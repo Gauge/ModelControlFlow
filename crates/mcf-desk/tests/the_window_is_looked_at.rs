@@ -368,6 +368,31 @@ fn an_open_dropdown_is_drawn_over_the_page() {
     );
 }
 
+/// Words nothing here matches leave the library empty and offer the hub
+/// from the list itself; what the hub answered is pressed there too (D51,
+/// B-485).
+#[test]
+fn words_nothing_matches_offer_the_hub_from_the_list() {
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    desk.filter = "gemma".to_owned();
+    assert!(desk.library().is_empty());
+    assert!(
+        act_within(&desk, &mcf_desk::Act::SearchHub, (40.0, 400.0)),
+        "nothing in the list searches the hub for the words typed"
+    );
+    desk.doing = a_search_answer();
+    if let mcf_desk::Doing::Listing(job) = &mut desk.doing {
+        job.finished = true;
+    }
+    desk.hear_for_review();
+    assert!(desk.hub_matches());
+    assert!(
+        act_within(&desk, &mcf_desk::Act::PickHub(0), (40.0, 400.0)),
+        "the hub's first repository cannot be opened from the list"
+    );
+}
+
 /// Every run has a card with its own Run: the ladder, the cross-check and
 /// the prompt analysis each start from the Diagnostics page, and nothing
 /// there toggles a row (D50, B-477).
@@ -2232,12 +2257,52 @@ fn every_page_is_drawn_for_review() {
     let _ = drawn(&desk, DAY, "review-diagnostics-probing");
     desk.doing = mcf_desk::Doing::Nothing;
 
-    // Add model, with search results.
-    let mut adding = four_models();
-    adding.page = Page::Adding;
-    adding.typed = "gemma".to_owned();
-    adding.doing = a_search_answer();
-    let _ = drawn(&adding, DAY, "review-add-search");
+    // The library searched: words nothing here matches, the hub asked and
+    // answered, and one of its repositories opened (D51).
+    let mut searched = four_models();
+    searched.page = Page::Models;
+    searched.filter = "gemma".to_owned();
+    let _ = drawn(&searched, DAY, "review-library-search");
+    searched.doing = a_search_answer();
+    if let mcf_desk::Doing::Listing(job) = &mut searched.doing {
+        job.finished = true;
+    }
+    searched.hear_for_review();
+    let _ = drawn(&searched, DAY, "review-library-hub");
+    searched.hub_chosen = Some(0);
+    searched.chosen = None;
+    searched.doing = a_files_answer();
+    let _ = drawn(&searched, DAY, "review-library-hub-files");
+}
+
+/// A repository's files as the daemon lists them, for the hub page.
+fn a_files_answer() -> mcf_desk::Doing {
+    use mcf_record::json::Value;
+    let file = |name: &str, bytes: i64, fits: bool| {
+        Value::map([
+            ("file", Value::text(name)),
+            ("bytes", Value::Integer(bytes)),
+            ("fits", Value::Bool(fits)),
+            ("why", Value::Null),
+        ])
+    };
+    mcf_desk::Doing::Listing(mcf_desk::job::Job::already(
+        "looking up someone/gemma-4-12B-it-qat-GGUF".to_owned(),
+        vec![Value::map([
+            ("repository", Value::text("someone/gemma-4-12B-it-qat-GGUF")),
+            ("revision", Value::text("abc123")),
+            (
+                "files",
+                Value::List(vec![
+                    file("gemma-4-12B-it-qat-Q4_K_M.gguf", 7_300_000_000, true),
+                    file("gemma-4-12B-it-qat-Q8_0.gguf", 12_500_000_000, true),
+                    file("gemma-4-12B-it-qat-BF16.gguf", 24_000_000_000, false),
+                ]),
+            ),
+            ("terms", Value::text("gemma (terms present)")),
+            ("done", Value::Bool(true)),
+        ])],
+    ))
 }
 
 /// Where a hold can go on this machine: as resolved, the processor, the card.

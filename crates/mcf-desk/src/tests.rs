@@ -283,7 +283,7 @@ fn every_menu_entry_reaches_something_built() {
 #[test]
 fn typing_is_only_typing_where_something_takes_it() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    for page in [Page::Adding, Page::Hosting] {
+    for page in [Page::Adding, Page::Hosting, Page::Models] {
         desk.page = page;
         assert!(
             desk.takes_typing(),
@@ -293,7 +293,6 @@ fn typing_is_only_typing_where_something_takes_it() {
     for page in [
         Page::Monitor,
         Page::Host,
-        Page::Models,
         Page::Diagnostics,
         Page::Anatomy,
         Page::Vocabulary,
@@ -849,6 +848,7 @@ fn a_ladder_that_never_separated_yields_no_speed() {
 #[test]
 fn a_pasted_reference_is_taken_as_a_value() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.page = Page::Adding;
 
     desk.paste("an-owner/a-repository-GGUF");
     assert_eq!(
@@ -888,6 +888,7 @@ fn a_pasted_reference_is_taken_as_a_value() {
 #[test]
 fn a_paste_is_bounded() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.page = Page::Adding;
     desk.paste(&"a".repeat(4096));
     assert_eq!(
         desk.typed.chars().count(),
@@ -1508,7 +1509,14 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
         desk.settings.as_ref().map(|held| held.flash_attention),
         Some(true)
     );
-    assert!(!desk.takes_typing(), "nothing is being typed into now");
+    assert!(
+        desk.editing.is_none(),
+        "nothing is being typed into a setting now"
+    );
+    assert!(
+        desk.takes_typing(),
+        "the library's search field still takes typing (D51)"
+    );
 }
 
 /// The capabilities card asks for the probes ticked: every one is no list,
@@ -1590,4 +1598,77 @@ fn the_last_hold_settings_come_back_with_one_press() {
         desk.settings.as_ref().map(|held| held.context),
         Some(32_768)
     );
+}
+
+/// The search field narrows the library by the words typed, over the name,
+/// the architecture and the path, case aside; words nothing matches leave
+/// the list empty rather than whole (D51, B-485).
+#[test]
+fn the_search_field_narrows_the_library() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let model = |name: &str, architecture: &str| Model {
+        name: name.to_owned(),
+        path: format!("/store/owner/{name}-GGUF/{name}.gguf"),
+        architecture: Some(architecture.to_owned()),
+        ..Model::default()
+    };
+    desk.models = vec![
+        model("Assistant-8B-Q4_K_M", "llama"),
+        model("Coder-30B-Q4_K_XL", "a-moe-architecture"),
+        model("Tiny-135M", "llama"),
+    ];
+    assert_eq!(desk.library(), vec![0, 1, 2]);
+    desk.filter = "LLAMA".to_owned();
+    assert_eq!(
+        desk.library(),
+        vec![0, 2],
+        "the architecture counts, case aside"
+    );
+    desk.filter = "q4_k".to_owned();
+    assert_eq!(desk.library(), vec![0, 1]);
+    desk.filter = "coder xl".to_owned();
+    assert_eq!(desk.library(), vec![1], "every word must match");
+    desk.filter = "gemma".to_owned();
+    assert!(desk.library().is_empty());
+    assert!(!desk.hub_matches(), "nothing has been asked of the hub");
+    // Return with nothing here matching asks the hub for the words.
+    desk.page = Page::Models;
+    desk.entered();
+    assert!(
+        matches!(desk.doing, crate::Doing::Listing(_)),
+        "Return on words nothing matches did not search the hub"
+    );
+}
+
+/// What the hub answered is kept for the words it was asked, listed with
+/// its downloads, and dropped from the list once the words change.
+#[test]
+fn the_hubs_answer_is_kept_for_its_words() {
+    use mcf_record::json::Value;
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.filter = "gemma".to_owned();
+    let mut job = crate::job::Job::already(
+        "searching".to_owned(),
+        vec![Value::map([
+            ("query", Value::text("gemma")),
+            (
+                "repositories",
+                Value::List(vec![Value::map([
+                    ("id", Value::text("someone/gemma-GGUF")),
+                    ("downloads", Value::Integer(1_295_081)),
+                ])]),
+            ),
+            ("done", Value::Bool(true)),
+        ])],
+    );
+    job.finished = true;
+    desk.doing = crate::Doing::Listing(job);
+    desk.hear_for_review();
+    let hub = desk.hub.as_ref().expect("the hub's answer is kept");
+    assert_eq!(hub.query, "gemma");
+    assert_eq!(hub.repositories.len(), 1);
+    assert_eq!(hub.repositories[0].downloads, Some(1_295_081));
+    assert!(desk.hub_matches());
+    desk.filter = "gemma 4".to_owned();
+    assert!(!desk.hub_matches(), "other words are another question");
 }

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 51 |
+| **Version** | 52 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4862,6 +4862,55 @@ that the window and the console have what the command line has (A22);
 the comparison card is the bench, the same way. Nothing on the page
 stands for a thing a run does not separately do.
 
+### D51 — The library is one search, over what is here and over the hub *(on the operator's instruction)*
+
+**A person looking for a model types what they are looking for, once. The
+library answers first with what is here that matches; when nothing here
+does, it offers the hub; a model chosen either way is a repository, and
+its quantizations are picked on its page; and a quantization that is not
+here yet is downloaded by the same button that would run it.**
+
+**What the library was.** A list of every file held, by name and size,
+with a separate page for adding one from the hub: a word to search or a
+reference to look up, a list of files, a Get button. A person who wanted
+a model they did not have went to a second place, typed the same name
+they would have typed into the first, and came back to find it in the
+list. A person who had a model in three quantizations saw three entries
+and chose between them by reading their names.
+
+**The search field.** At the top of the list, a field. What is typed
+filters what is held — by name, architecture, repository and quantization
+— as it is typed. When the field is not empty the list ends with a row
+that searches the hub for the same words, and when nothing here matches,
+Return presses it. What the hub answers is listed under what is here,
+under its own heading, most downloaded first, each row marked as on the
+hub with its downloads, and choosing one opens its page like any other.
+
+**A model is a repository.** The files held from one repository are one
+entry, and its page has a Quantization row: every GGUF file the
+repository publishes — those here and those the hub has — each with its
+size and whether it would run here, the ones here marked as here. Picking
+one that is here makes it the page's subject; picking one that is not
+makes it the subject as *not downloaded*, and the page says what it knows
+of it from the hub.
+
+**Download and run.** On a subject that is not downloaded, the button
+that would start the server reads *Download and start server*, and a
+diagnostics card's Run reads *Download and run*. The download goes first
+and shows its progress where the button was; when the file is here the
+run follows on it, and the entry is one of the library's from then on.
+
+**What the hub said, kept.** The daemon keeps what the hub answered — a
+search, a repository's files — beside the store for a day, says when it
+read it, and asks again on request: a library that asked the hub on every
+keystroke would be a library that stops working without a network, and
+one that never asked again would show last month's hub.
+
+**Filters.** A Filters toggle beside the field opens a row of pickers —
+architecture, fits here, size — applied with the words to what is here
+and to what the hub found. Each says *any* until somebody sets it, so an
+empty list is a list nothing matched and not one a filter hid.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -4891,6 +4940,13 @@ stands for a thing a run does not separately do.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 52 — the library is one search
+
+D51 written on the operator's instruction: a search field over the
+library that offers the hub when nothing here matches, a model as a
+repository with its quantizations picked on its page, download-and-run,
+what the hub said kept for a day, and filters.
 
 ### Version 51 — diagnostics as runs
 

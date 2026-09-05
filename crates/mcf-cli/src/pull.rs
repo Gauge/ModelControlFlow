@@ -67,13 +67,14 @@ pub(crate) fn run(
     from: Option<&str>,
     into: Option<&str>,
     offered: Offered<'_>,
+    fresh: bool,
 ) -> Response {
     let reference = match reference::parse(asked_for) {
         Ok(reference) => reference,
         // A word rather than a reference searches the hub for the names it
         // has, so that `mcf pull qwen` answers with something to pull (A2).
         Err(_) if !asked_for.contains(['/', ':', '@', ' ']) && !asked_for.trim().is_empty() => {
-            return crate::acquire::searched(asked_for, from);
+            return crate::acquire::searched(asked_for, from, fresh);
         }
         Err(failure) => return refused("that is not a reference MCF can resolve", &failure),
     };

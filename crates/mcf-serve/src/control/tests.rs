@@ -129,10 +129,12 @@ fn the_new_requests_survive_the_wire() {
         Request::Offered {
             reference: "owner/repository".to_owned(),
             from: None,
+            fresh: false,
         },
         Request::Offered {
             reference: "owner/repository".to_owned(),
             from: Some("https://elsewhere.example/".to_owned()),
+            fresh: true,
         },
         Request::Acquire {
             reference: "owner/repository".to_owned(),
@@ -399,4 +401,22 @@ fn a_probe_request_round_trips() {
     assert_eq!((engine, apply, up_to), (None, false, None));
     assert!(only.is_empty());
     assert!(Request::read(r#"{"protocol":1,"ask":"probe"}"#).is_err());
+}
+
+/// A search and a listing carry whether the hub is to be asked again, and
+/// a line without the flag reads as not (B-488).
+#[test]
+fn a_hub_request_carries_whether_it_wants_the_hub_asked_again() {
+    let asked = Request::Search {
+        query: "gemma".to_owned(),
+        from: None,
+        fresh: true,
+    };
+    let read = Request::read(&asked.to_line()).unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(read, asked);
+    let bare = r#"{"protocol":1,"ask":"offered","reference":"owner/name"}"#;
+    let Ok(Request::Offered { fresh, .. }) = Request::read(bare) else {
+        panic!("a bare listing did not read");
+    };
+    assert!(!fresh, "a line without the flag asks for what was kept");
 }

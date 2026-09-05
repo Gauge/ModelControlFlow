@@ -249,6 +249,9 @@ pub enum Request {
         reference: String,
         /// A hub other than the default, where the caller says.
         from: Option<String>,
+        /// Whether to ask the hub again rather than answer from what was
+        /// kept of its last answer within the day (B-488).
+        fresh: bool,
     },
     /// The probes, as one run the daemon carries: each announced as it
     /// starts and its finding as it lands (B-478, D50).
@@ -270,6 +273,9 @@ pub enum Request {
         query: String,
         /// A hub other than the default, where the caller says.
         from: Option<String>,
+        /// Whether to ask the hub again rather than answer from what was
+        /// kept of its last answer within the day (B-488).
+        fresh: bool,
     },
     /// Fetch one published file into this machine's store.
     ///
@@ -476,7 +482,19 @@ pub fn is_reference(typed: &str) -> bool {
 }
 
 /// The search's line: the word, and the hub where one was named.
-fn search_line(query: &str, from: Option<&str>) -> Value {
+fn offered_line(reference: &str, from: Option<&str>, fresh: bool) -> Value {
+    Value::map([
+        ("ask", Value::text("offered")),
+        ("reference", Value::text(reference.to_owned())),
+        (
+            "from",
+            from.map_or(Value::Null, |hub| Value::text(hub.to_owned())),
+        ),
+        ("fresh", Value::Bool(fresh)),
+    ])
+}
+
+fn search_line(query: &str, from: Option<&str>, fresh: bool) -> Value {
     Value::map([
         ("ask", Value::text("search")),
         ("query", Value::text(query.to_owned())),
@@ -484,6 +502,7 @@ fn search_line(query: &str, from: Option<&str>) -> Value {
             "from",
             from.map_or(Value::Null, |hub| Value::text(hub.to_owned())),
         ),
+        ("fresh", Value::Bool(fresh)),
     ])
 }
 
@@ -635,12 +654,12 @@ impl Request {
                 image.as_deref(),
                 *started,
             ),
-            Self::Offered { reference, from } => Value::map([
-                ("ask", Value::text("offered")),
-                ("reference", Value::text(reference.clone())),
-                ("from", maybe(from.as_deref())),
-            ]),
-            Self::Search { query, from } => search_line(query, from.as_deref()),
+            Self::Offered {
+                reference,
+                from,
+                fresh,
+            } => offered_line(reference, from.as_deref(), *fresh),
+            Self::Search { query, from, fresh } => search_line(query, from.as_deref(), *fresh),
             Self::Probe { .. } => probe_line(self),
             Self::Acquire {
                 reference,
@@ -743,6 +762,7 @@ impl Request {
                     .ok_or_else(|| refused("a listing naming no reference", line))?
                     .to_owned(),
                 from: optional("from"),
+                fresh: matches!(value.get("fresh"), Some(Value::Bool(true))),
             }),
             Some("probe") => Ok(Self::Probe {
                 model: value
@@ -772,6 +792,7 @@ impl Request {
                     .ok_or_else(|| refused("a search naming no word", line))?
                     .to_owned(),
                 from: optional("from"),
+                fresh: matches!(value.get("fresh"), Some(Value::Bool(true))),
             }),
             Some("acquire") => Ok(Self::Acquire {
                 reference: value

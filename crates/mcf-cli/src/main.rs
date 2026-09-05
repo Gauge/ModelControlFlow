@@ -113,6 +113,9 @@ enum Request<'a> {
         into: Option<&'a str>,
         /// Where MCF may read a credential from, if the operator named one.
         offered: pull::Offered<'a>,
+        /// Whether to ask the hub again rather than answer a word from what
+        /// was kept of its last answer within the day (B-488).
+        fresh: bool,
     },
     /// Check what this machine holds: the bytes, and where they came from.
     Check {
@@ -1661,6 +1664,7 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut from = None;
     let mut into = None;
     let mut offered = pull::Offered::Nothing;
+    let mut fresh = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -1700,6 +1704,7 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
+            "--fresh" => fresh = true,
             other if other.starts_with("--") => return Err(other),
             other if reference.is_none() => reference = Some(other),
             other => return Err(other),
@@ -1711,6 +1716,7 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             from,
             into,
             offered,
+            fresh,
         }),
         None => Ok(Request::MissingArgument {
             command: "pull",
@@ -1849,8 +1855,10 @@ const COMMANDS: &str = "\
     \x20          [--from <hub>]             says which variants would run\n\
     \x20          [--token-from <file>]      here. MCF reads a credential\n\
     \x20          [--token-from-env <VAR>]   only where you name one, and\n\
-    \x20                                     puts models where MCF_MODELS\n\
-    \x20                                     says unless --into names one\n\
+    \x20          [--fresh]                  puts models where MCF_MODELS\n\
+    \x20                                     says unless --into names one;\n\
+    \x20                                     a word searches the hub, kept\n\
+    \x20                                     a day unless --fresh\n\
     \x20 mcf serve                           start the daemon: it stays up,\n\
     \x20                                     recovers what is on the disk and\n\
     \x20                                     costs nothing while idle\n\
@@ -2048,7 +2056,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             from,
             into,
             offered,
-        } => pull::run(reference, *from, *into, *offered),
+            fresh,
+        } => pull::run(reference, *from, *into, *offered, *fresh),
         Request::Serve => serve::run(),
         Request::Tui => tui::run(),
         Request::Desk => desk::run(),
@@ -2113,7 +2122,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Host { model, changes } => hosting::host(model, changes),
         Request::Hosted => hosting::held(),
         Request::Unhost => hosting::unhost(),
-        Request::Offered { reference } => acquire::offered(reference, None),
+        Request::Offered { reference } => acquire::offered(reference, None, false),
         Request::Acquire { reference, file } => acquire::acquire(reference, file, None),
         Request::Measure {
             model,

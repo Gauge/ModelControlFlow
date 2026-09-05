@@ -1964,6 +1964,56 @@ fn newest_probes(
         .collect()
 }
 
+/// How long what the hub answered is kept for: a day (B-488).
+const HUB_KEPT_FOR_NANOS: i128 = 86_400 * 1_000_000_000;
+
+/// An answer from the hub, kept beside the store for a day and served from
+/// there until then, unless the caller asked fresh (B-488, D51).
+///
+/// **A library that asked the hub on every keystroke would stop working
+/// without a network; one that never asked again would show last month's
+/// hub.** So the answer is kept with when it was read, served with that
+/// time on it and whether it was kept, and read again on request. Only a
+/// served answer is kept; a refusal is not a fact about the hub.
+fn kept_answer(home: &Path, key: &str, fresh: bool, ask: impl FnOnce() -> Answer) -> Answer {
+    let at = home.join("hub-cache").join(format!(
+        "{}.json",
+        mcf_core::digest::sha256(key.as_bytes()).hex()
+    ));
+    if !fresh
+        && let Ok(text) = std::fs::read_to_string(&at)
+        && let Ok(kept) = mcf_record::json::parse(&text)
+        && let Some(read_at) = kept.get("read_at")
+        && let Ok(then) = mcf_record::decode::timestamp(read_at)
+        && Timestamp::now()
+            .utc_nanos()
+            .saturating_sub(then.utc_nanos())
+            < HUB_KEPT_FOR_NANOS
+        && let Some(Value::Map(body)) = kept.get("body").cloned()
+    {
+        let mut body = body;
+        body.insert("read_at".to_owned(), read_at.clone());
+        body.insert("kept".to_owned(), Value::Bool(true));
+        return Answer::served(Value::Map(body));
+    }
+    let answer = ask();
+    if !answer.served {
+        return answer;
+    }
+    let now = mcf_record::encode::timestamp(Timestamp::now());
+    let kept = Value::map([("read_at", now.clone()), ("body", answer.body.clone())]);
+    if let Some(parent) = at.parent() {
+        let _made = std::fs::create_dir_all(parent);
+    }
+    let _kept = std::fs::write(&at, kept.to_line());
+    let Value::Map(mut body) = answer.body else {
+        return Answer::served(answer.body);
+    };
+    body.insert("read_at".to_owned(), now);
+    body.insert("kept".to_owned(), Value::Bool(false));
+    Answer::served(Value::Map(body))
+}
+
 /// The hub MCF reads when nobody has named another.
 const DEFAULT_HUB: &str = "https://huggingface.co/";
 
@@ -3813,10 +3863,28 @@ impl Daemon {
             Request::Status => (Answer::served(self.status()), None),
             Request::Holding => (Answer::served(self.holding()), None),
             Request::Components => (Answer::served(self.components()), None),
-            Request::Offered { reference, from } => {
-                (Self::offered(reference, from.as_deref()), None)
-            }
-            Request::Search { query, from } => (Self::searched(query, from.as_deref()), None),
+            Request::Offered {
+                reference,
+                from,
+                fresh,
+            } => (
+                kept_answer(
+                    &self.mcf_home(),
+                    &format!("files:{reference}@{}", from.as_deref().unwrap_or("")),
+                    *fresh,
+                    || Self::offered(reference, from.as_deref()),
+                ),
+                None,
+            ),
+            Request::Search { query, from, fresh } => (
+                kept_answer(
+                    &self.mcf_home(),
+                    &format!("search:{}@{}", query.trim(), from.as_deref().unwrap_or("")),
+                    *fresh,
+                    || Self::searched(query, from.as_deref()),
+                ),
+                None,
+            ),
             Request::Settings { model } => (self.settings_for(model), None),
             Request::Anatomy { model } => (self.anatomy_of(model), None),
             Request::Tokenize {

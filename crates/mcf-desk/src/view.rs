@@ -601,25 +601,90 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     )
     .or(act);
 
+    let pane = Box::new(right, area.y, area.right() - right, area.h);
+    if desk.hub_chosen.is_some() {
+        return hub_page(paint, desk, mouse, pane).or(act);
+    }
     let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
         paint.say_at(
             right,
             area.y,
-            "Choose a model on the left.",
+            "Choose a model on the left, or type to search.",
             Weight::Regular,
             size::BODY,
             ink.quiet,
         );
         return act;
     };
-    model_page(
+    model_page(paint, desk, mouse, pane, held).or(act)
+}
+
+/// A hub repository's page: its files with their sizes and whether each
+/// would run here, each with a way to get it; the look-up's progress or
+/// refusal before that, and a download's progress while one goes (D51,
+/// B-485).
+fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let id = desk
+        .hub
+        .as_ref()
+        .zip(desk.hub_chosen)
+        .and_then(|(hub, at)| hub.repositories.get(at))
+        .map_or("a repository", |found| found.id.as_str());
+    paint.say_at(
+        area.x,
+        area.y,
+        &format!("On the hub — not downloaded · {id}"),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let y = area.y + 26.0;
+    match &desk.doing {
+        Doing::Listing(job) if !job.finished => {
+            paint.say_at(area.x, y, &job.what, Weight::Regular, size::BODY, ink.quiet);
+            return None;
+        }
+        Doing::Downloading(job) => {
+            paint.say_at(area.x, y, &job.what, Weight::Bold, size::BODY, ink.ink);
+            ui::progress(
+                paint,
+                Box::new(area.x, y + 24.0, area.w.min(520.0), 8.0),
+                crate::job::fraction(job),
+            );
+            paint.say_at(
+                area.x,
+                y + 46.0,
+                &downloading_line(job),
+                Weight::Regular,
+                size::SMALL,
+                ink.quiet,
+            );
+            return None;
+        }
+        _ => {}
+    }
+    let job = desk.doing.job()?;
+    if let Some(why) = &job.refused {
+        let mut at = y;
+        for line in paint
+            .wrap(why, Weight::Regular, size::BODY, area.w.min(600.0))
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, at, line, Weight::Regular, size::BODY, ink.bad);
+            at += 20.0;
+        }
+        return None;
+    }
+    let found = job.conclusion().or_else(|| job.latest())?;
+    found.get("files")?;
+    published(
         paint,
-        desk,
         mouse,
-        Box::new(right, area.y, area.right() - right, area.h),
-        held,
+        Box::new(area.x, y, area.w, area.bottom() - y),
+        found,
     )
-    .or(act)
 }
 
 /// Why there are no settings, and what Host will do about it where it can.
@@ -1652,14 +1717,9 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         Kind::Ordinary,
         Act::Tab(crate::Tab::Contents),
     ));
-    actions.push((
-        "Add model".to_owned(),
-        Kind::Ordinary,
-        Act::Go(Page::Adding),
-    ));
     for (label, kind, what) in actions {
         let where_ = Box::new(area.x, y, list - 20.0, 30.0);
-        let needs_one = what != Act::Go(Page::Adding);
+        let needs_one = true;
         // Host waits on a build where none of the engines here can run
         // the model: the button is drawn quiet and does nothing.
         let waits = what == Act::HostIt && desk.needs_engine.is_some();
@@ -1737,31 +1797,45 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
     let actions_at = area.bottom();
     let mut act = None;
     spaced(paint, area.x, area.y, "models", ink.faint);
-    let mut y = area.y + 26.0;
-    if desk.models.is_empty() {
-        paint.say_at(
-            area.x,
-            y,
-            "none held",
-            Weight::Regular,
-            size::BODY,
-            ink.faint,
-        );
+    let mut y = area.y + 24.0;
+    // The search field: what is typed narrows the list as it is typed, and
+    // is the words the hub is asked for (D51).
+    let _pressed = ui::field(
+        paint,
+        mouse,
+        Box::new(area.x - 6.0, y, list, 30.0),
+        &desk.filter,
+        "Search models",
+        desk.editing.is_none(),
+    );
+    y += 44.0;
+    let shown = desk.library();
+    if let Some(note) = match (desk.models.is_empty(), shown.is_empty()) {
+        (true, _) => Some("none held"),
+        (false, true) => Some("nothing here matches"),
+        (false, false) => None,
+    } {
+        paint.say_at(area.x, y, note, Weight::Regular, size::BODY, ink.faint);
+        y += 24.0;
     }
-    for (at, held) in desk.models.iter().enumerate() {
+    for (count, at) in shown.iter().copied().enumerate() {
+        let Some(held) = desk.models.get(at) else {
+            continue;
+        };
         if y > actions_at - 62.0 {
             paint.say_at(
                 area.x,
                 y,
-                &format!("… and {} more", desk.models.len().saturating_sub(at)),
+                &format!("… and {} more", shown.len().saturating_sub(count)),
                 Weight::Regular,
                 size::SMALL,
                 ink.faint,
             );
+            y = actions_at;
             break;
         }
         let where_ = Box::new(area.x - 6.0, y - 4.0, list, 40.0);
-        let chosen = desk.chosen == Some(at);
+        let chosen = desk.chosen == Some(at) && desk.hub_chosen.is_none();
         if chosen {
             paint.panel(where_, 6.0, ink.accent_soft, 255);
         } else if mouse.over(where_) {
@@ -1808,7 +1882,137 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         }
         y += 40.0;
     }
+    if let Some(pressed) = hub_rows(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, y, list, actions_at - y),
+    ) {
+        act = Some(pressed);
+    }
+    act
+}
 
+/// The row that searches the hub for the words in the field, quiet while
+/// a search goes.
+fn search_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: Box,
+    words: &str,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let searching =
+        matches!(&desk.doing, Doing::Listing(job) if !job.finished) && desk.hub_chosen.is_none();
+    let label = paint.elide(
+        &format!("Search Hugging Face for {words:?}"),
+        Weight::Regular,
+        size::BODY,
+        at.w - 32.0,
+    );
+    let where_ = Box::new(at.x, at.y, at.w - 20.0, 30.0);
+    let pressed = ui::button(
+        paint,
+        mouse,
+        where_,
+        &label,
+        if searching {
+            Kind::Quiet
+        } else {
+            Kind::Ordinary
+        },
+    );
+    if searching {
+        paint.say_at(
+            at.x,
+            at.y + 36.0,
+            "searching…",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    (pressed && !searching).then_some(Act::SearchHub)
+}
+
+/// Under what is here: the row that searches the hub for the words in the
+/// field, and what the hub answered for them, one row a repository with its
+/// downloads, most downloaded first (D51, B-485).
+fn hub_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let words = desk.filter.trim();
+    if words.is_empty() || area.h < 40.0 {
+        return None;
+    }
+    let mut y = area.y + 6.0;
+    let mut act = None;
+    if !desk.hub_matches() {
+        return search_row(paint, desk, mouse, Box::new(area.x, y, area.w, 30.0), words);
+    }
+    let hub = desk.hub.as_ref()?;
+    spaced(paint, area.x, y, "on the hub", ink.faint);
+    y += 24.0;
+    if hub.repositories.is_empty() {
+        paint.say_at(
+            area.x,
+            y,
+            "nothing on the hub matches",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return None;
+    }
+    for (at, found) in hub.repositories.iter().enumerate() {
+        if y > area.bottom() - 40.0 {
+            paint.say_at(
+                area.x,
+                y,
+                &format!("… and {} more", hub.repositories.len().saturating_sub(at)),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            break;
+        }
+        let where_ = Box::new(area.x - 6.0, y - 4.0, area.w, 40.0);
+        let chosen = desk.hub_chosen == Some(at);
+        if chosen {
+            paint.panel(where_, 6.0, ink.accent_soft, 255);
+        } else if mouse.over(where_) {
+            paint.panel(where_, 6.0, ink.line, 110);
+        }
+        let name = paint.elide(&found.id, Weight::Regular, size::BODY, area.w - 14.0);
+        paint.say_at(
+            area.x,
+            y,
+            &name,
+            if chosen {
+                Weight::Bold
+            } else {
+                Weight::Regular
+            },
+            size::BODY,
+            if chosen { ink.accent } else { ink.ink },
+        );
+        let downloads = found.downloads.map_or_else(
+            || "on the hub".to_owned(),
+            |count| format!("on the hub · {} downloads", words::grouped(count)),
+        );
+        paint.say_at(
+            area.x,
+            y + 18.0,
+            &downloads,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        if mouse.clicked(where_) {
+            act = Some(Act::PickHub(at));
+        }
+        y += 40.0;
+    }
     act
 }
 

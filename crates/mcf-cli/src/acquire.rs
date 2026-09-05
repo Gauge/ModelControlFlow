@@ -22,11 +22,12 @@ use mcf_serve::control::{Answer, Request};
 use crate::Response;
 
 /// What a repository publishes, and which of it will run here.
-pub(crate) fn offered(reference: &str, from: Option<&str>) -> Response {
+pub(crate) fn offered(reference: &str, from: Option<&str>, fresh: bool) -> Response {
     ask(
         &Request::Offered {
             reference: reference.to_owned(),
             from: from.map(str::to_owned),
+            fresh,
         },
         &published,
     )
@@ -35,14 +36,30 @@ pub(crate) fn offered(reference: &str, from: Option<&str>) -> Response {
 /// Fetches one published file into this machine's store.
 /// Which repositories the hub lists for a word, so that `mcf pull qwen`
 /// answers with names to pull rather than a refusal (A2).
-pub(crate) fn searched(query: &str, from: Option<&str>) -> Response {
+pub(crate) fn searched(query: &str, from: Option<&str>, fresh: bool) -> Response {
     ask(
         &Request::Search {
             query: query.to_owned(),
             from: from.map(str::to_owned),
+            fresh,
         },
         &found,
     )
+}
+
+/// Where an answer came from: the hub just now, or what was kept of a read
+/// within the day, with when (B-488).
+fn read_from(body: &Value) -> Option<String> {
+    let at = body
+        .get("read_at")
+        .and_then(|at| mcf_record::decode::timestamp(at).ok())?;
+    let at = at.to_string();
+    let at = at.get(..19).map_or(at.clone(), |head| format!("{head}Z"));
+    Some(if matches!(body.get("kept"), Some(Value::Bool(true))) {
+        format!("  kept from a read of the hub at {at}; --fresh asks again")
+    } else {
+        format!("  read from the hub at {at}")
+    })
 }
 
 fn found(body: &Value) -> Vec<String> {
@@ -57,10 +74,11 @@ fn found(body: &Value) -> Vec<String> {
             "the hub lists no repository with GGUF files for {query:?}"
         )];
     }
-    let mut lines = vec![format!(
+    let mut lines = read_from(body).into_iter().collect::<Vec<String>>();
+    lines.push(format!(
         "{} repositories with GGUF files for {query:?}, most downloaded first",
         listed.len()
-    )];
+    ));
     for repository in &listed {
         let id = repository.get("id").and_then(Value::as_text).unwrap_or("?");
         let downloads = repository
@@ -146,7 +164,8 @@ fn ask(request: &Request, render: &dyn Fn(&Value) -> Vec<String>) -> Response {
 
 /// A listing, one row a published file.
 fn published(body: &Value) -> Vec<String> {
-    let mut lines = vec![format!(
+    let mut lines = read_from(body).into_iter().collect::<Vec<String>>();
+    lines.push(format!(
         "{} at {}",
         body.get("repository")
             .and_then(Value::as_text)
@@ -154,7 +173,7 @@ fn published(body: &Value) -> Vec<String> {
         body.get("revision")
             .and_then(Value::as_text)
             .unwrap_or("an unstated revision")
-    )];
+    ));
     // Before the files, because it is the thing a person may need to decide
     // not to download at all (B-023).
     if let Some(terms) = body.get("terms").and_then(Value::as_text) {

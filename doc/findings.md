@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 137 |
+| **Version** | 138 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 189 | [F189 — The library is one search: words typed narrow what is held as they are typed, words nothing here matches offer the hub from the list itself and its answer is listed under what is here, a hub repository's page lists its files to get, and the daemon keeps what the hub answered for a day and says when it read it (B-485, B-488, D51, A2, A7)](#189--f189-the-library-is-one-search-words-typed-narrow-what-is-held-as-they-are-typed-words-nothing-here-matches-offer-the-hub-from-the-list-itself-and-its-answer-is-listed-under-what-is-here-a-hub-repositorys-page-lists-its-files-to-get-and-the-daemon-keeps-what-the-hub-answered-for-a-day-and-says-when-it-read-it-b-485-b-488-d51-a2-a7) |
 | 188 | [F188 — The console's Diagnostics screen follows the window: the checkbox rows go, each run is a button with its cost under it — Quick run, Run, Cross-check, Capabilities — one line a run says what it answers, and what the last runs found is drawn under them; the probes run from the console as they do from the window (B-482, D50, A22, B-072)](#188--f188-the-consoles-diagnostics-screen-follows-the-window-the-checkbox-rows-go-each-run-is-a-button-with-its-cost-under-it-quick-run-run-cross-check-capabilities-one-line-a-run-says-what-it-answers-and-what-the-last-runs-found-is-drawn-under-them-the-probes-run-from-the-console-as-they-do-from-the-window-b-482-d50-a22-b-072) |
 | 187 | [F187 — The library lists the figures that decide a choice: under each model's name its architecture, trained window, device kind and measured speed, and the review pass found the Statistics column grown past the window once Capabilities joined it, which its duplicate of the left column's last-served line and button had left no room for (B-484, D49, F181, §3.15)](#187--f187-the-library-lists-the-figures-that-decide-a-choice-under-each-models-name-its-architecture-trained-window-device-kind-and-measured-speed-and-the-review-pass-found-the-statistics-column-grown-past-the-window-once-capabilities-joined-it-which-its-duplicate-of-the-left-columns-last-served-line-and-button-had-left-no-room-for-b-484-d49-f181-315) |
 | 186 | [F186 — A hold's settings are remembered per model: the daemon keeps the settings each model was last held under from the record, Configure offers them as one press beside the recommendation, and mcf settings says Qwen3-VL-2B was last held under an 8,192-token window rather than the 262,144 recommended (B-475, D49, A1, A22)](#186--f186-a-holds-settings-are-remembered-per-model-the-daemon-keeps-the-settings-each-model-was-last-held-under-from-the-record-configure-offers-them-as-one-press-beside-the-recommendation-and-mcf-settings-says-qwen3-vl-2b-was-last-held-under-an-8192-token-window-rather-than-the-262144-recommended-b-475-d49-a1-a22) |
@@ -9611,6 +9612,47 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 189 · F189 — The library is one search: words typed narrow what is held as they are typed, words nothing here matches offer the hub from the list itself and its answer is listed under what is here, a hub repository's page lists its files to get, and the daemon keeps what the hub answered for a day and says when it read it (B-485, B-488, D51, A2, A7)
+
+The operator asked for a search bar on the models page that filters what
+is held, offers Hugging Face when nothing here matches, lists what the
+hub found in the same list, and lets a model be picked and its
+quantization chosen whether or not it is downloaded. D51 decided it; this
+is the first two of its five parts.
+
+**The search field.** At the top of the library, a field takes what is
+typed on the Models page whenever no setting is being edited, and the
+list narrows as it is typed: every word must appear in the model's name,
+its architecture or its path, case aside. The list says *nothing here
+matches* rather than showing everything, and when the field is not empty
+it ends with *Search Hugging Face for "…"*; Return presses it when
+nothing here matches. What the hub answers is listed under an *on the
+hub* heading with each repository's downloads, most downloaded first,
+and stays there until the words change; choosing one opens its page,
+which says it is on the hub and not downloaded and lists its GGUF files
+with their sizes, whether each would run here, and a way to get each. The
+separate add page's button is gone from the actions; the page itself
+stays reachable for a pasted reference until the quantization row (B-486)
+takes that over.
+
+**What the hub said, kept.** The daemon keeps a served search or listing
+beside the store under a digest of what was asked, with when it was
+read, and answers the same question from there for a day; every such
+answer carries *read_at* and whether it was kept, `mcf pull <word>` prints
+*kept from a read of the hub at …* or *read from the hub at …*, and
+`--fresh` asks the hub again. A refusal is not kept: it is not a fact
+about the hub. A test on a scratch home holds the daemon to it — the
+second ask within the day does not reach the hub, a fresh one does, and a
+refusal leaves the next ask to reach it.
+
+**What ran.** The library drawn with *gemma* typed against a library of
+three: *nothing here matches* and the search row; then with the hub's
+three answers listed and the first opened, its three files at 7.30, 12.50
+and 24.00 GB with Get on each (F181's review pass). The window's own
+tests hold the field to its narrowing, the hub's answer to its words, and
+the list to offering the hub and its repositories where they can be
+pressed.
+
 ## 188 · F188 — The console's Diagnostics screen follows the window: the checkbox rows go, each run is a button with its cost under it — Quick run, Run, Cross-check, Capabilities — one line a run says what it answers, and what the last runs found is drawn under them; the probes run from the console as they do from the window (B-482, D50, A22, B-072)
 
 D50 was decided for the window (F184) and the console still had the six
@@ -12738,6 +12780,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 138 — the library is one search
+
+F189: the search field over the library that offers the hub, and the
+hub's answers kept for a day (B-485, B-488).
 
 ### Version 137 — the console follows the window
 

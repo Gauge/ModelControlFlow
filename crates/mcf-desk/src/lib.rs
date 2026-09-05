@@ -1117,6 +1117,39 @@ pub enum Picker {
     Rope,
 }
 
+/// What the hub answered a search with: the words, and the repositories
+/// with GGUF files it lists for them, most downloaded first (D51).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HubList {
+    /// The words the hub was asked for.
+    pub query: String,
+    /// What it listed.
+    pub repositories: Vec<HubRepo>,
+}
+
+/// One repository the hub listed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HubRepo {
+    /// `owner/name`, as the hub names it.
+    pub id: String,
+    /// Downloads the hub counts, where it says.
+    pub downloads: Option<u64>,
+}
+
+impl HubRepo {
+    /// One repository as the daemon lists it.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            id: value.get("id")?.as_text()?.to_owned(),
+            downloads: value
+                .get("downloads")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+        })
+    }
+}
+
 /// One run the Diagnostics page offers, each on its own card with its own
 /// controls, cost and Run (D50, B-477).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1309,6 +1342,10 @@ pub enum Act {
     },
     /// Start one run's card on the chosen model (D50).
     Run(Card),
+    /// Search the hub for the words in the library's field (D51).
+    SearchHub,
+    /// Open the page of one repository the hub listed, by its place.
+    PickHub(usize),
     /// Turn one probe on or off on the capabilities card.
     ToggleProbe(usize),
     /// Flip whether the probes apply what they find.
@@ -1495,6 +1532,15 @@ pub struct Desk {
     pub busy: bool,
     /// What is being typed, on the screen that has a field.
     pub typed: String,
+    /// What the library is being searched for: filters what is held as it
+    /// is typed, and is the words the hub is asked for (D51, B-485).
+    pub filter: String,
+    /// What the hub answered for the words in the field, where it was
+    /// asked: listed under what is here until the words change.
+    pub hub: Option<HubList>,
+    /// Which hub repository's page is open, where one is, by its place in
+    /// the hub's list; `None` is a held model's page (B-485).
+    pub hub_chosen: Option<usize>,
     /// The temperature to draw the settledness seeds at, as typed; empty
     /// asks the question nothing, and the page says so (B-431).
     pub temperature: String,
@@ -1668,6 +1714,9 @@ impl Desk {
             recommended: None,
             no_settings: None,
             last_settings: None,
+            filter: String::new(),
+            hub: None,
+            hub_chosen: None,
             needs_engine: None,
             host_after: None,
             building: None,
@@ -1688,8 +1737,10 @@ impl Desk {
     /// Whether the screen showing has a field somebody could be typing into.
     #[must_use]
     pub fn takes_typing(&self) -> bool {
-        matches!(self.page, Page::Adding | Page::Hosting | Page::Prompt)
-            || (matches!(self.page, Page::Models | Page::Host) && self.editing.is_some())
+        matches!(
+            self.page,
+            Page::Adding | Page::Hosting | Page::Prompt | Page::Models
+        ) || (self.page == Page::Host && self.editing.is_some())
     }
 
     /// The longest a pasted value may be, on a screen whose field takes a
@@ -1767,6 +1818,8 @@ impl Desk {
             (Page::Hosting, Caret::System) => &mut self.system,
             (Page::Hosting, Caret::Effort) => &mut self.effort,
             (Page::Hosting, Caret::Picture) => &mut self.picture,
+            // The library's search field, when no setting is being edited.
+            (Page::Models, _) => &mut self.filter,
             _ => &mut self.typed,
         }
     }
@@ -1782,6 +1835,7 @@ impl Desk {
             (Page::Hosting, Caret::System) => &self.system,
             (Page::Hosting, Caret::Effort) => &self.effort,
             (Page::Hosting, Caret::Picture) => &self.picture,
+            (Page::Models, _) => &self.filter,
             _ => &self.typed,
         }
     }
@@ -1840,7 +1894,15 @@ impl Desk {
     /// What Return runs on the screen showing.
     pub fn entered(&mut self) {
         match self.page {
-            Page::Models | Page::Host => self.apply_edit(),
+            // A setting being typed is applied; otherwise Return searches
+            // the hub for words nothing here matches (D51).
+            Page::Models if self.editing.is_some() => self.apply_edit(),
+            Page::Models => {
+                if !self.filter.trim().is_empty() && self.library().is_empty() {
+                    self.search_hub();
+                }
+            }
+            Page::Host => self.apply_edit(),
             Page::Adding => self.look_up(),
             Page::Prompt => self.report_prompt(),
             Page::Hosting => {
@@ -1914,6 +1976,11 @@ impl Desk {
             && job.finished
         {
             self.keep_the_probes();
+        }
+        if let Doing::Listing(job) = &self.doing
+            && job.finished
+        {
+            self.keep_the_hub();
         }
         // The engine just built is what the model was waiting for: the
         // settings are asked again, now that there is something to run it
@@ -2025,6 +2092,8 @@ impl Desk {
                 }
             }
             Act::Run(card) => self.run_card(card),
+            Act::SearchHub => self.search_hub(),
+            Act::PickHub(at) => self.pick_hub(at),
             Act::ToggleProbe(at) => {
                 if let Some(wanted) = self.probes_wanted.get_mut(at) {
                     *wanted = !*wanted;
@@ -2506,11 +2575,13 @@ impl Desk {
                 Request::Offered {
                     reference: asked.clone(),
                     from: None,
+                    fresh: false,
                 }
             } else {
                 Request::Search {
                     query: asked.clone(),
                     from: None,
+                    fresh: false,
                 }
             },
             if is_reference {
@@ -2620,6 +2691,113 @@ impl Desk {
             // card says so and offers the command.
             Card::Comparison => {}
         }
+    }
+
+    /// The held models the search field lets through, by their place in
+    /// the list: every one where the field is empty; else those whose name,
+    /// architecture or path carry the words, case aside (D51).
+    #[must_use]
+    pub fn library(&self) -> Vec<usize> {
+        let wanted = self.filter.trim().to_lowercase();
+        let words: Vec<&str> = wanted.split_whitespace().collect();
+        self.models
+            .iter()
+            .enumerate()
+            .filter(|(_, held)| {
+                if words.is_empty() {
+                    return true;
+                }
+                let haystack = format!(
+                    "{} {} {}",
+                    held.name,
+                    held.architecture.as_deref().unwrap_or(""),
+                    held.path
+                )
+                .to_lowercase();
+                words.iter().all(|word| haystack.contains(word))
+            })
+            .map(|(at, _)| at)
+            .collect()
+    }
+
+    /// Whether the hub's answer on show is for the words in the field.
+    #[must_use]
+    pub fn hub_matches(&self) -> bool {
+        self.hub
+            .as_ref()
+            .is_some_and(|hub| hub.query == self.filter.trim())
+    }
+
+    /// Asks the hub for the words in the field — the request `mcf pull
+    /// <word>` sends — and lists what it answers under what is here.
+    pub fn search_hub(&mut self) {
+        let query = self.filter.trim().to_owned();
+        if query.is_empty() || self.doing.busy() {
+            return;
+        }
+        self.hub = None;
+        self.hub_chosen = None;
+        self.doing = Doing::Listing(job::Job::start(
+            &self.socket,
+            Request::Search {
+                query: query.clone(),
+                from: None,
+                fresh: false,
+            },
+            format!("searching the hub for {query:?}"),
+        ));
+    }
+
+    /// Opens one hub repository's page: its files are looked up, and the
+    /// page shows them with a way to get each (B-485).
+    pub fn pick_hub(&mut self, at: usize) {
+        let Some(id) = self
+            .hub
+            .as_ref()
+            .and_then(|hub| hub.repositories.get(at))
+            .map(|found| found.id.clone())
+        else {
+            return;
+        };
+        self.hub_chosen = Some(at);
+        self.chosen = None;
+        self.doing = Doing::Listing(job::Job::start(
+            &self.socket,
+            Request::Offered {
+                reference: id.clone(),
+                from: None,
+                fresh: false,
+            },
+            format!("looking up {id}"),
+        ));
+    }
+
+    /// What a frame does when the search job has answered, for a review
+    /// that builds the state by hand rather than through a socket.
+    pub fn hear_for_review(&mut self) {
+        self.keep_the_hub();
+    }
+
+    /// Keeps what the hub answered a search with, once the job has it.
+    fn keep_the_hub(&mut self) {
+        let Doing::Listing(job) = &self.doing else {
+            return;
+        };
+        let Some(found) = job.conclusion().or_else(|| job.latest()) else {
+            return;
+        };
+        let Some(listed) = found.get("repositories").and_then(Value::as_list) else {
+            return;
+        };
+        let query = found
+            .get("query")
+            .and_then(Value::as_text)
+            .unwrap_or("")
+            .to_owned();
+        self.hub = Some(HubList {
+            query,
+            repositories: listed.iter().filter_map(HubRepo::from_value).collect(),
+        });
     }
 
     /// The probes named for the run: none where every one is ticked, which

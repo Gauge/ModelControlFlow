@@ -1213,3 +1213,48 @@ fn a_rung_over_one_pair_has_no_spread() {
         "an unmeasured rung counts its pairs too"
     );
 }
+
+/// What the hub answered is kept for a day and served from there with when
+/// it was read; fresh asks again; a refusal is not kept (B-488).
+#[test]
+fn what_the_hub_answered_is_kept_for_a_day() {
+    let machine = Machine::new("hub-kept");
+    let home = machine.root.clone();
+    let asked = std::cell::Cell::new(0_u32);
+    let answer = || {
+        asked.set(asked.get() + 1);
+        Answer::served(Value::map([("query", Value::text("gemma"))]))
+    };
+    let first = super::kept_answer(&home, "search:gemma@", false, answer);
+    assert!(first.served);
+    assert_eq!(first.body.get("kept"), Some(&Value::Bool(false)));
+    assert!(
+        first.body.get("read_at").is_some(),
+        "when it was read is on it"
+    );
+    let again = super::kept_answer(&home, "search:gemma@", false, answer);
+    assert_eq!(
+        asked.get(),
+        1,
+        "the second ask within the day reached the hub"
+    );
+    assert_eq!(again.body.get("kept"), Some(&Value::Bool(true)));
+    assert_eq!(again.body.get("query"), Some(&Value::text("gemma")));
+    let fresh = super::kept_answer(&home, "search:gemma@", true, answer);
+    assert_eq!(asked.get(), 2, "fresh did not reach the hub");
+    assert_eq!(fresh.body.get("kept"), Some(&Value::Bool(false)));
+    let refused = super::kept_answer(&home, "search:nothing@", false, || {
+        Answer::refused(&crate::control::refused("no", "nothing"))
+    });
+    assert!(!refused.served);
+    let asked_again = std::cell::Cell::new(0_u32);
+    let _served = super::kept_answer(&home, "search:nothing@", false, || {
+        asked_again.set(1);
+        Answer::served(Value::map([("query", Value::text("nothing"))]))
+    });
+    assert_eq!(
+        asked_again.get(),
+        1,
+        "a refusal was kept as if it were an answer"
+    );
+}
