@@ -1783,3 +1783,55 @@ fn a_pick_not_here_downloads_first_and_then_does_the_thing() {
     );
     assert_eq!(desk.page, Page::Hosting, "the server was not started");
 }
+
+/// The filters narrow the library with the words: by architecture, by
+/// whether MCF says a model will run here, and by size; each is *any*
+/// until set, and *any* again when set back (D51, B-489).
+#[test]
+fn the_filters_narrow_the_library_with_the_words() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let model = |name: &str, architecture: &str, bytes: u64, refused: Option<&str>| Model {
+        name: name.to_owned(),
+        path: format!("/store/{name}.gguf"),
+        architecture: Some(architecture.to_owned()),
+        bytes: Some(bytes),
+        refused: refused.map(str::to_owned),
+        ..Model::default()
+    };
+    desk.models = vec![
+        model("Small", "llama", 5_000_000_000, None),
+        model("Large", "llama", 40_000_000_000, Some("too large")),
+        model("Moe", "a-moe", 18_000_000_000, None),
+    ];
+    let members = |desk: &Desk| -> Vec<usize> {
+        desk.library()
+            .into_iter()
+            .flat_map(|group| group.members)
+            .collect()
+    };
+    assert_eq!(desk.architectures(), vec!["a-moe", "llama"]);
+    assert!(!desk.filters.any_set());
+    desk.act(crate::Act::SetArchitecture(2));
+    assert_eq!(desk.filters.architecture.as_deref(), Some("llama"));
+    assert_eq!(members(&desk), vec![0, 1]);
+    desk.act(crate::Act::SetFits(1));
+    assert_eq!(members(&desk), vec![0], "only what will run here");
+    desk.act(crate::Act::SetArchitecture(0));
+    assert_eq!(members(&desk), vec![0, 2], "any architecture again");
+    desk.act(crate::Act::SetSize(2));
+    assert_eq!(desk.filters.size, Some(20_000_000_000));
+    assert_eq!(members(&desk), vec![0, 2]);
+    desk.act(crate::Act::SetSize(1));
+    assert_eq!(members(&desk), vec![0], "up to 8 GB");
+    desk.filter = "moe".to_owned();
+    assert!(
+        members(&desk).is_empty(),
+        "the words and the filters both apply"
+    );
+    desk.act(crate::Act::SetSize(0));
+    desk.act(crate::Act::SetFits(0));
+    assert_eq!(members(&desk), vec![2]);
+    assert!(!desk.filters.any_set());
+    desk.act(crate::Act::ToggleFilters);
+    assert!(desk.filters.open);
+}

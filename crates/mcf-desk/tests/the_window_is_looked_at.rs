@@ -397,6 +397,32 @@ fn words_nothing_matches_offer_the_hub_from_the_list() {
     );
 }
 
+/// The filters open from the library and each picker's list drops over
+/// it (D51, B-489).
+#[test]
+fn the_filters_open_from_the_library() {
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    assert!(
+        act_within(&desk, &mcf_desk::Act::ToggleFilters, (40.0, 200.0)),
+        "nothing in the library opens the filters"
+    );
+    desk.filters.open = true;
+    assert!(
+        act_within(
+            &desk,
+            &mcf_desk::Act::Open(mcf_desk::Picker::Fits),
+            (40.0, 260.0)
+        ),
+        "the fits picker cannot be opened"
+    );
+    desk.open = Some(mcf_desk::Picker::Fits);
+    assert!(
+        act_within(&desk, &mcf_desk::Act::SetFits(1), (40.0, 400.0)),
+        "the fits list does not offer will run here"
+    );
+}
+
 /// Every run has a card with its own Run: the ladder, the cross-check and
 /// the prompt analysis each start from the Diagnostics page, and nothing
 /// there toggles a row (D50, B-477).
@@ -2263,22 +2289,7 @@ fn every_page_is_drawn_for_review() {
 
     review_the_library(&recommended);
 
-    // The library searched: words nothing here matches, the hub asked and
-    // answered, and one of its repositories opened (D51).
-    let mut searched = four_models();
-    searched.page = Page::Models;
-    searched.filter = "gemma".to_owned();
-    let _ = drawn(&searched, DAY, "review-library-search");
-    searched.doing = a_search_answer();
-    if let mcf_desk::Doing::Listing(job) = &mut searched.doing {
-        job.finished = true;
-    }
-    searched.hear_for_review();
-    let _ = drawn(&searched, DAY, "review-library-hub");
-    searched.hub_chosen = Some(0);
-    searched.chosen = None;
-    searched.doing = a_files_answer();
-    let _ = drawn(&searched, DAY, "review-library-hub-files");
+    review_the_search();
 }
 
 /// A repository's files as the daemon lists them, for the hub page.
@@ -2309,6 +2320,32 @@ fn a_files_answer() -> mcf_desk::Doing {
             ("done", Value::Bool(true)),
         ])],
     ))
+}
+
+/// The library filtered and searched: the filters open with a list
+/// dropped, words nothing here matches, the hub asked and answered, and
+/// one of its repositories opened (D51).
+fn review_the_search() {
+    let mut searched = four_models();
+    searched.page = Page::Models;
+    searched.filters.open = true;
+    searched.filters.fits = Some(true);
+    searched.open = Some(mcf_desk::Picker::Size);
+    let _ = drawn(&searched, DAY, "review-library-filters");
+    searched.filters = mcf_desk::Filters::default();
+    searched.open = None;
+    "gemma".clone_into(&mut searched.filter);
+    let _ = drawn(&searched, DAY, "review-library-search");
+    searched.doing = a_search_answer();
+    if let mcf_desk::Doing::Listing(job) = &mut searched.doing {
+        job.finished = true;
+    }
+    searched.hear_for_review();
+    let _ = drawn(&searched, DAY, "review-library-hub");
+    searched.hub_chosen = Some(0);
+    searched.chosen = None;
+    searched.doing = a_files_answer();
+    let _ = drawn(&searched, DAY, "review-library-hub-files");
 }
 
 /// A model as a repository: its quantizations picked on Configure, the

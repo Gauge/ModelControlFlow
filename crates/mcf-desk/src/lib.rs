@@ -1143,7 +1143,47 @@ pub enum Picker {
     Rope,
     /// Which quantization of the repository the page is about (B-486).
     Quantization,
+    /// The filters' architecture (B-489).
+    Architecture,
+    /// The filters' *fits here*.
+    Fits,
+    /// The filters' size.
+    Size,
 }
+
+/// The filters beside the library's search field: applied with the words
+/// to what is here, each *any* until somebody sets it, so an empty list is
+/// a list nothing matched and not one a filter hid (D51, B-489).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Filters {
+    /// Whether the row of pickers is shown.
+    pub open: bool,
+    /// Only models of this architecture, where set.
+    pub architecture: Option<String>,
+    /// Only models MCF says will run here (`true`), or will not (`false`).
+    pub fits: Option<bool>,
+    /// Only models of at most this many bytes, where set.
+    pub size: Option<u64>,
+}
+
+impl Filters {
+    /// Whether any filter is set.
+    #[must_use]
+    pub const fn any_set(&self) -> bool {
+        self.architecture.is_some() || self.fits.is_some() || self.size.is_some()
+    }
+}
+
+/// The sizes the filter offers: any, then three ceilings in bytes.
+pub const SIZE_CHOICES: [Option<u64>; 4] = [
+    None,
+    Some(8_000_000_000),
+    Some(20_000_000_000),
+    Some(50_000_000_000),
+];
+
+/// The *fits here* choices: any, will run here, will not.
+pub const FITS_CHOICES: [Option<bool>; 3] = [None, Some(true), Some(false)];
 
 /// What the hub answered a search with: the words, and the repositories
 /// with GGUF files it lists for them, most downloaded first (D51).
@@ -1459,6 +1499,14 @@ pub enum Act {
     Run(Card),
     /// Search the hub for the words in the library's field (D51).
     SearchHub,
+    /// Show or hide the filters beside the search field (B-489).
+    ToggleFilters,
+    /// Set the architecture filter, by its place in the list offered.
+    SetArchitecture(usize),
+    /// Set the *fits here* filter, by its place in the list offered.
+    SetFits(usize),
+    /// Set the size filter, by its place in the list offered.
+    SetSize(usize),
     /// Pick one quantization of the page's repository, by its place in
     /// the list the page offers: here first, then the hub's (B-486).
     Quantization(usize),
@@ -1675,6 +1723,9 @@ pub struct Desk {
     /// What to do once the download going has finished: the thing the
     /// button named, on the file once it is here (B-487).
     pub after_download: Option<Act>,
+    /// The filters beside the search field, each *any* until set (D51,
+    /// B-489).
+    pub filters: Filters,
     /// The temperature to draw the settledness seeds at, as typed; empty
     /// asks the question nothing, and the page says so (B-431).
     pub temperature: String,
@@ -1854,6 +1905,7 @@ impl Desk {
             offered: std::collections::BTreeMap::new(),
             pending: None,
             after_download: None,
+            filters: Filters::default(),
             needs_engine: None,
             host_after: None,
             building: None,
@@ -2232,6 +2284,9 @@ impl Desk {
             }
             Act::Run(card) => self.run_card(card),
             Act::SearchHub => self.search_hub(),
+            Act::ToggleFilters | Act::SetArchitecture(_) | Act::SetFits(_) | Act::SetSize(_) => {
+                self.filter_act(&act);
+            }
             Act::Quantization(at) => self.pick_quantization(at),
             Act::PickOffered(at) => self.pick_offered(at),
             Act::DownloadThen(then) => self.download_then(*then),
@@ -2841,7 +2896,24 @@ impl Desk {
     pub fn library(&self) -> Vec<Group> {
         let wanted = self.filter.trim().to_lowercase();
         let words: Vec<&str> = wanted.split_whitespace().collect();
+        let filters = &self.filters;
         let passes = |held: &Model| {
+            if let Some(architecture) = &filters.architecture
+                && held.architecture.as_deref().map(str::to_lowercase)
+                    != Some(architecture.to_lowercase())
+            {
+                return false;
+            }
+            if let Some(fits) = filters.fits
+                && held.refused.is_none() != fits
+            {
+                return false;
+            }
+            if let Some(size) = filters.size
+                && held.bytes.is_none_or(|bytes| bytes > size)
+            {
+                return false;
+            }
             if words.is_empty() {
                 return true;
             }
@@ -2873,6 +2945,37 @@ impl Desk {
             }
         }
         groups
+    }
+
+    /// One act on the filters: the toggle, or one picker set by its place
+    /// in the list it offers, the first of which is *any* (B-489).
+    fn filter_act(&mut self, act: &Act) {
+        match *act {
+            Act::ToggleFilters => self.filters.open = !self.filters.open,
+            Act::SetArchitecture(at) => {
+                self.filters.architecture = at
+                    .checked_sub(1)
+                    .and_then(|at| self.architectures().get(at).cloned());
+            }
+            Act::SetFits(at) => self.filters.fits = FITS_CHOICES.get(at).copied().flatten(),
+            Act::SetSize(at) => self.filters.size = SIZE_CHOICES.get(at).copied().flatten(),
+            _ => {}
+        }
+        self.open = None;
+    }
+
+    /// The architectures held, each once, in order: what the architecture
+    /// filter offers after *any* (B-489).
+    #[must_use]
+    pub fn architectures(&self) -> Vec<String> {
+        let mut found: Vec<String> = self
+            .models
+            .iter()
+            .filter_map(|held| held.architecture.clone())
+            .collect();
+        found.sort();
+        found.dedup();
+        found
     }
 
     /// The quantizations of the page's repository: the files held, then the

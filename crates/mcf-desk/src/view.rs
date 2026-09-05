@@ -602,11 +602,28 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     .or(act);
 
     let pane = Box::new(right, area.y, area.right() - right, area.h);
-    if desk.hub_chosen.is_some() {
-        return hub_page(paint, desk, mouse, pane).or(act);
+    // A filter's list drops over the library, last, so it is on top.
+    let boxes = filter_boxes(Box::new(area.x, area.y, list, actions_at - area.y));
+    let filter_menu = match desk.open {
+        Some(Picker::Architecture) if desk.filters.open => Some((Picker::Architecture, boxes[0])),
+        Some(Picker::Fits) if desk.filters.open => Some((Picker::Fits, boxes[1])),
+        Some(Picker::Size) if desk.filters.open => Some((Picker::Size, boxes[2])),
+        _ => None,
+    };
+    let over = if desk.hub_chosen.is_some() {
+        hub_page(paint, desk, mouse, pane)
+    } else if desk.pending.is_some() {
+        pending_page(paint, desk, mouse, pane)
+    } else {
+        None
+    };
+    if let Some((picker, at)) = filter_menu
+        && let Some(picked) = open_menu(paint, desk, mouse, picker, at)
+    {
+        return Some(picked);
     }
-    if desk.pending.is_some() {
-        return pending_page(paint, desk, mouse, pane).or(act);
+    if desk.hub_chosen.is_some() || desk.pending.is_some() {
+        return over.or(act);
     }
     let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
         paint.say_at(
@@ -1743,7 +1760,12 @@ fn configure_menu(
             }
             ui::options(paint, mouse, at, &labels, desk.quantization_at()).map(Act::Quantization)
         }
-        Picker::Model | Picker::Window | Picker::On => None,
+        Picker::Model
+        | Picker::Window
+        | Picker::On
+        | Picker::Architecture
+        | Picker::Fits
+        | Picker::Size => None,
     }
 }
 
@@ -1993,7 +2015,11 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         "Search models",
         desk.editing.is_none(),
     );
-    y += 44.0;
+    y += 38.0;
+    if let Some(pressed) = filter_rows(paint, desk, mouse, area) {
+        act = Some(pressed);
+    }
+    y += filters_height(desk);
     let shown = desk.library();
     if let Some(note) = match (desk.models.is_empty(), shown.is_empty()) {
         (true, _) => Some("none held"),
@@ -2031,6 +2057,124 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         act = Some(pressed);
     }
     act
+}
+
+/// How tall the filters are under the field: the toggle's line, and the
+/// three pickers when open (B-489).
+fn filters_height(desk: &Desk) -> f32 {
+    if desk.filters.open {
+        22.0 + 3.0 * 32.0
+    } else {
+        22.0
+    }
+}
+
+/// Where each filter's picker sits, for drawing it and its list alike.
+fn filter_boxes(area: Box) -> [Box; 3] {
+    let top = area.y + 24.0 + 38.0 + 22.0;
+    let x = area.x + 88.0;
+    let wide = area.w - 94.0;
+    [
+        Box::new(x, top, wide, 28.0),
+        Box::new(x, top + 32.0, wide, 28.0),
+        Box::new(x, top + 64.0, wide, 28.0),
+    ]
+}
+
+/// The word the toggle shows: *Filters*, with how many are set.
+fn filters_word(desk: &Desk) -> String {
+    let set = [
+        desk.filters.architecture.is_some(),
+        desk.filters.fits.is_some(),
+        desk.filters.size.is_some(),
+    ]
+    .iter()
+    .filter(|set| **set)
+    .count();
+    match (desk.filters.open, set) {
+        (true, 0) => "Filters ▴".to_owned(),
+        (false, 0) => "Filters ▾".to_owned(),
+        (true, set) => format!("Filters ▴ · {set} set"),
+        (false, set) => format!("Filters ▾ · {set} set"),
+    }
+}
+
+/// The filters under the search field: a toggle, and when open three
+/// pickers — architecture, fits here, size — each *any* until set (D51,
+/// B-489).
+fn filter_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let y = area.y + 24.0 + 38.0;
+    let word = filters_word(desk);
+    let hit = Box::new(
+        area.x - 6.0,
+        y - 4.0,
+        paint.measure(&word, Weight::Regular, size::SMALL) + 12.0,
+        20.0,
+    );
+    paint.say_at(
+        area.x,
+        y,
+        &word,
+        Weight::Regular,
+        size::SMALL,
+        if mouse.over(hit) {
+            ink.accent
+        } else {
+            ink.quiet
+        },
+    );
+    if mouse.clicked(hit) {
+        return Some(Act::ToggleFilters);
+    }
+    if !desk.filters.open {
+        return None;
+    }
+    let boxes = filter_boxes(area);
+    let labels = ["Architecture", "Fits here", "Size"];
+    let values = [
+        desk.filters
+            .architecture
+            .clone()
+            .unwrap_or_else(|| "any".to_owned()),
+        fits_label(desk.filters.fits).to_owned(),
+        size_label(desk.filters.size),
+    ];
+    let pickers = [Picker::Architecture, Picker::Fits, Picker::Size];
+    let mut act = None;
+    for ((label, value), (box_of, picker)) in
+        labels.iter().zip(values).zip(boxes.iter().zip(pickers))
+    {
+        paint.say_at(
+            area.x,
+            box_of.y + 7.0,
+            label,
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        if ui::picker(paint, mouse, *box_of, &value, desk.open == Some(picker)) {
+            act = Some(Act::Open(picker));
+        }
+    }
+    act
+}
+
+/// The *fits here* choice's word.
+fn fits_label(fits: Option<bool>) -> &'static str {
+    match fits {
+        None => "any",
+        Some(true) => "will run here",
+        Some(false) => "will not run here",
+    }
+}
+
+/// The size choice's word.
+fn size_label(size: Option<u64>) -> String {
+    size.map_or_else(
+        || "any".to_owned(),
+        |bytes| format!("up to {}", gigabytes(bytes)),
+    )
 }
 
 /// The row that searches the hub for the words in the field, quiet while
@@ -3144,6 +3288,37 @@ fn open_menu(
         }
         // The Configure tab's lists are drawn by the model page.
         Picker::Placement | Picker::Rope | Picker::Quantization => None,
+        Picker::Architecture => {
+            let mut labels = vec!["any".to_owned()];
+            labels.extend(desk.architectures());
+            let now = desk.filters.architecture.as_ref().and_then(|held| {
+                desk.architectures()
+                    .iter()
+                    .position(|found| found == held)
+                    .map(|at| at + 1)
+            });
+            ui::options(paint, mouse, at, &labels, now.or(Some(0))).map(Act::SetArchitecture)
+        }
+        Picker::Fits => {
+            let labels: Vec<String> = crate::FITS_CHOICES
+                .iter()
+                .map(|fits| fits_label(*fits).to_owned())
+                .collect();
+            let now = crate::FITS_CHOICES
+                .iter()
+                .position(|fits| *fits == desk.filters.fits);
+            ui::options(paint, mouse, at, &labels, now).map(Act::SetFits)
+        }
+        Picker::Size => {
+            let labels: Vec<String> = crate::SIZE_CHOICES
+                .iter()
+                .map(|size| size_label(*size))
+                .collect();
+            let now = crate::SIZE_CHOICES
+                .iter()
+                .position(|size| *size == desk.filters.size);
+            ui::options(paint, mouse, at, &labels, now).map(Act::SetSize)
+        }
         Picker::Window => {
             let offered = windows();
             let labels: Vec<String> = offered
