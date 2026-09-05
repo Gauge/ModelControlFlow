@@ -1455,6 +1455,53 @@ fn a_report() -> mcf_desk::Desk {
     desk
 }
 
+/// A prompt analysis under way says which generation it is on, of how
+/// many, and can be cut short from the page; one that has finished offers
+/// no Stop (B-479, B-468, A7).
+#[test]
+fn a_prompt_analysis_under_way_says_its_step_and_offers_stop() {
+    use mcf_record::json::Value;
+    let under_way = |answers: Vec<Value>| {
+        let mut desk = four_models();
+        desk.page = Page::Prompt;
+        desk.chosen = Some(0);
+        "Write a function. Lowercase everything.".clone_into(&mut desk.typed);
+        let mut job = mcf_desk::job::Job::already("taking the prompt apart".to_owned(), answers);
+        job.finished = false;
+        desk.doing = mcf_desk::Doing::Reporting(job);
+        desk
+    };
+    let step = Value::map([
+        ("reporting", Value::text("a model")),
+        (
+            "step",
+            mcf_serve::prompt::Step {
+                what: "without part 2 of 4".to_owned(),
+                count: 3,
+                of: 12,
+            }
+            .to_value(),
+        ),
+        ("done", Value::Bool(false)),
+    ]);
+    let said = under_way(vec![step]);
+    assert!(
+        act_somewhere(&said, &mcf_desk::Act::Stop),
+        "a prompt analysis under way cannot be cut short from its page"
+    );
+    let unsaid = under_way(Vec::new());
+    let with = drawn(&said, DAY, "prompt-under-way");
+    let without = drawn(&unsaid, DAY, "prompt-under-way-unsaid");
+    assert!(
+        with.pixels != without.pixels,
+        "the step the daemon announced is not on the page"
+    );
+    assert!(
+        !act_somewhere(&a_report(), &mcf_desk::Act::Stop),
+        "a finished report offers a Stop with nothing to stop"
+    );
+}
+
 /// Every figure the console prints is on the screen too.
 ///
 /// The window drew bars and named no number, no floor and no answer, so a

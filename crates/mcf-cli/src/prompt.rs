@@ -123,16 +123,13 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
             served: false,
         };
     }
-    let mut line = String::new();
-    if BufReader::new(&connection).read_line(&mut line).is_err() {
+    // **Printed as it comes.** A report is many generations, and the daemon
+    // says which it is on before each; a terminal that showed nothing until
+    // the report showed a run that looked stopped (B-479, A7). The report
+    // is the line that says it is done.
+    let Some(answer) = the_report_as_it_comes(&connection) else {
         return Response {
             text: "mcf: MCF did not answer".to_owned(),
-            served: false,
-        };
-    }
-    let Ok(answer) = Answer::read(&line) else {
-        return Response {
-            text: "mcf: MCF answered with something that is not an answer".to_owned(),
             served: false,
         };
     };
@@ -155,6 +152,26 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
         text: rendered(&answer.body, named).join("\n"),
         served: true,
     }
+}
+
+/// Reads the daemon's lines, printing each step as it is announced, and
+/// returns the line that ends the run: the report, or the refusal. `None`
+/// where the connection ended with neither.
+fn the_report_as_it_comes(connection: &UnixStream) -> Option<Answer> {
+    for read in BufReader::new(connection).lines() {
+        let read = read.ok()?;
+        let Ok(answer) = Answer::read(read.trim_end()) else {
+            continue;
+        };
+        if !answer.served || matches!(answer.body.get("done"), Some(Value::Bool(true))) {
+            return Some(answer);
+        }
+        if let Some(step) = mcf_serve::prompt::step_said(&answer.body) {
+            println!("{step}");
+            let _flushed = std::io::stdout().flush();
+        }
+    }
+    None
 }
 
 /// What the document was taken apart into, as the report calls one part.

@@ -3543,11 +3543,35 @@ fn a_report_or_why_not<'a>(
             size::BODY,
             ink.quiet,
         );
+        // **Which generation, of how many.** The daemon says before each
+        // what it is about to ask — *generation 3 of 12: without part 2 of
+        // 4* — and the page says the same, with a bar of the count and the
+        // seconds so far; before the first is announced it says it is
+        // waiting for that, not a sentence about generations in general
+        // (B-479, A7).
+        let step = job
+            .latest()
+            .and_then(mcf_serve::prompt::step_said)
+            .unwrap_or_else(|| {
+                "waiting for the daemon to say which generation it is on".to_owned()
+            });
         paint.say_at(
             area.x,
             at + 20.0,
-            "one generation for the prompt, one for each part left out, one for the control \
-             sentence, one for each further seed",
+            &step,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        ui::progress(
+            paint,
+            Box::new(area.x, at + 42.0, area.w.min(520.0), 8.0),
+            job.latest().and_then(step_fraction),
+        );
+        paint.say_at(
+            area.x,
+            at + 58.0,
+            &format!("{} s so far", job.ran()),
             Weight::Regular,
             size::SMALL,
             ink.faint,
@@ -3567,6 +3591,23 @@ fn a_report_or_why_not<'a>(
         return None;
     }
     job.conclusion().or_else(|| job.latest())
+}
+
+/// How far a report is, as the generation announced of those planned;
+/// `None` where the daemon has not said (A7).
+fn step_fraction(latest: &Value) -> Option<f32> {
+    let step = latest.get("step")?;
+    let figure = |key: &str| {
+        step.get(key)
+            .and_then(Value::as_integer)
+            .and_then(|found| u16::try_from(found).ok())
+    };
+    let (count, of) = (figure("count")?, figure("of")?);
+    if of == 0 {
+        return None;
+    }
+    // A generation index is a small count, exact in f32.
+    Some((f32::from(count.saturating_sub(1)) / f32::from(of)).clamp(0.0, 1.0))
 }
 
 fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
@@ -3594,8 +3635,19 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     );
 
     let (mut act, under) = the_document(paint, desk, mouse, area);
-    let (asked, button) = ui::fitted(paint, mouse, (area.x, under), "Analyse", Kind::Primary);
-    if asked && !desk.doing.busy() && desk.chosen.is_some() {
+    // While a report runs, the button that started it is the one that cuts
+    // it short (B-479, B-468).
+    let running = matches!(&desk.doing, Doing::Reporting(job) if !job.finished);
+    let (asked, button) = ui::fitted(
+        paint,
+        mouse,
+        (area.x, under),
+        if running { "Stop" } else { "Analyse" },
+        Kind::Primary,
+    );
+    if asked && running {
+        act = Some(Act::Stop);
+    } else if asked && !desk.doing.busy() && desk.chosen.is_some() {
         act = Some(Act::ReportPrompt);
     }
     let (cleared, cleared_button) = ui::fitted(

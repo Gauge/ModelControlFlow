@@ -2691,15 +2691,17 @@ impl Desk {
         self.host_it();
     }
 
-    /// Cuts the run that is going short: the ladder or the cross-check. The
-    /// daemon stops the engine at its next glance and climbs no further, and
-    /// what was heard stays on the page (A7).
+    /// Cuts the run that is going short: the ladder, the cross-check or the
+    /// prompt analysis. The daemon stops the engine at its next glance and
+    /// asks no further generation, and what was heard stays on the page
+    /// (A7, B-479).
     pub fn stop_run(&mut self) {
         match &mut self.doing {
             Doing::Measuring(job) | Doing::CrossChecking(job) => {
                 job.stop();
                 self.cross_check_after = false;
             }
+            Doing::Reporting(job) => job.stop(),
             _ => {}
         }
     }

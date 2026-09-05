@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 130 |
+| **Version** | 131 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 182 | [F182 — A prompt analysis says which generation it is on: the daemon announces each of a planned count before it asks it, the plan and the run are one arithmetic, 34 generations on Qwen3-VL-2B streamed as generation n of 34 and took 19.8 s, and a run cut at three seconds asked the six it had announced and no more, recording nothing (B-479, B-468, A6, A7, A22)](#182--f182-a-prompt-analysis-says-which-generation-it-is-on-the-daemon-announces-each-of-a-planned-count-before-it-asks-it-the-plan-and-the-run-are-one-arithmetic-34-generations-on-qwen3-vl-2b-streamed-as-generation-n-of-34-and-took-198-s-and-a-run-cut-at-three-seconds-asked-the-six-it-had-announced-and-no-more-recording-nothing-b-479-b-468-a6-a7-a22) |
 | 181 | [F181 — The window is read from its own renders: the review pass drew every page as a person meets it and found the throughput table twice, a right column cut at the pane, two columns drawn over each other at 670 pixels, a peak label over its bars, a recommendation crowding the next row and a line that read "?" (B-481, A22, §3.15, D49)](#181--f181-the-window-is-read-from-its-own-renders-the-review-pass-drew-every-page-as-a-person-meets-it-and-found-the-throughput-table-twice-a-right-column-cut-at-the-pane-two-columns-drawn-over-each-other-at-670-pixels-a-peak-label-over-its-bars-a-recommendation-crowding-the-next-row-and-a-line-that-read-b-481-a22-315-d49) |
 | 180 | [F180 — A word searches the hub: the add-model page took only owner/repository and refused everything else in the reference parser's words, and now a word lists the repositories with GGUF files the hub has for it, most downloaded first, twenty for gemma, each a press from its files; mcf pull answers a word the same way (B-476, A2, A22)](#180--f180--a-word-searches-the-hub-the-add-model-page-took-only-ownerrepository-and-refused-everything-else-in-the-reference-parsers-words-and-now-a-word-lists-the-repositories-with-gguf-files-the-hub-has-for-it-most-downloaded-first-twenty-for-gemma-each-a-press-from-its-files-mcf-pull-answers-a-word-the-same-way-b-476-a2-a22) |
 | 179 | [F179 — Four places down the left and a Running page that reads the held engine's own counters: Qwen3-VL-2B on the card answered one request and Running said 41 generated, 16 prompted, 151.8 tokens a second, nought in hand, and what the hold has in memory and on the card, once a second while somebody looks (B-474, D49, A7, B4)](#179--f179--four-places-down-the-left-and-a-running-page-that-reads-the-held-engines-own-counters-qwen3-vl-2b-on-the-card-answered-one-request-and-running-said-41-generated-16-prompted-1518-tokens-a-second-nought-in-hand-and-what-the-hold-has-in-memory-and-on-the-card-once-a-second-while-somebody-looks-b-474-d49-a7-b4) |
@@ -9604,6 +9605,54 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 182 · F182 — A prompt analysis says which generation it is on: the daemon announces each of a planned count before it asks it, the plan and the run are one arithmetic, 34 generations on Qwen3-VL-2B streamed as generation n of 34 and took 19.8 s, and a run cut at three seconds asked the six it had announced and no more, recording nothing (B-479, B-468, A6, A7, A22)
+
+The operator asked that prompt analysis give better feedback on what it is
+doing at any given time. It gave none: the daemon ran every generation of
+a report and answered once at the end, the command line read one line,
+and the window said *one generation for the prompt, one for each part
+left out…* — a sentence about reports in general, drawn the same at the
+first second and the fortieth. A comment in the daemon said the request
+announced its steps as a measurement does (B-227); nothing under the
+comment did.
+
+**What changed.** The report's bench announces every generation before
+it asks it, in the report's own words — *the prompt as written*, *without
+part 2 of 5*, *the control sentence added*, *the control sentence at
+position 3 of 5*, *part 2 of 5 alone*, *the first 2 parts*, *parts 2 and
+3 swapped*, *as bullets*, *seed 2 of 3 at temperature 0.700* — each as
+*generation n of N*. N is planned before the first is spent, from the
+parts and the extras by the arithmetic each extra already carried for its
+own cost, with the forms counted exactly rather than at their most; a
+test asks a report with every extra and asserts the count announced
+first is the count asked (A6). The daemon writes each step to the asker
+as a line, the command line prints them as they come, and the window's
+prompt page shows the step, a bar of the count, the seconds so far and
+Stop in the place of Analyse.
+
+**A run is cut short from wherever it was started** (B-468). The step
+line is how the daemon learns the asker has gone: a line that cannot be
+written is a client that closed its end, and the next generation is not
+asked. The engine finishes the one in flight — a report's generations are
+short — and the report is refused as the client's leaving rather than
+recorded.
+
+**What ran.** Qwen3-VL-2B on the Radeon, a five-phrase prompt with every
+extra and a temperature: 34 generations announced as *generation n of
+34*, the last three the seeds, 19.8 s in all. The same report with the
+command line killed at three seconds: six generations announced, and
+the engine's own slots — polled five times a second for the twenty
+seconds after — were processing in 4 samples of 100 against 14 of 100
+for the run left to finish, which is the one in flight and nothing after
+it; the record grew by one entry for the finished run and by none for
+the cut one.
+
+**Left as found.** A short name that `mcf list` does not print is refused
+by the report as *more than one llama.cpp is provisioned* — the name
+failed to resolve, the engine choice fell through to the rule that wants
+exactly one build, and the refusal is about the wrong thing (A2). The
+path works, and `mcf run` says *there is no model at* the name.
+
 ## 181 · F181 — The window is read from its own renders: the review pass drew every page as a person meets it and found the throughput table twice, a right column cut at the pane, two columns drawn over each other at 670 pixels, a peak label over its bars, a recommendation crowding the next row and a line that read "?" (B-481, A22, §3.15, D49)
 
 The operator said they were done reviewing the window by hand for a
@@ -12469,6 +12518,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 131 — a report says which generation it is on
+
+F182: every generation of a prompt analysis is announced as n of N
+before it is asked, and a run is cut short at the next (B-479).
 
 ### Version 130 — the window read from its renders
 

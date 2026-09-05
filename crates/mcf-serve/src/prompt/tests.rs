@@ -20,6 +20,9 @@ fn unforced(_: &str, _: &[usize]) -> Option<Held> {
     None
 }
 
+/// A listener that hears the steps and says nothing.
+fn quietly(_: Step) {}
+
 /// A document taken apart on its own: no question after it, the text deciding
 /// the unit, the default cap.
 /// A caller's temperature with nothing cut — the condition the settledness
@@ -81,7 +84,14 @@ fn an_unchanged_answer_says_the_clause_was_not_used() {
             said("a different answer")
         }
     };
-    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut unforced);
+    let report = measure(
+        &only("One. Two."),
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+        &mut quietly,
+    );
     let unused = report.unused();
     assert_eq!(unused.len(), 1, "one clause changed nothing");
     assert_eq!(
@@ -116,6 +126,7 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
         Some(warm()),
         &mut ask,
         &mut unforced,
+        &mut quietly,
     );
     // The baseline, the three ablations and the control, all greedy at 41;
     // the seeds after them are the settledness question and are meant to
@@ -149,6 +160,7 @@ fn a_prompt_of_one_sentence_has_nothing_to_ablate() {
         Some(warm()),
         &mut ask,
         &mut unforced,
+        &mut quietly,
     );
     assert!(
         report.clauses.is_empty(),
@@ -168,7 +180,14 @@ fn without_a_temperature_the_seeds_are_not_asked() {
         asked += 1;
         said("an answer")
     };
-    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut unforced);
+    let report = measure(
+        &only("One. Two."),
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+        &mut quietly,
+    );
     assert_eq!(
         report.settled, None,
         "not settled, not unsettled: not asked"
@@ -187,6 +206,7 @@ fn a_prompt_that_settles_the_answer_reports_one_answer() {
         Some(warm()),
         &mut ask,
         &mut unforced,
+        &mut quietly,
     );
     let settled = report.settled.expect("a temperature was stated");
     assert_eq!(settled.distinct, 1);
@@ -214,6 +234,7 @@ fn a_prompt_that_does_not_settle_reports_how_many_answers_and_how_far_apart() {
         Some(warm()),
         &mut ask,
         &mut unforced,
+        &mut quietly,
     );
     let settled = report.settled.expect("a temperature was stated");
     assert_eq!(settled.distinct, SEEDS, "every seed gave its own answer");
@@ -232,7 +253,14 @@ fn a_prompt_longer_than_the_cap_says_what_was_left_out() {
         let _wrote = write!(long, "Sentence {at}. ");
     }
     let mut ask = |_: &str, _: Draw| said("an answer");
-    let report = measure(&only(&long), 41, None, &mut ask, &mut unforced);
+    let report = measure(
+        &only(&long),
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+        &mut quietly,
+    );
     assert_eq!(report.clauses.len(), MOST_CLAUSES);
     assert_eq!(report.clauses_over_the_cap, 3, "and it says how many");
 }
@@ -296,7 +324,14 @@ fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {
             said("the answer is five words")
         }
     };
-    let report = measure(&only("First. Second."), 41, None, &mut ask, &mut unforced);
+    let report = measure(
+        &only("First. Second."),
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+        &mut quietly,
+    );
     let steered = report
         .clauses
         .iter()
@@ -350,6 +385,7 @@ fn the_floor_is_what_an_inert_sentence_does() {
         None,
         &mut ask,
         &mut unforced,
+        &mut quietly,
     );
     assert!(
         report.floor > 0,
@@ -474,7 +510,7 @@ fn the_whole_prompt_is_asked_and_the_cap_is_chosen() {
         most: Some(2),
         extras: Extras::NONE,
     };
-    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced, &mut quietly);
     assert_eq!(report.unit, Unit::Paragraph);
     assert!(!report.unit_chosen, "the text decided");
     assert_eq!(report.most, 2);
@@ -502,7 +538,14 @@ fn the_whole_prompt_is_asked_and_the_cap_is_chosen() {
         most: None,
         ..taken
     };
-    let report = measure(&by_sentence, 41, None, &mut ask, &mut unforced);
+    let report = measure(
+        &by_sentence,
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+        &mut quietly,
+    );
     assert_eq!(report.unit, Unit::Sentence);
     assert!(report.unit_chosen);
     assert_eq!(report.most, MOST_CLAUSES);
@@ -538,7 +581,14 @@ fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
             of: opening.len(),
         })
     };
-    let report = measure(&only("One. Two. Three."), 41, None, &mut ask, &mut force);
+    let report = measure(
+        &only("One. Two. Three."),
+        41,
+        None,
+        &mut ask,
+        &mut force,
+        &mut quietly,
+    );
     // Three clauses and the inert sentence: four readings, each with the
     // baseline's identifiers — `said` makes them the word lengths.
     assert_eq!(forced.len(), 4, "{forced:?}");
@@ -590,7 +640,14 @@ fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
 fn an_empty_answer_has_no_opening_to_force() {
     let mut ask = |_: &str, _: Draw| said("");
     let mut force = |_: &str, _: &[usize]| Some(Held::default());
-    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut force);
+    let report = measure(
+        &only("One. Two."),
+        41,
+        None,
+        &mut ask,
+        &mut force,
+        &mut quietly,
+    );
     assert!(report.clauses.iter().all(|held| held.held.is_none()));
     assert_eq!(report.floor_held, None);
 }
@@ -702,7 +759,7 @@ fn the_floor_at_every_position_is_a_spread_and_costs_a_generation_each() {
         most: None,
         extras: Extras::NONE.with(Extra::Floors, true),
     };
-    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced, &mut quietly);
     let floors = report.floors.clone().unwrap_or_default();
     assert_eq!(
         floors.iter().map(|at| at.position).collect::<Vec<_>>(),
@@ -731,7 +788,7 @@ fn the_floor_at_every_position_is_a_spread_and_costs_a_generation_each() {
         extras: Extras::NONE,
         ..taken
     };
-    let report = measure(&one_draw, 41, None, &mut ask, &mut unforced);
+    let report = measure(&one_draw, 41, None, &mut ask, &mut unforced, &mut quietly);
     assert_eq!(report.floors, None);
     assert_eq!(report.floor_spread(), None);
     assert_eq!(asked.borrow().len(), 5);
@@ -759,7 +816,7 @@ fn each_part_alone_is_read_against_the_answer_as_written_and_costs_a_generation_
         most: Some(2),
         extras: Extras::NONE.with(Extra::Alone, true),
     };
-    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced, &mut quietly);
     let alone = report.alone.clone().expect("asked for, so present");
     assert_eq!(alone.len(), 2, "the first `most` parts, like the removals");
     assert_eq!(alone.first().map(|read| read.moved), Some(500_000));
@@ -793,7 +850,7 @@ fn each_part_alone_is_read_against_the_answer_as_written_and_costs_a_generation_
         extras: Extras::NONE,
         ..taken
     };
-    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced, &mut quietly);
     assert_eq!(report.alone, None);
     assert_eq!(report.alone_floor, None);
     assert_eq!(asked.borrow().len(), 4);
@@ -827,7 +884,7 @@ fn the_prompt_grown_from_the_front_is_read_short_of_the_whole_and_costs_a_genera
         "the whole is never a prefix read"
     );
     assert_eq!(Extra::Prefixes.generations(1, 1), 0);
-    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced, &mut quietly);
     let prefixes = report.prefixes.clone().expect("asked for, so present");
     let moved: Vec<u64> = prefixes.iter().map(|read| read.moved).collect();
     assert_eq!(
@@ -856,7 +913,7 @@ fn the_prompt_grown_from_the_front_is_read_short_of_the_whole_and_costs_a_genera
         most: Some(2),
         ..taken
     };
-    let report = measure(&capped, 41, None, &mut ask, &mut unforced);
+    let report = measure(&capped, 41, None, &mut ask, &mut unforced, &mut quietly);
     assert_eq!(
         report.prefixes.map(|prefixes| prefixes.len()),
         Some(2),
@@ -867,7 +924,7 @@ fn the_prompt_grown_from_the_front_is_read_short_of_the_whole_and_costs_a_genera
         extras: Extras::NONE,
         ..taken
     };
-    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced, &mut quietly);
     assert_eq!(report.prefixes, None);
 }
 
@@ -909,7 +966,7 @@ fn neighbours_are_swapped_in_turn_with_the_breaks_left_where_they_were() {
         "One.\n\nTwo.\nThree.",
         "the last part has no neighbour after it"
     );
-    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced, &mut quietly);
     let swaps = report.swaps.clone().expect("asked for, so present");
     let moved: Vec<u64> = swaps.iter().map(|read| read.moved).collect();
     assert_eq!(moved.len(), 2);
@@ -928,7 +985,7 @@ fn neighbours_are_swapped_in_turn_with_the_breaks_left_where_they_were() {
         extras: Extras::NONE,
         ..taken
     };
-    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced, &mut quietly);
     assert_eq!(report.swaps, None);
 }
 
@@ -988,7 +1045,7 @@ fn a_form_already_worn_is_not_asked_and_one_part_is_nothing_to_list() {
             said("yes")
         }
     };
-    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced, &mut quietly);
     let forms = report.forms.clone().expect("asked for, so present");
     assert_eq!(forms.len(), 6);
     assert!(
@@ -1019,7 +1076,7 @@ fn a_form_already_worn_is_not_asked_and_one_part_is_nothing_to_list() {
         ..taken
     };
     asked.borrow_mut().clear();
-    let report = measure(&one_line, 41, None, &mut ask, &mut unforced);
+    let report = measure(&one_line, 41, None, &mut ask, &mut unforced, &mut quietly);
     let forms = report.forms.clone().expect("asked for");
     assert_eq!(
         forms.first().map(|formed| &formed.outcome),
@@ -1032,7 +1089,7 @@ fn a_form_already_worn_is_not_asked_and_one_part_is_nothing_to_list() {
         ..taken
     };
     asked.borrow_mut().clear();
-    let report = measure(&one_part, 41, None, &mut ask, &mut unforced);
+    let report = measure(&one_part, 41, None, &mut ask, &mut unforced, &mut quietly);
     let forms = report.forms.clone().expect("asked for");
     let not_rendered: Vec<&str> = forms
         .iter()
@@ -1061,7 +1118,7 @@ fn a_form_already_worn_is_not_asked_and_one_part_is_nothing_to_list() {
         extras: Extras::NONE,
         ..taken
     };
-    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced, &mut quietly);
     assert_eq!(report.forms, None);
 }
 
@@ -1234,7 +1291,14 @@ fn the_thoughts_cost_reaches_the_report() {
         tokens: vec![1],
         thought: Some(prompt.len()),
     };
-    let report = measure(&only("One. Two. Three."), 41, None, &mut ask, &mut unforced);
+    let report = measure(
+        &only("One. Two. Three."),
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+        &mut quietly,
+    );
     assert_eq!(report.baseline_thought, Some("One. Two. Three.".len()));
     let thoughts: Vec<Option<usize>> = report.clauses.iter().map(|clause| clause.thought).collect();
     assert!(
@@ -1258,8 +1322,100 @@ fn the_thoughts_cost_reaches_the_report() {
 #[test]
 fn a_turn_with_no_thought_counts_none() {
     let mut ask = |_: &str, _: Draw| said("Blue.");
-    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut unforced);
+    let report = measure(
+        &only("One. Two."),
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+        &mut quietly,
+    );
     assert_eq!(report.baseline_thought, None);
     assert_eq!(report.floor_thought, None);
     assert!(report.clauses.iter().all(|clause| clause.thought.is_none()));
+}
+
+/// Every generation is announced, and the count announced first is the count
+/// asked: the plan and the run are the same arithmetic (B-479, A6).
+#[test]
+fn every_generation_is_said_before_it_is_asked_and_the_plan_is_the_count() {
+    let mut asked = 0_usize;
+    let mut ask = |_: &str, _: Draw| {
+        asked += 1;
+        said("the same")
+    };
+    let mut steps = Vec::new();
+    let mut say = |step: Step| steps.push(step);
+    let taken = Taken {
+        text: "One. Two. Three.",
+        by: None,
+        most: None,
+        extras: Extras::named(["floors", "alone", "prefixes", "swaps", "forms"]),
+    };
+    let _report = measure(&taken, 41, Some(warm()), &mut ask, &mut unforced, &mut say);
+    assert_eq!(steps.len(), asked, "a generation went unannounced");
+    let of = planned(&taken, true);
+    assert_eq!(asked, of, "the plan said {of}; the run asked {asked}");
+    assert!(
+        steps
+            .iter()
+            .enumerate()
+            .all(|(at, step)| step.count == at + 1 && step.of == of),
+        "the steps are not counted one at a time from one to the plan: {steps:?}"
+    );
+    let words: Vec<&str> = steps.iter().map(|step| step.what.as_str()).collect();
+    assert_eq!(words[0], "the prompt as written");
+    assert_eq!(words[1], "without part 1 of 3");
+    assert_eq!(words[4], "the control sentence added");
+    assert!(
+        words.contains(&"the control sentence at position 0 of 3"),
+        "{words:?}"
+    );
+    assert!(words.contains(&"part 2 of 3 alone"), "{words:?}");
+    assert!(words.contains(&"the control sentence alone"), "{words:?}");
+    assert!(words.contains(&"the first part alone"), "{words:?}");
+    assert!(words.contains(&"the first 2 parts"), "{words:?}");
+    assert!(words.contains(&"parts 2 and 3 swapped"), "{words:?}");
+    assert!(words.contains(&"as bullets"), "{words:?}");
+    assert_eq!(
+        words.last().copied(),
+        Some("seed 3 of 3 at temperature 0.700")
+    );
+}
+
+/// One part is nothing to take apart: the plan is the prompt and the control
+/// sentence, and the run asks exactly those.
+#[test]
+fn one_part_plans_two_generations() {
+    let mut asked = 0_usize;
+    let mut ask = |_: &str, _: Draw| {
+        asked += 1;
+        said("the same")
+    };
+    let taken = only("One sentence only.");
+    let _report = measure(&taken, 41, None, &mut ask, &mut unforced, &mut quietly);
+    assert_eq!(planned(&taken, false), 2);
+    assert_eq!(asked, 2);
+}
+
+/// The step as the daemon sends it reads back as one line.
+#[test]
+fn a_step_is_said_as_one_line() {
+    let body = Value::map([
+        ("reporting", Value::text("a model")),
+        (
+            "step",
+            Step {
+                what: "without part 2 of 4".to_owned(),
+                count: 3,
+                of: 12,
+            }
+            .to_value(),
+        ),
+    ]);
+    assert_eq!(
+        step_said(&body).as_deref(),
+        Some("generation 3 of 12: without part 2 of 4")
+    );
+    assert_eq!(step_said(&Value::map([("done", Value::Bool(true))])), None);
 }

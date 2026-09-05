@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 261 |
+| **Version** | 262 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **374 items: 57 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 7
-decided, 23 resolved) and 317 build items (222 done, 2 dropped, 15 in progress,
-37 blocked on a decision, 41 open).** Every item cites
+decided, 23 resolved) and 317 build items (223 done, 2 dropped, 15 in progress,
+37 blocked on a decision, 40 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -309,7 +309,7 @@ first and importance second.
 | B-476 | A word on the add-model page searches the hub: what a person types is a reference — owner/name, with a file or a revision, or a repository URL — or a word, and a word is answered with the repositories the hub lists for it that publish GGUF files, most downloaded first, each a press away from its files; `mcf pull <word>` answers the same; the page says which it takes | A2, A22, B-023, D49 | Typing a word on the add-model page or after `mcf pull` lists repositories to pick; a reference still lists files; a phrase that is neither is refused with the word | done. F180 |
 | B-477 | The Diagnostics page is one card per run: throughput, cross-check, capabilities, prompt analysis, comparison, each naming what it answers, its controls — device, depths, repeats, which probes, what to apply — with the recommendation as the default, its cost before its own Run, its step and a Stop while it goes, and its figures on the model's Statistics tab after; the checkbox rows go | D50, §3.15, A7, B-467, B-468 | No control on the page stands for a thing a run does not separately do; every run is started from its own card with its own controls | open |
 | B-478 | The probes are a run the daemon carries: `mcf probe`'s orchestration moves into the daemon as a streamed request, each probe announced as it starts and its finding as it lands, with `--apply` as a switch, so the window's capabilities card and the console have what the command line has | D50, A22, B-072, B-442 | The window runs the probes on a model and applies what they find without the command line; `mcf probe` prints the same stream | open |
-| B-479 | Prompt analysis says what it is doing at every step: the daemon announces each generation of the report as it starts — which part is being left out, swapped or moved, which seed — and the window's prompt card shows the step, the count so far of the total, and a Stop | A7, B-072, B-468 | A prompt analysis under way shows which of its generations it is on and how many remain, and can be cut short | open |
+| B-479 | Prompt analysis says what it is doing at every step: the daemon announces each generation of the report as it starts — which part is being left out, swapped or moved, which seed — and the window's prompt card shows the step, the count so far of the total, and a Stop | A7, B-072, B-468 | A prompt analysis under way shows which of its generations it is on and how many remain, and can be cut short | done. F182: 34 generations announced as n of 34 at the command line and in the window, the plan and the count one arithmetic, a run killed at three seconds asked no generation past the one in flight and recorded nothing |
 | B-480 | A message from the window goes to the running server where one is held for the model, so the server's counters move for it and the model is loaded once; and nothing a person starts from the window — a message, a run — cuts short a request another client has in flight on the server | D49, A7, B4, B-470 | With a server held, a message from the Server page shows in Tokens out and Gen tok/s; a run started while a client's request is in flight leaves that request to finish | open. F179: the window's messages ran through MCF's own engine beside the server, so the server's counters stayed at nought |
 | B-481 | The window is reviewed from its own renders: the window tests draw every page in the states a person meets to image files when asked, and MCF reads the images for what sits where — a pass a person is not asked for | A22, §3.15, D49, B-462 | `MCF_LOOK=<dir>` with the window tests writes one image a page and state; a defect of placement is found by reading them and fixed before a person sees it | done. F181: the first pass found the throughput table drawn twice, a column cut at the pane, two columns drawn over each other, a peak label over its bars, a recommendation two pixels from the next row and a line reading "?" |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
@@ -491,6 +491,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 262 — a report says which generation it is on
+
+B-479 done: every generation of a prompt analysis is announced before it
+is asked, at the command line and in the window, with a Stop (F182).
 
 ### Version 261 — the window read from its renders
 

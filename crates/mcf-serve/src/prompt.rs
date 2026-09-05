@@ -80,6 +80,7 @@
 //! something that happens on the way past (§3.8).
 
 use mcf_core::configuration::Thousandths;
+use mcf_record::json::Value;
 
 pub use crate::generation::{Draw, Stated, Truncation, Whose};
 
@@ -742,15 +743,32 @@ struct Bench<'a, 'b> {
     seed: u64,
     ask: Ask<'b>,
     force: Force<'b>,
+    /// Who is told what each generation is before it is asked (B-479).
+    say: Say<'b>,
+    /// Generations asked so far, counting the baseline.
+    count: usize,
+    /// Generations the run will ask in all, from [`planned`].
+    of: usize,
 }
 
 impl Bench<'_, '_> {
+    /// Asks a prompt under a draw, having said what the generation is.
+    fn ask_as(&mut self, what: String, prompt: &str, draw: Draw) -> Answered {
+        self.count = self.count.saturating_add(1);
+        (self.say)(Step {
+            what,
+            count: self.count,
+            of: self.of,
+        });
+        (self.ask)(prompt, draw)
+    }
+
     /// Asks the prompt, greedy at the held seed, and reads the answer.
     ///
     /// The opening is an empty list where the baseline said nothing, and a
     /// rank over nothing is not taken rather than read as kept.
-    fn read(&mut self, prompt: &str) -> Reading {
-        let said = (self.ask)(prompt, Draw::greedy(self.seed));
+    fn read(&mut self, what: String, prompt: &str) -> Reading {
+        let said = self.ask_as(what, prompt, Draw::greedy(self.seed));
         let held = if self.opening.is_empty() {
             None
         } else {
@@ -1467,6 +1485,96 @@ pub type Ask<'a> = &'a mut dyn FnMut(&str, Draw) -> Answered;
 /// `None` where the reading could not be taken at all. Nothing is generated.
 pub type Force<'a> = &'a mut dyn FnMut(&str, &[usize]) -> Option<Held>;
 
+/// One generation of a report, said before it is asked: what it is, and
+/// which it is of how many the run will ask (B-479).
+///
+/// A report is many generations and minutes; a surface that showed nothing
+/// until the last one showed a run that looked stopped. The count is of
+/// generations planned from the extras and the parts, so the last step's
+/// count is its total, and a run cut short says how far it got.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Step {
+    /// What this generation asks, in the report's own words: *without part
+    /// 2 of 4*, *the control sentence added*, *seed 2 of 3*.
+    pub what: String,
+    /// Which generation this is, counting from one.
+    pub count: usize,
+    /// How many the run will ask in all.
+    pub of: usize,
+}
+
+impl Step {
+    /// The step as the daemon sends it.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+        Value::map([
+            ("what", Value::text(self.what.clone())),
+            ("count", count(self.count)),
+            ("of", count(self.of)),
+        ])
+    }
+}
+
+/// The line a surface prints of a step the daemon announced, where the
+/// answer is one: *generation 3 of 12: without part 2 of 4*. The same words
+/// at the command line and in the window (A22).
+#[must_use]
+pub fn step_said(body: &Value) -> Option<String> {
+    let step = body.get("step")?;
+    let figure = |key: &str| step.get(key).and_then(Value::as_integer);
+    Some(format!(
+        "generation {} of {}: {}",
+        figure("count")?,
+        figure("of")?,
+        step.get("what").and_then(Value::as_text)?
+    ))
+}
+
+/// Who is told each step before it is asked.
+pub type Say<'a> = &'a mut dyn FnMut(Step);
+
+/// How many generations a report will ask, counted the way [`measure`]
+/// asks them: the prompt as written, each part left out, the control
+/// sentence, and what each extra adds. Said before the first is spent, so
+/// a surface can say *3 of 12* rather than *3 of some* (A6, B-479).
+#[must_use]
+pub fn planned(taken: &Taken<'_>, settling: bool) -> usize {
+    let (unit, _) = taken.unit();
+    let all = parts_of(taken.text, unit);
+    let written = joined(&all);
+    let ablated = all.len().min(taken.cap());
+    // One part is nothing to take apart, and no extra reads it.
+    let many = all.len() > 1;
+    // Each extra's own arithmetic, save the forms: their cost is the most
+    // they can take, and the forms the prompt is already in are not asked.
+    let extras = if many {
+        taken
+            .extras
+            .with(Extra::Forms, false)
+            .generations(all.len(), ablated)
+    } else {
+        0
+    };
+    let forms = if taken.extras.has(Extra::Forms) {
+        Form::ALL
+            .into_iter()
+            .filter(|form| {
+                form.render(&all)
+                    .is_some_and(|rendered| rendered != written)
+            })
+            .count()
+    } else {
+        0
+    };
+    // The prompt as written, and the control sentence added.
+    2_usize
+        .saturating_add(if many { ablated } else { 0 })
+        .saturating_add(extras)
+        .saturating_add(forms)
+        .saturating_add(if settling { SEEDS } else { 0 })
+}
+
 /// Measures what a prompt does.
 ///
 /// **The seed is held still across every ablation, and every ablation is
@@ -1481,13 +1589,20 @@ pub fn measure(
     settle: Option<Settle>,
     ask: Ask<'_>,
     force: Force<'_>,
+    say: Say<'_>,
 ) -> Report {
     let (unit, unit_chosen) = taken.unit();
     let all = parts_of(taken.text, unit);
+    let of = planned(taken, settle.is_some());
     // The baseline is the parts put back together, not the text as pasted:
     // what differs between it and a variant must be the part removed and
     // nothing else, and a variant is always the joined parts (§3.4).
     let prompt = joined(&all);
+    say(Step {
+        what: "the prompt as written".to_owned(),
+        count: 1,
+        of,
+    });
     let Answered {
         text: baseline,
         tokens: opening,
@@ -1500,6 +1615,9 @@ pub fn measure(
         seed,
         ask,
         force,
+        say,
+        count: 1,
+        of,
     };
 
     let most = taken.cap();
@@ -1510,7 +1628,10 @@ pub fn measure(
     if all.len() > 1 {
         for at in 0..ablated {
             let shortened = without(&all, at);
-            let read = bench.read(&shortened);
+            let read = bench.read(
+                format!("without part {} of {}", at.saturating_add(1), all.len()),
+                &shortened,
+            );
             clauses.push(Clause {
                 changed: read.answer.trim() != baseline.trim(),
                 moved: read.moved,
@@ -1538,7 +1659,7 @@ pub fn measure(
     // is asked, and the answer compared against the baseline — which is that
     // same prompt with the inert sentence removed. One removal against
     // another, which is the comparison the numbers above need.
-    let read = bench.read(&with_inert(&all));
+    let read = bench.read("the control sentence added".to_owned(), &with_inert(&all));
     let floor = read.moved;
     let floor_thought = read.thought;
     let floor_held = if all.len() <= 1 { None } else { read.held };
@@ -1559,7 +1680,7 @@ pub fn measure(
         .has(Extra::Forms)
         .then(|| forms_of(&mut bench, &all, &prompt));
 
-    let settled = settle.map(|under| settled(&prompt, seed, under, &baseline, bench.ask));
+    let settled = settle.map(|under| settled(&prompt, seed, under, &baseline, &mut bench));
 
     Report {
         floor,
@@ -1598,7 +1719,14 @@ fn floors_of(bench: &mut Bench<'_, '_>, all: &[Part], drawn: (u64, Option<Held>)
                     held: drawn.1,
                 };
             }
-            let read = bench.read(&with_inert_at(all, position));
+            let read = bench.read(
+                format!(
+                    "the control sentence at position {} of {}",
+                    position,
+                    all.len()
+                ),
+                &with_inert_at(all, position),
+            );
             FloorAt {
                 position,
                 moved: read.moved,
@@ -1621,9 +1749,18 @@ fn alone_of(bench: &mut Bench<'_, '_>, all: &[Part], first: usize) -> (Vec<Readi
     let alone = all
         .iter()
         .take(first)
-        .map(|part| bench.read(part.text.trim()))
+        .enumerate()
+        .map(|(at, part)| {
+            bench.read(
+                format!("part {} of {} alone", at.saturating_add(1), all.len()),
+                part.text.trim(),
+            )
+        })
         .collect();
-    (alone, bench.read(NO_INSTRUCTION))
+    (
+        alone,
+        bench.read("the control sentence alone".to_owned(), NO_INSTRUCTION),
+    )
 }
 
 /// The prompt grown from the front (B-436).
@@ -1636,7 +1773,14 @@ fn alone_of(bench: &mut Bench<'_, '_>, all: &[Part], first: usize) -> (Vec<Readi
 /// at no distance from itself.
 fn prefixes_of(bench: &mut Bench<'_, '_>, all: &[Part], most: usize) -> Vec<Reading> {
     (1..=strict_prefixes(all.len(), most))
-        .map(|kept| bench.read(&joined(all.get(..kept).unwrap_or_default())))
+        .map(|kept| {
+            let what = if kept == 1 {
+                "the first part alone".to_owned()
+            } else {
+                format!("the first {kept} parts")
+            };
+            bench.read(what, &joined(all.get(..kept).unwrap_or_default()))
+        })
         .collect()
 }
 
@@ -1652,7 +1796,16 @@ fn prefixes_of(bench: &mut Bench<'_, '_>, all: &[Part], most: usize) -> Vec<Read
 /// still a paragraph break after the swap.
 fn swaps_of(bench: &mut Bench<'_, '_>, all: &[Part], most: usize) -> Vec<Reading> {
     (0..strict_prefixes(all.len(), most))
-        .map(|at| bench.read(&swapped(all, at)))
+        .map(|at| {
+            bench.read(
+                format!(
+                    "parts {} and {} swapped",
+                    at.saturating_add(1),
+                    at.saturating_add(2)
+                ),
+                &swapped(all, at),
+            )
+        })
         .collect()
 }
 
@@ -1689,7 +1842,9 @@ fn forms_of(bench: &mut Bench<'_, '_>, all: &[Part], written: &str) -> Vec<Forme
             outcome: match form.render(all) {
                 None => Rendering::NotRendered(ONE_PART),
                 Some(rendered) if rendered == written => Rendering::NotRendered(AS_WRITTEN),
-                Some(rendered) => Rendering::Read(bench.read(&rendered)),
+                Some(rendered) => {
+                    Rendering::Read(bench.read(format!("as {}", form.name()), &rendered))
+                }
             },
         })
         .collect()
@@ -1700,7 +1855,13 @@ fn forms_of(bench: &mut Bench<'_, '_>, all: &[Part], written: &str) -> Vec<Forme
 /// The greedy baseline is not one of the samples — it was drawn under another
 /// condition, and counting it among them would make the count a count of two
 /// things (§3.4). It is what `from_greedy` is measured from.
-fn settled(prompt: &str, seed: u64, under: Settle, baseline: &str, ask: Ask<'_>) -> Settled {
+fn settled(
+    prompt: &str,
+    seed: u64,
+    under: Settle,
+    baseline: &str,
+    bench: &mut Bench<'_, '_>,
+) -> Settled {
     let answers: Vec<String> = (0..SEEDS)
         .map(|extra| {
             let draw = Draw {
@@ -1708,7 +1869,12 @@ fn settled(prompt: &str, seed: u64, under: Settle, baseline: &str, ask: Ask<'_>)
                 temperature: under.temperature,
                 truncation: under.truncation,
             };
-            ask(prompt, draw).text.trim().to_owned()
+            let what = format!(
+                "seed {} of {SEEDS} at temperature {}",
+                extra.saturating_add(1),
+                under.temperature
+            );
+            bench.ask_as(what, prompt, draw).text.trim().to_owned()
         })
         .collect();
     let mut distinct = answers.clone();

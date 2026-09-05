@@ -335,6 +335,30 @@ fn clause_value(clause: &crate::prompt::Clause) -> Value {
 /// tell a second run of the same text from a run of a changed one — and the
 /// answer as its length.
 /// The conditions a recorded prompt report carries (§3.4).
+/// What a report's generations leave behind between them, beside the
+/// answers the report reads.
+#[derive(Default)]
+struct ReportTally {
+    /// Generations asked so far.
+    asked: usize,
+    /// Which engine answered is a condition of every figure, and the
+    /// account of each generation names it; the report keeps the names
+    /// and drains the rest (§3.4).
+    engines: std::collections::BTreeSet<String>,
+    /// What the generations were addressed as, from their own accounts:
+    /// the report said *one user turn* over a prompt that went bare
+    /// (A21, F160).
+    addressed: std::collections::BTreeSet<String>,
+    /// **A generation that was refused refuses the report.** Before this,
+    /// a model name no engine resolved gave seven empty answers, and the
+    /// report read them as *every part removed gave the SAME answer* —
+    /// a finding printed over a failure, and then recorded (A2). The first
+    /// refusal is kept whole and passed on as the answer.
+    refused: Option<Value>,
+    /// How long the baseline's answer was and what ended it.
+    baseline_account: Option<(i64, String)>,
+}
+
 fn prompt_report_conditions(
     served: &Value,
     model: &Path,
@@ -2717,9 +2741,9 @@ impl Daemon {
                 seed,
             } => {
                 // Many generations and one report: a request that takes
-                // minutes says what it is doing as it goes, for the same
-                // reason a measurement does — a client cannot tell a long
-                // run from a hung one (B-227).
+                // minutes says which generation it is on before each, for
+                // the same reason a measurement does — a client cannot tell
+                // a long run from a hung one (B-227, B-479).
                 self.prompt_report(
                     &model,
                     &crate::prompt::Taken {
@@ -3259,70 +3283,44 @@ impl Daemon {
         let picked = self.picked_engine_or_why(named);
         let settle = match self.settle_asked(named, settle) {
             Ok(settle) => settle,
-            Err(failure) => {
-                let answer = Answer::refused(&failure);
-                let _written = writeln!(writer, "{}", answer.to_line());
-                let _flushed = writer.flush();
-                return;
+            Err(failure) => return Self::write_refusal(writer, &Answer::refused(&failure)),
+        };
+        let mut tally = ReportTally::default();
+        // **Every generation is announced before it is asked**, and the
+        // announcement is how the daemon learns the asker has gone: a line
+        // that cannot be written is a client that left, and the run stops
+        // at its next generation rather than spending the rest on nobody
+        // (B-479, B-468).
+        let left = std::cell::Cell::new(false);
+        let mut say = |step: crate::prompt::Step| {
+            let line = Answer::served(Value::map([
+                ("reporting", Value::text(named.to_owned())),
+                ("step", step.to_value()),
+                ("done", Value::Bool(false)),
+            ]));
+            if writeln!(writer, "{}", line.to_line())
+                .and_then(|()| writer.flush())
+                .is_err()
+            {
+                left.set(true);
             }
         };
-        let mut asked = 0_usize;
-        // Which engine answered is a condition of every figure below, and
-        // the account of each generation names it; the report keeps the
-        // names and drains the rest (§3.4).
-        let mut engines = std::collections::BTreeSet::new();
-        // What the generations were addressed as, from their own accounts:
-        // the report said *one user turn* over a prompt that went bare
-        // (A21, F160).
-        let mut addressed = std::collections::BTreeSet::new();
-        // **A generation that was refused refuses the report.** Before this,
-        // a model name no engine resolved gave seven empty answers, and the
-        // report read them as *every part removed gave the SAME answer* —
-        // a finding printed over a failure, and then recorded (A2, F: seen
-        // with a name that was a directory rather than a file). The first
-        // refusal is kept whole and passed on as the answer.
-        let mut refused: Option<Value> = None;
-        let mut baseline_account: Option<(i64, String)> = None;
         let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
-            asked = asked.saturating_add(1);
-            let Some(produced) =
-                self.generated_quietly(named, prompt, draw, picked.clone().ok(), turn, waiting)
-            else {
+            if left.get() {
+                let _first = tally
+                    .refused
+                    .get_or_insert_with(|| Value::text(crate::served::CLIENT_LEFT.to_owned()));
                 return crate::prompt::Answered::default();
-            };
-            // The first ask is the prompt as written. How long its answer
-            // was and what ended it are the account's, and a page that
-            // printed an empty answer under a 600-token cap with neither
-            // left a reader to guess between a model that said nothing and
-            // a report that lost what it said (A7, F160).
-            if asked == 1 {
-                baseline_account = Some(Self::length_and_ending(&produced.account));
             }
-            if produced.said.is_none()
-                && let Some(failure) = produced.account.get("failure")
-                && refused.is_none()
-            {
-                refused = Some(failure.clone());
-            }
-            if let Some(engine) = Self::condition_of(&produced.account, "engine") {
-                let _seen = engines.insert(engine);
-            }
-            if let Some(under) = Self::condition_of(&produced.account, "addressed_as") {
-                let _seen = addressed.insert(under);
-            }
-            // What the model spent before its answer, from the account
-            // that counted it: a persona that makes the model think for
-            // three hundred tokens costs that on every turn it is used
-            // (B-455, B-451).
-            let thought = Self::thought_in(&produced.account);
-            produced
-                .said
-                .map(|held| crate::prompt::Answered {
-                    text: held.text,
-                    tokens: held.tokens,
-                    thought,
-                })
-                .unwrap_or_default()
+            self.report_generation(
+                named,
+                prompt,
+                draw,
+                picked.clone().ok(),
+                turn,
+                waiting,
+                &mut tally,
+            )
         };
         let tokenizer = self.tokenizer_for(named, picked.as_ref().ok());
         let mut not_held: Option<String> = None;
@@ -3340,12 +3338,16 @@ impl Daemon {
                 None
             }
         };
-        let report = crate::prompt::measure(taken, seed, settle, &mut ask, &mut force);
+        let report = crate::prompt::measure(taken, seed, settle, &mut ask, &mut force, &mut say);
+        let ReportTally {
+            asked,
+            engines,
+            addressed,
+            refused,
+            baseline_account,
+        } = tally;
         if let Some(failure) = refused {
-            let answer = Answer::refused_as(failure);
-            let _written = writeln!(writer, "{}", answer.to_line());
-            let _flushed = writer.flush();
-            return;
+            return Self::write_refusal(writer, &Answer::refused_as(failure));
         }
         // What the model was asked, as the baseline was: the parts put back
         // together, which is what the counts below are of.
@@ -3383,10 +3385,76 @@ impl Daemon {
                 let _was = fields.insert("answer_stopped".to_owned(), Value::text(stopped));
             }
         }
-        let served = self.record_prompt_report(served, named, prompt, seed, &engines);
+        let mut served = self.record_prompt_report(served, named, prompt, seed, &engines);
+        // The report is the last line of many; a reader waits for the one
+        // that says so (B-479).
+        if let Value::Map(fields) = &mut served {
+            let _was = fields.insert("done".to_owned(), Value::Bool(true));
+        }
         let answer = Answer::served(served);
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
+    }
+
+    /// Writes a refusal as the answer, and does not mind a client that left.
+    fn write_refusal(writer: &mut &UnixStream, answer: &Answer) {
+        let _written = writeln!(writer, "{}", answer.to_line());
+        let _flushed = writer.flush();
+    }
+
+    /// One generation of a report, and what the tally keeps of it.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the conditions of a generation and the tally it adds to"
+    )]
+    fn report_generation(
+        &self,
+        named: &str,
+        prompt: &str,
+        draw: crate::prompt::Draw,
+        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        turn: Option<&crate::turn::Turn>,
+        waiting: crate::served::Waiting<'_>,
+        tally: &mut ReportTally,
+    ) -> crate::prompt::Answered {
+        tally.asked = tally.asked.saturating_add(1);
+        let Some(produced) = self.generated_quietly(named, prompt, draw, picked, turn, waiting)
+        else {
+            return crate::prompt::Answered::default();
+        };
+        // The first ask is the prompt as written. How long its answer
+        // was and what ended it are the account's, and a page that
+        // printed an empty answer under a 600-token cap with neither
+        // left a reader to guess between a model that said nothing and
+        // a report that lost what it said (A7, F160).
+        if tally.asked == 1 {
+            tally.baseline_account = Some(Self::length_and_ending(&produced.account));
+        }
+        if produced.said.is_none()
+            && let Some(failure) = produced.account.get("failure")
+            && tally.refused.is_none()
+        {
+            tally.refused = Some(failure.clone());
+        }
+        if let Some(engine) = Self::condition_of(&produced.account, "engine") {
+            let _seen = tally.engines.insert(engine);
+        }
+        if let Some(under) = Self::condition_of(&produced.account, "addressed_as") {
+            let _seen = tally.addressed.insert(under);
+        }
+        // What the model spent before its answer, from the account
+        // that counted it: a persona that makes the model think for
+        // three hundred tokens costs that on every turn it is used
+        // (B-455, B-451).
+        let thought = Self::thought_in(&produced.account);
+        produced
+            .said
+            .map(|held| crate::prompt::Answered {
+                text: held.text,
+                tokens: held.tokens,
+                thought,
+            })
+            .unwrap_or_default()
     }
 
     /// One text condition of a generation's account, where it has one.
