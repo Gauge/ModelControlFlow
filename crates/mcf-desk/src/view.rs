@@ -795,6 +795,11 @@ fn statistic_sections(desk: &Desk, held: &Model) -> Vec<(&'static str, Vec<Strin
         }],
         held.prompt_reported,
     ));
+    if held.probed.is_empty() {
+        sections.push(("Capabilities", not_yet("probed"), false));
+    } else {
+        sections.push(("Capabilities", probed_said(&held.probed), true));
+    }
     sections.push((
         "Probed settings",
         vec![
@@ -817,6 +822,28 @@ fn statistic_sections(desk: &Desk, held: &Model) -> Vec<(&'static str, Vec<Strin
         sections.push(("Last served", vec![last.said()], true));
     }
     sections
+}
+
+/// What the probes found, one line a probe: its name and the first line
+/// that says what it observed, leaving out what it asks and decides and
+/// the conditions it ran under, which are on the record.
+fn probed_said(probed: &[(String, Vec<String>)]) -> Vec<String> {
+    probed
+        .iter()
+        .map(|(name, lines)| {
+            let finding = lines.iter().map(|line| line.trim()).find(|line| {
+                !line.is_empty()
+                    && line != name
+                    && !line.starts_with("asks ")
+                    && !line.starts_with("decides ")
+                    && !line.starts_with("under:")
+            });
+            match finding {
+                Some(finding) => format!("{name}: {finding}"),
+                None => format!("{name}: ran"),
+            }
+        })
+        .collect()
 }
 
 /// What the last measurement said, section by section: where it was taken,
@@ -1979,7 +2006,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         let (pressed, below) =
             small_card(paint, desk, mouse, Box::new(right.x, y, right.w, 0.0), card);
         act = pressed.or(act);
-        y = below + 16.0;
+        y = below + 12.0;
     }
     if let Some((picker, at)) = menu
         && let Some(picked) = open_menu(paint, desk, mouse, picker, at)
@@ -1997,13 +2024,13 @@ fn card_head(paint: &mut Painter, at: Box, card: Card) -> f32 {
     paint.edge(at, 10.0, ink.line, ink.card);
     paint.say_at(
         at.x + PAD,
-        at.y + 14.0,
+        at.y + 12.0,
         card.name(),
         Weight::Bold,
         size::BODY,
         ink.ink,
     );
-    let mut y = at.y + 34.0;
+    let mut y = at.y + 31.0;
     for line in paint
         .wrap(
             card.answers(),
@@ -2017,7 +2044,7 @@ fn card_head(paint: &mut Painter, at: Box, card: Card) -> f32 {
         paint.say_at(at.x + PAD, y, line, Weight::Regular, size::SMALL, ink.faint);
         y += 16.0;
     }
-    y + 10.0
+    y + 6.0
 }
 
 /// How tall a card's head is: its name and what it answers, wrapped to two
@@ -2029,14 +2056,14 @@ fn head_height(paint: &mut Painter, card: Card, w: f32) -> f32 {
         .clamp(1, 2);
     #[allow(clippy::cast_precision_loss, reason = "one or two lines")]
     let lines = lines as f32;
-    34.0 + 16.0 * lines + 10.0
+    31.0 + 16.0 * lines + 6.0
 }
 
 /// Whether a run is going, so that no card offers a second one meanwhile.
 fn a_run_is_going(desk: &Desk) -> bool {
     matches!(
         &desk.doing,
-        Doing::Measuring(job) | Doing::CrossChecking(job) if !job.finished
+        Doing::Measuring(job) | Doing::CrossChecking(job) | Doing::Probing(job) if !job.finished
     )
 }
 
@@ -2179,7 +2206,8 @@ fn throughput_buttons(
 fn is_done(desk: &Desk, card: Card) -> bool {
     match (card, &desk.doing) {
         (Card::Throughput, Doing::Measuring(job))
-        | (Card::CrossCheck, Doing::CrossChecking(job)) => job.finished && job.refused.is_none(),
+        | (Card::CrossCheck, Doing::CrossChecking(job))
+        | (Card::Capabilities, Doing::Probing(job)) => job.finished && job.refused.is_none(),
         _ => false,
     }
 }
@@ -2277,16 +2305,142 @@ fn small_card(
                 act = Some(Act::Go(Page::Prompt));
             }
         }
-        Card::Capabilities | Card::Comparison => {
-            if let Some(pressed) =
-                command_rows(paint, desk, mouse, (inner_x, y), inner_w, card, &model)
-            {
+        Card::Capabilities => {
+            act = capabilities_rows(paint, desk, mouse, (inner_x, y), inner_w);
+        }
+        Card::Comparison => {
+            if let Some(pressed) = command_rows(paint, mouse, (inner_x, y), inner_w, card, &model) {
                 act = Some(pressed);
             }
         }
         Card::Throughput => {}
     }
     (act, frame.bottom())
+}
+
+/// How many rows the probe checkboxes take, two to a row.
+fn probe_rows() -> f32 {
+    #[allow(clippy::cast_precision_loss, reason = "a count of nine probes")]
+    let rows = mcf_serve::probes::run::PROBES.len().div_ceil(2) as f32;
+    rows
+}
+
+/// The capabilities card's rows: one checkbox a probe, the Apply switch,
+/// Run with its step and a Stop while the probes go, and where the
+/// findings went once they have (B-478, D50).
+fn capabilities_rows(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    (x, mut y): (f32, f32),
+    wide: f32,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let column = wide / 2.0;
+    for (at, name) in mcf_serve::probes::run::PROBES.iter().enumerate() {
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::integer_division,
+            reason = "a column of two and a row of five: the quotient is the row"
+        )]
+        let (col, row) = ((at % 2) as f32, (at / 2) as f32);
+        let (bx, by) = (x + col * column, y + row * 20.0);
+        let wanted = desk.probes_wanted.get(at).copied().unwrap_or(false);
+        if tick_box(paint, mouse, (bx, by), name, wanted) {
+            act = Some(Act::ToggleProbe(at));
+        }
+    }
+    y += probe_rows() * 20.0 + 8.0;
+    if tick_box(paint, mouse, (x, y), "Apply findings", desk.probes_apply) {
+        act = Some(Act::ApplyProbes);
+    }
+    y += 30.0;
+    let probing = matches!(&desk.doing, Doing::Probing(job) if !job.finished);
+    let running = a_run_is_going(desk);
+    let none_ticked = desk.probes_wanted.iter().all(|wanted| !*wanted);
+    let (pressed, button) = ui::fitted(
+        paint,
+        mouse,
+        (x, y),
+        if probing { "Stop" } else { "Run" },
+        if (running && !probing) || none_ticked {
+            Kind::Quiet
+        } else {
+            Kind::Primary
+        },
+    );
+    if pressed && probing {
+        act = Some(Act::Stop);
+    } else if pressed && !running && !none_ticked {
+        act = Some(Act::Run(Card::Capabilities));
+    }
+    if let Doing::Probing(job) = &desk.doing
+        && !job.finished
+    {
+        let step = job
+            .latest()
+            .and_then(probe_step_said)
+            .unwrap_or_else(|| "starting".to_owned());
+        let shown = paint.elide(&step, Weight::Regular, size::SMALL, wide - button.w - 12.0);
+        paint.say_at(
+            button.right() + 12.0,
+            y + 8.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.accent,
+        );
+    } else if none_ticked {
+        paint.say_at(
+            button.right() + 12.0,
+            y + 8.0,
+            "nothing ticked runs",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    y += 44.0;
+    if let Some(pressed) = done_line(paint, desk, mouse, (x, y), Card::Capabilities) {
+        act = Some(pressed);
+    }
+    act
+}
+
+/// A step the daemon announced for the probes, as one line: *probe 3 of
+/// 9: stop-conditions* — the same words `mcf probe` prints (A22).
+fn probe_step_said(body: &Value) -> Option<String> {
+    let step = body.get("step")?;
+    let figure = |key: &str| step.get(key).and_then(Value::as_integer);
+    Some(format!(
+        "probe {} of {}: {}",
+        figure("count")?,
+        figure("of")?,
+        step.get("name").and_then(Value::as_text)?
+    ))
+}
+
+/// A checkbox with its label. Returns whether it was pressed.
+fn tick_box(paint: &mut Painter, mouse: &Mouse, (x, y): (f32, f32), label: &str, on: bool) -> bool {
+    let ink = paint.ink;
+    let square = Box::new(x, y - 1.0, 16.0, 16.0);
+    paint.edge(
+        square,
+        4.0,
+        if on { ink.accent } else { ink.line },
+        ink.card,
+    );
+    if on {
+        ui::tick(
+            paint,
+            Box::new(square.x + 3.0, square.y + 3.0, 10.0, 10.0),
+            ink.accent,
+        );
+    }
+    paint.say_at(x + 24.0, y, label, Weight::Regular, size::SMALL, ink.ink);
+    let width = 24.0 + paint.measure(label, Weight::Regular, size::SMALL) + 8.0;
+    mouse.clicked(Box::new(x - 4.0, y - 5.0, width, 24.0))
 }
 
 /// How tall a small card is, from what it shows.
@@ -2307,37 +2461,22 @@ fn small_card_height(
             44.0 + progress + done + 12.0
         }
         Card::Prompt => 34.0 + 16.0,
-        Card::Capabilities | Card::Comparison => {
-            let applied = applied_lines(desk, card).len() as f32 * 18.0;
+        Card::Capabilities => {
+            let done = if is_done(desk, card) { 34.0 } else { 0.0 };
+            probe_rows() * 20.0 + 8.0 + 30.0 + 44.0 + done + 12.0
+        }
+        Card::Comparison => {
             let command = card.command(model).map_or(0.0, |command| {
-                paint
+                #[allow(clippy::cast_precision_loss, reason = "a line count")]
+                let lines = paint
                     .wrap(&command, Weight::Regular, size::SMALL, inner_w)
-                    .len() as f32
-                    * 16.0
+                    .len() as f32;
+                lines * 16.0
             });
-            applied + 20.0 + command + 40.0 + 12.0
+            20.0 + command + 40.0 + 12.0
         }
         Card::Throughput => 0.0,
     }
-}
-
-/// What the probes applied to the chosen model, where they have run: the
-/// capabilities card shows the last findings that reached the model.
-fn applied_lines(desk: &Desk, card: Card) -> Vec<String> {
-    if card != Card::Capabilities {
-        return Vec::new();
-    }
-    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
-        return Vec::new();
-    };
-    let mut lines = Vec::new();
-    if let Some(addressing) = &held.applied_addressing {
-        lines.push(format!("Chat template: {addressing}"));
-    }
-    if let Some(budget) = &held.applied_budget {
-        lines.push(format!("Token budget: {budget}"));
-    }
-    lines
 }
 
 /// The rows of a card whose run is at the command line for now: what the
@@ -2345,7 +2484,6 @@ fn applied_lines(desk: &Desk, card: Card) -> Vec<String> {
 /// and Copy (B-478).
 fn command_rows(
     paint: &mut Painter,
-    desk: &Desk,
     mouse: &Mouse,
     (x, mut y): (f32, f32),
     wide: f32,
@@ -2353,11 +2491,6 @@ fn command_rows(
     model: &str,
 ) -> Option<Act> {
     let ink = paint.ink;
-    for line in applied_lines(desk, card) {
-        let shown = paint.elide(&line, Weight::Regular, size::SMALL, wide);
-        paint.say_at(x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
-        y += 18.0;
-    }
     paint.say_at(
         x,
         y,

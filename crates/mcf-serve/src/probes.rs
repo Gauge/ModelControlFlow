@@ -132,6 +132,7 @@ impl Addressing {
 pub mod declined;
 pub mod embedding;
 pub mod language;
+pub mod run;
 pub mod structured;
 pub mod thinking;
 pub mod tools;

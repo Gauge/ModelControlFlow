@@ -351,6 +351,9 @@ enum Request<'a> {
         /// The longest prompt the usable-context probe may ask for, where
         /// the caller wants less than the file declares (B-461).
         up_to: Option<usize>,
+        /// Which probes, by name and separated by commas; every one when
+        /// absent (B-478).
+        only: Option<&'a str>,
     },
     /// Ask an embedding model for a vector.
     Embed {
@@ -893,10 +896,20 @@ fn probe_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a
     let mut engine = None;
     let mut apply = false;
     let mut up_to = None;
+    let mut only = None;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
             "--apply" => apply = true,
+            "--only" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "probe --only",
+                        needs: "probe names, separated by commas",
+                    });
+                };
+                only = Some(*value);
+            }
             "--engine" => {
                 let Some(value) = rest.next() else {
                     return Ok(Request::MissingArgument {
@@ -931,6 +944,7 @@ fn probe_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a
         engine,
         apply,
         up_to,
+        only,
     })
 }
 
@@ -1886,10 +1900,11 @@ const COMMANDS: &str = "\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
     \x20           [--up-to <tokens>]        ask a model to do the thing, and\n\
-    \x20                                     report what it did — configuring\n\
+    \x20           [--only <names>]          report what it did — configuring\n\
     \x20                                     nothing (§X, D42); the context\n\
     \x20                                     trial is projected before it is\n\
-    \x20                                     spent, and --up-to asks for less\n\
+    \x20                                     spent, --up-to asks for less, and\n\
+    \x20                                     --only names the probes to run\n\
     \x20 mcf provision [<component>]         build a pinned component in a\n\
     \x20     [--list] [--remove <c>          container, everything recorded,\n\
     \x20      --because <why>] [--into <dir>] removable without residue; unnamed,\n\
@@ -2136,7 +2151,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             engine,
             apply,
             up_to,
-        } => probe::run(model, *engine, *apply, *up_to),
+            only,
+        } => probe::run(model, *engine, *apply, *up_to, *only),
         Request::Provision { name, into } => provision::run(*name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {

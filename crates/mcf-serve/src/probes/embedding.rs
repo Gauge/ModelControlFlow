@@ -169,3 +169,37 @@ pub fn embedding(model: &Path, bytes: &[u8], engine: &str, ask: Ask<'_>) -> Prob
 
 #[cfg(test)]
 mod tests;
+
+/// One embedding, for a probe: the width, a digest of the vector, and how
+/// many identifiers the text spent (B-057). In this process, through MCF's
+/// own engine: the daemon's engines do not embed.
+///
+/// **A digest rather than the vector.** The probe's question is *the same
+/// one twice*, which a digest answers exactly; and a vector passing through
+/// a probe is a vector something downstream might record, which is the
+/// shape A25 keeps out of the record.
+///
+/// `None` where this artifact does not embed, which is what an ordinary
+/// text model does and is not a failure (A7).
+#[must_use]
+pub fn measured(path: &std::path::Path, text: &str) -> Option<(usize, String, usize)> {
+    use mcf_standin::bert;
+    use mcf_standin::tokenizer::Vocabulary;
+    let bytes = std::fs::read(path).ok()?;
+    let file = mcf_standin::gguf::parse(&bytes).ok()?;
+    let vocabulary = Vocabulary::read(&file).ok()?;
+    let tokens = vocabulary.encode(text, true).ok()?;
+    let model = bert::load(&file, &bytes)
+        .ok()?
+        .across(mcf_standin::threads::Threads::what_the_machine_reports());
+    let build = mcf_core::build_identity::BuildIdentity::current()
+        .version
+        .to_owned();
+    let marked = bert::embed(&model, &build, &tokens).ok()?;
+    let embedding = marked.value().observed().clone();
+    let mut digest = mcf_core::digest::Sha256::new();
+    for value in &embedding.vector {
+        digest.update(&value.to_le_bytes());
+    }
+    Some((embedding.vector.len(), digest.finish().hex(), tokens.len()))
+}

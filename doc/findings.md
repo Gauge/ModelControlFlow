@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 133 |
+| **Version** | 134 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 185 | [F185 — The probes are a run the daemon carries: mcf probe and the window's capabilities card send one request and read each probe's finding as it lands, two probes on Qwen3-VL-2B took 21.8 s through the Vulkan build where the same model had fallen to MCF's own engine because three builds stood here, and a run cut short at four seconds asked no trial past the one in flight (B-478, B-468, D50, A22, D42)](#185--f185-the-probes-are-a-run-the-daemon-carries-mcf-probe-and-the-windows-capabilities-card-send-one-request-and-read-each-probes-finding-as-it-lands-two-probes-on-qwen3-vl-2b-took-218-s-through-the-vulkan-build-where-the-same-model-had-fallen-to-mcfs-own-engine-because-three-builds-stood-here-and-a-run-cut-short-at-four-seconds-asked-no-trial-past-the-one-in-flight-b-478-b-468-d50-a22-d42) |
 | 184 | [F184 — The Diagnostics page is one card per run: the six checkbox rows, five of which were one ladder's results drawn as choices, are gone, and throughput, cross-check, capabilities, prompt analysis and comparison each have a card with their own controls, cost and Run, the two the daemon does not carry yet saying so and offering the command (B-477, D50, §3.15, A22)](#184--f184-the-diagnostics-page-is-one-card-per-run-the-six-checkbox-rows-five-of-which-were-one-ladders-results-drawn-as-choices-are-gone-and-throughput-cross-check-capabilities-prompt-analysis-and-comparison-each-have-a-card-with-their-own-controls-cost-and-run-the-two-the-daemon-does-not-carry-yet-saying-so-and-offering-the-command-b-477-d50-315-a22) |
 | 183 | [F183 — A request goes to the server hosted for its model: a run and a prompt report on Qwen3-VL-2B while it was hosted ran through the hosted server on its port, one engine process throughout, its counters at 45 generated and 155 prompted, and an unhost with a 300-token run in flight waited 1.8 s for the run to finish before the card gave back 3.3 GiB (B-480, B-468, A7, A27, B4)](#183--f183-a-request-goes-to-the-server-hosted-for-its-model-a-run-and-a-prompt-report-on-qwen3-vl-2b-while-it-was-hosted-ran-through-the-hosted-server-on-its-port-one-engine-process-throughout-its-counters-at-45-generated-and-155-prompted-and-an-unhost-with-a-300-token-run-in-flight-waited-18-s-for-the-run-to-finish-before-the-card-gave-back-33-gib-b-480-b-468-a7-a27-b4) |
 | 182 | [F182 — A prompt analysis says which generation it is on: the daemon announces each of a planned count before it asks it, the plan and the run are one arithmetic, 34 generations on Qwen3-VL-2B streamed as generation n of 34 and took 19.8 s, and a run cut at three seconds asked the six it had announced and no more, recording nothing (B-479, B-468, A6, A7, A22)](#182--f182-a-prompt-analysis-says-which-generation-it-is-on-the-daemon-announces-each-of-a-planned-count-before-it-asks-it-the-plan-and-the-run-are-one-arithmetic-34-generations-on-qwen3-vl-2b-streamed-as-generation-n-of-34-and-took-198-s-and-a-run-cut-at-three-seconds-asked-the-six-it-had-announced-and-no-more-recording-nothing-b-479-b-468-a6-a7-a22) |
@@ -9607,6 +9608,55 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 185 · F185 — The probes are a run the daemon carries: mcf probe and the window's capabilities card send one request and read each probe's finding as it lands, two probes on Qwen3-VL-2B took 21.8 s through the Vulkan build where the same model had fallen to MCF's own engine because three builds stood here, and a run cut short at four seconds asked no trial past the one in flight (B-478, B-468, D50, A22, D42)
+
+D50 said the capabilities card is the probes as a run the daemon carries,
+so that the window and the console have what the command line has (A22).
+The orchestration — which probes, in what order, through which addressing,
+recorded where, applied how — was two thousand lines in the command-line
+crate, and the window could name the command and no more (F184).
+
+**What changed.** The orchestration moved into the daemon's crate as one
+run: a plan of probes by name, the chat template ahead of any probe that is
+asked through its addressing, each announced before it runs and its
+finding written as it lands, and the closing lines at the end. The daemon
+carries it as a request like a measurement, streamed line by line; every
+trial goes back through the daemon's own socket as a generation, so the
+engine that answers is the one every other request gets — the server
+hosted for the model where one is held (F183). `mcf probe` sends the
+request and prints the stream, with `--only` to name the probes; the
+window's capabilities card has one checkbox a probe, an Apply switch, Run
+with the step beside it and a Stop, and the model's Statistics tab gains a
+Capabilities section with one line a probe. What the probes apply is read
+back into the settings when the run ends.
+
+**Two things the move found.** With three builds provisioned the probes
+had been falling to MCF's own engine — the rule that wants exactly one
+build refused, and the fall-through was silent — so a model the daemon
+would have served through the Vulkan build was probed by an engine that
+does not read its architecture, and the report said *inconclusive* on
+every trial. Any provisioned build is an engine now: which of several
+answers is the daemon's choice by the device, and the record names the
+build it resolved. And a run cut short had gone on: the client's leaving
+was noticed only between probes, and a probe is dozens of trials. Every
+trial asks first whether the asker is still there, by reading the asker's
+own connection for its end, and a run cut short spends no trial past the
+one in flight (B-468).
+
+**What ran.** Qwen3-VL-2B: `--only chat-template,stop-conditions` through
+the daemon, each probe announced as *probe n of 2* and its lines following,
+21.8 s, both through *provisioned llama.cpp-vulkan @925e1179947e*; the
+stop-conditions probe observed the model ending its own turn in five of
+five trials, the longest 51 tokens, which is the budget on file. The same
+run with four probes killed at four seconds: the engine's slots were
+processing in 2 of 50 samples over the next ten seconds, against 42 of 50
+before the check went in.
+
+**Left open.** The findings are kept for the window's life and not read
+back from the record on start (B-483). The comparison card still names
+the command (`mcf bench` is not carried yet). The console's Diagnostics
+screen follows (B-482).
+
 ## 184 · F184 — The Diagnostics page is one card per run: the six checkbox rows, five of which were one ladder's results drawn as choices, are gone, and throughput, cross-check, capabilities, prompt analysis and comparison each have a card with their own controls, cost and Run, the two the daemon does not carry yet saying so and offering the command (B-477, D50, §3.15, A22)
 
 The operator did not understand what the checkbox tests were for, and
@@ -12610,6 +12660,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 134 — the probes as a run the daemon carries
+
+F185: the probes run in the daemon and stream to the command line and the
+window's capabilities card; three builds no longer send them to MCF's own
+engine; a cut run stops at its next trial (B-478).
 
 ### Version 133 — one card per run
 

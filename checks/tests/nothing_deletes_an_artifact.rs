@@ -45,7 +45,7 @@ const DECLARED: &[Deletes] = &[
                never the record, which keeps what the answers did (B-027)",
     },
     Deletes {
-        file: "crates/mcf-cli/src/probe.rs",
+        file: "crates/mcf-serve/src/probes/run.rs",
         calls: 1,
         what: "the picture the vision probe just drew, once the turn that was shown it is \
                over. MCF computes those bytes itself — the shapes are drawn by \

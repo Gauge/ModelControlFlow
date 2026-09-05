@@ -579,6 +579,9 @@ pub struct Model {
     pub applied_addressing: Option<String>,
     /// The budget a probe applied, by provenance, where one was.
     pub applied_budget: Option<String>,
+    /// What the probes last found on it, by probe: the name and the lines
+    /// the daemon wrote for it (B-478).
+    pub probed: Vec<(String, Vec<String>)>,
     /// Whether that device is a graphics card.
     pub on_a_card: bool,
     /// Why it will not run, where it will not.
@@ -849,6 +852,9 @@ fn model_from(held: &Value) -> Model {
             .and_then(|applied| applied.get("budget"))
             .and_then(Value::as_text)
             .map(str::to_owned),
+        // Read from the record on start is B-483; until then a run's
+        // findings are kept for the window's life.
+        probed: Vec::new(),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
@@ -1164,9 +1170,8 @@ impl Card {
     #[must_use]
     pub fn command(self, model: &str) -> Option<String> {
         match self {
-            Self::Capabilities => Some(format!("mcf probe {model} --apply")),
             Self::Comparison => Some(format!("mcf bench {model} <other-model> --prompt \"…\"")),
-            Self::Throughput | Self::CrossCheck | Self::Prompt => None,
+            Self::Throughput | Self::CrossCheck | Self::Capabilities | Self::Prompt => None,
         }
     }
 }
@@ -1295,6 +1300,10 @@ pub enum Act {
     },
     /// Start one run's card on the chosen model (D50).
     Run(Card),
+    /// Turn one probe on or off on the capabilities card.
+    ToggleProbe(usize),
+    /// Flip whether the probes apply what they find.
+    ApplyProbes,
     /// Read a run's figures where they are kept: the model's Statistics tab.
     SeeStatistics,
     /// Cut the run that is going short.
@@ -1420,6 +1429,8 @@ pub enum Doing {
     Answering(job::Job),
     /// Taking a prompt apart.
     Reporting(job::Job),
+    /// The probes are running on the chosen model (B-478).
+    Probing(job::Job),
 }
 
 impl Doing {
@@ -1435,6 +1446,7 @@ impl Doing {
             | Self::CrossChecking(job)
             | Self::Answering(job)
             | Self::Provisioning(job)
+            | Self::Probing(job)
             | Self::Hosting(job) => Some(job),
         }
     }
@@ -1506,6 +1518,11 @@ pub struct Desk {
     pub said: String,
     /// The tests offered on the diagnostics screen.
     pub tests: Vec<Test>,
+    /// Which probes the capabilities card runs, one flag a probe in the
+    /// order the daemon lists them; all of them to begin with (B-478).
+    pub probes_wanted: Vec<bool>,
+    /// Whether the probes apply what they find, which is an act (D43).
+    pub probes_apply: bool,
     /// What MCF can build, and which of it is here.
     pub components: Vec<Component>,
     /// What the chosen model would be hosted under, and what MCF advised.
@@ -1629,6 +1646,8 @@ impl Desk {
             doing: Doing::Nothing,
             said: String::new(),
             tests: tests(),
+            probes_wanted: vec![true; mcf_serve::probes::run::PROBES.len()],
+            probes_apply: false,
             components: Vec::new(),
             settings: None,
             recommended: None,
@@ -1827,6 +1846,7 @@ impl Desk {
             | Doing::CrossChecking(job)
             | Doing::Answering(job)
             | Doing::Reporting(job)
+            | Doing::Probing(job)
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => job.drain(),
         };
@@ -1873,6 +1893,11 @@ impl Desk {
             && job.finished
         {
             self.keep_the_cross_check();
+        }
+        if let Doing::Probing(job) = &self.doing
+            && job.finished
+        {
+            self.keep_the_probes();
         }
         // The engine just built is what the model was waiting for: the
         // settings are asked again, now that there is something to run it
@@ -1984,6 +2009,12 @@ impl Desk {
                 }
             }
             Act::Run(card) => self.run_card(card),
+            Act::ToggleProbe(at) => {
+                if let Some(wanted) = self.probes_wanted.get_mut(at) {
+                    *wanted = !*wanted;
+                }
+            }
+            Act::ApplyProbes => self.probes_apply = !self.probes_apply,
             Act::SeeStatistics => {
                 self.page = Page::Models;
                 self.tab = Tab::Statistics;
@@ -2540,10 +2571,79 @@ impl Desk {
                 self.cross_check(at);
             }
             Card::Prompt => self.page = Page::Prompt,
-            // Run at the command line until the daemon carries them
-            // (B-478); their cards say so and offer the command.
-            Card::Capabilities | Card::Comparison => {}
+            Card::Capabilities => {
+                self.page = Page::Diagnostics;
+                self.probe(at);
+            }
+            // Run at the command line until the daemon carries it; its
+            // card says so and offers the command.
+            Card::Comparison => {}
         }
+    }
+
+    /// The probes named for the run: none where every one is ticked, which
+    /// is every one; the ticked ones otherwise.
+    #[must_use]
+    pub fn probes_only(&self) -> Vec<String> {
+        if self.probes_wanted.iter().all(|wanted| *wanted) {
+            return Vec::new();
+        }
+        mcf_serve::probes::run::PROBES
+            .iter()
+            .zip(&self.probes_wanted)
+            .filter(|(_, wanted)| **wanted)
+            .map(|(name, _)| (*name).to_owned())
+            .collect()
+    }
+
+    /// Runs the probes ticked on the chosen model — the same request
+    /// `mcf probe` sends (B-478, A22).
+    pub fn probe(&mut self, at: usize) {
+        let Some(held) = self.models.get(at) else {
+            return;
+        };
+        if self.probes_wanted.iter().all(|wanted| !*wanted) {
+            return;
+        }
+        self.chosen = Some(at);
+        self.doing = Doing::Probing(job::Job::start(
+            &self.socket,
+            Request::Probe {
+                model: held.path.clone(),
+                engine: None,
+                apply: self.probes_apply,
+                up_to: None,
+                only: self.probes_only(),
+            },
+            format!("probing {}", held.name),
+        ));
+    }
+
+    /// Keeps what a finished probe run found on the model it ran on, and
+    /// reads the settings again, since the probes may have applied some.
+    fn keep_the_probes(&mut self) {
+        let Doing::Probing(job) = &self.doing else {
+            return;
+        };
+        let found: Vec<(String, Vec<String>)> = job
+            .answers
+            .iter()
+            .filter_map(|answer| {
+                let name = answer.get("step")?.get("name")?.as_text()?.to_owned();
+                let lines: Vec<String> = answer
+                    .get("lines")?
+                    .as_list()?
+                    .iter()
+                    .filter_map(Value::as_text)
+                    .map(str::to_owned)
+                    .collect();
+                (!lines.is_empty()).then_some((name, lines))
+            })
+            .collect();
+        if let Some(held) = self.chosen.and_then(|at| self.models.get_mut(at)) {
+            held.probed = found;
+        }
+        self.read_settings();
     }
 
     /// One act on the Configure tab. Whatever was being typed is applied
@@ -2739,7 +2839,10 @@ impl Desk {
     /// (A7, B-479).
     pub fn stop_run(&mut self) {
         match &mut self.doing {
-            Doing::Measuring(job) | Doing::CrossChecking(job) | Doing::Reporting(job) => {
+            Doing::Measuring(job)
+            | Doing::CrossChecking(job)
+            | Doing::Reporting(job)
+            | Doing::Probing(job) => {
                 job.stop();
             }
             _ => {}
@@ -2978,6 +3081,7 @@ impl Desk {
             | Doing::CrossChecking(job)
             | Doing::Answering(job)
             | Doing::Reporting(job)
+            | Doing::Probing(job)
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => (
                 if job.finished {

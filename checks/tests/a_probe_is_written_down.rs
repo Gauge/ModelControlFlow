@@ -56,13 +56,13 @@ fn an_observation_is_not_the_act_it_might_lead_to() {
 /// question answered yesterday could not be read back today. It is the shape
 /// F103 and F105 both have: a guard covers the place it was written for.
 ///
-/// So it is bound to the shape instead. Any function in `probe.rs` that renders
+/// So it is bound to the shape instead. Any function in `probes/run.rs` that renders
 /// an `Outcome::Observed` is rendering a probe's result, and must record it —
 /// whichever way it came out (A9), which is checked by requiring the write to
 /// sit outside the branch that reports a divergence.
 #[test]
 fn every_probe_that_renders_an_observation_records_it() {
-    let source = read("crates/mcf-cli/src/probe.rs");
+    let source = read("crates/mcf-serve/src/probes/run.rs");
     let rendering = renderers(&source);
     assert!(
         rendering.len() >= 2,
@@ -129,7 +129,7 @@ fn every_probe_method_has_a_renderer() {
         "the probes define fewer methods than MCF has probes, so this is reading the wrong \
          files: {methods:#?}"
     );
-    let source = read("crates/mcf-cli/src/probe.rs");
+    let source = read("crates/mcf-serve/src/probes/run.rs");
     // Renderers *of an observation*: a `*_lines` function that renders no
     // `Outcome` is a section of the report rather than a probe's result, and
     // counting it would demand a `Method` for the list of modalities MCF
@@ -141,7 +141,7 @@ fn every_probe_method_has_a_renderer() {
     assert_eq!(
         rendered,
         methods.len(),
-        "there are {} probe method(s) — {methods:#?} — and {rendered} function(s) in probe.rs \
+        "there are {} probe method(s) — {methods:#?} — and {rendered} function(s) in probes/run.rs \
          that render one. A probe with no renderer cannot be run; a renderer with no method is \
          not a probe (D42)",
         methods.len()
@@ -172,7 +172,7 @@ fn probe_sources() -> Vec<String> {
     found
 }
 
-/// The functions in `probe.rs` that render a probe's result, by name and body.
+/// The functions in `probes/run.rs` that render a probe's result, by name and body.
 ///
 /// Named `*_lines` by convention, which is the convention this check makes
 /// load-bearing: it is how a renderer is told from a helper, and a probe
@@ -213,7 +213,7 @@ fn renderers(source: &str) -> Vec<(String, String)> {
 /// A write that failed says so.
 #[test]
 fn a_measurement_that_could_not_be_kept_does_not_read_as_kept() {
-    let source = read("crates/mcf-cli/src/probe.rs");
+    let source = read("crates/mcf-serve/src/probes/run.rs");
     assert!(
         source.contains("BUT NOT RECORDED"),
         "A2: a probe whose result could not be written must say so rather than printing the \

@@ -470,13 +470,19 @@ fn a_card_starts_its_own_run() {
     desk.act(crate::Act::Run(crate::Card::Prompt));
     assert_eq!(desk.page, Page::Prompt);
     desk.page = Page::Diagnostics;
-    desk.act(crate::Act::Run(crate::Card::Capabilities));
-    assert!(matches!(desk.doing, crate::Doing::Nothing));
     desk.act(crate::Act::Run(crate::Card::Comparison));
     assert!(matches!(desk.doing, crate::Doing::Nothing));
-    assert_eq!(
-        crate::Card::Capabilities.command("a-model").as_deref(),
-        Some("mcf probe a-model --apply")
+    assert!(
+        crate::Card::Comparison
+            .command("a-model")
+            .is_some_and(|command| command.starts_with("mcf bench a-model")),
+        "the comparison card names no command"
+    );
+    assert_eq!(crate::Card::Capabilities.command("a-model"), None);
+    desk.act(crate::Act::Run(crate::Card::Capabilities));
+    assert!(
+        matches!(desk.doing, crate::Doing::Probing(_)),
+        "the capabilities card did not start the probes"
     );
     desk.act(crate::Act::SeeStatistics);
     assert_eq!(desk.page, Page::Models);
@@ -1503,4 +1509,57 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
         Some(true)
     );
     assert!(!desk.takes_typing(), "nothing is being typed into now");
+}
+
+/// The capabilities card asks for the probes ticked: every one is no list,
+/// one unticked is the eight named, and Apply is a switch (B-478, D43).
+#[test]
+fn the_capabilities_card_asks_for_the_probes_ticked() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    assert!(
+        desk.probes_only().is_empty(),
+        "every probe ticked is every probe"
+    );
+    desk.act(crate::Act::ToggleProbe(1));
+    let only = desk.probes_only();
+    assert_eq!(only.len(), mcf_serve::probes::run::PROBES.len() - 1);
+    assert!(!only.iter().any(|name| name == "context"));
+    assert!(only.iter().any(|name| name == "chat-template"));
+    assert!(!desk.probes_apply);
+    desk.act(crate::Act::ApplyProbes);
+    assert!(desk.probes_apply);
+    // A probe run keeps what it found on the model it ran on.
+    desk.models = vec![Model::default()];
+    desk.chosen = Some(0);
+    let step = mcf_record::json::Value::map([
+        ("name", mcf_record::json::Value::text("stop-conditions")),
+        ("count", mcf_record::json::Value::Integer(1)),
+        ("of", mcf_record::json::Value::Integer(1)),
+    ]);
+    let mut job = crate::job::Job::already(
+        "probing".to_owned(),
+        vec![
+            mcf_record::json::Value::map([
+                ("step", step.clone()),
+                ("lines", mcf_record::json::Value::List(Vec::new())),
+            ]),
+            mcf_record::json::Value::map([
+                ("step", step),
+                (
+                    "lines",
+                    mcf_record::json::Value::List(vec![
+                        mcf_record::json::Value::text("  stop-conditions"),
+                        mcf_record::json::Value::text(" ended its own turn in 5 of 5 trials"),
+                    ]),
+                ),
+            ]),
+        ],
+    );
+    job.finished = true;
+    desk.doing = crate::Doing::Probing(job);
+    desk.keep_the_probes();
+    let probed = &desk.models[0].probed;
+    assert_eq!(probed.len(), 1, "{probed:?}");
+    assert_eq!(probed[0].0, "stop-conditions");
+    assert_eq!(probed[0].1.len(), 2);
 }

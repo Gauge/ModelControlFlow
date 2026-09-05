@@ -2629,6 +2629,7 @@ impl Daemon {
             Request::CrossCheck { model } => Some(("cross-check", model.clone())),
             Request::Host { model, .. } => Some(("hosting", model.clone())),
             Request::PromptReport { model, .. } => Some(("prompt report", model.clone())),
+            Request::Probe { model, .. } => Some(("probing", model.clone())),
             Request::Acquire { reference, .. } => Some(("acquisition", reference.clone())),
             Request::Provision { component } => Some((
                 "provisioning",
@@ -2685,6 +2686,10 @@ impl Daemon {
     }
 
     /// The long requests, each answered in many lines.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per request the daemon carries, each a call; the match is total by design"
+    )]
     fn carrying(
         &self,
         request: Request,
@@ -2775,6 +2780,13 @@ impl Daemon {
                     writer,
                 );
             }
+            Request::Probe {
+                model,
+                engine,
+                apply,
+                up_to,
+                only,
+            } => self.probing(&model, engine.as_deref(), (apply, up_to), &only, writer),
             Request::Acquire {
                 reference,
                 file,
@@ -3443,6 +3455,100 @@ impl Daemon {
         let _flushed = writer.flush();
     }
 
+    /// The probes on one model, as a run this daemon carries (B-478, D50):
+    /// each announced as it starts, its finding written as it lands, and the
+    /// closing lines with `done`. Every trial goes back through this
+    /// daemon's own socket as a generation, so the engine that answers is
+    /// the one every other request gets — the server hosted for the model
+    /// where one is held (B-480). A line that cannot be written is a client
+    /// that left, and the next probe is not asked.
+    fn probing(
+        &self,
+        named: &str,
+        engine: Option<&str>,
+        (apply, up_to): (bool, Option<usize>),
+        only: &[String],
+        writer: &mut &UnixStream,
+    ) {
+        let asked = crate::probes::run::Asked {
+            engine,
+            apply,
+            up_to,
+            only,
+        };
+        let path = crate::generation::resolved(&self.places.models, named);
+        if !path.is_file() {
+            return Self::write_refusal(
+                writer,
+                &Answer::refused(&crate::control::refused(
+                    "there is no model at this name; `mcf list` says what this machine holds",
+                    named,
+                )),
+            );
+        }
+        let resolved = self.picked_engine(named).map(|(llama, _, _)| {
+            format!(
+                "provisioned {} @{}",
+                llama.component,
+                llama.commit.get(..12).unwrap_or(&llama.commit)
+            )
+        });
+        // The asker's own connection, read for its end: a client that has
+        // gone reads as closed, and the run stops at its next trial.
+        let listener = (**writer).try_clone().ok();
+        if let Some(listener) = &listener {
+            let _deadline = listener.set_read_timeout(Some(std::time::Duration::from_millis(1)));
+        }
+        let gone = || {
+            use std::io::Read as _;
+            let mut byte = [0_u8; 1];
+            match listener
+                .as_ref()
+                .map(|listener| (&*listener).read(&mut byte))
+            {
+                Some(Ok(0)) => true,
+                Some(Err(error)) => !matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ),
+                Some(Ok(_)) | None => false,
+            }
+        };
+        let at = crate::probes::run::Places {
+            socket: &self.places.socket,
+            models: &self.places.models,
+            resolved: resolved.as_deref(),
+            gone: Some(&gone),
+        };
+        let model = path.display().to_string();
+        let mut say = |step: &crate::probes::run::Step, lines: &[String]| -> bool {
+            let line = Answer::served(Value::map([
+                ("probing", Value::text(model.clone())),
+                ("step", step.to_value()),
+                (
+                    "lines",
+                    Value::List(lines.iter().cloned().map(Value::text).collect()),
+                ),
+                ("done", Value::Bool(false)),
+            ]));
+            writeln!(writer, "{}", line.to_line())
+                .and_then(|()| writer.flush())
+                .is_ok()
+        };
+        let answer = match crate::probes::run::run(&at, &path, &asked, &mut say) {
+            Ok(closing) => Answer::served(Value::map([
+                ("probing", Value::text(model)),
+                (
+                    "lines",
+                    Value::List(closing.into_iter().map(Value::text).collect()),
+                ),
+                ("done", Value::Bool(true)),
+            ])),
+            Err(why) => Answer::refused(&crate::control::refused(&why, named)),
+        };
+        Self::write_refusal(writer, &answer);
+    }
+
     /// The engine a report reads and asks through: the server hosted for
     /// the model where one is held, so the model is loaded once (B-480);
     /// the engine the model resolves to otherwise, or why none does.
@@ -3602,10 +3708,11 @@ impl Daemon {
             | Request::CrossCheck { .. }
             | Request::Provision { .. }
             | Request::Host { .. }
-            | Request::PromptReport { .. } => (
+            | Request::PromptReport { .. }
+            | Request::Probe { .. } => (
                 Answer::refused(&crate::control::refused(
                     "a request that answers in many lines reached the one-answer path",
-                    "generate, acquire, measure, cross-check, provision or host",
+                    "generate, acquire, measure, cross-check, provision, host, prompt-report or probe",
                 )),
                 None,
             ),

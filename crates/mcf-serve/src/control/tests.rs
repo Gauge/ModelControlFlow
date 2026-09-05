@@ -370,3 +370,33 @@ fn a_measurement_says_where_the_model_goes() {
         "a place MCF does not put a model is refused"
     );
 }
+
+/// A probe request carries which probes, whether to apply, the engine and
+/// the cap, and reads back as itself; a line naming no model is refused
+/// (B-478).
+#[test]
+fn a_probe_request_round_trips() {
+    let asked = Request::Probe {
+        model: "m".to_owned(),
+        engine: Some("provisioned".to_owned()),
+        apply: true,
+        up_to: Some(4096),
+        only: vec!["chat-template".to_owned(), "thinking".to_owned()],
+    };
+    let read = Request::read(&asked.to_line()).unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(read, asked);
+    let bare = r#"{"protocol":1,"ask":"probe","model":"m"}"#;
+    let Ok(Request::Probe {
+        engine,
+        apply,
+        up_to,
+        only,
+        ..
+    }) = Request::read(bare)
+    else {
+        panic!("a bare probe request did not read");
+    };
+    assert_eq!((engine, apply, up_to), (None, false, None));
+    assert!(only.is_empty());
+    assert!(Request::read(r#"{"protocol":1,"ask":"probe"}"#).is_err());
+}

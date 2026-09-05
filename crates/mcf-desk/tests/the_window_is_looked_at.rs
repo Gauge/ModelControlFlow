@@ -43,6 +43,7 @@ fn four_models() -> Desk {
             prompt_reported: false,
             applied_addressing: None,
             applied_budget: None,
+            probed: Vec::new(),
             on_a_card: true,
             speed: Some(155.0),
             start_up: Some("412.7".to_owned()),
@@ -67,6 +68,7 @@ fn four_models() -> Desk {
             prompt_reported: false,
             applied_addressing: None,
             applied_budget: None,
+            probed: Vec::new(),
             on_a_card: true,
             ..Model::default()
         },
@@ -377,6 +379,7 @@ fn every_run_starts_from_its_own_card() {
     for wanted in [
         mcf_desk::Act::Run(mcf_desk::Card::Throughput),
         mcf_desk::Act::Run(mcf_desk::Card::CrossCheck),
+        mcf_desk::Act::Run(mcf_desk::Card::Capabilities),
         mcf_desk::Act::Go(Page::Prompt),
     ] {
         assert!(
@@ -2222,6 +2225,8 @@ fn every_page_is_drawn_for_review() {
     let _ = drawn(&desk, DAY, "review-diagnostics");
     desk.doing = mcf_desk::Doing::Measuring(a_ladder_under_way());
     let _ = drawn(&desk, NIGHT, "review-diagnostics-running");
+    desk.doing = mcf_desk::Doing::Probing(a_probe_run_under_way());
+    let _ = drawn(&desk, DAY, "review-diagnostics-probing");
     desk.doing = mcf_desk::Doing::Nothing;
 
     // Add model, with search results.
@@ -2257,6 +2262,28 @@ fn three_placements() -> Vec<mcf_desk::Placement> {
             free: Some(97_000_000_000),
         },
     ]
+}
+
+/// The probes three in: the daemon has announced the third.
+fn a_probe_run_under_way() -> mcf_desk::job::Job {
+    let mut going = mcf_desk::job::Job::already(
+        "probing Assistant-8B".to_owned(),
+        vec![mcf_record::json::Value::map([
+            ("probing", mcf_record::json::Value::text("a-model")),
+            (
+                "step",
+                mcf_record::json::Value::map([
+                    ("name", mcf_record::json::Value::text("stop-conditions")),
+                    ("count", mcf_record::json::Value::Integer(3)),
+                    ("of", mcf_record::json::Value::Integer(9)),
+                ]),
+            ),
+            ("lines", mcf_record::json::Value::List(Vec::new())),
+            ("done", mcf_record::json::Value::Bool(false)),
+        ])],
+    );
+    going.finished = false;
+    going
 }
 
 /// A ladder two rungs in: its estimate, one reading, and the second rung

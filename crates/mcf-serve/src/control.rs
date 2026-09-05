@@ -250,6 +250,20 @@ pub enum Request {
         /// A hub other than the default, where the caller says.
         from: Option<String>,
     },
+    /// The probes, as one run the daemon carries: each announced as it
+    /// starts and its finding as it lands (B-478, D50).
+    Probe {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// Which engine to ask through, where the caller named one.
+        engine: Option<String>,
+        /// Whether to apply what was observed, which is an act (D43).
+        apply: bool,
+        /// The longest prompt the usable-context probe may ask for (B-461).
+        up_to: Option<usize>,
+        /// Which probes, by name; empty is all of them.
+        only: Vec<String>,
+    },
     /// Which repositories a hub lists for a word, most downloaded first.
     Search {
         /// The word, as a person typed it.
@@ -497,6 +511,38 @@ fn measure_line(request: &Request) -> Value {
     ])
 }
 
+fn probe_line(request: &Request) -> Value {
+    let Request::Probe {
+        model,
+        engine,
+        apply,
+        up_to,
+        only,
+    } = request
+    else {
+        return Value::Null;
+    };
+    let mut fields = vec![
+        ("ask", Value::text("probe")),
+        ("model", Value::text(model.clone())),
+        ("apply", Value::Bool(*apply)),
+        (
+            "only",
+            Value::List(only.iter().cloned().map(Value::text).collect()),
+        ),
+    ];
+    if let Some(engine) = engine {
+        fields.push(("engine", Value::text(engine.clone())));
+    }
+    if let Some(up_to) = up_to {
+        fields.push((
+            "up_to",
+            Value::Integer(i64::try_from(*up_to).unwrap_or(i64::MAX)),
+        ));
+    }
+    Value::map(fields)
+}
+
 fn prompt_report_line(request: &Request) -> Value {
     let Request::PromptReport {
         model,
@@ -595,6 +641,7 @@ impl Request {
                 ("from", maybe(from.as_deref())),
             ]),
             Self::Search { query, from } => search_line(query, from.as_deref()),
+            Self::Probe { .. } => probe_line(self),
             Self::Acquire {
                 reference,
                 file,
@@ -696,6 +743,27 @@ impl Request {
                     .ok_or_else(|| refused("a listing naming no reference", line))?
                     .to_owned(),
                 from: optional("from"),
+            }),
+            Some("probe") => Ok(Self::Probe {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a probe naming no model", line))?
+                    .to_owned(),
+                engine: optional("engine"),
+                apply: matches!(value.get("apply"), Some(Value::Bool(true))),
+                up_to: value
+                    .get("up_to")
+                    .and_then(Value::as_integer)
+                    .and_then(|held| usize::try_from(held).ok()),
+                only: value
+                    .get("only")
+                    .and_then(Value::as_list)
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter_map(Value::as_text)
+                    .map(str::to_owned)
+                    .collect(),
             }),
             Some("search") => Ok(Self::Search {
                 query: value

@@ -79,7 +79,7 @@ const DECLARED: &[Spawns] = &[
                container is the whole of why it may",
     },
     Spawns {
-        file: "crates/mcf-cli/src/probe.rs",
+        file: "crates/mcf-serve/src/probes/run.rs",
         sites: 1,
         what: "the provisioned engine's own tool that takes an image, so that the vision probe \
                can put a picture to a model at all. What is started is a binary MCF built \
