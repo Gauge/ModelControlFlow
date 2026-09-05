@@ -1746,3 +1746,40 @@ fn a_model_is_a_repository_with_its_quantizations() {
     assert!(desk.pending.is_none());
     assert_eq!(desk.chosen, Some(0));
 }
+
+/// A subject not here downloads first, and once the file is here it is the
+/// subject and the thing the button named happens on it (D51, B-487).
+#[test]
+fn a_pick_not_here_downloads_first_and_then_does_the_thing() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.pending = Some(crate::Pending {
+        repository: "owner/Model-GGUF".to_owned(),
+        file: "Model-Q8_0.gguf".to_owned(),
+        bytes: Some(2),
+        fits: Some(true),
+    });
+    desk.act(crate::Act::DownloadThen(std::boxed::Box::new(
+        crate::Act::HostIt,
+    )));
+    assert!(
+        matches!(desk.doing, crate::Doing::Downloading(_)),
+        "the download did not go first"
+    );
+    assert_eq!(desk.after_download, Some(crate::Act::HostIt));
+    // The file arrives: the library is read again and holds it.
+    desk.models = vec![Model {
+        name: "Model-Q8_0".to_owned(),
+        path: "/store/owner/Model-GGUF/Model-Q8_0.gguf".to_owned(),
+        file: "Model-Q8_0.gguf".to_owned(),
+        repository: Some("owner/Model-GGUF".to_owned()),
+        ..Model::default()
+    }];
+    desk.settle_download();
+    assert_eq!(desk.chosen, Some(0), "the file here is the subject now");
+    assert!(desk.pending.is_none());
+    assert!(
+        desk.after_download.is_none(),
+        "the thing named was not done"
+    );
+    assert_eq!(desk.page, Page::Hosting, "the server was not started");
+}

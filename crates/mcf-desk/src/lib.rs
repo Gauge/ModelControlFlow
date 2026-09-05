@@ -1462,6 +1462,12 @@ pub enum Act {
     /// Pick one quantization of the page's repository, by its place in
     /// the list the page offers: here first, then the hub's (B-486).
     Quantization(usize),
+    /// Pick one file of the hub repository whose page is open, by its
+    /// place in the hub's list: the page's subject as not downloaded.
+    PickOffered(usize),
+    /// Download the subject that is not here, then do the thing named:
+    /// start the server, or a run (B-487).
+    DownloadThen(std::boxed::Box<Act>),
     /// Open the page of one repository the hub listed, by its place.
     PickHub(usize),
     /// Turn one probe on or off on the capabilities card.
@@ -1666,6 +1672,9 @@ pub struct Desk {
     /// A quantization picked that is not here: the page's subject as *not
     /// downloaded*, until it is got or another is picked (B-486).
     pub pending: Option<Pending>,
+    /// What to do once the download going has finished: the thing the
+    /// button named, on the file once it is here (B-487).
+    pub after_download: Option<Act>,
     /// The temperature to draw the settledness seeds at, as typed; empty
     /// asks the question nothing, and the page says so (B-431).
     pub temperature: String,
@@ -1844,6 +1853,7 @@ impl Desk {
             hub_chosen: None,
             offered: std::collections::BTreeMap::new(),
             pending: None,
+            after_download: None,
             needs_engine: None,
             host_after: None,
             building: None,
@@ -2076,6 +2086,7 @@ impl Desk {
             && job.refused.is_none()
         {
             self.refresh();
+            self.settle_download();
         }
         // A model that has just started answering is one MCF is holding, and
         // the screen says where it is without anybody asking it to.
@@ -2222,6 +2233,8 @@ impl Desk {
             Act::Run(card) => self.run_card(card),
             Act::SearchHub => self.search_hub(),
             Act::Quantization(at) => self.pick_quantization(at),
+            Act::PickOffered(at) => self.pick_offered(at),
+            Act::DownloadThen(then) => self.download_then(*then),
             Act::PickHub(at) => self.pick_hub(at),
             Act::ToggleProbe(at) => {
                 if let Some(wanted) = self.probes_wanted.get_mut(at) {
@@ -2958,6 +2971,72 @@ impl Desk {
                     });
                 }
             }
+        }
+    }
+
+    /// Makes one file of the open hub repository the page's subject as not
+    /// downloaded, by its place in what the hub publishes (B-487).
+    pub fn pick_offered(&mut self, at: usize) {
+        let Some(repository) = self
+            .hub
+            .as_ref()
+            .zip(self.hub_chosen)
+            .and_then(|(hub, chosen)| hub.repositories.get(chosen))
+            .map(|found| found.id.clone())
+        else {
+            return;
+        };
+        let Some(file) = self
+            .offered
+            .get(&repository)
+            .and_then(|files| files.get(at))
+            .cloned()
+        else {
+            return;
+        };
+        self.pending = Some(Pending {
+            repository,
+            file: file.file,
+            bytes: file.bytes,
+            fits: file.fits,
+        });
+        self.hub_chosen = None;
+        self.chosen = None;
+    }
+
+    /// Downloads the subject that is not here, and keeps what to do once
+    /// it is: the download goes first, and the thing follows on the file
+    /// (B-487, D51).
+    pub fn download_then(&mut self, then: Act) {
+        let Some(pending) = self.pending.clone() else {
+            return;
+        };
+        if self.doing.busy() {
+            return;
+        }
+        self.after_download = Some(then);
+        self.download(&pending.repository, &pending.file);
+    }
+
+    /// Once a download has finished and the library has been read again:
+    /// the file that was pending is the subject now, and what the button
+    /// named happens on it (B-487).
+    pub fn settle_download(&mut self) {
+        let Some(pending) = self.pending.clone() else {
+            self.after_download = None;
+            return;
+        };
+        let Some(at) = self.models.iter().position(|held| {
+            held.file == pending.file && held.repository.as_deref() == Some(&pending.repository)
+        }) else {
+            return;
+        };
+        self.pending = None;
+        self.hub_chosen = None;
+        self.chosen = Some(at);
+        self.read_settings();
+        if let Some(then) = self.after_download.take() {
+            self.act(then);
         }
     }
 

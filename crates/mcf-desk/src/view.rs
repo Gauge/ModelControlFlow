@@ -683,6 +683,33 @@ fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         y += 30.0;
     }
     y += 10.0;
+    if let Some(pressed) = pending_actions(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, y, area.w, 0.0),
+        pending,
+    ) {
+        act = Some(pressed);
+    }
+    if open && let Some(picked) = configure_menu(paint, desk, mouse, Picker::Quantization, box_of) {
+        act = Some(picked);
+    }
+    act
+}
+
+/// Under a subject not here: the download going, or the buttons — the one
+/// that downloads and starts the server, and Download alone (B-487).
+fn pending_actions(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    pending: &crate::Pending,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let y = area.y;
+    let mut act = None;
     if let Doing::Downloading(job) = &desk.doing {
         paint.say_at(area.x, y, &job.what, Weight::Bold, size::BODY, ink.ink);
         ui::progress(
@@ -699,16 +726,31 @@ fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
             ink.quiet,
         );
     } else {
-        let (get, _) = ui::fitted(paint, mouse, (area.x, y), "Download", Kind::Primary);
+        // The download goes first and the server follows on the file
+        // once it is here (B-487); Download alone is the second button.
+        let (start, drawn) = ui::fitted(
+            paint,
+            mouse,
+            (area.x, y),
+            "Download and start server",
+            Kind::Primary,
+        );
+        if start && !desk.doing.busy() {
+            act = Some(Act::DownloadThen(std::boxed::Box::new(Act::HostIt)));
+        }
+        let (get, _) = ui::fitted(
+            paint,
+            mouse,
+            (drawn.right() + 12.0, y),
+            "Download",
+            Kind::Ordinary,
+        );
         if get && !desk.doing.busy() {
             act = Some(Act::Download {
                 reference: pending.repository.clone(),
                 file: pending.file.clone(),
             });
         }
-    }
-    if open && let Some(picked) = configure_menu(paint, desk, mouse, Picker::Quantization, box_of) {
-        act = Some(picked);
     }
     act
 }
@@ -2368,10 +2410,19 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     let mut menu: Option<(Picker, Box)> = None;
 
     // The model every card runs on, first.
-    let chosen_model = desk
-        .chosen
-        .and_then(|at| desk.models.get(at))
-        .map_or_else(|| "none chosen".to_owned(), |held| held.name.clone());
+    let chosen_model = desk.pending.as_ref().map_or_else(
+        || {
+            desk.chosen
+                .and_then(|at| desk.models.get(at))
+                .map_or_else(|| "none chosen".to_owned(), |held| held.name.clone())
+        },
+        |pending| {
+            format!(
+                "{} — not downloaded",
+                pending.file.trim_end_matches(".gguf")
+            )
+        },
+    );
     paint.say_at(
         area.x,
         area.y,
@@ -2466,6 +2517,27 @@ fn head_height(paint: &mut Painter, card: Card, w: f32) -> f32 {
     #[allow(clippy::cast_precision_loss, reason = "one or two lines")]
     let lines = lines as f32;
     31.0 + 16.0 * lines + 6.0
+}
+
+/// A card's Run, or Stop while its run goes, or *Download and run* on a
+/// subject not here (B-487).
+fn run_label(desk: &Desk, going: bool) -> &'static str {
+    if going {
+        "Stop"
+    } else if desk.pending.is_some() {
+        "Download and run"
+    } else {
+        "Run"
+    }
+}
+
+/// An act on a subject not here goes after its download (B-487).
+fn download_then(desk: &Desk, act: Act) -> Act {
+    if desk.pending.is_some() {
+        Act::DownloadThen(std::boxed::Box::new(act))
+    } else {
+        act
+    }
 }
 
 /// Whether a run is going, so that no card offers a second one meanwhile.
@@ -2565,8 +2637,13 @@ fn throughput_buttons(
 ) -> (Option<Act>, f32) {
     let ink = paint.ink;
     let mut act = None;
-    let quick = Box::new(x, y, 130.0, 34.0);
-    let full = Box::new(quick.right() + 14.0, y, 110.0, 34.0);
+    let (quick_w, full_w) = if desk.pending.is_some() {
+        (170.0, 160.0)
+    } else {
+        (130.0, 110.0)
+    };
+    let quick = Box::new(x, y, quick_w, 34.0);
+    let full = Box::new(quick.right() + 14.0, y, full_w, 34.0);
     let kind = |primary: bool| {
         if running {
             Kind::Quiet
@@ -2576,13 +2653,21 @@ fn throughput_buttons(
             Kind::Ordinary
         }
     };
-    if ui::button(paint, mouse, quick, "Quick run", kind(false)) && !running {
-        act = Some(Act::Measure {
+    // On a subject not here the buttons download first and run after
+    // (B-487).
+    let then = |act: Act| download_then(desk, act);
+    let (quick_label, full_label) = if desk.pending.is_some() {
+        ("Download, quick run", "Download and run")
+    } else {
+        ("Quick run", "Run")
+    };
+    if ui::button(paint, mouse, quick, quick_label, kind(false)) && !running {
+        act = Some(then(Act::Measure {
             deepest: desk.quick_depth(),
-        });
+        }));
     }
-    if ui::button(paint, mouse, full, "Run", kind(true)) && !running {
-        act = Some(Act::Run(Card::Throughput));
+    if ui::button(paint, mouse, full, full_label, kind(true)) && !running {
+        act = Some(then(Act::Run(Card::Throughput)));
     }
     let measuring = matches!(&desk.doing, Doing::Measuring(job) if !job.finished);
     if measuring {
@@ -2677,7 +2762,7 @@ fn small_card(
                 paint,
                 mouse,
                 (inner_x, y),
-                if checking { "Stop" } else { "Run" },
+                run_label(desk, checking),
                 if running && !checking {
                     Kind::Quiet
                 } else {
@@ -2687,7 +2772,7 @@ fn small_card(
             if pressed && checking {
                 act = Some(Act::Stop);
             } else if pressed && !running {
-                act = Some(Act::Run(Card::CrossCheck));
+                act = Some(download_then(desk, Act::Run(Card::CrossCheck)));
             }
             let (low, high) = desk.cross_check_estimate();
             paint.say_at(
@@ -2772,7 +2857,7 @@ fn capabilities_rows(
         paint,
         mouse,
         (x, y),
-        if probing { "Stop" } else { "Run" },
+        run_label(desk, probing),
         if (running && !probing) || none_ticked {
             Kind::Quiet
         } else {
@@ -2782,7 +2867,7 @@ fn capabilities_rows(
     if pressed && probing {
         act = Some(Act::Stop);
     } else if pressed && !running && !none_ticked {
-        act = Some(Act::Run(Card::Capabilities));
+        act = Some(download_then(desk, Act::Run(Card::Capabilities)));
     }
     if let Doing::Probing(job) = &desk.doing
         && !job.finished
@@ -2926,7 +3011,13 @@ fn command_rows(
 /// guess at (A7, §3.4). Returns where the next row goes.
 fn placement_rows(paint: &mut Painter, desk: &Desk, x: f32, mut y: f32, wide: f32) -> f32 {
     let ink = paint.ink;
-    let placed = desk.chosen.and_then(|at| desk.models.get(at));
+    // A subject not here has no engine or device yet: MCF resolves a file
+    // it holds, and the last model's would be a claim about this one (A7).
+    let placed = if desk.pending.is_some() {
+        None
+    } else {
+        desk.chosen.and_then(|at| desk.models.get(at))
+    };
     for (label, value) in [
         ("Engine", placed.and_then(|held| held.engine.clone())),
         (
@@ -3540,7 +3631,7 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
         y += 8.0;
     }
     let mut act = None;
-    for file in files.iter().take(12) {
+    for (at, file) in files.iter().enumerate().take(12) {
         let name = file
             .get("file")
             .and_then(Value::as_text)
@@ -3573,6 +3664,11 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
                 reference: repository.clone(),
                 file: name.clone(),
             });
+        } else if mouse.clicked(where_) {
+            // The row itself picks the file as the page's subject, not
+            // downloaded, with the button that downloads and starts it
+            // (B-487).
+            act = Some(Act::PickOffered(at));
         }
         y += 32.0;
         if y > area.bottom() - 20.0 {

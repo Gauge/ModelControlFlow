@@ -2350,6 +2350,8 @@ fn review_the_library(recommended: &mcf_serve::hosting::Hosting) {
     grouped.open = None;
     grouped.pick_quantization(2);
     let _ = drawn(&grouped, DAY, "review-library-pending");
+    grouped.page = Page::Diagnostics;
+    let _ = drawn(&grouped, DAY, "review-diagnostics-pending");
 }
 
 /// Where a hold can go on this machine: as resolved, the processor, the card.

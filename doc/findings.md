@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 139 |
+| **Version** | 140 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 191 | [F191 — Download and run: on a quantization not here the page's Start server reads Download and start server and a diagnostics card's Run reads Download and run, the download goes first with its progress where the button was, and the run follows on the file once the library holds it; a hub repository's file picked on its page is the same subject (B-487, D51, A7)](#191--f191-download-and-run-on-a-quantization-not-here-the-pages-start-server-reads-download-and-start-server-and-a-diagnostics-cards-run-reads-download-and-run-the-download-goes-first-with-its-progress-where-the-button-was-and-the-run-follows-on-the-file-once-the-library-holds-it-a-hub-repositorys-file-picked-on-its-page-is-the-same-subject-b-487-d51-a7) |
 | 190 | [F190 — A model is a repository with its quantizations: the files held from one repository are one entry of the library, the page's Quantization row lists the ones here and the ones the hub publishes with each one's size and whether it would run here, and a quantization picked that is not here is the page's subject as not downloaded (B-486, D51, A7, B-023)](#190--f190-a-model-is-a-repository-with-its-quantizations-the-files-held-from-one-repository-are-one-entry-of-the-library-the-pages-quantization-row-lists-the-ones-here-and-the-ones-the-hub-publishes-with-each-ones-size-and-whether-it-would-run-here-and-a-quantization-picked-that-is-not-here-is-the-pages-subject-as-not-downloaded-b-486-d51-a7-b-023) |
 | 189 | [F189 — The library is one search: words typed narrow what is held as they are typed, words nothing here matches offer the hub from the list itself and its answer is listed under what is here, a hub repository's page lists its files to get, and the daemon keeps what the hub answered for a day and says when it read it (B-485, B-488, D51, A2, A7)](#189--f189-the-library-is-one-search-words-typed-narrow-what-is-held-as-they-are-typed-words-nothing-here-matches-offer-the-hub-from-the-list-itself-and-its-answer-is-listed-under-what-is-here-a-hub-repositorys-page-lists-its-files-to-get-and-the-daemon-keeps-what-the-hub-answered-for-a-day-and-says-when-it-read-it-b-485-b-488-d51-a2-a7) |
 | 188 | [F188 — The console's Diagnostics screen follows the window: the checkbox rows go, each run is a button with its cost under it — Quick run, Run, Cross-check, Capabilities — one line a run says what it answers, and what the last runs found is drawn under them; the probes run from the console as they do from the window (B-482, D50, A22, B-072)](#188--f188-the-consoles-diagnostics-screen-follows-the-window-the-checkbox-rows-go-each-run-is-a-button-with-its-cost-under-it-quick-run-run-cross-check-capabilities-one-line-a-run-says-what-it-answers-and-what-the-last-runs-found-is-drawn-under-them-the-probes-run-from-the-console-as-they-do-from-the-window-b-482-d50-a22-b-072) |
@@ -9613,6 +9614,33 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 191 · F191 — Download and run: on a quantization not here the page's Start server reads Download and start server and a diagnostics card's Run reads Download and run, the download goes first with its progress where the button was, and the run follows on the file once the library holds it; a hub repository's file picked on its page is the same subject (B-487, D51, A7)
+
+D51's third part: a quantization that is not here is downloaded by the
+same button that would run it.
+
+**What changed.** The page of a subject not here has *Download and start
+server* first and *Download* beside it; the throughput card's two buttons
+read *Download, quick run* and *Download and run*, and the cross-check
+and capabilities cards' Run reads *Download and run*, while the
+Diagnostics page's model line names the file as not downloaded. Each is
+one act carrying the act that follows it: the download goes first and
+shows its progress where the buttons were; when it has finished the
+library is read again, the file that was pending is found by its
+repository and name and becomes the subject, the settings are read for
+it, and the act that was carried happens on it — the server starts, or
+the run runs. A download that was refused leaves the subject pending
+with the refusal where it was, and nothing follows. On a hub repository's
+page, pressing a file's row makes it the subject the same way, so the
+hub's files and a held repository's are picked and got alike.
+
+**What ran.** The page of a quantization not here drawn with the two
+buttons, and the Diagnostics page with that subject and its relabelled
+buttons, in the review pass (F181). A unit test holds the whole path:
+the act starts the download and keeps what follows, the library read
+after holds the file, and settling makes it the subject and does the
+thing — the page is the server's.
+
 ## 190 · F190 — A model is a repository with its quantizations: the files held from one repository are one entry of the library, the page's Quantization row lists the ones here and the ones the hub publishes with each one's size and whether it would run here, and a quantization picked that is not here is the page's subject as not downloaded (B-486, D51, A7, B-023)
 
 A model held in two quantizations was two entries, told apart by reading
@@ -12815,6 +12843,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 140 — download and run
+
+F191: a subject not here is downloaded by the button that would run it,
+and the run follows on the file (B-487).
 
 ### Version 139 — a model is a repository
 
