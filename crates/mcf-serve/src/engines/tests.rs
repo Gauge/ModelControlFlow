@@ -579,12 +579,61 @@ fn an_engine_records_its_own_component_name() {
 /// components MCF knows how to build.
 #[test]
 fn the_required_engine_follows_the_driver() {
-    let with = super::required(true).expect("the table names the accelerator build");
-    let without = super::required(false).expect("the table names the processor build");
-    assert_eq!(with.name, "llama.cpp-cuda");
+    let cuda = super::required(super::Backend::Cuda).expect("the table names the CUDA build");
+    let vulkan = super::required(super::Backend::Vulkan).expect("the table names the Vulkan build");
+    let without =
+        super::required(super::Backend::None).expect("the table names the processor build");
+    assert_eq!(cuda.name, "llama.cpp-cuda");
+    assert_eq!(vulkan.name, "llama.cpp-vulkan");
     assert_eq!(without.name, "llama.cpp");
+    for build in [cuda, vulkan, without] {
+        assert!(
+            build.targets.contains(&"llama-server"),
+            "every build is the same server: {}",
+            build.name
+        );
+    }
     assert!(
-        with.targets.contains(&"llama-server") && without.targets.contains(&"llama-server"),
-        "both builds are the same server"
+        super::wanted_for(super::Backend::None).is_none(),
+        "a machine with no card wants nothing built for one"
     );
+}
+
+/// Which back end a card is driven through is read from the kernel's driver
+/// and the loader's table, both of which have to be there: a Radeon without
+/// its Vulkan driver is a card an engine built for Vulkan would not find.
+#[test]
+fn a_card_is_driven_through_what_the_system_installed_for_it() {
+    let root = std::env::temp_dir().join(format!("mcf-backend-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&root);
+    let drm = root.join("drm");
+    let icds = root.join("icd.d");
+    let driver = root.join("drivers").join("amdgpu");
+    std::fs::create_dir_all(drm.join("card0").join("device")).expect("a fake card");
+    std::fs::create_dir_all(drm.join("card0-DP-1")).expect("a connector");
+    std::fs::create_dir_all(&driver).expect("a fake driver");
+    std::fs::create_dir_all(&icds).expect("a loader table");
+    std::os::unix::fs::symlink(&driver, drm.join("card0").join("device").join("driver"))
+        .expect("the driver link");
+
+    assert_eq!(
+        super::backend_from(false, &drm, &icds),
+        super::Backend::None,
+        "a card without its Vulkan driver is not driven through Vulkan"
+    );
+    std::fs::write(icds.join("radeon_icd.json"), "{}").expect("the driver's entry");
+    assert_eq!(
+        super::backend_from(false, &drm, &icds),
+        super::Backend::Vulkan
+    );
+    assert_eq!(
+        super::backend_from(true, &drm, &icds),
+        super::Backend::Cuda,
+        "NVIDIA's driver wins where it is loaded"
+    );
+    assert_eq!(
+        super::backend_from(false, &root.join("nowhere"), &icds),
+        super::Backend::None
+    );
+    let _cleared = std::fs::remove_dir_all(&root);
 }

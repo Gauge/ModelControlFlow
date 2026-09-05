@@ -115,6 +115,55 @@ pub const COMPONENTS: &[Component] = &[
         ],
     },
     Component {
+        name: "llama.cpp-vulkan",
+        role: "the same reference, built with a Vulkan back end, so a measurement can be \
+           taken on a card that CUDA does not drive — a Radeon, or the graphics on a \
+           processor that carves its memory out of the system's. Without it such a \
+           card is present and every timing on the machine is a processor timing",
+        // **A higher floor than the plain build, and stated.** The Vulkan
+        // back end at this commit is written against the loader's headers
+        // at 1.3.268 or later — `VK_EXT_layer_settings` — and bookworm ships
+        // 1.3.239, which does not compile it. Trixie ships 1.4.309, glslc
+        // 2025.2 and glibc 2.41: the binaries built here run on a host with
+        // glibc 2.41 or newer, which is a narrower promise than the plain
+        // build's 2.36, and it is this component's promise alone. Vulkan
+        // adds the loader's headers, the shader compiler and the SPIR-V
+        // headers the back end's cmake asks for by name at build time; at
+        // run time the binary finds the host's own loader and the driver the
+        // host installed for its card, which is what the hardware profiler
+        // reports as the runtime.
+        image: "docker.io/library/debian:trixie",
+        image_digest: "sha256:6788062a1b42ac281f053ac876170b79a3eaed5d61383b8ed7eaca6c6965f3b1",
+        source: "https://github.com/ggml-org/llama.cpp.git",
+        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
+        packages: &[
+            "build-essential",
+            "cmake",
+            "git",
+            "ca-certificates",
+            "libvulkan-dev",
+            "glslc",
+            "spirv-headers",
+        ],
+        packaging: Packaging::Apt,
+        configure: &[
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DGGML_NATIVE=OFF",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DLLAMA_CURL=OFF",
+            "-DLLAMA_BUILD_TESTS=OFF",
+            "-DLLAMA_BUILD_EXAMPLES=ON",
+            "-DGGML_VULKAN=ON",
+        ],
+        targets: &[
+            "llama-tokenize",
+            "llama-completion",
+            "llama-embedding",
+            "llama-server",
+            "llama-mtmd-cli",
+        ],
+    },
+    Component {
         name: "llama.cpp-cuda",
         role: "the same reference, built with a CUDA backend, so a measurement can \
            be taken on the GPU as well as the CPU. Without it MCF's engine \

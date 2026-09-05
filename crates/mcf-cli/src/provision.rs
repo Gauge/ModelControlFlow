@@ -144,8 +144,8 @@ pub(crate) fn list(into: Option<&str>) -> Response {
 /// The component to build: the one named, or the engine this machine needs.
 fn chosen_component(name: Option<&str>) -> Result<&'static Component, String> {
     let Some(name) = name else {
-        let driver = mcf_serve::engines::accelerator_driver_present();
-        return mcf_serve::engines::required(driver).ok_or_else(|| {
+        let backend = mcf_serve::engines::backend_present();
+        return mcf_serve::engines::required(backend).ok_or_else(|| {
             "mcf: MCF's component table names no engine for this machine — adding one is a \
              change to MCF, not a setting"
                 .to_owned()

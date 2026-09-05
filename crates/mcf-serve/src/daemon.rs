@@ -833,7 +833,7 @@ fn discover_engines(places: &Places) -> Vec<(crate::engines::Engine, Vec<crate::
 /// The engine a model on this machine would need built: decided by whether
 /// an accelerator's driver is loaded, which is a directory listing.
 fn needed_engine() -> Option<&'static mcf_core::component::Component> {
-    crate::engines::required(crate::engines::accelerator_driver_present())
+    crate::engines::required(crate::engines::backend_present())
 }
 
 /// Memory free for a new process, or `None` where the platform will not say.
@@ -916,6 +916,7 @@ fn measured(
     readings: Vec<Value>,
     planned: &crate::ladder::Planned,
     started: crate::declared::Started,
+    placed: Option<&(String, u32)>,
 ) -> Answer {
     // Two measurements the run took and used to throw away: what reading a
     // token of prompt costs, and the time to a first token (A7).
@@ -957,6 +958,20 @@ fn measured(
                     "is_the_stand_in",
                     Value::Bool(ran_on.is_some_and(is_the_stand_in)),
                 ),
+                // Which device the engine was pointed at and how much of the
+                // model it was told to put there. A timing that does not say
+                // is a timing of the processor or of the card, and a reader
+                // cannot tell which (§3.4, F133).
+                (
+                    "device",
+                    placed.map_or(Value::Null, |(device, _)| Value::text(device.clone())),
+                ),
+                (
+                    "gpu_layers",
+                    placed.map_or(Value::Null, |(_, layers)| {
+                        Value::Integer(i64::from(*layers))
+                    }),
+                ),
                 // What the engine was started with beyond the plain load: a
                 // timing under a draft head is a timing of that condition,
                 // and two runs are only comparable if each says which it was
@@ -990,6 +1005,28 @@ fn measured(
                 ),
             ]),
         ),
+    ]))
+}
+
+/// Whether a refusal says the client that asked has gone, which is the one
+/// refusal a ladder does not climb past: the rungs after it would be spent
+/// on nobody.
+fn asker_left(why: Option<&str>) -> bool {
+    why.is_some_and(|why| why.contains(crate::served::CLIENT_LEFT))
+}
+
+/// The line a measurement opens with: the rungs it will climb and what the
+/// climb should take, before a token is spent (A6).
+fn estimate_line(named: &str, ladder: &[u64], guess: (u64, u64)) -> Answer {
+    Answer::served(Value::map([
+        ("measuring", Value::text(named.to_owned())),
+        (
+            "depths",
+            Value::List(ladder.iter().map(|depth| as_whole(*depth)).collect()),
+        ),
+        ("estimate_low_seconds", as_whole(guess.0)),
+        ("estimate_high_seconds", as_whole(guess.1)),
+        ("done", Value::Bool(false)),
     ]))
 }
 
@@ -2339,9 +2376,18 @@ impl Daemon {
             Request::Measure {
                 model,
                 engine,
+                on,
                 deepest,
                 started,
-            } => self.measuring(&model, engine.as_deref(), deepest, started, waiting, writer),
+            } => self.measuring(
+                &model,
+                engine.as_deref(),
+                on,
+                deepest,
+                started,
+                waiting,
+                writer,
+            ),
             Request::CrossCheck { model } => self.cross_checking(&model, waiting, writer),
             Request::PromptReport {
                 model,
@@ -3156,10 +3202,15 @@ impl Daemon {
         clippy::too_many_arguments,
         reason = "one measurement's conditions, each named in what it writes"
     )]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one run's conditions — what, through which engine, on which device, how deep, started with what — and who is waiting"
+    )]
     fn measuring(
         &self,
         named: &str,
         engine: Option<&str>,
+        on: Option<crate::control::On>,
         deepest: u64,
         started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
@@ -3191,36 +3242,34 @@ impl Daemon {
 
         // Before anything runs. The estimate is arithmetic over the ladder and
         // the model's size, and it is a range because it is an estimate (A6).
-        let guess = estimated_seconds(&ladder, held);
+        // Where the caller put it, or where MCF resolves it to. A place the
+        // caller asked for that nothing here provides is a refusal before a
+        // token is spent or an estimate given, with the reason (A2).
+        let picked = match self.picked_engine_on(named, on) {
+            Ok((engine, layers, context, _)) => Some((engine, layers, context)),
+            Err(why) if on.is_some() => {
+                return say(
+                    writer,
+                    &Answer::refused(
+                        &mcf_core::failure::Failure::new(
+                            mcf_core::failure::Category::EngineSpawnNotFound,
+                            mcf_core::failure::Attribution::Machine,
+                            mcf_core::failure::Disposition::Refused,
+                            WHERE,
+                            "nothing here can measure where the caller asked",
+                        )
+                        .with_context("wanted", why)
+                        .with_context("model", named.to_owned()),
+                    ),
+                );
+            }
+            Err(_) => None,
+        };
+
         say(
             writer,
-            &Answer::served(Value::map([
-                ("measuring", Value::text(named.to_owned())),
-                (
-                    "depths",
-                    Value::List(
-                        ladder
-                            .iter()
-                            .map(|depth| Value::Integer(i64::try_from(*depth).unwrap_or(i64::MAX)))
-                            .collect(),
-                    ),
-                ),
-                (
-                    "estimate_low_seconds",
-                    Value::Integer(i64::try_from(guess.0).unwrap_or(i64::MAX)),
-                ),
-                (
-                    "estimate_high_seconds",
-                    Value::Integer(i64::try_from(guess.1).unwrap_or(i64::MAX)),
-                ),
-                ("done", Value::Bool(false)),
-            ])),
+            &estimate_line(named, &ladder, estimated_seconds(&ladder, held)),
         );
-
-        // The build and the device the model resolves to decide how the
-        // engine is started, so a measurement is taken on the device it says
-        // it was taken on (A6, A12, F133).
-        let picked = self.picked_engine(named);
         let planned = planned_memory(&path, held, &ladder);
         let mut readings: Vec<Value> = Vec::new();
         let mut ran_on: Option<String> = None;
@@ -3243,6 +3292,13 @@ impl Daemon {
                 &mut report,
             );
             ran_on = ran_on.take().or(engine);
+            // The asker has gone: what was measured so far is theirs and
+            // they are not there to read it, and every rung after this one
+            // would be spent on nobody. Nothing is recorded, because a run
+            // cut short is not the measurement it was asked for (A1).
+            if asker_left(reading.get("why").and_then(Value::as_text)) {
+                return;
+            }
             readings.push(reading.clone());
             say(
                 writer,
@@ -3271,6 +3327,7 @@ impl Daemon {
             readings,
             &planned,
             started,
+            self.placed(named, on).as_ref(),
         );
         // Written down as it is sent, the way a generation's account is. A
         // measurement nobody can find later is the same as one not taken
@@ -3586,6 +3643,9 @@ impl Daemon {
                     }
                     Err(why) => refused = refused.take().or_else(|| Some(why.clone())),
                 }
+            }
+            if asker_left(refused.as_deref()) {
+                break;
             }
             if let (Ok(short), Ok(long)) = (&one, &many)
                 && short.held_the_pin(1)
@@ -4050,6 +4110,140 @@ impl Daemon {
             )),
         };
         say(writer, &answer);
+    }
+
+    /// Where a model lands and how much of it: the device MCF resolves it to
+    /// and the layers the engine is told to put there.
+    fn placed(&self, named: &str, on: Option<crate::control::On>) -> Option<(String, u32)> {
+        let (_, layers, _, device) = self.picked_engine_on(named, on).ok()?;
+        Some((device, layers))
+    }
+
+    /// The engine and the device a measurement runs on: where MCF resolves
+    /// the model to, or where the caller said — the processor with nothing
+    /// on a card, or a card with the whole model on it.
+    ///
+    /// **The processor is served by the plain build where there is one.** A
+    /// card's build told to put nothing on the card still starts its back
+    /// end, and a processor timing through it is a timing of that too;
+    /// where only a card's build is here it is used, with nought layers, and
+    /// the conditions say so. **A card needs a build that drives one**, and
+    /// asking for the card on a machine with none is refused with what would
+    /// (A2, A21).
+    fn picked_engine_on(
+        &self,
+        named: &str,
+        on: Option<crate::control::On>,
+    ) -> core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64, String), String> {
+        let (recommended, _) = self.recommend(named).map_err(|failure| {
+            failure
+                .context_value("wanted")
+                .map_or_else(|| failure.detail().to_owned(), str::to_owned)
+        })?;
+        let held = self.engines_held();
+        let adapter = |engine: &crate::engines::Engine| crate::adapters::ProvisionedLlama {
+            prefix: engine.prefix.clone(),
+            commit: engine.commit.clone(),
+            component: engine.name.clone(),
+        };
+        let resolved = || {
+            held.iter()
+                .find(|(engine, _)| engine.name == recommended.engine)
+        };
+        match on {
+            None => {
+                let (engine, _) = resolved().ok_or_else(|| {
+                    format!(
+                        "the engine this model resolves to, {}, is not provisioned",
+                        recommended.engine
+                    )
+                })?;
+                Ok((
+                    adapter(engine),
+                    recommended.gpu_layers,
+                    recommended.context,
+                    recommended.device.clone(),
+                ))
+            }
+            Some(crate::control::On::Processor) => {
+                // The build that computes on the processor alone, found by
+                // what it answers when asked what it can compute on rather
+                // than by what it is called (B-417): the card's build with
+                // nought layers stands in where there is no other.
+                let (engine, _) = held
+                    .iter()
+                    .find(|(_, devices)| {
+                        devices
+                            .iter()
+                            .all(|device| device.kind == crate::engines::Kind::Cpu)
+                    })
+                    .or_else(resolved)
+                    .ok_or_else(|| "no engine is provisioned".to_owned())?;
+                Ok((adapter(engine), 0, recommended.context, "CPU".to_owned()))
+            }
+            Some(crate::control::On::Card) => {
+                let (engine, card) = held
+                    .iter()
+                    .find_map(|(engine, devices)| {
+                        devices
+                            .iter()
+                            .find(|device| device.kind == crate::engines::Kind::Gpu)
+                            .map(|device| (engine, device.name.clone()))
+                    })
+                    .ok_or_else(|| {
+                        crate::engines::wanted_for(crate::engines::backend_present()).map_or_else(
+                            || "no card is here, and no engine drives one".to_owned(),
+                            |component| {
+                                format!(
+                                    "no engine here drives the card; `mcf provision {}` builds one",
+                                    component.name
+                                )
+                            },
+                        )
+                    })?;
+                Ok((adapter(engine), 999, recommended.context, card))
+            }
+        }
+    }
+
+    /// A card this machine has that no provisioned engine drives, and the
+    /// component that would.
+    ///
+    /// **Said beside the recommendation rather than folded into it.** The
+    /// recommendation is what will run now; this is what could, and a
+    /// surface that showed the processor as *where this runs* on a machine
+    /// with a card and said nothing more would be reporting MCF's own reach
+    /// as the machine's (A21). `None` where there is no card, or an engine
+    /// for it is already here.
+    fn card_unused(&self) -> Option<Value> {
+        let wanted = crate::engines::wanted_for(crate::engines::backend_present())?;
+        if self
+            .engines_held()
+            .iter()
+            .any(|(engine, _)| engine.name == wanted.name)
+        {
+            return None;
+        }
+        // Named by the driver the kernel put on it, which is a file the
+        // daemon may read; the card's own name is the hardware profiler's,
+        // and the profiler is a command somebody runs, never the serving
+        // path (§3.8, B4).
+        let card = crate::engines::card_driver_present().map_or_else(
+            || "a card".to_owned(),
+            |driver| format!("a card the kernel drives through {driver}"),
+        );
+        Some(Value::map([
+            ("component", Value::text(wanted.name.to_owned())),
+            ("card", Value::text(card.clone())),
+            (
+                "because",
+                Value::text(format!(
+                    "{card} is here, and no engine MCF has built drives it; {} would, and \
+                     until it is built every figure here is the processor's",
+                    wanted.name
+                )),
+            ),
+        ]))
     }
 
     /// What MCF would run a model under, and what it recommends.
@@ -4759,6 +4953,11 @@ impl Daemon {
             ]),
             Ok(holding) => Value::map([
                 ("readable", Value::Bool(true)),
+                // Once for the machine rather than once per model: a card no
+                // engine drives is a fact about this computer, and every
+                // surface that lists what runs where says it beside the list
+                // (A21).
+                ("card_unused", self.card_unused().unwrap_or(Value::Null)),
                 (
                     "models",
                     Value::List(

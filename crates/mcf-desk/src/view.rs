@@ -1356,6 +1356,14 @@ fn run_buttons(
     if ui::button(paint, mouse, taking, "Prompt analysis", Kind::Ordinary) && !running {
         act = Some(Act::Go(Page::Prompt));
     }
+    // Only while something runs: a run can be cut short, and the button
+    // that does it is there for as long as there is one to cut.
+    if running {
+        let stop = Box::new(taking.right() + 18.0, area.y, 110.0, 34.0);
+        if ui::button(paint, mouse, stop, "Stop", Kind::Primary) {
+            act = Some(Act::Stop);
+        }
+    }
     let (low, high) = desk.estimate(true);
     paint.say_centred(
         Box::new(quick.x, quick.bottom(), quick.w, 20.0),
@@ -1406,6 +1414,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     // last, over the table below, because in immediate mode the last thing
     // painted is the thing on top.
     let mut menu: Option<(Picker, Box)> = None;
+    let mut act_from_card = None;
     let chosen_model = desk
         .chosen
         .and_then(|at| desk.models.get(at))
@@ -1417,6 +1426,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
             "context window",
             format!("{} tokens", words::grouped(desk.window)),
         ),
+        (Picker::On, "put it on", on_label(desk.on)),
     ] {
         paint.say_at(area.x, y, label, Weight::Regular, size::BODY, ink.quiet);
         let box_of = Box::new(area.x + 190.0, y - 6.0, 340.0, 28.0);
@@ -1428,6 +1438,21 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
             menu = Some((picker, box_of));
         }
         y += 34.0;
+    }
+
+    y = placement_rows(paint, desk, area.x, y, wide);
+    if let Some((component, because)) = &desk.card_unused {
+        if let Some(act) = card_unused(
+            paint,
+            desk,
+            mouse,
+            Box::new(area.x, y, wide, 0.0),
+            component,
+            because,
+        ) {
+            act_from_card = Some(act);
+        }
+        y += card_unused_height(paint, desk, wide, because);
     }
 
     // Choosing a window implies every power of two below it, so the depths are
@@ -1453,7 +1478,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     y += 42.0;
 
     let (chose, below) = tests_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0));
-    act = chose.or(act);
+    act = chose.or(act_from_card).or(act);
     readings(
         paint,
         desk,
@@ -1465,6 +1490,113 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         act = Some(picked);
     }
     act
+}
+
+/// Where the model lands — engine and device — as MCF resolved them, in the
+/// words the Models page uses for the same two facts. Not pickers: a person
+/// who wants them otherwise changes them where they are set. The device is
+/// the line this page had nothing of: a run whose page does not say whether
+/// it is timing a card or a processor is timing something the reader has to
+/// guess at (A7, §3.4). Returns where the next row goes.
+fn placement_rows(paint: &mut Painter, desk: &Desk, x: f32, mut y: f32, wide: f32) -> f32 {
+    let ink = paint.ink;
+    let placed = desk.chosen.and_then(|at| desk.models.get(at));
+    for (label, value) in [
+        ("engine", placed.and_then(|held| held.engine.clone())),
+        (
+            "runs on",
+            placed.and_then(|held| {
+                held.device.as_ref().map(|device| {
+                    if held.on_a_card {
+                        format!("{device} — the whole model on the card")
+                    } else {
+                        device.clone()
+                    }
+                })
+            }),
+        ),
+    ] {
+        paint.say_at(x, y, label, Weight::Regular, size::BODY, ink.quiet);
+        let (said, colour) = value.map_or_else(
+            || ("not resolved".to_owned(), ink.faint),
+            |value| (value, ink.ink),
+        );
+        let shown = paint.elide(&said, Weight::Regular, size::BODY, wide - 190.0);
+        paint.say_at(x + 190.0, y, &shown, Weight::Regular, size::BODY, colour);
+        y += 26.0;
+    }
+    y + 8.0
+}
+
+/// A card nothing here drives: the daemon's sentence, a button to build the
+/// engine that would, and — while it builds — how that is going.
+fn card_unused(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: Box,
+    component: &str,
+    because: &str,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let mut y = at.y;
+    for line in paint
+        .wrap(because, Weight::Regular, size::SMALL, at.w)
+        .iter()
+        .take(3)
+    {
+        paint.say_at(at.x, y, line, Weight::Regular, size::SMALL, ink.warn);
+        y += 16.0;
+    }
+    y += 6.0;
+    if let Doing::Provisioning(job) = &desk.doing
+        && desk.building.as_deref() == Some(component)
+    {
+        building(paint, job, at.x, y, at.w);
+        return None;
+    }
+    let (pressed, _) = ui::fitted(
+        paint,
+        mouse,
+        (at.x, y),
+        &format!("Build {component}"),
+        Kind::Ordinary,
+    );
+    (pressed && !desk.doing.busy()).then(|| Act::Build(component.to_owned()))
+}
+
+/// How much room the card line and its button take, so what follows is
+/// drawn under them.
+fn card_unused_height(paint: &mut Painter, desk: &Desk, wide: f32, because: &str) -> f32 {
+    let lines = paint
+        .wrap(because, Weight::Regular, size::SMALL, wide)
+        .len()
+        .min(3);
+    // A build in progress prints up to four lines under its own heading.
+    let under = if matches!(&desk.doing, Doing::Provisioning(_)) {
+        90.0
+    } else {
+        ui::BUTTON + 12.0
+    };
+    #[expect(clippy::cast_precision_loss, reason = "at most three lines of text")]
+    let text = lines as f32 * 16.0;
+    text + 6.0 + under + 10.0
+}
+
+/// Where a run can put the model, in the order the menu offers them.
+const ON_CHOICES: [Option<mcf_serve::control::On>; 3] = [
+    None,
+    Some(mcf_serve::control::On::Processor),
+    Some(mcf_serve::control::On::Card),
+];
+
+/// The words for where the model goes.
+fn on_label(on: Option<mcf_serve::control::On>) -> String {
+    match on {
+        None => "where MCF resolves it".to_owned(),
+        Some(mcf_serve::control::On::Processor) => "the processor, nothing on a card".to_owned(),
+        Some(mcf_serve::control::On::Card) => "the card, the whole model on it".to_owned(),
+    }
 }
 
 /// Draws whichever dropdown is open, and says what was picked from it.
@@ -1485,6 +1617,13 @@ fn open_menu(
                 return None;
             }
             ui::options(paint, mouse, at, &labels, desk.chosen).map(Act::Choose)
+        }
+        Picker::On => {
+            let labels: Vec<String> = ON_CHOICES.iter().map(|on| on_label(*on)).collect();
+            let chosen = ON_CHOICES.iter().position(|on| *on == desk.on);
+            ui::options(paint, mouse, at, &labels, chosen)
+                .and_then(|index| ON_CHOICES.get(index).copied())
+                .map(Act::SetOn)
         }
         Picker::Window => {
             let offered = windows();
@@ -1849,7 +1988,10 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
             .and_then(Value::as_text)
             .unwrap_or("MCF did not say");
         let shown = paint.elide(
-            &format!("measured on {ran}"),
+            &format!(
+                "measured on {ran}{}",
+                mcf_tui::screens::diagnostics::on_device(conditions)
+            ),
             Weight::Regular,
             size::SMALL,
             area.w,

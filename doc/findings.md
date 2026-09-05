@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 120 |
+| **Version** | 121 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 174 | [F174 — A diagnostic says which device it is on, and a Radeon is one: the profiler reads the 8060S from its driver's files, a Vulkan build of the reference drives it, GLM-4.7-Flash decodes at 16.1 ms a token on the card against 33.9 on the processor, a processor run reused the card's server until the build and the layers joined the reuse rule, and a run is cut short from wherever it was started (B-467, B-468, B-072, F133, A7, A21, §3.4)](#174--f174--a-diagnostic-says-which-device-it-is-on-and-a-radeon-is-one-the-profiler-reads-the-8060s-from-its-drivers-files-a-vulkan-build-of-the-reference-drives-it-glm-47-flash-decodes-at-161-ms-a-token-on-the-card-against-339-on-the-processor-a-processor-run-reused-the-cards-server-until-the-build-and-the-layers-joined-the-reuse-rule-and-a-run-is-cut-short-from-wherever-it-was-started-b-467-b-468-b-072-f133-a7-a21-34) |
 | 173 | [F173 — A budget measured on a probe's question bounds that question and no other: GLM-4.7-Flash's stop-conditions budget of 247 was 244 tokens of thought about a river's name, the thinking probe raised it to 279, and a two-sentence question thought for 297 (B-466, F172, F106, B-451, A7, D42)](#173--f173--a-budget-measured-on-a-probes-question-bounds-that-question-and-no-other-glm-47-flashs-stop-conditions-budget-of-247-was-244-tokens-of-thought-about-a-rivers-name-the-thinking-probe-raised-it-to-279-and-a-two-sentence-question-thought-for-297-b-466-f172-f106-b-451-a7-d42) |
 | 172 | [F172 — An applied addressing that ends inside the thinking is read as one: `mcf run` on GLM-4.7-Flash went from 400 tokens of loop cut by the budget, raw, to `Nile` after 205 tokens of thought counted apart, and the budget the probe applied is the thought's size (B-465, B-466, F171, B-451, A7, §3.4)](#172--f172--an-applied-addressing-that-ends-inside-the-thinking-is-read-as-one-mcf-run-on-glm-47-flash-went-from-400-tokens-of-loop-cut-by-the-budget-raw-to-nile-after-205-tokens-of-thought-counted-apart-and-the-budget-the-probe-applied-is-the-thoughts-size-b-465-b-466-f171-b-451-a7-34) |
 | 171 | [F171 — The probes read with the engine that answers: on a tekken and a glm4 vocabulary every probe ran through the provisioned server, and GLM's template had to be read by its roles before the chat-template probe had anything to try (B-442, B-441, F158, F37, A7, §3.4)](#171--f171--the-probes-read-with-the-engine-that-answers-on-a-tekken-and-a-glm4-vocabulary-every-probe-ran-through-the-provisioned-server-and-glms-template-had-to-be-read-by-its-roles-before-the-chat-template-probe-had-anything-to-try-b-442-b-441-f158-f37-a7-34) |
@@ -9596,6 +9597,104 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 174 · F174 — A diagnostic says which device it is on, and a Radeon is one: the profiler reads the 8060S from its driver's files, a Vulkan build of the reference drives it, GLM-4.7-Flash decodes at 16.1 ms a token on the card against 33.9 on the processor, a processor run reused the card's server until the build and the layers joined the reuse rule, and a run is cut short from wherever it was started (B-467, B-468, B-072, F133, A7, A21, §3.4)
+
+The window's Diagnostics page ran a measurement and said nothing about
+where it ran; `mcf doctor` on this machine said *accelerators: none
+present* two lines above a temperature it had read from the Radeon. Both
+were silences rather than guesses, and A7 forbids the one as much as the
+other. What was done: the device is named before a run and in its
+conditions after, a person can put a run on the processor or the card,
+the profiler reads a Radeon, MCF knows a Vulkan build of the reference for
+a card CUDA does not drive and offers it where nothing drives the card,
+and a run can be stopped. Along the way a defect in how the daemon keeps
+a server was found by its figure, and the run's progress was already on
+the page from B-072's last cut.
+
+**What the machine is.** An AMD Ryzen AI MAX+ 395 with the Radeon 8060S on
+the same die — a chip that carves its graphics memory out of the system's
+94 GiB rather than having its own — with the kernel's `amdgpu` driver on
+it and mesa's Vulkan driver for it in the loader's table. NVIDIA's driver
+is not here, so the two routes the profiler had reported nothing. A third
+route, `amdgpu-files`, reads what the driver publishes under
+`/sys/class/drm/card0/device`: the PCI id and its name from the system's
+own `pci.ids` table, the kernel release as the driver's version, the
+Vulkan driver the loader lists as the runtime, the memory pool the driver's
+`uma` group says the chip addresses — the 94 GiB, not the 512 MiB
+carve-out — and its hwmon temperature. `mcf doctor` now says *accelerator
+#0: AMD Strix Halo [Radeon 8060S Graphics] · driver amdgpu, kernel 6.18.35
+· runtime Vulkan, through the radeon driver the loader lists · 91.2 GiB of
+94.1 GiB free · 50 °C · characterized*, and the instrument tier holds the
+route's temperature to the thermal module's reading of the same chip by
+the hwmon class. Two routes numbering their first device nought no longer
+merge two vendors into one card with a disagreement on it.
+
+**What drives it.** The reference engine here was the plain build, and a
+build that computes on the processor alone answers `--list-devices` with
+nothing however many cards are installed (F128). MCF's component table
+gains `llama.cpp-vulkan`: the same commit with `GGML_VULKAN=ON`. Bookworm,
+the plain build's floor, ships Vulkan headers 1.3.239, and the back end at
+this commit is written against the layer-settings extension of 1.3.268 —
+two builds failed there, one for a cmake package the list did not name
+(`spirv-headers`) and one for the headers. The build moved to trixie: glibc
+2.41, the same as this host, and a higher floor than the plain build's
+2.36, stated in the component. Built, the server answers *Vulkan0: Radeon
+8060S Graphics (RADV GFX1151) (96966 MiB, 96166 MiB free)*, and the
+resolver, which prefers a card at equal context, puts every model that
+fits on it with all its layers. Which back end a machine wants is read
+from the kernel's driver and the loader's table together: a card without
+its Vulkan driver is one an engine built for Vulkan would start and not
+find, and MCF says so before building one.
+
+**What the surfaces say.** Under *what to measure* the window and the
+console show *engine* and *runs on* for the chosen model, as the Models
+page already did; the console's device line says where a person put it
+where they did. Beside the models, the daemon says of the machine — not of
+any model — when a card is here that no built engine drives, and names the
+build that would: the window draws the sentence and a button that builds
+it, the console the sentence and the command. After a run, the line that
+named the engine names the device and the layers: *measured on provisioned
+llama.cpp-vulkan server @925e1179947e, Radeon 8060S Graphics with 999
+layers on the card*; `mcf measure` prints *device Radeon 8060S Graphics,
+999 layers on the card* under its conditions, and the record carries both.
+A run goes where MCF resolves it unless the person says: the window's
+*put it on* picker, the console's `d`, and `mcf measure --on cpu|gpu`.
+Asking for the card on a machine with no build for it is refused before a
+token is spent, with the command that builds one.
+
+**What was measured, and the defect the figures found.** Qwen3-VL-2B on
+the card and on the processor decode alike, about 16 ms a token at 512 and
+1,024 deep — a two-billion-parameter model on a chip whose card and
+processor share one memory bus — while the card loads it in 380 ms against
+1,180. GLM-4.7-Flash, 17.6 GB: **16.1 ms a token on the card against 33.9
+on the processor at 512 deep, and 671 ms to the first token against
+3,073.** Before the reuse rule was corrected the figures were nonsense —
+0.143 ms a token on *the processor* over one sample, with a start-up of
+377 ms that was the card's — because a kept server was reused on the
+model, the window and the start switches alone, so a processor run after
+a card run went to the card's server and reported the processor. The
+build's prefix and the layer count are part of the kept server's identity
+now, and two runs back to back under different placements start two
+servers, which the start-up figures show. A few rungs on the card came
+back over one or two samples of three with a first rung of 0.226 ms a
+token: the card's first pair after a load separates badly, and the median
+over three repeats is what stands; that the card's shallowest rung wants a
+warm-up the processor's does not is left here as an observation.
+
+**Cut short.** The daemon already watched, every quarter second while an
+engine ran, whether the client that asked was still there, and stopped the
+engine when it was not; the ladder then climbed on to the next rung for
+nobody, and the finished ladder was recorded. Now a rung whose asker left
+ends the ladder and nothing is recorded, because a run cut short is not
+the measurement it was asked for (A1). The shared job keeps a handle to
+its connection and closes it on Stop — the window's button, the console's
+`x` — and says *stopped at your asking after N s; what had been measured is
+above, and nothing was recorded* rather than that MCF failed. Checked by
+killing `mcf measure` at *1,024 tokens, repeat 2 of 3*: the record did not
+grow and a measurement asked for eight seconds later was served. `mcf
+measure` prints each line as it comes now, which is what made the kill
+possible at a known step and is what B-072 owed the terminal.
+
 ## 173 · F173 — A budget measured on a probe's question bounds that question and no other: GLM-4.7-Flash's stop-conditions budget of 247 was 244 tokens of thought about a river's name, the thinking probe raised it to 279, and a two-sentence question thought for 297 (B-466, F172, F106, B-451, A7, D42)
 
 F172 left GLM-4.7-Flash with an applied budget of 247 tokens and the
@@ -12046,6 +12145,14 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 121 — on which device
+
+F174: the profiler reads a Radeon, a Vulkan build of the reference drives
+it and is offered where nothing does, every diagnostic names its device
+before and after and goes where a person puts it, a kept server is one
+build with one layer count, and a run is cut short from wherever it was
+started (B-467, B-468).
 
 ### Version 120 — the size of its question
 

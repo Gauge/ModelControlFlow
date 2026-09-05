@@ -319,6 +319,7 @@ pub fn routes() -> Vec<Box<dyn Route>> {
     vec![
         Box::new(super::route_files::Files),
         Box::new(super::nvml::VendorLibrary),
+        Box::new(super::route_amdgpu::Amdgpu::default()),
     ]
 }
 
@@ -327,7 +328,18 @@ pub(super) fn read_through(routes: &[Box<dyn Route>]) -> Vec<Accelerator> {
     let mut devices: Vec<Accelerator> = Vec::new();
     for route in routes {
         for (index, reading) in route.probe().into_iter().enumerate() {
-            match devices.get_mut(index) {
+            // Two routes reading one vendor number their devices the same
+            // way, and their readings of device #0 are readings of one
+            // card. Two routes reading two vendors do not: the first Radeon
+            // and the first NVIDIA card are both #0 to their driver, and
+            // merging them made one accelerator out of two with a vendor
+            // disagreement on it. A reading whose vendor is known and
+            // differs is another device, and goes after the ones held.
+            let another = devices
+                .get(index)
+                .is_some_and(|held| disagree(&held.reading.vendor, &reading.vendor));
+            let at = if another { devices.len() } else { index };
+            match devices.get_mut(at) {
                 Some(device) => {
                     let mut disagreements = device.reading.disagreements_with(&reading);
                     device.disagreements.append(&mut disagreements);
@@ -337,7 +349,7 @@ pub(super) fn read_through(routes: &[Box<dyn Route>]) -> Vec<Accelerator> {
                     device.routes.push(route.name());
                 }
                 None => devices.push(Accelerator {
-                    index,
+                    index: at,
                     reading,
                     routes: vec![route.name()],
                     disagreements: Vec::new(),

@@ -271,6 +271,36 @@ fn accelerator_occupancy_agrees_with_the_vendor() {
 /// reading that quietly counted *cases* rather than *whole answers* would give
 /// a model partial credit nobody defined, and it would sort above one that got
 /// fewer things entirely right.
+/// On a machine with a Radeon, the profiler's temperature for it is the
+/// thermal module's, read a second way: through the hwmon class rather than
+/// the card's own directory. On a machine without one there is nothing to
+/// compare, and that is said rather than passed silently (A7, A19).
+#[test]
+fn a_radeons_temperature_agrees_with_the_thermal_module() {
+    let machine = mcf_core::hardware::Machine::read();
+    let Some(card) = machine
+        .accelerators
+        .iter()
+        .find(|held| held.routes().contains(&"amdgpu-files"))
+    else {
+        println!("no card the amdgpu driver drives is here; nothing to cross-check against (A7)");
+        return;
+    };
+    let mcf_core::attested::Attested::Known(degrees) = card.reading().temperature_c else {
+        panic!("a card here whose temperature the driver does not publish: {card}");
+    };
+    let sensors = mcf_core::hardware::thermal::sensors();
+    let Some(theirs) = sensors.iter().find(|sensor| sensor.chip == "amdgpu") else {
+        panic!("the thermal module does not read the chip the profiler reads: {sensors:?}");
+    };
+    let difference = (i64::from(degrees) * 1000 - theirs.millidegrees).abs();
+    assert!(
+        difference <= 1000,
+        "the profiler read {degrees} °C and the thermal module {} m°C for the same chip",
+        theirs.millidegrees
+    );
+}
+
 #[test]
 fn a_laboratory_reading_is_the_share_of_attempts_that_were_whole() {
     use mcf_bench::eval::{Ran, Trials};

@@ -123,6 +123,12 @@ struct Console {
     model: usize,
     status: Option<Result<Value, String>>,
     models: Vec<Held>,
+    /// The component that would drive a card here that nothing does, as the
+    /// daemon said beside the models.
+    card_unused: Option<String>,
+    /// Where a run puts the model, where the person chose: `None` is where
+    /// MCF resolves it to.
+    on: Option<mcf_serve::control::On>,
     tests: Vec<screens::diagnostics::Test>,
     /// A run in progress, if one is: the job, and what to do after it.
     running: Option<Running>,
@@ -242,6 +248,8 @@ impl Console {
             model: 0,
             status: None,
             models: Vec::new(),
+            card_unused: None,
+            on: None,
             tests: screens::diagnostics::tests(),
             running: None,
             components: Vec::new(),
@@ -284,12 +292,20 @@ impl Console {
                 .collect();
         }
         self.models = match ask(&self.socket, &Request::Holding) {
-            Ok(answer) if answer.served => answer
-                .body
-                .get("models")
-                .and_then(Value::as_list)
-                .map(|models| models.iter().map(Self::describe).collect())
-                .unwrap_or_default(),
+            Ok(answer) if answer.served => {
+                self.card_unused = answer
+                    .body
+                    .get("card_unused")
+                    .and_then(|held| held.get("component"))
+                    .and_then(Value::as_text)
+                    .map(str::to_owned);
+                answer
+                    .body
+                    .get("models")
+                    .and_then(Value::as_list)
+                    .map(|models| models.iter().map(Self::describe).collect())
+                    .unwrap_or_default()
+            }
             _ => Vec::new(),
         };
         if self.row >= self.models.len() {
@@ -428,7 +444,7 @@ impl Console {
         self.running = Some(Running {
             run: Run::Ladder,
             job: job::Job::start(
-                self.socket.clone(),
+                &self.socket,
                 Request::Measure {
                     // The plain load: the console times what the model does
                     // as its file lays it out, and a switch is asked for at
@@ -436,6 +452,7 @@ impl Console {
                     started: mcf_serve::declared::Started::default(),
                     model: held.path.clone(),
                     engine: None,
+                    on: self.on,
                     deepest,
                 },
                 format!("measuring {}", held.name),
@@ -456,7 +473,7 @@ impl Console {
         self.running = Some(Running {
             run: Run::CrossCheck,
             job: job::Job::start(
-                self.socket.clone(),
+                &self.socket,
                 Request::CrossCheck {
                     model: held.path.clone(),
                 },
@@ -569,16 +586,21 @@ fn draw_diagnostics(console: &Console, into: &mut Screen, from: usize) {
         .models
         .get(console.model)
         .map_or("nothing selected", |held| held.name.as_str());
-    let window = console
+    let resolved = console
         .models
         .get(console.model)
-        .and_then(|held| held.engine.as_ref().ok())
-        .map(|resolved| resolved.context);
+        .and_then(|held| held.engine.as_ref().ok());
     screens::diagnostics::draw(
         into,
         from,
-        model,
-        window,
+        screens::diagnostics::Setup {
+            model,
+            window: resolved.map(|held| held.context),
+            engine: resolved.map(|held| held.engine.as_str()),
+            device: resolved.map(|held| held.device.as_str()),
+            on: console.on,
+            card_unused: console.card_unused.as_deref(),
+        },
         &console.tests,
         screens::diagnostics::Cursor {
             row: console.row,
@@ -867,6 +889,22 @@ fn act(console: &mut Console, key: Key) -> Leaving {
                 console.refresh();
             }
             Key::Character('S') => console.confirming = true,
+            // Where the next run puts the model: as MCF resolves it, the
+            // processor, the card, and round again.
+            Key::Character('d') if console.at == Where::Diagnostics => {
+                console.on = match console.on {
+                    None => Some(mcf_serve::control::On::Processor),
+                    Some(mcf_serve::control::On::Processor) => Some(mcf_serve::control::On::Card),
+                    Some(mcf_serve::control::On::Card) => None,
+                };
+            }
+            // Cut the run short. The daemon stops the engine at its next
+            // glance; what was heard stays on the screen.
+            Key::Character('x') if console.at == Where::Diagnostics => {
+                if let Some(running) = console.running.as_mut() {
+                    running.job.stop();
+                }
+            }
             Key::Character(' ') if console.at == Where::Diagnostics => {
                 screens::diagnostics::toggle(
                     console

@@ -47,6 +47,41 @@ pub const VERSION: i64 = 1;
 /// the principle that there is a largest.
 pub const REQUEST_CEILING: usize = 4 * 1024 * 1024;
 
+/// Where a measurement puts the model, where the caller chooses.
+///
+/// Two words rather than a layer count: what a person wants to know is
+/// whether the figure is the card's or the processor's, and *the whole model
+/// on the card* or *none of it* are the two conditions that answer that. A
+/// partial offload is a real configuration and not one this chooses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum On {
+    /// The processor, with nothing on a card.
+    Processor,
+    /// A card, with the whole model on it.
+    Card,
+}
+
+impl On {
+    /// The word on the wire and at the command line.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Processor => "processor",
+            Self::Card => "card",
+        }
+    }
+
+    /// The word, read; `cpu` and `gpu` are taken too, being what people type.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "processor" | "cpu" => Some(Self::Processor),
+            "card" | "gpu" => Some(Self::Card),
+            _ => None,
+        }
+    }
+}
+
 /// What a client is asking for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -240,6 +275,10 @@ pub enum Request {
         /// Which engine, where the caller says. Absent means the daemon's
         /// stated rule.
         engine: Option<String>,
+        /// Where the model is put, where the caller says: the processor or
+        /// the card. Absent means where MCF resolves it to, which a surface
+        /// shows before the run and the conditions name after it.
+        on: Option<On>,
         /// The deepest context to sample, which implies every power of two
         /// below it — the shallow points are what the deep one is read
         /// against, so a run that skipped them would be a run whose deepest
@@ -410,6 +449,7 @@ fn measure_line(request: &Request) -> Value {
     let Request::Measure {
         model,
         engine,
+        on,
         deepest,
         started,
     } = request
@@ -420,6 +460,7 @@ fn measure_line(request: &Request) -> Value {
         ("ask", Value::text("measure")),
         ("model", Value::text(model.clone())),
         ("engine", maybe(engine.as_deref())),
+        ("on", maybe(on.map(On::as_str))),
         (
             "deepest",
             Value::Integer(i64::try_from(*deepest).unwrap_or(i64::MAX)),
@@ -698,6 +739,12 @@ impl Request {
                     .ok_or_else(|| refused("a measurement naming no model", line))?
                     .to_owned(),
                 engine: optional("engine"),
+                on: match value.get("on").and_then(Value::as_text) {
+                    None => None,
+                    Some(word) => Some(On::parse(word).ok_or_else(|| {
+                        refused("a measurement naming a device MCF does not place on", word)
+                    })?),
+                },
                 // A measurement with no ceiling would be one that runs until
                 // the machine runs out, which is not a diagnostic but an
                 // accident. The caller says how deep, always.

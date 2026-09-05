@@ -442,6 +442,16 @@ pub struct Served {
     /// made up itself, fresh for each engine it starts, and keeps it here.
     /// `None` for an engine hosted on a port, which places its own.
     pub media_marker: Option<String>,
+    /// The build it is: the prefix the binary was started from. Two builds
+    /// of the same commit — one for the processor, one for a card — hold
+    /// the same model as two different engines, and a request that resolved
+    /// to one is not answered by the other (F133).
+    pub prefix: PathBuf,
+    /// How many layers it was told to put on a card. A server holding the
+    /// whole model on the card does not answer for a request that asked for
+    /// none of it there: the figure would be the card's under the
+    /// processor's name.
+    pub gpu_layers: u32,
     /// What it was started with beyond the plain load: a draft head, a rope
     /// scaling. An engine holding a model under one set of these does not
     /// answer for another — the tokens are drawn from a different
@@ -532,6 +542,8 @@ impl Served {
             last_words,
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
+            prefix: llama.prefix.clone(),
+            gpu_layers: settings.gpu_layers,
             window: settings.context,
             projector: settings.projector.as_ref().map(PathBuf::from),
             media_marker: None,
@@ -704,6 +716,8 @@ impl Served {
             last_words,
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
+            prefix: llama.prefix.clone(),
+            gpu_layers,
             window: context,
             projector: projector.map(Path::to_path_buf),
             media_marker: Some(media_marker),
@@ -1284,13 +1298,15 @@ pub fn asked_while(
 
 /// The failure a request closed before its answer is reported as: who
 /// stopped waiting, and how far the engine had got.
+/// What a request is told when the client that asked for it went away. One
+/// sentence in one place, because a ladder reads it back to know whether to
+/// climb on: a run whose asker has left is a run nobody will read.
+pub const CLIENT_LEFT: &str = "the client that asked for this left before the engine answered, \
+                               so the request was closed and the engine stopped";
+
 fn closed_failure(model: &Path, closed: Closed, progress: Option<&Progress>) -> Failure {
     let (what, attribution) = match closed {
-        Closed::ClientLeft => (
-            "the client that asked for this left before the engine answered, so the \
-             request was closed and the engine stopped",
-            Attribution::User,
-        ),
+        Closed::ClientLeft => (CLIENT_LEFT, Attribution::User),
         Closed::Stopping => (
             "the daemon was asked to stop while the engine was answering, so the \
              request was closed and the engine stopped",

@@ -6,7 +6,7 @@
 //! whatever MCF says about it is well-formed, honest about what it could not
 //! read, and consistent between the routes that answered.
 
-use super::{Characterization, Machine, Missing, Reading, routes};
+use super::{Characterization, Machine, Missing, Reading, Route as _, routes};
 use crate::attested::Attested;
 use crate::measurement::Bytes;
 
@@ -220,4 +220,132 @@ fn the_seam_is_a_parameter_and_changes_nothing_ambient() {
         Machine::read().accelerators.len(),
         "asking about a different machine changed this one"
     );
+}
+
+/// A Radeon is read from the files its driver writes, laid out here the way
+/// the kernel lays them out, so the route is checked on a machine with no
+/// such card (B-015).
+///
+/// The chip carves its memory out of the system's — the driver's `uma` group
+/// says so — and the pool a model lands in is then the system memory the
+/// card may address, not the carve-out.
+#[test]
+fn a_radeon_is_read_from_the_files_its_driver_writes() {
+    let root = std::env::temp_dir().join(format!("mcf-amdgpu-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&root);
+    let drm = root.join("drm");
+    let device = drm.join("card0").join("device");
+    std::fs::create_dir_all(device.join("uma")).expect("a fake card");
+    std::fs::create_dir_all(device.join("hwmon").join("hwmon3")).expect("its sensor");
+    std::fs::create_dir_all(drm.join("card0-DP-1")).expect("a connector");
+    std::fs::create_dir_all(drm.join("renderD128")).expect("a render node");
+    let driver = root.join("drivers").join("amdgpu");
+    std::fs::create_dir_all(&driver).expect("a fake driver");
+    std::os::unix::fs::symlink(&driver, device.join("driver")).expect("the driver link");
+    for (name, text) in [
+        ("vendor", "0x1002\n"),
+        ("device", "0x1586\n"),
+        ("mem_info_vram_total", "536870912\n"),
+        ("mem_info_vram_used", "440705024\n"),
+        ("mem_info_gtt_total", "101139496960\n"),
+        ("mem_info_gtt_used", "450560000\n"),
+    ] {
+        std::fs::write(device.join(name), text).expect(name);
+    }
+    std::fs::write(
+        device.join("hwmon").join("hwmon3").join("temp1_input"),
+        "72000\n",
+    )
+    .expect("a temperature");
+    std::fs::write(root.join("osrelease"), "6.18.35-test\n").expect("a kernel");
+    std::fs::write(
+        root.join("pci.ids"),
+        "# a table\n1002  Advanced Micro Devices, Inc. [AMD/ATI]\n\t1586  Strix Halo [Radeon 8060S Graphics]\n\t\t1022 1099  A board\n10de  NVIDIA\n\t1586  Not this one\n",
+    )
+    .expect("the table");
+    std::fs::create_dir_all(root.join("icd.d")).expect("a loader table");
+    std::fs::write(root.join("icd.d").join("radeon_icd.json"), "{}").expect("the driver entry");
+
+    let route = super::route_amdgpu::Amdgpu {
+        drm,
+        pci_ids: root.join("pci.ids"),
+        icds: root.join("icd.d"),
+        kernel: root.join("osrelease"),
+    };
+    let readings = route.probe();
+    assert_eq!(
+        readings.len(),
+        1,
+        "one card, not its connectors: {readings:?}"
+    );
+    let reading = readings.first().expect("the card");
+    assert_eq!(reading.vendor, Attested::Known("AMD".to_owned()));
+    assert_eq!(
+        reading.model,
+        Attested::Known("Strix Halo [Radeon 8060S Graphics]".to_owned())
+    );
+    assert_eq!(
+        reading.driver,
+        Attested::Known("amdgpu, kernel 6.18.35-test".to_owned())
+    );
+    assert!(reading.runtime.is_known(), "the loader lists its driver");
+    assert_eq!(
+        reading.memory_total,
+        Attested::Known(Bytes(101_139_496_960)),
+        "a chip that carves out reports the pool it may address"
+    );
+    assert_eq!(
+        reading.memory_available,
+        Attested::Known(Bytes(101_139_496_960 - 450_560_000))
+    );
+    assert_eq!(reading.temperature_c, Attested::Known(72));
+    assert!(reading.missing().is_empty(), "characterized: {reading:?}");
+
+    // Without the table, the id stands rather than a name MCF made up.
+    let unnamed = super::route_amdgpu::Amdgpu {
+        pci_ids: root.join("no-table"),
+        ..route
+    };
+    let reading = unnamed.probe();
+    assert_eq!(
+        reading.first().map(|held| held.model.clone()),
+        Some(Attested::Known("PCI device 0x1002:0x1586".to_owned()))
+    );
+    let _cleared = std::fs::remove_dir_all(&root);
+}
+
+/// Two routes each numbering their first device nought are not describing
+/// one device when they name different vendors: the first Radeon and the
+/// first NVIDIA card are two accelerators, not one with a disagreement on it.
+#[test]
+fn two_vendors_at_index_nought_are_two_devices() {
+    struct Fixed(&'static str, Vec<Reading>);
+    impl super::Route for Fixed {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+        fn covers(&self) -> &'static [Missing] {
+            &[Missing::Identity]
+        }
+        fn probe(&self) -> Vec<Reading> {
+            self.1.clone()
+        }
+    }
+    let of = |vendor: &str| Reading {
+        vendor: Attested::Known(vendor.to_owned()),
+        model: Attested::Known(format!("{vendor} card")),
+        ..Reading::nothing_known()
+    };
+    let machine = Machine::read_through(&[
+        Box::new(Fixed("nvidia-files", vec![of("NVIDIA")])),
+        Box::new(Fixed("nvidia-library", vec![of("NVIDIA")])),
+        Box::new(Fixed("amdgpu-files", vec![of("AMD")])),
+    ]);
+    assert_eq!(machine.accelerators.len(), 2, "{:?}", machine.accelerators);
+    let first = machine.accelerators.first().expect("the NVIDIA card");
+    assert_eq!(first.routes(), ["nvidia-files", "nvidia-library"]);
+    assert!(first.disagreements().is_empty(), "{first}");
+    let second = machine.accelerators.get(1).expect("the Radeon");
+    assert_eq!(second.index(), 1);
+    assert_eq!(second.routes(), ["amdgpu-files"]);
 }

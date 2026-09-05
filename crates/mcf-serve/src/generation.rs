@@ -1514,9 +1514,18 @@ fn serving<'slot>(
     // for the plain load: the tokens come from a different arrangement of
     // the same weights, and answering one from the other would put a
     // condition in the account that was not the condition (A6, B-456).
-    let reused = slot
-        .as_ref()
-        .is_some_and(|held| held.model == path && held.window >= window && held.started == started);
+    // The same model under the same build, with the same share of it on the
+    // card, in a window at least this large, started the same way. The build
+    // and the layers were not compared, so a run asked for on the processor
+    // reused the server a card's run had left, and reported the processor
+    // under the card's figure (F133).
+    let reused = slot.as_ref().is_some_and(|held| {
+        held.model == path
+            && held.prefix == llama.prefix
+            && held.gpu_layers == gpu_layers
+            && held.window >= window
+            && held.started == started
+    });
     if !reused {
         *slot = None;
         // The projector its publisher shipped beside it, where one sits

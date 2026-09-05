@@ -968,7 +968,7 @@ fn a_window_holding_a_model_says_that_it_is() {
     let idle = drawn(&desk, NIGHT, "hosting-idle");
 
     desk.doing = mcf_desk::Doing::Hosting(mcf_desk::job::Job::start(
-        std::path::PathBuf::from("/nowhere/control.sock"),
+        std::path::Path::new("/nowhere/control.sock"),
         mcf_serve::control::Request::Hosted,
         "holding Assistant-8B-Instruct-Q4_K_M".to_owned(),
     ));

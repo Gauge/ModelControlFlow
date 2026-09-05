@@ -527,7 +527,7 @@ fn after_the_run(mut console: Console, ladder_ran: Option<u64>) {
 #[test]
 fn a_run_under_way_says_which_step_it_is_on() {
     let mut job = crate::job::Job::start(
-        std::path::PathBuf::from("/nowhere/control.sock"),
+        std::path::Path::new("/nowhere/control.sock"),
         mcf_serve::control::Request::Hosted,
         "measuring a-model".to_owned(),
     );
@@ -586,5 +586,61 @@ fn a_run_under_way_says_which_step_it_is_on() {
     assert!(
         lines.iter().all(|(line, _)| !line.contains("repeat")),
         "a finished run is not on a step: {lines:?}"
+    );
+}
+
+/// The line that names the engine a figure came from names the device too,
+/// with how much of the model was on it, or says nothing where the run did
+/// not say — never a device MCF assumed (A7).
+#[test]
+fn a_figure_names_the_device_it_was_taken_on() {
+    let on_the_card = Value::map([
+        ("device", Value::text("Radeon 8060S")),
+        ("gpu_layers", Value::Integer(999)),
+    ]);
+    assert_eq!(
+        screens::diagnostics::on_device(&on_the_card),
+        ", Radeon 8060S with 999 layers on the card"
+    );
+    let on_the_processor = Value::map([
+        ("device", Value::text("CPU")),
+        ("gpu_layers", Value::Integer(0)),
+    ]);
+    assert_eq!(screens::diagnostics::on_device(&on_the_processor), ", CPU");
+    assert_eq!(
+        screens::diagnostics::on_device(&Value::map([("engine_ran", Value::text("x"))])),
+        "",
+        "a run that did not say is not given a device"
+    );
+}
+
+/// A job cut short says so — stopped at somebody's asking, not failed — and
+/// keeps what it had heard. Cutting a finished job does nothing.
+#[test]
+fn a_job_cut_short_says_so_and_keeps_what_it_heard() {
+    let mut job = crate::job::Job::start(
+        std::path::Path::new("/nowhere/control.sock"),
+        mcf_serve::control::Request::Hosted,
+        "measuring a-model".to_owned(),
+    );
+    job.answers.push(Value::map([(
+        "reading",
+        Value::map([("depth", Value::Integer(512))]),
+    )]));
+    job.stop();
+    assert!(job.finished && job.stopped);
+    let why = job.refused.clone().unwrap_or_default();
+    assert!(why.contains("stopped at your asking"), "{why}");
+    assert!(
+        why.contains("nothing was recorded"),
+        "a run cut short is not the measurement it was asked for: {why}"
+    );
+    assert_eq!(job.answers.len(), 1, "what was heard stays");
+
+    let mut over = crate::job::Job::already("done".to_owned(), Vec::new());
+    over.stop();
+    assert!(
+        !over.stopped && over.refused.is_none(),
+        "a finished job is not stopped"
     );
 }

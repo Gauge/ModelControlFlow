@@ -1011,7 +1011,7 @@ fn a_busy_daemon_is_not_a_missing_one() {
     desk.refusal = None;
     desk.busy = true;
     desk.doing = crate::Doing::Hosting(crate::job::Job::start(
-        std::path::PathBuf::from("/nowhere/control.sock"),
+        std::path::Path::new("/nowhere/control.sock"),
         mcf_serve::control::Request::Hosted,
         "holding a-model".to_owned(),
     ));
@@ -1376,7 +1376,7 @@ fn a_run_under_way_is_said_on_every_page() {
     );
 
     let mut job = crate::job::Job::start(
-        std::path::PathBuf::from("/nowhere/control.sock"),
+        std::path::Path::new("/nowhere/control.sock"),
         mcf_serve::control::Request::Hosted,
         "measuring a-model".to_owned(),
     );

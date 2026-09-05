@@ -304,6 +304,9 @@ enum Request<'a> {
         deepest: u64,
         /// Which engine to ask through, if the caller named one.
         engine: Option<&'a str>,
+        /// Where the model goes, if the caller said: the processor or the
+        /// card. Absent is where MCF resolves it to.
+        on: Option<mcf_serve::control::On>,
         /// What the engine is started with beyond the plain load (B-463).
         started: mcf_serve::declared::Started,
     },
@@ -802,6 +805,7 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
 fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut deepest = 8192;
     let mut engine = None;
+    let mut on = None;
     let mut started = mcf_serve::declared::Started::default();
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
@@ -832,6 +836,23 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
                 };
                 engine = Some(*value);
             }
+            "--on" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "measure --on",
+                        needs: "cpu or gpu",
+                    });
+                };
+                on = match mcf_serve::control::On::parse(value) {
+                    Some(on) => Some(on),
+                    None => {
+                        return Ok(Request::UnexpectedArgument {
+                            command: "measure --on (wants cpu or gpu)",
+                            argument: value,
+                        });
+                    }
+                };
+            }
             // What the engine is started with beyond the plain load: a
             // timing under one of these is a timing of that condition, and
             // the two conditions are only comparable if each says which it
@@ -852,6 +873,7 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
         model,
         deepest,
         engine,
+        on,
         started,
     })
 }
@@ -1901,9 +1923,10 @@ const COMMANDS: &str = "\
     \x20 mcf measure <model>                 time it at doubling context\n\
     \x20         [--deepest <n>]             depths, so the cost of a longer\n\
     \x20         [--engine <name>]           conversation is measured rather\n\
-    \x20         [--draft-head]              than assumed. A draft head or a\n\
-    \x20         [--rope-scaling <kind>]     scaling is timed by running it\n\
-    \x20         [--rope-scale <n>]          twice: each run says which it was\n\
+    \x20         [--on cpu|gpu]              than assumed — where MCF puts\n\
+    \x20         [--draft-head]              it, unless --on says. A draft\n\
+    \x20         [--rope-scaling <kind>]     head or a scaling is timed by\n\
+    \x20         [--rope-scale <n>]          running it: each run says which\n\
     \x20 mcf settings <model>                every setting a model would run\n\
     \x20              [--context <n>]        under, and where each came from;\n\
     \x20                                     with a context, what that window\n\
@@ -2068,8 +2091,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             model,
             deepest,
             engine,
+            on,
             started,
-        } => measure::run(model, *deepest, *engine, *started),
+        } => measure::run(model, *deepest, *engine, *on, *started),
         Request::PromptReport {
             model,
             prompt,
@@ -2494,11 +2518,29 @@ mod tests {
             model: "m",
             deepest: 1024,
             engine: Some("e"),
+            on: None,
             started: mcf_serve::declared::Started::default(),
         };
         assert_eq!(
             parse(&["measure", "m", "--engine", "e", "--deepest", "1024"]),
             both
+        );
+        assert!(
+            matches!(
+                parse(&["measure", "m", "--on", "gpu"]),
+                Request::Measure {
+                    on: Some(mcf_serve::control::On::Card),
+                    ..
+                }
+            ),
+            "--on gpu puts the whole model on the card"
+        );
+        assert!(
+            matches!(
+                parse(&["measure", "m", "--on", "elsewhere"]),
+                Request::UnexpectedArgument { .. }
+            ),
+            "a place MCF does not put a model is not a run"
         );
         assert_eq!(
             parse(&["measure", "m", "--deepest", "1024", "--engine", "e"]),

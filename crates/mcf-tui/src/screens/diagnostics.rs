@@ -153,7 +153,7 @@ pub fn keep_the_ladder(tests: &mut [Test], job: &Job) {
                 .get("engine_ran")
                 .and_then(Value::as_text)
                 .unwrap_or("MCF did not say");
-            lines.push(format!("measured on {engine}"));
+            lines.push(format!("measured on {engine}{}", on_device(conditions)));
         }
     }
     let derived = job.conclusion().map(|body| {
@@ -305,12 +305,12 @@ pub struct Cursor {
 pub fn draw(
     into: &mut Screen,
     from: usize,
-    model: &str,
-    window: Option<u64>,
+    setup: Setup<'_>,
     tests: &[Test],
     cursor: Cursor,
     running: Option<&Job>,
 ) {
+    let (model, window) = (setup.model, setup.window);
     let mut row = from + 1;
     let button = |index: usize| {
         if cursor.on_buttons && cursor.button == index {
@@ -345,6 +345,38 @@ pub fn draw(
     );
     field(into, row, "context window", &window_text);
     row += 1;
+    // Where the model lands, in the console's own words for the same two
+    // facts on the host screen. Not a picker: MCF resolved these, and a
+    // person who wants them otherwise changes them where they are set.
+    let unresolved = || "not resolved".to_owned();
+    into.put(3, row, "engine", Ink::Quiet);
+    into.put(
+        21,
+        row,
+        &setup.engine.map_or_else(unresolved, str::to_owned),
+        Ink::Plain,
+    );
+    row += 1;
+    into.put(3, row, "runs on", Ink::Quiet);
+    let on: String = runs_on(&setup)
+        .chars()
+        .take(into.width().saturating_sub(24))
+        .collect();
+    into.put(21, row, &on, Ink::Plain);
+    into.put_right(
+        into.width().saturating_sub(3),
+        row,
+        "d changes · x stops a run",
+        Ink::Quiet,
+    );
+    row += 1;
+    if let Some(component) = setup.card_unused {
+        let said =
+            format!("a card is here that no engine drives; `mcf provision {component}` builds one");
+        let shown: String = said.chars().take(into.width().saturating_sub(6)).collect();
+        into.put(3, row, &shown, Ink::Held);
+        row += 1;
+    }
     if let Some(window) = window {
         let mut depths = Vec::new();
         let mut depth = 512_u64;
@@ -367,6 +399,57 @@ pub fn draw(
     }
     let after = tests_table(into, row + 2, tests, cursor.row, chosen);
     under_the_table(into, after, tests, cursor.row, running);
+}
+
+/// Which device the run was pointed at, as its conditions say, for the line
+/// that names the engine: a figure that does not say whether it is the
+/// card's or the processor's is a figure a reader cannot place (§3.4).
+#[must_use]
+pub fn on_device(conditions: &Value) -> String {
+    let Some(device) = conditions.get("device").and_then(Value::as_text) else {
+        return String::new();
+    };
+    match conditions.get("gpu_layers").and_then(Value::as_integer) {
+        Some(layers) if layers > 0 => format!(", {device} with {layers} layers on the card"),
+        _ => format!(", {device}"),
+    }
+}
+
+/// What the run is set up to use: the model, the window, and where the model
+/// lands — engine and device — as the daemon resolved them. The device is
+/// the line the screen had nothing of: a run whose page does not say whether
+/// it is timing a card or a processor is timing something the reader has to
+/// guess at (A7).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Setup<'a> {
+    /// The model's name.
+    pub model: &'a str,
+    /// The window a run would use.
+    pub window: Option<u64>,
+    /// The engine the model resolves to.
+    pub engine: Option<&'a str>,
+    /// The device it lands on.
+    pub device: Option<&'a str>,
+    /// Where the person put it instead, if they did.
+    pub on: Option<mcf_serve::control::On>,
+    /// A card here that no engine drives, and the component that would.
+    pub card_unused: Option<&'a str>,
+}
+
+/// The device line: where the model lands, and — where the person chose —
+/// where the next run puts it instead.
+#[must_use]
+pub fn runs_on(setup: &Setup<'_>) -> String {
+    let resolved = setup.device.unwrap_or("not resolved");
+    match setup.on {
+        None => resolved.to_owned(),
+        Some(mcf_serve::control::On::Processor) => {
+            format!("the processor, nothing on a card — chosen; MCF resolves it to {resolved}")
+        }
+        Some(mcf_serve::control::On::Card) => {
+            format!("the card, the whole model on it — chosen; MCF resolves it to {resolved}")
+        }
+    }
 }
 
 /// What goes under the table: a run's progress while it goes, and what the

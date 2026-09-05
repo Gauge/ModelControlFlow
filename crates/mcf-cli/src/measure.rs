@@ -25,6 +25,7 @@ pub(crate) fn run(
     model: &str,
     deepest: u64,
     engine: Option<&str>,
+    on: Option<mcf_serve::control::On>,
     started: mcf_serve::declared::Started,
 ) -> Response {
     let Some(socket) = crate::serve::socket_path() else {
@@ -55,6 +56,7 @@ pub(crate) fn run(
     let line = Request::Measure {
         model: model.to_owned(),
         engine: engine.map(str::to_owned),
+        on,
         deepest,
         started,
     }
@@ -66,6 +68,11 @@ pub(crate) fn run(
         };
     }
 
+    // **Printed as it comes, not at the end.** A measurement is minutes and
+    // says where it is at every generation; a terminal that showed nothing
+    // until the last line showed a run that looked stopped, and gave nobody
+    // a moment to cut it short (A7). What ends the run — the conditions, or
+    // a refusal — is the response; the way there is printed on the way.
     let mut lines: Vec<String> = Vec::new();
     let mut served = true;
     let reader = BufReader::new(&connection);
@@ -82,10 +89,14 @@ pub(crate) fn run(
             ));
             break;
         }
-        lines.extend(said(&answer.body));
         if matches!(answer.body.get("done"), Some(Value::Bool(true))) {
+            lines.extend(said(&answer.body));
             break;
         }
+        for line in said(&answer.body) {
+            println!("{line}");
+        }
+        let _flushed = std::io::stdout().flush();
     }
     Response {
         text: lines.join("\n"),
@@ -173,10 +184,22 @@ fn under_what(body: &Value) -> Vec<String> {
             .get("engine_ran")
             .and_then(Value::as_text)
             .unwrap_or("MCF did not say");
+        let device = conditions
+            .get("device")
+            .and_then(Value::as_text)
+            .map_or_else(
+                || "MCF did not say".to_owned(),
+                |device| match number(conditions, "gpu_layers") {
+                    Some(layers) if layers > 0 => format!("{device}, {layers} layers on the card"),
+                    Some(_) => format!("{device}, nothing on a card"),
+                    None => device.to_owned(),
+                },
+            );
         let mut out = vec![
             String::new(),
             "under these conditions:".to_owned(),
             format!("  engine        {ran}"),
+            format!("  device        {device}"),
             format!(
                 "  method        {}",
                 conditions

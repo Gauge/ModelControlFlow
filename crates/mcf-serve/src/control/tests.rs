@@ -143,12 +143,14 @@ fn the_new_requests_survive_the_wire() {
             started: crate::declared::Started::default(),
             model: "a-model.gguf".to_owned(),
             engine: None,
+            on: None,
             deepest: 8192,
         },
         Request::Measure {
             started: crate::declared::Started::default(),
             model: "a-model.gguf".to_owned(),
             engine: Some("stand-in".to_owned()),
+            on: Some(super::On::Processor),
             deepest: 512,
         },
         Request::Provision { component: None },
@@ -340,5 +342,31 @@ fn a_prompt_report_by_an_unknown_unit_is_refused() {
     assert!(
         format!("{refused:?}").contains("not above nought"),
         "{refused:?}"
+    );
+}
+
+/// Where a measurement puts the model travels as a word, and a word MCF does
+/// not place on is refused rather than read as *wherever*.
+#[test]
+fn a_measurement_says_where_the_model_goes() {
+    let asked = super::Request::Measure {
+        model: "a-model.gguf".to_owned(),
+        engine: None,
+        on: Some(super::On::Card),
+        deepest: 1024,
+        started: crate::declared::Started::default(),
+    };
+    let read = super::Request::read(&asked.to_line()).expect("its own line reads back");
+    assert_eq!(read, asked);
+    let cpu = r#"{"protocol":1,"ask":"measure","model":"a-model.gguf","deepest":512,"on":"cpu"}"#;
+    match super::Request::read(cpu) {
+        Ok(super::Request::Measure { on, .. }) => assert_eq!(on, Some(super::On::Processor)),
+        other => panic!("cpu is a word people type: {other:?}"),
+    }
+    let elsewhere =
+        r#"{"protocol":1,"ask":"measure","model":"a-model.gguf","deepest":512,"on":"cloud"}"#;
+    assert!(
+        super::Request::read(elsewhere).is_err(),
+        "a place MCF does not put a model is refused"
     );
 }

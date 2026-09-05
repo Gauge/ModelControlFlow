@@ -18,7 +18,7 @@
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use std::time::Instant;
@@ -41,6 +41,12 @@ pub struct Job {
     /// When it was started, so how long it took is measured rather than
     /// estimated (A7: the screen may only show a figure it actually took).
     started: Instant,
+    /// The connection the request went out on, kept so the job can be cut
+    /// short: closing it is how the daemon learns the asker has gone, and
+    /// the daemon stops the engine and the ladder on seeing that.
+    connection: Option<UnixStream>,
+    /// Whether it was cut short from this side.
+    pub stopped: bool,
 }
 
 /// One thing heard from the daemon.
@@ -73,6 +79,8 @@ impl Job {
             refused: None,
             finished: true,
             started: Instant::now(),
+            connection: None,
+            stopped: false,
         }
     }
 
@@ -80,11 +88,16 @@ impl Job {
     ///
     /// Returns immediately; what comes back arrives through [`Job::drain`].
     #[must_use]
-    pub fn start(socket: PathBuf, request: Request, what: String) -> Self {
+    pub fn start(socket: &Path, request: Request, what: String) -> Self {
         let (send, heard) = channel();
+        // Connected here rather than on the thread, so that a handle to the
+        // connection stays with the job: the thread reads it, and the job
+        // can close it to cut the run short.
+        let connected = UnixStream::connect(socket).ok();
+        let kept = connected.as_ref().and_then(|held| held.try_clone().ok());
         let _worker = std::thread::spawn(move || {
             let line = request.to_line();
-            let Ok(mut connection) = UnixStream::connect(&socket) else {
+            let Some(mut connection) = connected else {
                 let _sent = send.send(Heard::Refused(
                     "MCF is not answering on this computer".to_owned(),
                 ));
@@ -176,7 +189,32 @@ impl Job {
             refused: None,
             finished: false,
             started: Instant::now(),
+            connection: kept,
+            stopped: false,
         }
+    }
+
+    /// Cuts the run short.
+    ///
+    /// The connection is closed, which is the one thing the daemon watches
+    /// for while an engine runs: it stops the engine at its next glance and
+    /// climbs no further. What was heard so far stays; nothing is invented
+    /// about what was not, and the job says it was stopped rather than that
+    /// MCF failed (A2, A7).
+    pub fn stop(&mut self) {
+        if self.finished {
+            return;
+        }
+        if let Some(connection) = self.connection.take() {
+            let _closed = connection.shutdown(std::net::Shutdown::Both);
+        }
+        self.stopped = true;
+        self.finished = true;
+        self.refused = Some(format!(
+            "stopped at your asking after {} s; what had been measured is above, and nothing \
+             was recorded",
+            self.ran()
+        ));
     }
 
     /// How long this job has been running, in whole seconds.

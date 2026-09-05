@@ -445,6 +445,106 @@ pub fn accelerator_driver_present() -> bool {
     std::fs::read_dir("/proc/driver/nvidia/gpus").is_ok_and(|mut cards| cards.next().is_some())
 }
 
+/// The back end a card on this machine is driven through, read from what the
+/// kernel and the system installed — not from the card's name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// NVIDIA's driver is loaded.
+    Cuda,
+    /// A card the kernel drives through a driver mesa has a Vulkan driver
+    /// for, and the loader's table lists that driver.
+    Vulkan,
+    /// No card, or one nothing here can drive.
+    None,
+}
+
+/// What this machine's card is driven through, where it has one.
+///
+/// CUDA first where NVIDIA's driver is loaded, which is the build that reads
+/// that card best; otherwise Vulkan where a card the kernel drives through
+/// `amdgpu`, `i915` or `xe` has its Vulkan driver installed. Both halves are
+/// checked: a card without its Vulkan driver is a card an engine built for
+/// Vulkan would start and not find, and saying so here is cheaper than
+/// building one to find out.
+#[must_use]
+pub fn backend_present() -> Backend {
+    backend_from(
+        accelerator_driver_present(),
+        Path::new("/sys/class/drm"),
+        Path::new("/usr/share/vulkan/icd.d"),
+    )
+}
+
+/// The same choice, over the directories it reads (B-015).
+#[must_use]
+pub fn backend_from(nvidia: bool, drm: &Path, icds: &Path) -> Backend {
+    if nvidia {
+        return Backend::Cuda;
+    }
+    let vulkan = card_drivers(drm).iter().any(|driver| {
+        let icd = match driver.as_str() {
+            "amdgpu" => "radeon_icd.json",
+            "i915" | "xe" => "intel_icd.json",
+            _ => return false,
+        };
+        std::fs::metadata(icds.join(icd)).is_ok()
+    });
+    if vulkan {
+        Backend::Vulkan
+    } else {
+        Backend::None
+    }
+}
+
+/// The kernel driver behind each card the DRM class lists, by card, read
+/// from the driver link the kernel publishes and nothing else.
+#[must_use]
+pub fn card_drivers(drm: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(drm) else {
+        return Vec::new();
+    };
+    let mut cards: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("card") && !name.contains('-'))
+        })
+        .collect();
+    cards.sort();
+    cards
+        .iter()
+        .filter_map(|card| {
+            let driver = std::fs::read_link(card.join("device").join("driver")).ok()?;
+            driver
+                .file_name()
+                .and_then(|held| held.to_str())
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+/// The kernel driver behind the first card here, where there is one.
+#[must_use]
+pub fn card_driver_present() -> Option<String> {
+    card_drivers(Path::new("/sys/class/drm")).into_iter().next()
+}
+
+/// The component this machine's card wants, where it has one and an engine
+/// for it is not already provisioned.
+#[must_use]
+pub fn wanted_for(backend: Backend) -> Option<&'static mcf_core::component::Component> {
+    let wanted = match backend {
+        Backend::Cuda => "llama.cpp-cuda",
+        Backend::Vulkan => "llama.cpp-vulkan",
+        Backend::None => return None,
+    };
+    mcf_core::component::COMPONENTS
+        .iter()
+        .find(|component| component.name == wanted)
+}
+
 /// The component a model on this machine would run on: the accelerator build
 /// where the driver for one is loaded, the processor build otherwise.
 ///
@@ -458,11 +558,11 @@ pub fn accelerator_driver_present() -> bool {
 /// `None` only if MCF's own component table has lost the entry, which a test
 /// forbids; a caller says so rather than building something else.
 #[must_use]
-pub fn required(accelerator_driver: bool) -> Option<&'static mcf_core::component::Component> {
-    let wanted = if accelerator_driver {
-        "llama.cpp-cuda"
-    } else {
-        "llama.cpp"
+pub fn required(backend: Backend) -> Option<&'static mcf_core::component::Component> {
+    let wanted = match backend {
+        Backend::Cuda => "llama.cpp-cuda",
+        Backend::Vulkan => "llama.cpp-vulkan",
+        Backend::None => "llama.cpp",
     };
     mcf_core::component::COMPONENTS
         .iter()

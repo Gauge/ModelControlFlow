@@ -760,6 +760,8 @@ pub enum Picker {
     Model,
     /// How deep a context it is set up for.
     Window,
+    /// Where the model goes: as MCF resolves it, the processor, or the card.
+    On,
 }
 
 /// The context windows a measurement can be set up for.
@@ -821,6 +823,10 @@ pub enum Act {
     /// Run what is ticked on the chosen model: the ladder to the chosen
     /// window, the cross-check, or both in turn.
     RunChosen,
+    /// Cut the run that is going short.
+    Stop,
+    /// Where the next run puts the model; `None` is where MCF resolves it.
+    SetOn(Option<mcf_serve::control::On>),
     /// Open a dropdown, or close it if it is the one already open.
     ///
     /// **The screen had two controls drawn as dropdowns that were not
@@ -1027,6 +1033,14 @@ pub struct Desk {
     /// daemon, not worked out here, so that what Host builds is what MCF
     /// would have built from the command line (B-072).
     pub needs_engine: Option<String>,
+    /// A card this computer has that no provisioned engine drives: the
+    /// component that would, and the daemon's sentence saying so. Read
+    /// beside the models, because it is a fact about the machine and not
+    /// about any one of them (A21).
+    pub card_unused: Option<(String, String)>,
+    /// Where the next run puts the model, where the person chose: `None` is
+    /// where MCF resolves it to.
+    pub on: Option<mcf_serve::control::On>,
     /// The model to hold once the engine being built is there — the one Host
     /// was pressed for, so that a model chosen meanwhile is not held by a
     /// press that was for another.
@@ -1077,6 +1091,8 @@ impl Desk {
             socket,
             page: Page::Models,
             models: Vec::new(),
+            card_unused: None,
+            on: None,
             shown: None,
             scroll: 0.0,
             reading: mcf_tui::machine::Reading::default(),
@@ -1423,6 +1439,11 @@ impl Desk {
             }
             Act::LookUp => self.look_up(),
             Act::Download { reference, file } => self.download(&reference, &file),
+            Act::Stop => self.stop_run(),
+            Act::SetOn(on) => {
+                self.on = on;
+                self.open = None;
+            }
             Act::Measure { deepest } => {
                 if let Some(at) = self.chosen {
                     self.page = Page::Diagnostics;
@@ -1643,7 +1664,7 @@ impl Desk {
             self.host_after = Some(held.path.clone());
             self.building = Some(engine.clone());
             self.doing = Doing::Provisioning(job::Job::start(
-                self.socket.clone(),
+                &self.socket,
                 Request::Provision { component: None },
                 format!("building {engine} so that {} can be held", held.name),
             ));
@@ -1661,7 +1682,7 @@ impl Desk {
             return;
         };
         self.doing = Doing::Hosting(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::Host {
                 model: held.path.clone(),
                 settings: settings.to_value(),
@@ -1683,7 +1704,7 @@ impl Desk {
         self.build_failed = None;
         self.building = Some(name.to_owned());
         self.doing = Doing::Provisioning(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::Provision {
                 component: Some(name.to_owned()),
             },
@@ -1762,7 +1783,7 @@ impl Desk {
             return;
         }
         self.doing = Doing::Listing(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::Offered {
                 reference: asked.clone(),
                 from: None,
@@ -1790,7 +1811,7 @@ impl Desk {
             return;
         };
         self.doing = Doing::Reporting(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::PromptReport {
                 // The window has no way to ask for a turn yet; the socket
                 // takes one (B-455), and the window's turn is B-462.
@@ -1810,7 +1831,7 @@ impl Desk {
     /// Fetches one published file.
     pub fn download(&mut self, reference: &str, file: &str) {
         self.doing = Doing::Downloading(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::Acquire {
                 reference: reference.to_owned(),
                 file: file.to_owned(),
@@ -1827,7 +1848,7 @@ impl Desk {
         };
         self.chosen = Some(at);
         self.doing = Doing::Measuring(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::Measure {
                 // The plain load: the window times what the model does as
                 // its file lays it out, and a switch is asked for at the
@@ -1835,6 +1856,7 @@ impl Desk {
                 started: mcf_serve::declared::Started::default(),
                 model: held.path.clone(),
                 engine: None,
+                on: self.on,
                 deepest,
             },
             format!("measuring {}", held.name),
@@ -1858,6 +1880,19 @@ impl Desk {
         }
     }
 
+    /// Cuts the run that is going short: the ladder or the cross-check. The
+    /// daemon stops the engine at its next glance and climbs no further, and
+    /// what was heard stays on the page (A7).
+    pub fn stop_run(&mut self) {
+        match &mut self.doing {
+            Doing::Measuring(job) | Doing::CrossChecking(job) => {
+                job.stop();
+                self.cross_check_after = false;
+            }
+            _ => {}
+        }
+    }
+
     /// Reads what the provisioned engine produces from the chosen model with
     /// MCF's own engine — the same request `mcf cross-check` sends (B-072).
     pub fn cross_check(&mut self, at: usize) {
@@ -1866,7 +1901,7 @@ impl Desk {
         };
         self.chosen = Some(at);
         self.doing = Doing::CrossChecking(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::CrossCheck {
                 model: held.path.clone(),
             },
@@ -1917,7 +1952,7 @@ impl Desk {
             .filter(|typed| !typed.is_empty())
             .map(str::to_owned);
         self.doing = Doing::Answering(job::Job::start(
-            self.socket.clone(),
+            &self.socket,
             Request::Generate {
                 model: held.path.clone(),
                 prompt: question,
@@ -1998,6 +2033,12 @@ impl Desk {
                     .unwrap_or_default();
                 read.sort_by(|one, two| one.name.cmp(&two.name));
                 self.models = read;
+                self.card_unused = answer.body.get("card_unused").and_then(|held| {
+                    Some((
+                        held.get("component").and_then(Value::as_text)?.to_owned(),
+                        held.get("because").and_then(Value::as_text)?.to_owned(),
+                    ))
+                });
             }
             Ok(answer) => {
                 self.refusal = Some(refused_because(&answer.body));
