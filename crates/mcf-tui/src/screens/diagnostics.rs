@@ -143,7 +143,11 @@ pub fn keep_the_ladder(tests: &mut [Test], job: &Job) {
             } else {
                 "Unknown".to_owned()
             };
-            lines.push(format!("at {} tokens   {said}", grouped(depth)));
+            lines.push(format!(
+                "at {} tokens   {said}{}",
+                grouped(depth),
+                pairs_note(reading)
+            ));
         }
         if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
             // B65 and D31: which engine ran is a condition of every figure
@@ -401,6 +405,38 @@ pub fn draw(
     under_the_table(into, after, tests, cursor.row, running);
 }
 
+/// How many pairs a rung was read off, where fewer than all of them
+/// separated, and what became of the rest — so a figure from one pair does
+/// not wear the look of one from three (A7, F174). Empty where every pair
+/// separated, or the reading predates the count.
+#[must_use]
+pub fn pairs_note(reading: &Value) -> String {
+    let Some(pairs) = reading.get("pairs") else {
+        return String::new();
+    };
+    let figure = |key: &str| pairs.get(key).and_then(Value::as_integer).unwrap_or(0);
+    let (of, separated) = (figure("of"), figure("separated"));
+    if separated >= of {
+        return String::new();
+    }
+    let mut why = Vec::new();
+    for (key, said) in [
+        ("did_not_separate", "did not separate"),
+        ("missed_the_pin", "missed the pin"),
+        ("refused", "were refused"),
+    ] {
+        let count = figure(key);
+        if count > 0 {
+            why.push(format!("{count} {said}"));
+        }
+    }
+    format!(
+        " — over {separated} of {of} pairs{}{}",
+        if why.is_empty() { "" } else { ": " },
+        why.join(", ")
+    )
+}
+
 /// Which device the run was pointed at, as its conditions say, for the line
 /// that names the engine: a figure that does not say whether it is the
 /// card's or the processor's is a figure a reader cannot place (§3.4).
@@ -538,7 +574,14 @@ pub fn progress_of(job: &Job) -> Vec<(String, Ink)> {
                 .get("ms_per_token")
                 .and_then(Value::as_text)
                 .map_or_else(|| "Unknown".to_owned(), |ms| format!("{ms} ms a token"));
-            lines.push((format!("at {} tokens   {said}", grouped(depth)), Ink::Plain));
+            lines.push((
+                format!(
+                    "at {} tokens   {said}{}",
+                    grouped(depth),
+                    pairs_note(reading)
+                ),
+                Ink::Plain,
+            ));
         }
         if matches!(answer.get("reading"), Some(Value::Bool(true))) {
             lines.push((

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 121 |
+| **Version** | 122 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 175 | [F175 — A rung read off one pair has no spread: a spread of nought was printed for one sample beside a spread of two milliseconds for three, every pair is now counted by what became of it, and GLM-4.7-Flash on the card read 17.98 ms a token over two pairs of three at 512 deep with one that did not separate (B-469, F174, F53, A7, A9)](#175--f175--a-rung-read-off-one-pair-has-no-spread-a-spread-of-nought-was-printed-for-one-sample-beside-a-spread-of-two-milliseconds-for-three-every-pair-is-now-counted-by-what-became-of-it-and-glm-47-flash-on-the-card-read-1798-ms-a-token-over-two-pairs-of-three-at-512-deep-with-one-that-did-not-separate-b-469-f174-f53-a7-a9) |
 | 174 | [F174 — A diagnostic says which device it is on, and a Radeon is one: the profiler reads the 8060S from its driver's files, a Vulkan build of the reference drives it, GLM-4.7-Flash decodes at 16.1 ms a token on the card against 33.9 on the processor, a processor run reused the card's server until the build and the layers joined the reuse rule, and a run is cut short from wherever it was started (B-467, B-468, B-072, F133, A7, A21, §3.4)](#174--f174--a-diagnostic-says-which-device-it-is-on-and-a-radeon-is-one-the-profiler-reads-the-8060s-from-its-drivers-files-a-vulkan-build-of-the-reference-drives-it-glm-47-flash-decodes-at-161-ms-a-token-on-the-card-against-339-on-the-processor-a-processor-run-reused-the-cards-server-until-the-build-and-the-layers-joined-the-reuse-rule-and-a-run-is-cut-short-from-wherever-it-was-started-b-467-b-468-b-072-f133-a7-a21-34) |
 | 173 | [F173 — A budget measured on a probe's question bounds that question and no other: GLM-4.7-Flash's stop-conditions budget of 247 was 244 tokens of thought about a river's name, the thinking probe raised it to 279, and a two-sentence question thought for 297 (B-466, F172, F106, B-451, A7, D42)](#173--f173--a-budget-measured-on-a-probes-question-bounds-that-question-and-no-other-glm-47-flashs-stop-conditions-budget-of-247-was-244-tokens-of-thought-about-a-rivers-name-the-thinking-probe-raised-it-to-279-and-a-two-sentence-question-thought-for-297-b-466-f172-f106-b-451-a7-d42) |
 | 172 | [F172 — An applied addressing that ends inside the thinking is read as one: `mcf run` on GLM-4.7-Flash went from 400 tokens of loop cut by the budget, raw, to `Nile` after 205 tokens of thought counted apart, and the budget the probe applied is the thought's size (B-465, B-466, F171, B-451, A7, §3.4)](#172--f172--an-applied-addressing-that-ends-inside-the-thinking-is-read-as-one-mcf-run-on-glm-47-flash-went-from-400-tokens-of-loop-cut-by-the-budget-raw-to-nile-after-205-tokens-of-thought-counted-apart-and-the-budget-the-probe-applied-is-the-thoughts-size-b-465-b-466-f171-b-451-a7-34) |
@@ -9597,6 +9598,40 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 175 · F175 — A rung read off one pair has no spread: a spread of nought was printed for one sample beside a spread of two milliseconds for three, every pair is now counted by what became of it, and GLM-4.7-Flash on the card read 17.98 ms a token over two pairs of three at 512 deep with one that did not separate (B-469, F174, F53, A7, A9)
+
+F174 left a figure standing that should not have: the card's first rung on
+the two-billion model read *0.226 ms a token (spread 0.000, over 1
+samples)* beside a rung of *16.144 ms a token (spread 0.078, over 2
+samples)*, and the one-sample rung looked the steadier of the two. A rung
+is three pairs of runs, one token against seventeen, and a pair whose
+longer run finished no later than its shorter is not a sample (F53); the
+median of what is left is the figure, and the spread was written as the
+last sample less the first — which for one sample is nought, and nought
+reads as *perfectly steady*, which is the opposite of what one throw of
+the dice is.
+
+**What changed.** A spread is between two: a rung read off one pair now
+carries no spread at all, absent rather than nought (A7). Every pair is
+counted by what became of it — separated, did not separate, missed the
+pin, refused — and the count travels in the reading. Every surface that
+prints a rung says, where fewer than all three separated, *over 2 of 3
+pairs: 1 did not separate* beside the figure; `mcf measure` says *no
+spread from one pair* where there is none. The fall-off's bracket, which
+is drawn from the spread at its two rungs, has nothing to draw from at
+such a rung, and instead of saying nothing the page says which rung and
+why. A reading from before the count carries none of this and is not
+given a story it did not have.
+
+**What ran.** GLM-4.7-Flash on the Radeon through the Vulkan build, 512
+and 1,024 deep: *17.979 ms a token (spread 2.028, over 2 sample(s) — over 2
+of 3 pairs: 1 did not separate)* and *17.986 ms a token (spread 3.995,
+over 3 sample(s))*. The rung the note is for is the first one after a
+load, as in F174; here two of its pairs separated and the spread stands.
+The one-pair shape is held by the daemon's own test, which reads a rung
+off one pair and finds no spread and the pairs counted, and off two and
+finds the spread between them.
+
 ## 174 · F174 — A diagnostic says which device it is on, and a Radeon is one: the profiler reads the 8060S from its driver's files, a Vulkan build of the reference drives it, GLM-4.7-Flash decodes at 16.1 ms a token on the card against 33.9 on the processor, a processor run reused the card's server until the build and the layers joined the reuse rule, and a run is cut short from wherever it was started (B-467, B-468, B-072, F133, A7, A21, §3.4)
 
 The window's Diagnostics page ran a measurement and said nothing about
@@ -12145,6 +12180,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 122 — over how many pairs
+
+F175: a rung read off one pair has no spread, the pairs are counted by
+what became of them, and every surface says over how many a figure
+stands (B-469).
 
 ### Version 121 — on which device
 

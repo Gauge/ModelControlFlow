@@ -644,3 +644,33 @@ fn a_job_cut_short_says_so_and_keeps_what_it_heard() {
         "a finished job is not stopped"
     );
 }
+
+/// A rung read off fewer pairs than were run says so, and what became of
+/// the rest; one read off every pair says nothing more (A7, F174).
+#[test]
+fn a_rung_says_how_many_pairs_it_was_read_off() {
+    let one_of_three = Value::map([(
+        "pairs",
+        Value::map([
+            ("of", Value::Integer(3)),
+            ("separated", Value::Integer(1)),
+            ("did_not_separate", Value::Integer(2)),
+            ("missed_the_pin", Value::Integer(0)),
+            ("refused", Value::Integer(0)),
+        ]),
+    )]);
+    assert_eq!(
+        screens::diagnostics::pairs_note(&one_of_three),
+        " — over 1 of 3 pairs: 2 did not separate"
+    );
+    let all = Value::map([(
+        "pairs",
+        Value::map([("of", Value::Integer(3)), ("separated", Value::Integer(3))]),
+    )]);
+    assert_eq!(screens::diagnostics::pairs_note(&all), "");
+    assert_eq!(
+        screens::diagnostics::pairs_note(&Value::map([("depth", Value::Integer(512))])),
+        "",
+        "a reading from before the count is not given one"
+    );
+}

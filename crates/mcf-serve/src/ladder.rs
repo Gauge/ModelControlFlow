@@ -336,7 +336,46 @@ pub fn memory(readings: &[Value], planned: &Planned) -> Value {
 
 /// The bracket line, where the rungs said their spread: what the slope sits
 /// between, or that the spread reaches it and no slope is resolved.
+/// The first of the named rungs whose reading has no spread, and why that
+/// is: read off one pair, the others having not separated.
+fn unspread_rung(readings: &[Value], depths: &[u64]) -> Option<String> {
+    depths.iter().find_map(|depth| {
+        let reading = readings
+            .iter()
+            .find(|reading| per_token_of(reading).is_some_and(|(at, _)| at == *depth))?;
+        if reading
+            .get("spread_ns")
+            .and_then(Value::as_integer)
+            .is_some()
+        {
+            return None;
+        }
+        // Only where the pairs were counted: a reading from before the
+        // count has no spread and no story about it, and nothing is made
+        // up for it.
+        let pairs = Some(reading.get("pairs")?);
+        let figure = |key: &str| {
+            pairs
+                .and_then(|pairs| pairs.get(key))
+                .and_then(Value::as_integer)
+                .unwrap_or(0)
+        };
+        Some(format!(
+            "no bracket: the rung at {depth} tokens was read off {} pair(s) of {}, and a spread \
+             is between two — {} did not separate, {} missed the pin, {} were refused",
+            figure("separated"),
+            figure("of"),
+            figure("did_not_separate"),
+            figure("missed_the_pin"),
+            figure("refused"),
+        ))
+    })
+}
+
 fn bracket_said(held: &Value) -> Option<String> {
+    if let Some(why) = held.get("bracket_why").and_then(Value::as_text) {
+        return Some(why.to_owned());
+    }
     let bracket = held
         .get("bracket")
         .filter(|value| !matches!(value, Value::Null))?;
@@ -583,6 +622,13 @@ pub fn fall_off(
         per_block,
     } = predicted_slope(planned, deep.0, per_token_of_depth);
     let bracket = bracket_of(readings, *shallow, *deep, predicted);
+    // Where there is no bracket because a rung has no spread, the reason
+    // travels: a rung read off one pair has a figure and nothing to bracket
+    // it with, and a reader is owed which rung (A7, F174).
+    let bracket_why = bracket
+        .is_none()
+        .then(|| unspread_rung(readings, &[shallow.0, deep.0]))
+        .flatten();
     let prediction = why_predicted(reread, machine.is_some());
     Value::map([
         ("measured", Value::Bool(true)),
@@ -624,6 +670,7 @@ pub fn fall_off(
         ),
         ("reached_percent", reached.map_or(Value::Null, count)),
         ("prediction", Value::text(prediction)),
+        ("bracket_why", bracket_why.map_or(Value::Null, Value::text)),
         (
             "bracket",
             bracket.map_or(Value::Null, |bracket| bracket.as_value(as_milliseconds)),

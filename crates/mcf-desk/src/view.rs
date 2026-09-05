@@ -1896,6 +1896,63 @@ fn cross_check_progress(paint: &mut Painter, job: &crate::job::Job, area: Box) {
     }
 }
 
+/// One rung as it arrived: the depth, the figure or that there is none,
+/// and how many pairs it was read off where fewer than all separated.
+/// Returns where the next line goes, or nothing where this was no rung.
+fn one_reading(paint: &mut Painter, answer: &Value, x: f32, mut y: f32, wide: f32) -> Option<f32> {
+    let ink = paint.ink;
+    let reading = answer.get("reading")?;
+    let depth = reading
+        .get("depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    paint.say_at(
+        x,
+        y,
+        &format!(
+            "at {} tokens",
+            words::grouped(u64::try_from(depth).unwrap_or(0))
+        ),
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    let (said, colour) = if matches!(reading.get("measured"), Some(Value::Bool(true))) {
+        (
+            reading
+                .get("ms_per_token")
+                .and_then(Value::as_text)
+                .map_or_else(|| UNKNOWN.to_owned(), |ms| format!("{ms} ms a token")),
+            ink.ink,
+        )
+    } else {
+        (UNKNOWN.to_owned(), ink.faint)
+    };
+    paint.say_at(x + 190.0, y, &said, Weight::Bold, size::BODY, colour);
+    // A figure from one pair of three says so beside itself, quietly,
+    // so it does not wear the look of one from three (A7, F174).
+    let note = mcf_tui::screens::diagnostics::pairs_note(reading);
+    if !note.is_empty() {
+        let after = paint.measure(&said, Weight::Bold, size::BODY);
+        let shown = paint.elide(
+            &note,
+            Weight::Regular,
+            size::SMALL,
+            (wide - 190.0 - after - 8.0).max(40.0),
+        );
+        paint.say_at(
+            x + 190.0 + after + 8.0,
+            y + 1.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    y += 22.0;
+    Some(y)
+}
+
 /// What a run has said so far, under the setup rather than instead of it.
 fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
     let ink = paint.ink;
@@ -1936,37 +1993,9 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
         y += 22.0;
     }
     for answer in &job.answers {
-        let Some(reading) = answer.get("reading") else {
-            continue;
-        };
-        let depth = reading
-            .get("depth")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        paint.say_at(
-            area.x,
-            y,
-            &format!(
-                "at {} tokens",
-                words::grouped(u64::try_from(depth).unwrap_or(0))
-            ),
-            Weight::Regular,
-            size::BODY,
-            ink.quiet,
-        );
-        let (said, colour) = if matches!(reading.get("measured"), Some(Value::Bool(true))) {
-            (
-                reading
-                    .get("ms_per_token")
-                    .and_then(Value::as_text)
-                    .map_or_else(|| UNKNOWN.to_owned(), |ms| format!("{ms} ms a token")),
-                ink.ink,
-            )
-        } else {
-            (UNKNOWN.to_owned(), ink.faint)
-        };
-        paint.say_at(area.x + 190.0, y, &said, Weight::Bold, size::BODY, colour);
-        y += 22.0;
+        if let Some(next) = one_reading(paint, answer, area.x, y, area.w) {
+            y = next;
+        }
         if y > area.bottom() - 24.0 {
             return;
         }

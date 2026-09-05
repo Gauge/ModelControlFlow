@@ -1157,3 +1157,59 @@ fn a_prompt_report_says_what_its_generations_were_addressed_as() {
         "im_start…im_end as assistant — set by the chat-template probe"
     );
 }
+
+/// A rung read off one pair has a figure and no spread, and says how many
+/// pairs it was read off and what became of the rest; one read off two has a
+/// spread between them (F174).
+#[test]
+fn a_rung_over_one_pair_has_no_spread() {
+    let mut pairs = super::Pairs::of(3);
+    pairs.separated = 1;
+    pairs.not_apart = 2;
+    let reading = super::rung_reading(
+        512,
+        &mut [226_000],
+        &mut [380_000_000],
+        (Some(4096), None),
+        &pairs,
+        (None, None),
+    );
+    assert_eq!(reading.get("measured"), Some(&Value::Bool(true)));
+    assert_eq!(reading.get("spread_ns"), Some(&Value::Null));
+    assert_eq!(reading.get("spread_ms"), Some(&Value::Null));
+    let pairs = reading.get("pairs").expect("the pairs are counted");
+    assert_eq!(pairs.get("separated"), Some(&Value::Integer(1)));
+    assert_eq!(pairs.get("did_not_separate"), Some(&Value::Integer(2)));
+
+    let mut pairs = super::Pairs::of(3);
+    pairs.separated = 2;
+    pairs.pin_missed = 1;
+    let reading = super::rung_reading(
+        512,
+        &mut [16_000_000, 16_078_000],
+        &mut [1_000, 2_000],
+        (None, None),
+        &pairs,
+        (None, None),
+    );
+    assert_eq!(reading.get("spread_ns"), Some(&Value::Integer(78_000)));
+    assert_eq!(
+        reading.get("ns_per_token"),
+        Some(&Value::Integer(16_078_000)),
+        "the median of two is the upper, as the middle of a sorted list"
+    );
+
+    let none = super::rung_reading(
+        512,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        (None, None),
+        &super::Pairs::of(3),
+        (None, None),
+    );
+    assert_eq!(none.get("measured"), Some(&Value::Bool(false)));
+    assert!(
+        none.get("pairs").is_some(),
+        "an unmeasured rung counts its pairs too"
+    );
+}

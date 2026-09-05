@@ -1168,6 +1168,104 @@ impl Timed {
 /// where the engine refused the depth, that is the reason, not the pair
 /// (F152); where it ran but did not produce the pinned count, that is
 /// (B-396).
+/// Every pair of runs at a rung, by what became of it: a sample, or not one
+/// for a stated reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Pairs {
+    /// How many pairs were run.
+    of: u32,
+    /// How many separated, which are the samples.
+    separated: usize,
+    /// How many did not: the longer run finished no later than the shorter.
+    not_apart: usize,
+    /// How many had a run that did not produce what it was pinned to.
+    pin_missed: usize,
+    /// How many had a run the engine refused.
+    refused: usize,
+}
+
+impl Pairs {
+    const fn of(of: u32) -> Self {
+        Self {
+            of,
+            separated: 0,
+            not_apart: 0,
+            pin_missed: 0,
+            refused: 0,
+        }
+    }
+
+    fn to_value(self) -> Value {
+        Value::map([
+            ("of", Value::Integer(i64::from(self.of))),
+            ("separated", as_whole(self.separated)),
+            ("did_not_separate", as_whole(self.not_apart)),
+            ("missed_the_pin", as_whole(self.pin_missed)),
+            ("refused", as_whole(self.refused)),
+        ])
+    }
+}
+
+/// One rung's reading: the median of its samples with the spread between
+/// them, or why there is none.
+///
+/// **A spread is between two.** A rung read off one pair has a figure and no
+/// spread, and writing nought there said *perfectly steady* about a reading
+/// that was one throw of the dice — which is how a card's first rung after a
+/// load reported 0.226 ms a token beside a 16 ms rung and looked the more
+/// certain of the two (F174). Absent rather than nought, and the pairs are
+/// counted beside it.
+fn rung_reading(
+    depth: u64,
+    samples: &mut [u64],
+    first_token: &mut [u64],
+    (window, peak_resident): (Option<u64>, Option<u64>),
+    pairs: &Pairs,
+    (refused, fell_short): (Option<String>, Option<String>),
+) -> Value {
+    let at_depth = Value::Integer(i64::try_from(depth).unwrap_or(i64::MAX));
+    let Some(per_token) = middle(samples) else {
+        let mut reading = not_measured(at_depth, refused, fell_short);
+        if let Value::Map(fields) = &mut reading {
+            fields.insert("pairs".to_owned(), pairs.to_value());
+        }
+        return reading;
+    };
+    let spread = (samples.len() >= 2).then(|| {
+        samples
+            .last()
+            .copied()
+            .unwrap_or(per_token)
+            .saturating_sub(samples.first().copied().unwrap_or(per_token))
+    });
+    Value::map([
+        ("depth", at_depth),
+        ("ms_per_token", Value::text(as_milliseconds(per_token))),
+        ("ns_per_token", as_whole(per_token)),
+        (
+            "first_token_ms",
+            middle(first_token).map_or(Value::Null, |ns| Value::text(as_milliseconds(ns))),
+        ),
+        (
+            "first_token_ns",
+            middle(first_token).map_or(Value::Null, as_whole),
+        ),
+        (
+            "spread_ms",
+            spread.map_or(Value::Null, |spread| Value::text(as_milliseconds(spread))),
+        ),
+        ("spread_ns", spread.map_or(Value::Null, as_whole)),
+        ("samples", as_whole(samples.len())),
+        ("pairs", pairs.to_value()),
+        ("window", window.map_or(Value::Null, as_whole)),
+        (
+            "peak_resident_bytes",
+            peak_resident.map_or(Value::Null, as_whole),
+        ),
+        ("measured", Value::Bool(true)),
+    ])
+}
+
 fn not_measured(depth: Value, refused: Option<String>, fell_short: Option<String>) -> Value {
     Value::map([
         ("depth", depth),
@@ -3617,6 +3715,7 @@ impl Daemon {
         // sixteen because sixteen is what separates the two runs, and a
         // pair where that is not so is not divided (B-396).
         let mut fell_short: Option<String> = None;
+        let mut pairs = Pairs::of(REPEATS);
         for repeat in 0..REPEATS {
             report(a_run_starting(depth, 1, repeat));
             let one =
@@ -3647,74 +3746,43 @@ impl Daemon {
             if asker_left(refused.as_deref()) {
                 break;
             }
-            if let (Ok(short), Ok(long)) = (&one, &many)
-                && short.held_the_pin(1)
-                && long.held_the_pin(1 + SETTLED)
-                && long.ns > short.ns
-            {
-                #[expect(
-                    clippy::integer_division,
-                    reason = "a difference in nanoseconds over sixteen tokens; the \
-                              remainder is under a nanosecond a token"
-                )]
-                let per_token = (long.ns - short.ns) / u64::from(SETTLED);
-                samples.push(per_token);
-                first_token.push(short.ns);
+            // Every pair is accounted for: the ones that separated are the
+            // samples, and the ones that did not are counted by why, so a
+            // rung read off one pair of three says so rather than wearing
+            // the same figure as one read off three (A7, F174).
+            match (&one, &many) {
+                (Ok(short), Ok(long))
+                    if short.held_the_pin(1)
+                        && long.held_the_pin(1 + SETTLED)
+                        && long.ns > short.ns =>
+                {
+                    #[expect(
+                        clippy::integer_division,
+                        reason = "a difference in nanoseconds over sixteen tokens; the \
+                                  remainder is under a nanosecond a token"
+                    )]
+                    let per_token = (long.ns - short.ns) / u64::from(SETTLED);
+                    samples.push(per_token);
+                    first_token.push(short.ns);
+                }
+                (Ok(short), Ok(long))
+                    if short.held_the_pin(1) && long.held_the_pin(1 + SETTLED) =>
+                {
+                    pairs.not_apart = pairs.not_apart.saturating_add(1);
+                }
+                (Ok(_), Ok(_)) => pairs.pin_missed = pairs.pin_missed.saturating_add(1),
+                _ => pairs.refused = pairs.refused.saturating_add(1),
             }
         }
-        let at_depth = Value::Integer(i64::try_from(depth).unwrap_or(i64::MAX));
-        let reading = match middle(&mut samples) {
-            Some(per_token) => {
-                let spread = samples
-                    .last()
-                    .copied()
-                    .unwrap_or(per_token)
-                    .saturating_sub(samples.first().copied().unwrap_or(per_token));
-                Value::map([
-                    ("depth", at_depth),
-                    ("ms_per_token", Value::text(as_milliseconds(per_token))),
-                    // As a whole number too, for the slope read between rungs.
-                    (
-                        "ns_per_token",
-                        Value::Integer(i64::try_from(per_token).unwrap_or(i64::MAX)),
-                    ),
-                    (
-                        "first_token_ms",
-                        middle(&mut first_token)
-                            .map_or(Value::Null, |ns| Value::text(as_milliseconds(ns))),
-                    ),
-                    // As a whole number too, for what is read between rungs.
-                    (
-                        "first_token_ns",
-                        middle(&mut first_token).map_or(Value::Null, |ns| {
-                            Value::Integer(i64::try_from(ns).unwrap_or(i64::MAX))
-                        }),
-                    ),
-                    ("spread_ms", Value::text(as_milliseconds(spread))),
-                    // As a whole number too, for the bracket the slope read
-                    // between rungs sits in (B-427).
-                    ("spread_ns", as_whole(spread)),
-                    ("samples", as_whole(samples.len())),
-                    // The window the engine ran in and its peak resident
-                    // memory across the repeats, for what is read between
-                    // rungs (B-424).
-                    (
-                        "window",
-                        window.map_or(Value::Null, |tokens| {
-                            Value::Integer(i64::try_from(tokens).unwrap_or(i64::MAX))
-                        }),
-                    ),
-                    (
-                        "peak_resident_bytes",
-                        peak_resident.map_or(Value::Null, |bytes| {
-                            Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
-                        }),
-                    ),
-                    ("measured", Value::Bool(true)),
-                ])
-            }
-            None => not_measured(at_depth, refused, fell_short),
-        };
+        pairs.separated = samples.len();
+        let reading = rung_reading(
+            depth,
+            &mut samples,
+            &mut first_token,
+            (window, peak_resident),
+            &pairs,
+            (refused, fell_short),
+        );
         (reading, ran_on)
     }
 

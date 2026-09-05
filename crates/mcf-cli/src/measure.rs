@@ -143,17 +143,23 @@ fn said(body: &Value) -> Vec<String> {
         let depth = number(reading, "depth").unwrap_or(0);
         return vec![
             if matches!(reading.get("measured"), Some(Value::Bool(true))) {
+                // A spread is between two: a rung read off one pair has none,
+                // and says so rather than wearing a nought (A7, F174).
+                let spread = reading
+                    .get("spread_ms")
+                    .and_then(Value::as_text)
+                    .map_or_else(
+                        || "no spread from one pair".to_owned(),
+                        |spread| format!("spread {spread}"),
+                    );
                 format!(
-                    "  {depth:>7} tokens deep — {} ms a token (spread {}, over {} samples)",
+                    "  {depth:>7} tokens deep — {} ms a token ({spread}, over {} sample(s){})",
                     reading
                         .get("ms_per_token")
                         .and_then(Value::as_text)
                         .unwrap_or("?"),
-                    reading
-                        .get("spread_ms")
-                        .and_then(Value::as_text)
-                        .unwrap_or("?"),
                     number(reading, "samples").unwrap_or(0),
+                    mcf_tui::screens::diagnostics::pairs_note(reading),
                 )
             } else {
                 // A9: a depth that would not separate is a result, and it is
