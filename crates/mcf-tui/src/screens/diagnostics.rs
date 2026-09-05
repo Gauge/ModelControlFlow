@@ -36,6 +36,8 @@ pub enum Run {
     /// One cross-check: MCF's own engine reading what the provisioned one
     /// produced (`mcf cross-check`).
     CrossCheck,
+    /// The probes, as one run the daemon carries (`mcf probe`, B-478).
+    Probes,
 }
 
 /// One measurement that can be asked for.
@@ -51,8 +53,6 @@ pub struct Test {
     pub seconds: Option<u64>,
     /// What runs it.
     pub run: Run,
-    /// Whether it is selected.
-    pub chosen: bool,
     /// How long the last run of this test actually took, in seconds.
     ///
     /// **`None` until it has run, and `None` is not zero** (A7). A test that
@@ -75,7 +75,6 @@ pub fn tests() -> Vec<Test> {
         devices: "both",
         seconds,
         run: Run::Ladder,
-        chosen: true,
         ran: None,
         result: None,
     };
@@ -89,27 +88,57 @@ pub fn tests() -> Vec<Test> {
             devices: "both engines",
             seconds: Some(90),
             run: Run::CrossCheck,
-            chosen: false,
             ran: None,
             result: None,
         },
         ladder("Prompt reading speed", None),
+        // The probes: minutes of short trials, most of them the chat
+        // template's; the figure is what a full run took on this machine
+        // through a provisioned engine (F185).
+        Test {
+            name: "Capabilities — the probes",
+            devices: "an engine",
+            seconds: Some(240),
+            run: Run::Probes,
+            ran: None,
+            result: None,
+        },
     ]
 }
 
-/// Flips the choice at `at`, by the rule both surfaces share (B-072): the
-/// rows one run answers are chosen and unchosen together.
-pub fn toggle<'a>(rows: impl IntoIterator<Item = (Run, &'a mut bool)>, at: usize) {
-    let rows: Vec<(Run, &'a mut bool)> = rows.into_iter().collect();
-    let Some((flipped, chosen)) = rows.get(at) else {
-        return;
-    };
-    let (flipped, now) = (*flipped, !**chosen);
-    for (run, chosen) in rows {
-        if run == flipped {
-            *chosen = now;
+/// Writes a finished probe run onto its row: every line the daemon wrote
+/// for each probe, in order, or the refusal (B-478).
+pub fn keep_the_probes(tests: &mut [Test], job: &Job) {
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(why) = &job.refused {
+        lines.push(why.clone());
+    } else {
+        for answer in &job.answers {
+            lines.extend(
+                answer
+                    .get("lines")
+                    .and_then(Value::as_list)
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter_map(Value::as_text)
+                    .map(str::to_owned),
+            );
         }
     }
+    for test in tests.iter_mut().filter(|test| test.run == Run::Probes) {
+        test.ran = Some(job.ran());
+        test.result = Some(lines.clone());
+    }
+}
+
+/// The console's estimate for one run, on the row that names it.
+#[must_use]
+pub fn seconds_of(tests: &[Test], run: Run) -> u64 {
+    tests
+        .iter()
+        .find(|test| test.run == run)
+        .and_then(|test| test.seconds)
+        .unwrap_or(30)
 }
 
 /// Writes a finished ladder onto every row it answers.
@@ -257,16 +286,6 @@ pub fn quick_seconds(tests: &[Test]) -> u64 {
     sixth
 }
 
-/// The estimate for what is chosen, in seconds: each chosen run once.
-#[must_use]
-pub fn chosen_seconds(tests: &[Test]) -> u64 {
-    tests
-        .iter()
-        .filter(|test| test.chosen)
-        .filter_map(|test| test.seconds)
-        .sum()
-}
-
 /// The measured spread of MCF's own estimate against what runs take.
 const SLOWEST: u64 = 142;
 const QUICKEST: u64 = 58;
@@ -290,8 +309,15 @@ fn plain(seconds: u64) -> String {
     }
 }
 
-/// The buttons, in the order the cursor visits them.
-pub const BUTTONS: [&str; 3] = [" Quick Run ", " Run Selected ", " Back "];
+/// The buttons, in the order the cursor visits them: one a run the daemon
+/// carries, and Back (D50, B-482).
+pub const BUTTONS: [&str; 5] = [
+    " Quick run ",
+    " Run ",
+    " Cross-check ",
+    " Capabilities ",
+    " Back ",
+];
 
 /// Where the cursor is on this screen.
 #[derive(Debug, Clone, Copy)]
@@ -304,8 +330,10 @@ pub struct Cursor {
     pub on_buttons: bool,
 }
 
-/// Draws the screen. `running` is the run in progress or the one just
-/// finished, whose progress or result goes under the table.
+/// Draws the screen: the runs as buttons with their cost under each, the
+/// setup every run shares, one line a run saying what it answers, and
+/// under them the run going or what the last one found. No row stands for
+/// a thing a run does not separately do (D50).
 pub fn draw(
     into: &mut Screen,
     from: usize,
@@ -323,16 +351,27 @@ pub fn draw(
             Ink::Plain
         }
     };
-    into.put(3, row, BUTTONS[0], button(0));
-    into.put(20, row, BUTTONS[1], button(1));
-    into.put_right(into.width().saturating_sub(3), row, BUTTONS[2], button(2));
+    let mut x = 3;
+    let mut costs = Vec::new();
+    for (index, label) in BUTTONS.iter().enumerate().take(4) {
+        into.put(x, row, label, button(index));
+        costs.push((x, index));
+        x += label.chars().count() + 2;
+    }
+    into.put_right(into.width().saturating_sub(3), row, BUTTONS[4], button(4));
     row += 1;
-    into.put(3, row, &span(quick_seconds(tests)), Ink::Quiet);
-    let chosen = chosen_seconds(tests);
-    into.put(20, row, &span(chosen), Ink::Quiet);
+    for (x, index) in costs {
+        let seconds = match index {
+            0 => quick_seconds(tests),
+            1 => seconds_of(tests, Run::Ladder),
+            2 => seconds_of(tests, Run::CrossCheck),
+            _ => seconds_of(tests, Run::Probes),
+        };
+        into.put(x, row, &span(seconds), Ink::Quiet);
+    }
     row += 2;
 
-    into.put(3, row, "WHAT TO MEASURE", Ink::Heading);
+    into.put(3, row, "SETUP", Ink::Heading);
     row += 1;
     let field = |into: &mut Screen, row: usize, label: &str, value: &str| {
         into.put(3, row, label, Ink::Quiet);
@@ -401,8 +440,8 @@ pub fn draw(
             Ink::Quiet,
         );
     }
-    let after = tests_table(into, row + 2, tests, cursor.row, chosen);
-    under_the_table(into, after, tests, cursor.row, running);
+    let after = runs_table(into, row + 2, tests);
+    under_the_table(into, after, tests, running);
 }
 
 /// How many pairs a rung was read off, where fewer than all of them
@@ -489,19 +528,13 @@ pub fn runs_on(setup: &Setup<'_>) -> String {
 }
 
 /// What goes under the table: a run's progress while it goes, and what the
-/// highlighted row found once it has.
+/// last runs found once they have — every row with a result, in order.
 ///
 /// **Every line is the daemon's** — a rung as it came, the estimate it gave,
 /// the sentences it composed — and a refusal is drawn as one (A2). The rows
 /// the terminal has left bound it; a result longer than that says how much
 /// more there is rather than stopping as if that were all (A7).
-fn under_the_table(
-    into: &mut Screen,
-    from: usize,
-    tests: &[Test],
-    at: usize,
-    running: Option<&Job>,
-) {
+fn under_the_table(into: &mut Screen, from: usize, tests: &[Test], running: Option<&Job>) {
     let last = into.height().saturating_sub(2);
     let mut row = from;
     if row > last {
@@ -514,11 +547,13 @@ fn under_the_table(
             lines.extend(progress_of(job));
         }
         _ => {
-            if let Some(test) = tests.get(at)
-                && let (Some(ran), Some(found)) = (test.ran, &test.result)
-            {
+            for test in tests {
+                let (Some(ran), Some(found)) = (test.ran, &test.result) else {
+                    continue;
+                };
                 lines.push((format!("{} — ran {}", test.name, plain(ran)), Ink::Heading));
                 lines.extend(found.iter().map(|line| (line.clone(), Ink::Plain)));
+                lines.push((String::new(), Ink::Plain));
             }
         }
     }
@@ -658,73 +693,75 @@ pub fn step_line(answer: &Value) -> Option<String> {
     ))
 }
 
-/// The estimate column: the run's time on the row that names the run, and
-/// on a row that same run answers, where the time is.
-fn estimate_of(test: &Test) -> String {
-    match (test.seconds, test.run) {
-        (Some(seconds), _) => plain(seconds),
-        (None, Run::Ladder) => "in the ladder".to_owned(),
-        (None, Run::CrossCheck) => "in the cross-check".to_owned(),
-    }
-}
-
-/// The tests, and what has been chosen of them. Returns the first free row
-/// beneath.
-fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen: u64) -> usize {
+/// The runs, one line each: what it answers, what it costs, and when it
+/// last ran — the window's cards, as a terminal lists them (D50, B-482).
+/// Returns the first free row beneath.
+fn runs_table(into: &mut Screen, from: usize, tests: &[Test]) -> usize {
     let mut row = from;
     columns(
         into,
         3,
         row,
         &[
-            ("TESTS", 42, false, Ink::Heading),
-            ("DEVICES", 14, true, Ink::Quiet),
-            ("TIME", 14, true, Ink::Quiet),
+            ("RUN", 16, false, Ink::Heading),
+            ("ANSWERS", 44, false, Ink::Quiet),
+            ("TIME", 10, true, Ink::Quiet),
+            ("LAST RAN", 10, true, Ink::Quiet),
         ],
     );
     row += 1;
-    for (index, test) in tests.iter().enumerate() {
-        let here = index == at;
-        let mark = if test.chosen { "x" } else { " " };
-        into.put(3, row, "[", Ink::Plain);
-        into.put(4, row, mark, Ink::Held);
-        into.put(5, row, "]", Ink::Plain);
-        let ink = if here {
-            Ink::Selected
-        } else if test.chosen {
-            Ink::Plain
-        } else {
-            Ink::Quiet
-        };
+    let ran_of = |run: Run| {
+        tests
+            .iter()
+            .find(|test| test.run == run)
+            .and_then(|test| test.ran)
+            .map_or_else(|| "—".to_owned(), plain)
+    };
+    let listed: [(&str, &str, String, String); 5] = [
+        (
+            "Throughput",
+            "speed at each depth, prefill, first token, KV cache",
+            plain(seconds_of(tests, Run::Ladder)),
+            ran_of(Run::Ladder),
+        ),
+        (
+            "Cross-check",
+            "whether MCF's engine agrees with the provisioned one",
+            plain(seconds_of(tests, Run::CrossCheck)),
+            ran_of(Run::CrossCheck),
+        ),
+        (
+            "Capabilities",
+            "template, stop conditions, thinking, tools, context",
+            plain(seconds_of(tests, Run::Probes)),
+            ran_of(Run::Probes),
+        ),
+        (
+            "Prompt analysis",
+            "what each part of a prompt does — `mcf prompt`",
+            "—".to_owned(),
+            "—".to_owned(),
+        ),
+        (
+            "Comparison",
+            "two models on one question — `mcf bench`",
+            "—".to_owned(),
+            "—".to_owned(),
+        ),
+    ];
+    for (name, answers, cost, ran) in &listed {
         columns(
             into,
-            7,
+            3,
             row,
             &[
-                (test.name, 38, false, ink),
-                (test.devices, 14, true, Ink::Quiet),
-                (&estimate_of(test), 14, true, Ink::Quiet),
+                (name, 16, false, Ink::Plain),
+                (answers, 44, false, Ink::Quiet),
+                (cost, 10, true, Ink::Quiet),
+                (ran, 10, true, Ink::Quiet),
             ],
         );
         row += 1;
     }
-    row += 1;
-    let count = tests.iter().filter(|t| t.chosen).count();
-    columns(
-        into,
-        3,
-        row,
-        &[
-            ("selected", 12, false, Ink::Quiet),
-            (
-                &format!("{count} of {}", tests.len()),
-                10,
-                false,
-                Ink::Plain,
-            ),
-            ("estimate", 12, false, Ink::Quiet),
-            (&span(chosen), 26, false, Ink::Heading),
-        ],
-    );
-    row + 2
+    row + 1
 }

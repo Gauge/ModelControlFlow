@@ -274,7 +274,10 @@ fn the_buttons_are_pressed_rather_than_drawn() {
     console.status = Some(Ok(Value::map::<&str>([])));
     assert_eq!(console.at, Where::Diagnostics);
     assert_eq!(console.model, 1, "the run is set up for the model chosen");
-    assert!(!console.on_buttons, "the cursor lands in the table");
+    assert!(
+        console.on_buttons,
+        "the runs are buttons and there are no rows, so the cursor lands on them (D50)"
+    );
 
     // The diagnostics screen names that model and its ladder.
     let mut screen = Screen::new(80, 24);
@@ -291,27 +294,25 @@ fn the_buttons_are_pressed_rather_than_drawn() {
     // window prints it — 180 s / 6, at 0.58× and 1.42× (B-072).
     assert!(drawn.contains("21 s – 51 s"), "{drawn}");
 
-    // Untick everything, then Run Selected: nothing runs, and it says so.
-    for at in 0..console.tests.len() {
-        if console.tests.get(at).is_some_and(|test| test.chosen) {
-            screens::diagnostics::toggle(
-                console
-                    .tests
-                    .iter_mut()
-                    .map(|test| (test.run, &mut test.chosen)),
-                at,
-            );
-        }
+    // One line a run, with what it answers, and nothing ticked (D50).
+    assert!(drawn.contains("Capabilities"), "{drawn}");
+    assert!(drawn.contains("Prompt analysis"), "{drawn}");
+    assert!(!drawn.contains("[x]") && !drawn.contains("[ ]"), "{drawn}");
+    // The Capabilities button starts the probes, the same request `mcf
+    // probe` sends (B-478, B-482).
+    for _ in 0..3 {
+        act(&mut console, Key::Down);
     }
-    assert!(console.tests.iter().all(|test| !test.chosen));
-    act(&mut console, Key::Tab);
-    act(&mut console, Key::Down);
+    assert_eq!(console.button, 3);
     act(&mut console, Key::Enter);
-    assert!(console.running.is_none());
-    assert_eq!(
-        console.said.as_ref().map(|(said, _)| said.as_str()),
-        Some("nothing chosen runs here")
+    assert!(
+        console
+            .running
+            .as_ref()
+            .is_some_and(|held| held.run == Run::Probes),
+        "the Capabilities button did not start the probes"
     );
+    console.running = None;
 
     // Back, from the buttons, returns to the Models screen on the same model.
     act(&mut console, Key::Down);
@@ -395,7 +396,6 @@ fn a_finished_run_fills_the_rows_and_the_screen_shows_the_one_under_the_cursor()
             "measuring first.gguf".to_owned(),
             vec![reading(512, "15.430"), reading(1024, "17.276"), last],
         ),
-        then_cross_check: false,
     });
     // Hearing a finished job keeps it and refreshes from a daemon that is
     // not there; the models are what it had.
@@ -466,7 +466,6 @@ fn the_header_says_what_the_console_is_running() {
     console.running = Some(Running {
         run: Run::Ladder,
         job: going,
-        then_cross_check: false,
         kept: false,
     });
     let mut screen = Screen::new(80, 30);
@@ -478,9 +477,9 @@ fn the_header_says_what_the_console_is_running() {
 
 /// A finished run is heard once — a second pass must not fill the rows
 /// again with a longer time, nor ask the daemon again — and the keys work
-/// as before it: the cursor stays where it was, Tab crosses to the rows,
-/// Space on a row ticks it, and Back leaves. Driving the console in a
-/// terminal showed a run's time growing with every key pressed (F153).
+/// as before it: the cursor stays on the buttons, Tab has no rows to cross
+/// to, and Back leaves. Driving the console in a terminal showed a run's
+/// time growing with every key pressed (F153).
 fn after_the_run(mut console: Console, ladder_ran: Option<u64>) {
     console.at = Where::Diagnostics;
     console.on_buttons = true;
@@ -497,22 +496,11 @@ fn after_the_run(mut console: Console, ladder_ran: Option<u64>) {
     act(&mut console, Key::Down);
     assert!(console.on_buttons && console.button == 1);
     act(&mut console, Key::Tab);
-    assert!(!console.on_buttons);
-    act(&mut console, Key::Down);
-    act(&mut console, Key::Down);
-    assert_eq!(console.row, 2);
-    act(&mut console, Key::Character(' '));
-    assert!(
-        console
-            .tests
-            .iter()
-            .filter(|test| test.run == Run::Ladder)
-            .all(|test| !test.chosen),
-        "Space on a row ticks the rows one run answers"
-    );
-    act(&mut console, Key::Tab);
-    act(&mut console, Key::Down);
-    act(&mut console, Key::Down);
+    assert!(console.on_buttons, "there are no rows for Tab to cross to");
+    for _ in 0..3 {
+        act(&mut console, Key::Down);
+    }
+    assert_eq!(console.button, 4);
     act(&mut console, Key::Enter);
     assert_eq!(console.at, Where::Models);
 }

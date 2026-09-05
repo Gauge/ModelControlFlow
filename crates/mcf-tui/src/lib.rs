@@ -226,11 +226,6 @@ struct Running {
     /// The ladder, or the cross-check.
     run: Run,
     job: job::Job,
-    /// Whether the cross-check is to follow, because its row was ticked
-    /// beside the ladder's. One after the other rather than at once: both
-    /// want the engine and the machine's memory to themselves, and a
-    /// cross-check beside a timing would have changed the timing (A6).
-    then_cross_check: bool,
     /// Whether what it found has been written onto the rows: a finished run
     /// is kept so the screen can still say what it was, and is heard once.
     kept: bool,
@@ -395,7 +390,8 @@ impl Console {
     fn rows(&self) -> usize {
         match self.at {
             Where::Models => self.models.len(),
-            Where::Diagnostics => self.tests.len(),
+            // Diagnostics has no rows: every run is a button, and nothing
+            // there is ticked (D50, B-482).
             _ => 0,
         }
     }
@@ -426,7 +422,7 @@ impl Console {
 
     /// Starts the ladder on the chosen model — the request `mcf measure`
     /// sends (B-072).
-    fn measure(&mut self, deepest: Option<u64>, then_cross_check: bool) {
+    fn measure(&mut self, deepest: Option<u64>) {
         let Some(held) = self.models.get(self.model) else {
             self.said = Some(("no model is chosen".to_owned(), Ink::Refusal));
             return;
@@ -457,7 +453,6 @@ impl Console {
                 },
                 format!("measuring {}", held.name),
             ),
-            then_cross_check,
             kept: false,
         });
     }
@@ -479,23 +474,33 @@ impl Console {
                 },
                 format!("cross-checking {}", held.name),
             ),
-            then_cross_check: false,
             kept: false,
         });
     }
 
-    /// Runs what is ticked: the ladder, then the cross-check, each only if a
-    /// row it answers is chosen — the window's rule (B-072).
-    fn run_chosen(&mut self) {
-        let chosen = |run: Run| self.tests.iter().any(|test| test.chosen && test.run == run);
-        let cross_check = chosen(Run::CrossCheck);
-        if chosen(Run::Ladder) {
-            self.measure(self.deepest(), cross_check);
-        } else if cross_check {
-            self.cross_check();
-        } else {
-            self.said = Some(("nothing chosen runs here".to_owned(), Ink::Refusal));
-        }
+    /// Starts the probes on the chosen model — the request `mcf probe`
+    /// sends, every probe and nothing applied (B-478, B-482).
+    fn probes(&mut self) {
+        let Some(held) = self.models.get(self.model) else {
+            self.said = Some(("no model is chosen".to_owned(), Ink::Refusal));
+            return;
+        };
+        self.said = None;
+        self.running = Some(Running {
+            run: Run::Probes,
+            job: job::Job::start(
+                &self.socket,
+                Request::Probe {
+                    model: held.path.clone(),
+                    engine: None,
+                    apply: false,
+                    up_to: None,
+                    only: Vec::new(),
+                },
+                format!("probing {}", held.name),
+            ),
+            kept: false,
+        });
     }
 
     /// Takes what the run has said since the last pass, and when it has
@@ -520,17 +525,14 @@ impl Console {
             Run::CrossCheck => {
                 screens::diagnostics::keep_the_cross_check(&mut self.tests, &finished.job);
             }
+            Run::Probes => screens::diagnostics::keep_the_probes(&mut self.tests, &finished.job),
         }
         // The rows are filled from the run; the card is filled from the
         // record, which the daemon has just written to.
         self.refresh();
-        if finished.then_cross_check {
-            self.cross_check();
-        } else {
-            // Kept, finished, so the screen can still say what it was and
-            // how long it took.
-            self.running = Some(finished);
-        }
+        // Kept, finished, so the screen can still say what it was and how
+        // long it took.
+        self.running = Some(finished);
     }
 
     /// Presses the button under the cursor on the open screen.
@@ -549,11 +551,13 @@ impl Console {
             }
             (Where::Models, 1) => self.open(Where::Diagnostics),
             (Where::Models, _) => self.open(Where::Monitor),
-            (Where::Diagnostics, 0 | 1) if self.busy() => {
+            (Where::Diagnostics, 0..=3) if self.busy() => {
                 self.said = Some(("a run is already going".to_owned(), Ink::Refusal));
             }
-            (Where::Diagnostics, 0) => self.measure(Some(QUICK_DEPTH), false),
-            (Where::Diagnostics, 1) => self.run_chosen(),
+            (Where::Diagnostics, 0) => self.measure(Some(QUICK_DEPTH)),
+            (Where::Diagnostics, 1) => self.measure(self.deepest()),
+            (Where::Diagnostics, 2) => self.cross_check(),
+            (Where::Diagnostics, 3) => self.probes(),
             (Where::Diagnostics, _) => self.open(Where::Models),
             _ => {}
         }
@@ -567,7 +571,8 @@ impl Console {
             .position(|held| *held == screen)
             .unwrap_or(0);
         self.said = None;
-        self.on_buttons = false;
+        // A screen with no rows keeps the cursor on its buttons.
+        self.on_buttons = self.rows() == 0 && self.buttons() > 0;
         self.button = 0;
         self.row = if screen == Where::Models {
             self.model
@@ -629,6 +634,7 @@ fn draw(console: &Console, into: &mut Screen) {
             match held.run {
                 Run::Ladder => "Measuring",
                 Run::CrossCheck => "Cross-checking",
+                Run::Probes => "Probing",
             },
             Ink::Held,
         )),
@@ -881,7 +887,7 @@ fn act(console: &mut Console, key: Key) -> Leaving {
                     console.model = console.row;
                 }
             }
-            Key::Tab if console.buttons() > 0 => {
+            Key::Tab if console.buttons() > 0 && console.rows() > 0 => {
                 console.on_buttons = !console.on_buttons;
             }
             Key::Character('r') => {
@@ -904,15 +910,6 @@ fn act(console: &mut Console, key: Key) -> Leaving {
                 if let Some(running) = console.running.as_mut() {
                     running.job.stop();
                 }
-            }
-            Key::Character(' ') if console.at == Where::Diagnostics => {
-                screens::diagnostics::toggle(
-                    console
-                        .tests
-                        .iter_mut()
-                        .map(|test| (test.run, &mut test.chosen)),
-                    console.row,
-                );
             }
             _ => {}
         }
