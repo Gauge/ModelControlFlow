@@ -697,7 +697,10 @@ fn model_page(
     );
     let drawn = match desk.tab {
         crate::Tab::Configure => configure_tab(paint, desk, mouse, below, held),
-        crate::Tab::Statistics => statistics_tab(paint, desk, mouse, below, held),
+        crate::Tab::Statistics => {
+            statistics_tab(paint, below, held);
+            None
+        }
         crate::Tab::Contents => contents_tab(paint, desk, mouse, below),
     };
     drawn.or(act)
@@ -705,16 +708,10 @@ fn model_page(
 
 /// Everything measured or read about the model, in one place: the file's
 /// figures, the ladder and what was read off it, the cross-check, the
-/// prompt report, what the probes applied, and the last hold (D49).
-fn statistics_tab(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    area: Box,
-    held: &Model,
-) -> Option<Act> {
+/// prompt report, and what the probes applied and found (D49). Nothing here
+/// is pressed: the actions are in the left column.
+fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
     let ink = paint.ink;
-    let mut act = None;
     // The detail block draws the throughput table and the chart itself.
     let left = Box::new(area.x, area.y, area.w.min(400.0), area.h);
     let _after = detail(paint, left, held);
@@ -745,7 +742,7 @@ fn statistics_tab(
         }
         *y += 10.0;
     };
-    for (head, lines, known) in statistic_sections(desk, held) {
+    for (head, lines, known) in statistic_sections(held) {
         section(
             paint,
             &mut y,
@@ -754,23 +751,15 @@ fn statistics_tab(
             if known { ink.quiet } else { ink.faint },
         );
     }
-    let (pressed, _) = ui::fitted(
-        paint,
-        mouse,
-        (right.x, y + 4.0),
-        "Diagnostics",
-        Kind::Ordinary,
-    );
-    if pressed {
-        act = Some(Act::Go(Page::Diagnostics));
-    }
-    act
+    // No button and no *Last served* here: the left column's actions say
+    // both for the same model, and the column had grown past the window's
+    // foot repeating them (F187).
 }
 
 /// Every section of the Statistics tab's right column, in order: its
 /// heading, its lines, and whether there is a figure there or only where
 /// one would come from (A7).
-fn statistic_sections(desk: &Desk, held: &Model) -> Vec<(&'static str, Vec<String>, bool)> {
+fn statistic_sections(held: &Model) -> Vec<(&'static str, Vec<String>, bool)> {
     let not_yet = |_what: &str| vec!["Not run — see Diagnostics".to_owned()];
     let mut sections = Vec::new();
     match held.measured_body.as_ref() {
@@ -814,13 +803,6 @@ fn statistic_sections(desk: &Desk, held: &Model) -> Vec<(&'static str, Vec<Strin
         ],
         held.applied_addressing.is_some() || held.applied_budget.is_some(),
     ));
-    if let Some(last) = desk
-        .last_hold
-        .as_ref()
-        .filter(|last| last.model == held.path)
-    {
-        sections.push(("Last served", vec![last.said()], true));
-    }
     sections
 }
 
@@ -1767,7 +1749,7 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         );
     }
     for (at, held) in desk.models.iter().enumerate() {
-        if y > actions_at - 46.0 {
+        if y > actions_at - 62.0 {
             paint.say_at(
                 area.x,
                 y,
@@ -1778,7 +1760,7 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
             );
             break;
         }
-        let where_ = Box::new(area.x - 6.0, y - 4.0, list, 24.0);
+        let where_ = Box::new(area.x - 6.0, y - 4.0, list, 40.0);
         let chosen = desk.chosen == Some(at);
         if chosen {
             paint.panel(where_, 6.0, ink.accent_soft, 255);
@@ -1809,13 +1791,51 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
             size::SMALL,
             ink.faint,
         );
+        // The figures that decide a choice, under the name (D49): what it
+        // is, how long a conversation it was trained for, where it lands,
+        // and how fast it went where a run has been taken.
+        let figures = paint.elide(&chooses_by(held), Weight::Regular, size::SMALL, list - 14.0);
+        paint.say_at(
+            area.x,
+            y + 18.0,
+            &figures,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
         if mouse.clicked(where_) {
             act = Some(Act::Choose(at));
         }
-        y += 24.0;
+        y += 40.0;
     }
 
     act
+}
+
+/// One model's figures in a line: architecture, trained window, device
+/// kind, measured speed — each only where it is known (A7).
+fn chooses_by(held: &Model) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(architecture) = &held.architecture {
+        parts.push(architecture.clone());
+    }
+    if let Some(trained) = held.trained {
+        parts.push(format!("{} tokens", words::grouped(trained)));
+    }
+    if held.device.is_some() {
+        parts.push(if held.on_a_card { "GPU" } else { "CPU" }.to_owned());
+    }
+    if let Some(speed) = held.speed {
+        parts.push(format!("{speed:.0} tok/s"));
+    }
+    if held.refused.is_some() {
+        parts.push("will not run here".to_owned());
+    }
+    if parts.is_empty() {
+        "not yet read".to_owned()
+    } else {
+        parts.join(" · ")
+    }
 }
 
 /// Everything known about one model, as the console lists it.
