@@ -84,7 +84,13 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     };
     act = went.or(act);
     // The boundary between the column and the page is dragged (B-490).
-    if let Some(to) = ui::splitter(paint, mouse, Box::new(side - 4.0, 0.0, 8.0, height), true) {
+    if let Some(to) = ui::splitter(
+        paint,
+        mouse,
+        Box::new(side - 4.0, 0.0, 8.0, height),
+        true,
+        desk.grabbed == Some(Splitter::Side),
+    ) {
         act = Some(Act::Split(Splitter::Side, whole(to)));
     }
     paint.end();
@@ -650,6 +656,7 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
         mouse,
         Box::new(area.x + list + 12.0, area.y, 16.0, area.h),
         true,
+        desk.grabbed == Some(Splitter::List),
     ) {
         act = Some(Act::Split(Splitter::List, whole(to)));
     }
@@ -901,26 +908,33 @@ fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
         _ => {}
     }
     let job = desk.doing.job()?;
-    if let Some(why) = &job.refused {
-        let mut at = y;
-        for line in paint
-            .wrap(why, Weight::Regular, size::BODY, area.w.min(600.0))
-            .iter()
-            .take(3)
-        {
-            paint.say_at(area.x, at, line, Weight::Regular, size::BODY, ink.bad);
-            at += 20.0;
+    // The files come before any complaint about the stream: a listing that
+    // arrived whole and then closed is the answer, not a death (F194).
+    let files = job
+        .conclusion()
+        .or_else(|| job.latest())
+        .filter(|found| found.get("files").is_some());
+    match (files, &job.refused) {
+        (Some(found), _) => published(
+            paint,
+            mouse,
+            Box::new(area.x, y, area.w, area.bottom() - y),
+            found,
+        ),
+        (None, Some(why)) => {
+            let mut at = y;
+            for line in paint
+                .wrap(why, Weight::Regular, size::BODY, area.w.min(600.0))
+                .iter()
+                .take(3)
+            {
+                paint.say_at(area.x, at, line, Weight::Regular, size::BODY, ink.bad);
+                at += 20.0;
+            }
+            None
         }
-        return None;
+        (None, None) => None,
     }
-    let found = job.conclusion().or_else(|| job.latest())?;
-    found.get("files")?;
-    published(
-        paint,
-        mouse,
-        Box::new(area.x, y, area.w, area.bottom() - y),
-        found,
-    )
 }
 
 /// Why there are no settings, and what Host will do about it where it can.
@@ -2713,6 +2727,7 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
         mouse,
         Box::new(left.right() + 4.0, top, 16.0, area.bottom() - top),
         true,
+        desk.grabbed == Some(Splitter::Diagnostics),
     ) {
         act = Some(Act::Split(Splitter::Diagnostics, whole(to)));
     }

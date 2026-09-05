@@ -1232,6 +1232,11 @@ fn what_the_hub_answered_is_kept_for_a_day() {
         first.body.get("read_at").is_some(),
         "when it was read is on it"
     );
+    assert_eq!(
+        first.body.get("done"),
+        Some(&Value::Bool(true)),
+        "one answer says it is the whole of it, so a reader of a stream does not take the close for a death (F194)"
+    );
     let again = super::kept_answer(&home, "search:gemma@", false, answer);
     assert_eq!(
         asked.get(),
@@ -1239,6 +1244,7 @@ fn what_the_hub_answered_is_kept_for_a_day() {
         "the second ask within the day reached the hub"
     );
     assert_eq!(again.body.get("kept"), Some(&Value::Bool(true)));
+    assert_eq!(again.body.get("done"), Some(&Value::Bool(true)));
     assert_eq!(again.body.get("query"), Some(&Value::text("gemma")));
     let fresh = super::kept_answer(&home, "search:gemma@", true, answer);
     assert_eq!(asked.get(), 2, "fresh did not reach the hub");

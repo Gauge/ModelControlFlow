@@ -397,6 +397,54 @@ fn words_nothing_matches_offer_the_hub_from_the_list() {
     );
 }
 
+/// A repository's files show after a pick even when the stream closed
+/// without saying it was done.
+///
+/// F194: the daemon answered a look-up in one line with no closing word,
+/// so the window's job took the close for MCF dying mid-sentence and the
+/// hub page drew that refusal over the files it had. Picking a repository
+/// from the hub list did nothing a person could see.
+#[test]
+fn a_repositorys_files_show_though_the_stream_closed_without_a_word() {
+    use mcf_record::json::Value;
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    desk.filter = "gemma".to_owned();
+    desk.doing = a_search_answer();
+    if let mcf_desk::Doing::Listing(job) = &mut desk.doing {
+        job.finished = true;
+    }
+    desk.hear_for_review();
+    desk.hub_chosen = Some(0);
+    desk.chosen = None;
+    let mut job = mcf_desk::job::Job::already(
+        "looking up someone/gemma-4-12B-it-qat-GGUF".to_owned(),
+        vec![Value::map([
+            ("repository", Value::text("someone/gemma-4-12B-it-qat-GGUF")),
+            (
+                "files",
+                Value::List(vec![Value::map([
+                    ("file", Value::text("gemma-4-12B-it-qat-Q4_K_M.gguf")),
+                    ("bytes", Value::Integer(7_300_000_000)),
+                    ("fits", Value::Bool(true)),
+                    ("why", Value::Null),
+                ])]),
+            ),
+        ])],
+    );
+    job.refused = Some("MCF stopped answering before it said it had finished".to_owned());
+    desk.doing = mcf_desk::Doing::Listing(job);
+    desk.hear_for_review();
+    assert!(
+        desk.offered.contains_key("someone/gemma-4-12B-it-qat-GGUF"),
+        "the files that arrived are not kept"
+    );
+    assert!(
+        act_within(&desk, &mcf_desk::Act::PickOffered(0), (60.0, 700.0)),
+        "the files that arrived are not on the page to pick"
+    );
+}
+
 /// The filters open from the library and each picker's list drops over
 /// it (D51, B-489).
 #[test]
@@ -817,6 +865,26 @@ fn the_library_scrolls_and_the_splitters_move() {
     assert!(
         wider.splits.list > desk.splits.list,
         "the library did not widen"
+    );
+    // F195: the line has moved under the pointer and the press began
+    // outside the band where it now is; the drag goes on regardless, and
+    // stops when the button is let go.
+    let further = Mouse {
+        at: (band_x + 140.0, 300.0),
+        ..drag
+    };
+    assert_eq!(wider.grabbed, Some(mcf_desk::Splitter::List));
+    let Some(mcf_desk::Act::Split(mcf_desk::Splitter::List, further_to)) =
+        acted_with(&wider, &further, small)
+    else {
+        panic!("the drag dropped the line once it left the band where the press began");
+    };
+    assert!(further_to > to, "the line did not follow the pointer");
+    wider.released();
+    assert_eq!(
+        acted_with(&wider, &further, small),
+        None,
+        "a let-go splitter still followed the pointer"
     );
     wider.act(mcf_desk::Act::Split(mcf_desk::Splitter::List, 10_000));
     assert!(

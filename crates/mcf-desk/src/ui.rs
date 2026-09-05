@@ -574,9 +574,22 @@ pub fn scroll_region(
 /// A splitter between two areas: a band a person drags to move the
 /// boundary. Returns where the pointer is along the band's axis while it is
 /// dragged, for the caller to set the split by (B-490).
-pub fn splitter(paint: &mut Painter, mouse: &Mouse, band: Box, upright: bool) -> Option<f32> {
+///
+/// `grabbed` says a press already took hold of this splitter: the band
+/// moves with the line, so once the line is further from where the press
+/// began than the band is wide the press is no longer inside it, and a
+/// drag that was judged by the band alone dropped the line after a few
+/// points and had to be picked up again (F195). A held splitter follows
+/// the pointer until the button is let go.
+pub fn splitter(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    band: Box,
+    upright: bool,
+    grabbed: bool,
+) -> Option<f32> {
     let ink = paint.ink;
-    let held = mouse.down && mouse.began.is_some_and(|down| band.holds(down));
+    let held = mouse.down && (grabbed || mouse.began.is_some_and(|down| band.holds(down)));
     if held || mouse.over(band) {
         let line = if upright {
             Box::new(band.x + band.w / 2.0 - 1.0, band.y, 2.0, band.h)

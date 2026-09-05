@@ -1994,6 +1994,7 @@ fn kept_answer(home: &Path, key: &str, fresh: bool, ask: impl FnOnce() -> Answer
         let mut body = body;
         body.insert("read_at".to_owned(), read_at.clone());
         body.insert("kept".to_owned(), Value::Bool(true));
+        body.insert("done".to_owned(), Value::Bool(true));
         return Answer::served(Value::Map(body));
     }
     let answer = ask();
@@ -2011,6 +2012,10 @@ fn kept_answer(home: &Path, key: &str, fresh: bool, ask: impl FnOnce() -> Answer
     };
     body.insert("read_at".to_owned(), now);
     body.insert("kept".to_owned(), Value::Bool(false));
+    // One answer is the whole of it: a client that reads answers as a
+    // stream takes a connection closing without this as the daemon dying
+    // mid-sentence, and showed a refusal over a list of files (F194).
+    body.insert("done".to_owned(), Value::Bool(true));
     Answer::served(Value::Map(body))
 }
 

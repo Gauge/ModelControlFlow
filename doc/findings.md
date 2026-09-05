@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 142 |
+| **Version** | 144 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,8 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 195 | [F195 — A splitter dragged moved a few points and dropped: the drag was judged by whether the press began inside the band, and the band moves with the line, so once the line was further from the press than the band is wide the drag ended and each press shifted the line by about the band's width; a splitter taken hold of now follows the pointer until the button is let go (B-490, A7)](#195--f195--a-splitter-dragged-moved-a-few-points-and-dropped-the-drag-was-judged-by-whether-the-press-began-inside-the-band-and-the-band-moves-with-the-line-so-once-the-line-was-further-from-the-press-than-the-band-is-wide-the-drag-ended-and-each-press-shifted-the-line-by-about-the-bands-width-a-splitter-taken-hold-of-now-follows-the-pointer-until-the-button-is-let-go-b-490-a7) |
+| 194 | [F194 — Picking a repository from the hub list showed nothing: the daemon answered a look-up in one line with no closing word, the window's job took the connection closing for MCF dying mid-sentence, and the hub page drew that refusal over the files it already had; the daemon's one-line hub answers now say they are done, and the page shows the files it has before any complaint about the stream (B-486, B-488, A2)](#194--f194--picking-a-repository-from-the-hub-list-showed-nothing-the-daemon-answered-a-look-up-in-one-line-with-no-closing-word-the-windows-job-took-the-connection-closing-for-mcf-dying-mid-sentence-and-the-hub-page-drew-that-refusal-over-the-files-it-already-had-the-daemons-one-line-hub-answers-now-say-they-are-done-and-the-page-shows-the-files-it-has-before-any-complaint-about-the-stream-b-486-b-488-a2) |
 | 193 | [F193 — Every area that can overflow scrolls, and the areas resize: the library's rows, the model page under its tabs, a hub or pending page, the Diagnostics, Server, System and prompt pages each scroll by the wheel over them or a bar at their right edge, drawn only when the content is taller than the region, and the column, the library and the Diagnostics columns are dragged wider or narrower within the room each needs (B-490, §3.15, A7)](#193--f193-every-area-that-can-overflow-scrolls-and-the-areas-resize-the-librarys-rows-the-model-page-under-its-tabs-a-hub-or-pending-page-the-diagnostics-server-system-and-prompt-pages-each-scroll-by-the-wheel-over-them-or-a-bar-at-their-right-edge-drawn-only-when-the-content-is-taller-than-the-region-and-the-column-the-library-and-the-diagnostics-columns-are-dragged-wider-or-narrower-within-the-room-each-needs-b-490-315-a7) |
 | 192 | [F192 — Filters beside the search field: architecture, fits here and size, each any until set, applied with the words to what is here, so the list of a library of three under will run here is two and says nothing matched rather than hiding a filter; what the hub found stays outside them until its files are known (B-489, D51, A7, §3.15)](#192--f192-filters-beside-the-search-field-architecture-fits-here-and-size-each-any-until-set-applied-with-the-words-to-what-is-here-so-the-list-of-a-library-of-three-under-will-run-here-is-two-and-says-nothing-matched-rather-than-hiding-a-filter-what-the-hub-found-stays-outside-them-until-its-files-are-known-b-489-d51-a7-315) |
 | 191 | [F191 — Download and run: on a quantization not here the page's Start server reads Download and start server and a diagnostics card's Run reads Download and run, the download goes first with its progress where the button was, and the run follows on the file once the library holds it; a hub repository's file picked on its page is the same subject (B-487, D51, A7)](#191--f191-download-and-run-on-a-quantization-not-here-the-pages-start-server-reads-download-and-start-server-and-a-diagnostics-cards-run-reads-download-and-run-the-download-goes-first-with-its-progress-where-the-button-was-and-the-run-follows-on-the-file-once-the-library-holds-it-a-hub-repositorys-file-picked-on-its-page-is-the-same-subject-b-487-d51-a7) |
@@ -9616,6 +9618,60 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 195 · F195 — A splitter dragged moved a few points and dropped: the drag was judged by whether the press began inside the band, and the band moves with the line, so once the line was further from the press than the band is wide the drag ended and each press shifted the line by about the band's width; a splitter taken hold of now follows the pointer until the button is let go (B-490, A7)
+
+The operator reported that the resizing bars were not smooth: each
+press seemed to shift the boundary by a fixed amount rather than follow
+the hand.
+
+**Cause.** A splitter was held while the button was down and the press
+had begun inside its band, eight or sixteen points wide. The band is
+drawn where the line is, and the line follows the pointer, so after the
+first frame of a drag the band had moved with the line and the point the
+press began at was no longer inside it. The drag ended after about half
+the band's width — the fixed amount seen — and the next press started
+again from there.
+
+**Fix.** The desk remembers which splitter a press took hold of, from
+the first frame the band held the press until the button is let go, and
+a held splitter follows the pointer wherever it is. The window drops the
+hold on the button coming up.
+
+**Test.** The drag test now goes on to a second frame with the pointer
+well outside the band where the line has moved to, and the line still
+follows; once let go, the same pointer moves nothing.
+
+## 194 · F194 — Picking a repository from the hub list showed nothing: the daemon answered a look-up in one line with no closing word, the window's job took the connection closing for MCF dying mid-sentence, and the hub page drew that refusal over the files it already had; the daemon's one-line hub answers now say they are done, and the page shows the files it has before any complaint about the stream (B-486, B-488, A2)
+
+The operator reported that selecting a model from the hub list did
+nothing. A headless window driven against the live daemon showed the
+click and the daemon both working: the pick set the repository, the
+look-up went out and the answer came back with the files in it, and the
+files were kept. What the page drew was a refusal — *MCF stopped
+answering before it said it had finished* — over the answer it held.
+
+**Cause.** The window's job reads a request as a stream of answers and
+takes a connection closing without a line saying `done` for the daemon
+dying mid-sentence, which is right for a ladder or a probe run and had
+been the rule since the first streamed request (A2). A hub search or
+look-up is answered in one line, and that line carried no such word; the
+review fixtures for the hub pages were written with it, so every render
+of the page showed the files while the live window never did. The hub
+page then drew the refusal before it looked for files.
+
+**Fix.** Two sides, either sufficient. The daemon's kept hub answers say
+`done` — the fresh read and the one served from the day's cache alike —
+so a reader of the stream is told the one line is the whole of it. And
+the hub page shows the files it has before any complaint about the
+stream: a listing that arrived whole and then closed is the answer, not
+a death. The review path also keeps the files, so a fixture built by
+hand exercises what a frame does.
+
+**Test.** A files answer without a closing word, with the job's
+stream-closed refusal set as the job sets it, shows the file and offers
+Get to pick it; the daemon's cache test asserts the closing word on the
+first read and the kept one.
+
 ## 193 · F193 — Every area that can overflow scrolls, and the areas resize: the library's rows, the model page under its tabs, a hub or pending page, the Diagnostics, Server, System and prompt pages each scroll by the wheel over them or a bar at their right edge, drawn only when the content is taller than the region, and the column, the library and the Diagnostics columns are dragged wider or narrower within the room each needs (B-490, §3.15, A7)
 
 The operator asked for scroll bars on the list, and potentially other
@@ -12915,6 +12971,17 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 144 — a splitter follows the hand
+
+F195: a drag dropped its splitter after a few points; a held splitter
+follows the pointer until the button is let go (B-490).
+
+### Version 143 — the hub's one-line answer
+
+F194: a pick from the hub list showed a refusal over its files; the
+daemon's hub answers now say they are done and the page shows the files
+first (B-486, B-488).
 
 ### Version 142 — scrolling and resizing
 

@@ -1780,6 +1780,10 @@ pub struct Desk {
     pub scrolls: std::collections::BTreeMap<Region, f32>,
     /// Where the splitters between the window's areas sit.
     pub splits: Splits,
+    /// The splitter a press took hold of, until the button is let go: the
+    /// line follows the pointer however far it goes, not only while the
+    /// press is still inside the band (F195).
+    pub grabbed: Option<Splitter>,
     /// The last reading of the machine.
     pub reading: mcf_tui::machine::Reading,
     /// Why MCF could not be reached, when it could not.
@@ -1965,6 +1969,7 @@ impl Desk {
             shown: None,
             scrolls: std::collections::BTreeMap::new(),
             splits: Splits::default(),
+            grabbed: None,
             reading: mcf_tui::machine::Reading::default(),
             refusal: None,
             busy: false,
@@ -2377,7 +2382,7 @@ impl Desk {
             Act::Scroll(region, to) => {
                 let _was = self.scrolls.insert(region, as_points(to.max(0)));
             }
-            Act::Split(splitter, to) => self.splits.set(splitter, as_points(to)),
+            Act::Split(splitter, to) => self.split(splitter, to),
             Act::ToggleFilters | Act::SetArchitecture(_) | Act::SetFits(_) | Act::SetSize(_) => {
                 self.filter_act(&act);
             }
@@ -3340,6 +3345,7 @@ impl Desk {
     /// that builds the state by hand rather than through a socket.
     pub fn hear_for_review(&mut self) {
         self.keep_the_hub();
+        self.keep_the_files();
     }
 
     /// Keeps what the hub answered a search with, once the job has it.
@@ -4061,6 +4067,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     mouse.at = points(&paint, sdl::event_mouse(&event));
                     mouse.down = false;
                     mouse.click = Some(mouse.at);
+                    desk.released();
                 }
                 sdl::EVENT_MOUSE_WHEEL => mouse.wheel = sdl::event_wheel(&event),
                 // Typing. It arrives already composed, so a layout, a
@@ -4154,6 +4161,20 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
 
         // Nothing to do until something happens.
         std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+}
+
+impl Desk {
+    /// A splitter dragged to a position: it is held from here until the
+    /// button is let go (F195).
+    fn split(&mut self, splitter: Splitter, to: i32) {
+        self.grabbed = Some(splitter);
+        self.splits.set(splitter, as_points(to));
+    }
+
+    /// The button was let go: whatever a press took hold of is dropped.
+    pub fn released(&mut self) {
+        self.grabbed = None;
     }
 }
 
