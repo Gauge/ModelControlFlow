@@ -1008,6 +1008,37 @@ fn measured(
     ]))
 }
 
+/// One line of a load's progress: what the engine holds of the model so
+/// far, of how much, after how long. Not done.
+fn a_load_so_far(
+    path: &Path,
+    (resident, on_card): (u64, Option<u64>),
+    of: Option<u64>,
+    seconds: u64,
+) -> Value {
+    Value::map([
+        ("hosting", Value::text(path.display().to_string())),
+        (
+            "loading",
+            Value::map([
+                ("resident_bytes", as_whole(resident)),
+                ("card_bytes", on_card.map_or(Value::Null, as_whole)),
+                ("of_bytes", of.map_or(Value::Null, as_whole)),
+                ("seconds", as_whole(seconds)),
+            ]),
+        ),
+        ("done", Value::Bool(false)),
+    ])
+}
+
+/// What letting a model go gave back: which model, what the engine held in
+/// memory, and what it held on the card where it was on one.
+struct Freed {
+    model: String,
+    resident: Option<u64>,
+    card: Option<u64>,
+}
+
 /// Whether a refusal says the client that asked has gone, which is the one
 /// refusal a ladder does not climb past: the rungs after it would be spent
 /// on nobody.
@@ -1463,7 +1494,6 @@ struct Holding {
     ///
     /// Held and never read: dropping it is what stops the server, so the
     /// field's whole job is to be owned until somebody unhosts (A27).
-    #[expect(dead_code, reason = "owning it is what keeps the engine alive")]
     served: crate::served::Served,
     /// Which model.
     model: PathBuf,
@@ -2370,6 +2400,7 @@ impl Daemon {
             Request::Generate { model, .. } => Some(("generation", model.clone())),
             Request::Measure { model, .. } => Some(("measurement", model.clone())),
             Request::CrossCheck { model } => Some(("cross-check", model.clone())),
+            Request::Host { model, .. } => Some(("hosting", model.clone())),
             Request::PromptReport { model, .. } => Some(("prompt report", model.clone())),
             Request::Acquire { reference, .. } => Some(("acquisition", reference.clone())),
             Request::Provision { component } => Some((
@@ -2385,7 +2416,6 @@ impl Daemon {
             | Request::Settings { .. }
             | Request::Anatomy { .. }
             | Request::Tokenize { .. }
-            | Request::Host { .. }
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => None,
@@ -2487,6 +2517,7 @@ impl Daemon {
                 writer,
             ),
             Request::CrossCheck { model } => self.cross_checking(&model, waiting, writer),
+            Request::Host { model, settings } => self.hosting(&model, &settings, writer),
             Request::PromptReport {
                 model,
                 prompt,
@@ -2530,7 +2561,6 @@ impl Daemon {
             | Request::Settings { .. }
             | Request::Anatomy { .. }
             | Request::Tokenize { .. }
-            | Request::Host { .. }
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => {}
@@ -3244,7 +3274,6 @@ impl Daemon {
                 self.tokenized(model, text, engine.as_deref(), *beginning),
                 None,
             ),
-            Request::Host { model, settings } => (self.host(model, settings), None),
             Request::Hosted => (Answer::served(self.hosted()), None),
             Request::Unhost => (Answer::served(self.unhost()), None),
             // Handled before `respond` is reached; here so the match is
@@ -3255,10 +3284,11 @@ impl Daemon {
             | Request::Measure { .. }
             | Request::CrossCheck { .. }
             | Request::Provision { .. }
+            | Request::Host { .. }
             | Request::PromptReport { .. } => (
                 Answer::refused(&crate::control::refused(
                     "a request that answers in many lines reached the one-answer path",
-                    "generate, acquire, measure, cross-check or provision",
+                    "generate, acquire, measure, cross-check, provision or host",
                 )),
                 None,
             ),
@@ -4534,7 +4564,52 @@ impl Daemon {
     }
 
     /// Holds a model and answers on a port under these settings.
-    fn host(&self, named: &str, asked: &Value) -> Answer {
+    /// **The engine named in the settings, not whichever one is found.**
+    /// Looking one up by shape returned the processor build while the
+    /// settings said the CUDA one — so MCF would have resolved a model to a
+    /// card, said so, and started the build that cannot use it. That is the
+    /// same defect as the hardcoded layer count, one level up (F133).
+    fn engine_called(
+        &self,
+        name: &str,
+    ) -> core::result::Result<crate::adapters::ProvisionedLlama, Answer> {
+        let (engine, _) = self
+            .engines_held()
+            .into_iter()
+            .find(|(engine, _)| engine.name == name)
+            .ok_or_else(|| {
+                Answer::refused(&crate::control::refused(
+                    "no provisioned engine by that name: `mcf provision` builds one",
+                    name,
+                ))
+            })?;
+        Ok(crate::adapters::ProvisionedLlama {
+            prefix: engine.prefix.clone(),
+            commit: engine.commit.clone(),
+            component: engine.name.clone(),
+        })
+    }
+
+    /// Holds a model on a port, saying how the load is going while it
+    /// loads, and what it came up as when it has.
+    ///
+    /// **Streamed rather than answered**, because the answer is minutes
+    /// away on a large model and a screen waiting on one line drew a load
+    /// that looked stopped. Each second the engine's resident memory goes
+    /// out as *this much of this many bytes read*, and the last line
+    /// carries what `mcf hosted` would say, marked done (A7, B-072).
+    fn hosting(&self, named: &str, asked: &Value, writer: &mut &UnixStream) {
+        let say = |writer: &mut &UnixStream, answer: &Answer| {
+            let _written = writeln!(writer, "{}", answer.to_line());
+            let _flushed = writer.flush();
+        };
+        let answer = self.host(named, asked, &mut |loading| {
+            say(writer, &Answer::served(loading));
+        });
+        say(writer, &answer);
+    }
+
+    fn host(&self, named: &str, asked: &Value, report: &mut dyn FnMut(Value)) -> Answer {
         let (recommended, path) = match self.recommend(named) {
             Ok(held) => held,
             Err(failure) => return Answer::refused(&failure),
@@ -4549,25 +4624,9 @@ impl Daemon {
             return Answer::refused(&failure);
         }
 
-        // **The engine named in the settings, not whichever one is found.**
-        // Looking one up by shape returned the processor build while the
-        // settings said the CUDA one — so MCF would have resolved a model to
-        // a card, said so, and started the build that cannot use it. That is
-        // the same defect as the hardcoded layer count, one level up (F133).
-        let Some((engine, _)) = self
-            .engines_held()
-            .into_iter()
-            .find(|(engine, _)| engine.name == settings.engine)
-        else {
-            return Answer::refused(&crate::control::refused(
-                "no provisioned engine by that name: `mcf provision` builds one",
-                &settings.engine,
-            ));
-        };
-        let llama = crate::adapters::ProvisionedLlama {
-            prefix: engine.prefix.clone(),
-            commit: engine.commit.clone(),
-            component: engine.name.clone(),
+        let llama = match self.engine_called(&settings.engine) {
+            Ok(llama) => llama,
+            Err(refused) => return refused,
         };
         // Whatever was held before goes first: two servers on one port is a
         // second that never starts, and two on one card is two figures each
@@ -4593,7 +4652,26 @@ impl Daemon {
             ));
         }
 
-        match crate::served::Served::hosted(&llama, &path, &settings) {
+        let of = std::fs::metadata(&path).map(|about| about.len()).ok();
+        let began = std::time::Instant::now();
+        // Where the model goes onto a card, the card's memory is what grows
+        // as it loads, and the engine's own does not; read against what the
+        // card held before the load began.
+        let card_before = (settings.gpu_layers > 0)
+            .then(crate::engines::card_memory_used)
+            .flatten();
+        let mut loading = |resident: u64| {
+            let on_card = card_before.and_then(|before| {
+                crate::engines::card_memory_used().map(|now| now.saturating_sub(before))
+            });
+            report(a_load_so_far(
+                &path,
+                (resident, on_card),
+                of,
+                began.elapsed().as_secs(),
+            ));
+        };
+        match crate::served::Served::hosted(&llama, &path, &settings, &mut loading) {
             Ok(served) => {
                 let at = Timestamp::now();
                 let moved = settings.differs_from(&recommended);
@@ -4656,6 +4734,7 @@ impl Daemon {
                     // a feature its own file carries says so (B-456).
                     ("declares", declared.to_value()),
                     ("since", Value::text(at.to_string())),
+                    ("done", Value::Bool(true)),
                 ]))
             }
             Err(failure) => Answer::refused(&failure),
@@ -4699,31 +4778,76 @@ impl Daemon {
     /// Lets go of whatever is being held, and says so in the record.
     ///
     /// Returns what was let go, or `None` where nothing was.
-    fn let_go(&self, why: &str) -> Option<String> {
+    /// Lets the held model go, and says which it was and how much memory
+    /// the engine was holding when it went: read off the process before it
+    /// is dropped, because what a stop frees is the one figure a person
+    /// pressing it wants and nothing else knows it afterwards (A7).
+    fn let_go(&self, why: &str) -> Option<Freed> {
         let mut holding = match self.holding.lock() {
             Ok(holding) => holding,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let was = holding.take().map(|held| held.model.display().to_string());
-        if let Some(model) = was.clone() {
-            let _recorded = self.note(
-                EntryKind::ModelUnhosted,
-                Timestamp::now(),
-                Value::map([
-                    ("model", Value::text(model)),
-                    ("reason", Value::text(why.to_owned())),
-                ]),
-            );
-        }
-        was
+        let held = holding.take()?;
+        let model = held.model.display().to_string();
+        let resident = held.served.resident_bytes();
+        // The card's memory before and after the engine goes: what it gave
+        // back there, which the engine's own figure never held. Read after
+        // the process has gone, which the driver takes a moment over.
+        let card_before = (held.settings.gpu_layers > 0)
+            .then(crate::engines::card_memory_used)
+            .flatten();
+        drop(held);
+        let card = card_before.and_then(|before| {
+            let mut freed = 0;
+            for _ in 0..8 {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                let now = crate::engines::card_memory_used()?;
+                freed = freed.max(before.saturating_sub(now));
+                if freed > 0 {
+                    break;
+                }
+            }
+            Some(freed)
+        });
+        let freed = Freed {
+            model,
+            resident,
+            card,
+        };
+        let _recorded = self.note(
+            EntryKind::ModelUnhosted,
+            Timestamp::now(),
+            Value::map([
+                ("model", Value::text(freed.model.clone())),
+                ("reason", Value::text(why.to_owned())),
+                ("freed_bytes", freed.resident.map_or(Value::Null, as_whole)),
+                ("freed_card_bytes", freed.card.map_or(Value::Null, as_whole)),
+            ]),
+        );
+        Some(freed)
     }
 
-    /// Stops holding it, because somebody asked.
+    /// Stops holding it, because somebody asked, and says what that freed.
     fn unhost(&self) -> Value {
         let was = self.let_go("asked");
         Value::map([
             ("stopped", Value::Bool(was.is_some())),
-            ("was", was.map_or(Value::Null, Value::text)),
+            (
+                "was",
+                was.as_ref()
+                    .map_or(Value::Null, |freed| Value::text(freed.model.clone())),
+            ),
+            (
+                "freed_bytes",
+                was.as_ref()
+                    .and_then(|freed| freed.resident)
+                    .map_or(Value::Null, as_whole),
+            ),
+            (
+                "freed_card_bytes",
+                was.and_then(|freed| freed.card)
+                    .map_or(Value::Null, as_whole),
+            ),
         ])
     }
 

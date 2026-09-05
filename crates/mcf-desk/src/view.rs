@@ -261,7 +261,8 @@ pub fn reserve_of(held: &Model, context: u64) -> Option<(u64, Option<u64>)> {
 }
 
 /// Bytes as a figure a person reads.
-fn gigabytes(bytes: u64) -> String {
+#[must_use]
+pub fn gigabytes(bytes: u64) -> String {
     #[expect(
         clippy::cast_precision_loss,
         reason = "a memory figure shown to one decimal place"
@@ -294,10 +295,30 @@ fn held_window_cost(desk: &Desk) -> Option<String> {
     reserve_line(desk.hosted_model()?, context)
 }
 
+/// The card while a model loads: how far the load has got, in the same
+/// words the hosting page and the actions panel use.
+fn loading_card(paint: &mut Painter, desk: &Desk, at: Box) -> Option<f32> {
+    let ink = paint.ink;
+    let loading = desk.loading_line()?;
+    let shown = paint.elide(&loading, Weight::Bold, size::BODY, at.w - 28.0);
+    paint.say_at(
+        at.x + 14.0,
+        at.y + 20.0,
+        &shown,
+        Weight::Bold,
+        size::BODY,
+        ink.ink,
+    );
+    Some(at.bottom())
+}
+
 fn hosted_card(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let ink = paint.ink;
     ui::card(paint, at, desk.hosted.is_some());
     let Some(hosting) = &desk.hosted else {
+        if let Some(bottom) = loading_card(paint, desk, at) {
+            return bottom;
+        }
         paint.say_at(
             at.x + 14.0,
             at.y + 20.0,
@@ -1026,10 +1047,22 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         .is_some_and(|(hosting, held)| hosting.model == held.path);
     // *What is in it* on both: it reads the file and runs nothing, so a model
     // being held can be counted as well as one that is not.
+    // What a stop gives back, said on the button: the weights and the
+    // cache the hold reserved, which is what the daemon will be asked to
+    // free (§3.15).
+    let stop_label = desk
+        .hosted_model()
+        .zip(desk.hosted.as_ref().and_then(|hosting| hosting.context))
+        .and_then(|(held, context)| reserve_of(held, context))
+        .and_then(|(_, total)| total)
+        .map_or_else(
+            || "Stop hosting".to_owned(),
+            |total| format!("Stop hosting — frees {}", gigabytes(total)),
+        );
     let actions: [(&str, Kind, Act); 4] = if this_one {
         [
             ("Ask it something", Kind::Primary, Act::Go(Page::Hosting)),
-            ("Stop hosting", Kind::Ordinary, Act::StopHosting),
+            (stop_label.as_str(), Kind::Ordinary, Act::StopHosting),
             ("What is in it", Kind::Ordinary, Act::Go(Page::Anatomy)),
             ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
         ]
@@ -1080,17 +1113,11 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         // takes minutes: an operator who has been told *a moment* and waits
         // five is an operator who reasonably concludes it has failed. What MCF
         // knows is how long it has waited, so that is what it says (A7).
-        let said = job.refused.clone().unwrap_or_else(|| {
-            if job.finished {
-                String::new()
-            } else {
-                format!(
-                    "HOLDING — {}s so far. A large model is read from disk before it answers; \
-                     this screen keeps up to date while it loads.",
-                    job.ran()
-                )
-            }
-        });
+        let said = job
+            .refused
+            .clone()
+            .or_else(|| desk.loading_line())
+            .unwrap_or_default();
         let colour = if job.refused.is_some() {
             ink.bad
         } else {
@@ -2355,6 +2382,119 @@ fn downloading_line(job: &crate::job::Job) -> String {
 }
 
 /// A model, held and answering.
+/// The state of the hold, on the page a person asks the model from: where
+/// it answers, with a button that copies the address and a line saying what
+/// the address is; or how far the load has got; or the engine being built
+/// first; or why the last hold was refused; or what the last stop freed.
+/// Returns what was pressed and where the next thing goes. The ask box
+/// follows either way: a question goes through MCF's own engine, loaded for
+/// it, whether or not the model is held on a port.
+fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let mut y = at.y;
+    let this_one = desk
+        .hosted
+        .as_ref()
+        .zip(desk.chosen.and_then(|held| desk.models.get(held)))
+        .filter(|(hosting, held)| hosting.model == held.path)
+        .map(|(hosting, _)| hosting);
+    if let Some(hosting) = this_one {
+        return where_it_answers(paint, mouse, hosting, at);
+    }
+    let said: (String, Rgb) = if let Some(loading) = desk.loading_line() {
+        (loading, ink.quiet)
+    } else if let Doing::Provisioning(job) = &desk.doing
+        && !job.finished
+    {
+        building(paint, job, at.x, y, at.w);
+        return (None, y + 96.0);
+    } else if let Some(why) = &desk.host_refused {
+        (why.clone(), ink.bad)
+    } else if let Some(freed) = &desk.freed {
+        (freed.clone(), ink.quiet)
+    } else {
+        (
+            "not held on a port: a question here goes through MCF's own engine, loaded for it; \
+             Host it on the Models page to keep it resident and reachable by other programs"
+                .to_owned(),
+            ink.faint,
+        )
+    };
+    for line in paint
+        .wrap(&said.0, Weight::Regular, size::BODY, at.w)
+        .iter()
+        .take(4)
+    {
+        paint.say_at(at.x, y, line, Weight::Regular, size::BODY, said.1);
+        y += 20.0;
+    }
+    (None, y + 8.0)
+}
+
+/// Where a held model answers: the address with a button that copies it,
+/// what the address is, whether a key guards it, its window and since when,
+/// and what reaches it.
+fn where_it_answers(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    hosting: &crate::Hosted,
+    at: Box,
+) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let mut y = at.y;
+    let mut act = None;
+    paint.say_at(
+        at.x,
+        y,
+        "reachable at",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    let after = paint.measure("reachable at", Weight::Regular, size::SMALL);
+    paint.say_at(
+        at.x + after + 8.0,
+        y - 1.0,
+        &hosting.address,
+        Weight::Bold,
+        size::BODY,
+        ink.accent,
+    );
+    let address_wide = paint.measure(&hosting.address, Weight::Bold, size::BODY);
+    let (copied, _) = ui::fitted(
+        paint,
+        mouse,
+        (at.x + after + address_wide + 22.0, y - 8.0),
+        "Copy",
+        Kind::Quiet,
+    );
+    if copied {
+        act = Some(Act::Copy(hosting.address.clone()));
+    }
+    y += 24.0;
+    for line in [
+        "an OpenAI-compatible endpoint: give this to a tool as its base URL".to_owned(),
+        if hosting.api_key {
+            "an API key is set — callers present it".to_owned()
+        } else {
+            "no API key — anything on this computer can use it".to_owned()
+        },
+        format!(
+            "context {}   ·   since {}",
+            hosting
+                .context
+                .map_or_else(|| UNKNOWN.to_owned(), |context| format!("{context} tokens")),
+            hosting.since
+        ),
+        takes_line(hosting),
+    ] {
+        let shown = paint.elide(&line, Weight::Regular, size::SMALL, at.w);
+        paint.say_at(at.x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
+        y += 17.0;
+    }
+    (act, y + 12.0)
+}
+
 fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
@@ -2381,6 +2521,16 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     let mut y = area.y + 62.0;
 
     let mut act = None;
+    // What is held, or how the hold is going, or why it is not: the one
+    // place for it, before anything can be asked (A2, A7).
+    let (held_act, after) = held_block(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, y, area.w.min(640.0), 0.0),
+    );
+    act = held_act.or(act);
+    y = after;
     let field = Box::new(area.x, y, (area.w - 120.0).min(640.0), 32.0);
     if ui::field(
         paint,

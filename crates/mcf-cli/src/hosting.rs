@@ -48,10 +48,21 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
                 .map(|(name, value)| (name.as_str(), value.clone())),
         )
     };
-    ask(&Request::Host {
-        model: model.to_owned(),
-        settings,
-    })
+    // Printed as it loads: the daemon says once a second how much of the
+    // model the engine has read, and a terminal that showed nothing for the
+    // minutes a large model takes showed a load that looked stopped (A7).
+    ask_as_it_comes(
+        &Request::Host {
+            model: model.to_owned(),
+            settings,
+        },
+        &mut |body| {
+            if let Some(said) = loading_said(body) {
+                println!("  {said}");
+                let _flushed = std::io::stdout().flush();
+            }
+        },
+    )
     .map_or_else(
         |text| Response {
             text,
@@ -62,6 +73,122 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
             served: true,
         },
     )
+}
+
+/// One line of a load's progress, where the answer is one: how much of the
+/// model the engine holds so far, of how much, after how long — and, once
+/// there is a rate to read it off, about how long is left. The estimate is
+/// arithmetic on what was read so far and says so with *about* (A6).
+pub(crate) fn loading_said(body: &Value) -> Option<String> {
+    let loading = body.get("loading")?;
+    let figure = |key: &str| loading.get(key).and_then(Value::as_integer);
+    let seconds = figure("seconds")?;
+    let of = figure("of_bytes");
+    // Onto a card, the card's memory is the figure that grows; the engine's
+    // own does not show weights that went there.
+    let (read, where_) = match figure("card_bytes") {
+        Some(on_card) => (on_card, " onto the card"),
+        None => (figure("resident_bytes")?, ""),
+    };
+    Some(load_line(read, where_, of, seconds, "  "))
+}
+
+/// The sentence for how far a load has got, shared with the window's words.
+///
+/// No estimate off the first crumbs: a rate read from under a twentieth of
+/// the weights said *about 200 s* two seconds into a ten-second load. And
+/// none past the weights: what follows them is the cache and the engine's
+/// buffers, whose size the file does not say (A6, A7).
+pub(crate) fn load_line(
+    read: i64,
+    where_: &str,
+    of: Option<i64>,
+    seconds: i64,
+    gap: &str,
+) -> String {
+    match of {
+        Some(of) if read >= of => format!(
+            "loading{where_}{gap}{} so far — the {} of weights are on, and the cache and the \
+             engine's buffers follow; {seconds} s so far",
+            in_gigabytes(read),
+            in_gigabytes(of)
+        ),
+        Some(of) => {
+            let left = if read.saturating_mul(20) >= of && seconds > 0 && read > 0 {
+                #[expect(
+                    clippy::integer_division,
+                    reason = "whole seconds left at the rate so far; the remainder is under a second"
+                )]
+                let eta = (of - read).saturating_mul(seconds) / read;
+                if eta == 0 {
+                    ", nearly there".to_owned()
+                } else {
+                    format!(", about {eta} s to go")
+                }
+            } else {
+                String::new()
+            };
+            format!(
+                "loading{where_}{gap}{} of {} of weights, {seconds} s so far{left}",
+                in_gigabytes(read),
+                in_gigabytes(of)
+            )
+        }
+        None => format!(
+            "loading{where_}{gap}{}, {seconds} s so far",
+            in_gigabytes(read)
+        ),
+    }
+}
+
+/// What a stop gave back, where the daemon measured it: the engine's own
+/// memory, and the card's where the model was on one.
+pub(crate) fn freed_said(body: &Value) -> String {
+    let figure = |key: &str| body.get(key).and_then(Value::as_integer);
+    match (figure("freed_bytes"), figure("freed_card_bytes")) {
+        (Some(memory), Some(card)) => format!(
+            " — freed {} of memory and {} on the card",
+            in_gigabytes(memory),
+            in_gigabytes(card)
+        ),
+        (Some(memory), None) => format!(" — freed {}", in_gigabytes(memory)),
+        (None, Some(card)) => format!(" — freed {} on the card", in_gigabytes(card)),
+        (None, None) => String::new(),
+    }
+}
+
+/// Sends one request that answers in many lines, handing each line short
+/// of the last to `heard`, and returns the last.
+pub(crate) fn ask_as_it_comes(
+    request: &Request,
+    heard: &mut dyn FnMut(&Value),
+) -> Result<Value, String> {
+    let Some(socket) = crate::serve::socket_path() else {
+        return Err("mcf: MCF has nowhere to put a control socket on this machine".to_owned());
+    };
+    if let Some(why) = crate::serve::ensure_running(&socket) {
+        return Err(format!("mcf: MCF could not start\n  {why}"));
+    }
+    let mut connection = UnixStream::connect(&socket)
+        .map_err(|error| format!("mcf: MCF is not answering\n  {error}"))?;
+    writeln!(connection, "{}", request.to_line())
+        .and_then(|()| connection.flush())
+        .map_err(|error| format!("mcf: the request could not be sent\n  {error}"))?;
+    let reader = BufReader::new(&connection);
+    for read in reader.lines() {
+        let read = read.map_err(|error| format!("mcf: MCF stopped answering\n  {error}"))?;
+        let Ok(answer) = Answer::read(read.trim_end()) else {
+            continue;
+        };
+        if !answer.served {
+            return Err(format!("mcf: refused\n  {}", refused_because(&answer.body)));
+        }
+        if matches!(answer.body.get("done"), Some(Value::Bool(true))) {
+            return Ok(answer.body);
+        }
+        heard(&answer.body);
+    }
+    Err("mcf: MCF stopped answering before it said it had finished".to_owned())
 }
 
 /// What is being held, if anything.
@@ -91,7 +218,7 @@ pub(crate) fn unhost() -> Response {
         },
         |body| Response {
             text: match body.get("was").and_then(Value::as_text) {
-                Some(was) => format!("stopped hosting {was}"),
+                Some(was) => format!("stopped hosting {was}{}", freed_said(&body)),
                 None => "nothing was being hosted".to_owned(),
             },
             served: true,

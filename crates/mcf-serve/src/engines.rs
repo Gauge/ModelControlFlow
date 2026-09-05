@@ -531,6 +531,43 @@ pub fn card_driver_present() -> Option<String> {
     card_drivers(Path::new("/sys/class/drm")).into_iter().next()
 }
 
+/// What the cards here hold in their memory right now, summed, as the
+/// driver publishes it — the card's own memory and the system memory it
+/// addresses, since on a chip that carves its memory out of the system's the
+/// second is where a model goes. `None` where no card publishes the figure.
+///
+/// This is what a load onto a card shows: the engine's own resident memory
+/// does not grow with weights that went to the card, and a load watched by
+/// that figure alone read *0.1 GiB of 16 read* for its whole length (A7).
+#[must_use]
+pub fn card_memory_used() -> Option<u64> {
+    card_memory_used_under(Path::new("/sys/class/drm"))
+}
+
+/// The same, over the directory it reads (B-015).
+#[must_use]
+pub fn card_memory_used_under(drm: &Path) -> Option<u64> {
+    let entries = std::fs::read_dir(drm).ok()?;
+    let mut total: Option<u64> = None;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("card") || name.contains('-') {
+            continue;
+        }
+        let device = entry.path().join("device");
+        for file in ["mem_info_vram_used", "mem_info_gtt_used"] {
+            if let Some(used) = std::fs::read_to_string(device.join(file))
+                .ok()
+                .and_then(|text| text.trim().parse::<u64>().ok())
+            {
+                total = Some(total.unwrap_or(0).saturating_add(used));
+            }
+        }
+    }
+    total
+}
+
 /// The component this machine's card wants, where it has one and an engine
 /// for it is not already provisioned.
 #[must_use]

@@ -1084,6 +1084,7 @@ fn the_monitor_says_what_the_held_window_costs() {
         context: Some(32_768),
         projector: None,
         takes: None,
+        api_key: false,
     });
     // The same window, held under a model this list does not carry: the
     // address and the context still show, the price cannot.
@@ -1096,6 +1097,7 @@ fn the_monitor_says_what_the_held_window_costs() {
         context: Some(32_768),
         projector: None,
         takes: None,
+        api_key: false,
     });
 
     let ground = DAY.ground;

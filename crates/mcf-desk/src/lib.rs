@@ -117,6 +117,65 @@ pub struct Hosted {
     pub projector: Option<String>,
     /// What the engine said it takes for this model, where it answered.
     pub takes: Option<mcf_serve::takes::Takes>,
+    /// Whether callers must present a key.
+    pub api_key: bool,
+}
+
+impl Hosted {
+    /// The name, not the path: the question a screen answers is what is
+    /// answering.
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.model
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.model)
+            .trim_end_matches(".gguf")
+            .to_owned()
+    }
+}
+
+/// A load's progress as a sentence: what has been read of the weights, after
+/// how long, and about how long is left once a twentieth is read and there
+/// is a rate to read that off; past the weights, that the cache and the
+/// engine's buffers follow. Said with *about* because it is arithmetic on
+/// what has happened and not a promise (A6, A7).
+#[must_use]
+pub fn loading_said(read: u64, on_card: bool, of: Option<u64>, seconds: u64) -> String {
+    let where_ = if on_card { " onto the card" } else { "" };
+    match of {
+        Some(of) if read >= of => format!(
+            "loading{where_} — {} so far — the {} of weights are on, and the cache and the \
+             engine's buffers follow; {seconds} s so far",
+            view::gigabytes(read),
+            view::gigabytes(of)
+        ),
+        Some(of) => {
+            let left = if read.saturating_mul(20) >= of && seconds > 0 && read > 0 {
+                #[expect(
+                    clippy::integer_division,
+                    reason = "whole seconds left at the rate so far; the remainder is under a second"
+                )]
+                let eta = (of - read).saturating_mul(seconds) / read;
+                if eta == 0 {
+                    ", nearly there".to_owned()
+                } else {
+                    format!(", about {eta} s to go")
+                }
+            } else {
+                String::new()
+            };
+            format!(
+                "loading{where_} — {} of {} of weights, {seconds} s so far{left}",
+                view::gigabytes(read),
+                view::gigabytes(of)
+            )
+        }
+        None => format!(
+            "loading{where_} — {}, {seconds} s so far",
+            view::gigabytes(read)
+        ),
+    }
 }
 
 /// One component MCF can build, as this window needs it.
@@ -825,6 +884,9 @@ pub enum Act {
     RunChosen,
     /// Cut the run that is going short.
     Stop,
+    /// Put this text on the clipboard — the loop's, because the clipboard is
+    /// the window's and not the desk's.
+    Copy(String),
     /// Where the next run puts the model; `None` is where MCF resolves it.
     SetOn(Option<mcf_serve::control::On>),
     /// Open a dropdown, or close it if it is the one already open.
@@ -1060,6 +1122,13 @@ pub struct Desk {
     pub build_failed: Option<(String, String)>,
     /// What is being hosted: where it is reachable, and since when.
     pub hosted: Option<Hosted>,
+    /// Why the last hold was refused, kept until the next is pressed for:
+    /// a person who went to ask the model a question is owed the reason it
+    /// is not there to ask, on that page (A2).
+    pub host_refused: Option<String>,
+    /// What the last stop freed, in the daemon's figure, until something
+    /// else is held.
+    pub freed: Option<String>,
     /// What the chosen model is made of, as the daemon counted it — read
     /// when the screen for it is opened, never counted here (B-072).
     pub anatomy: Option<mcf_serve::anatomy::Said>,
@@ -1122,6 +1191,8 @@ impl Desk {
             building: None,
             build_failed: None,
             hosted: None,
+            host_refused: None,
+            freed: None,
             anatomy: None,
             no_anatomy: None,
             window: 8192,
@@ -1330,6 +1401,11 @@ impl Desk {
         if let Doing::Hosting(job) = &self.doing
             && job.finished
         {
+            // A refusal stays on the page the model would have answered on,
+            // until the next hold is pressed for (A2).
+            if let Some(why) = &job.refused {
+                self.host_refused = Some(why.clone());
+            }
             self.read_hosted();
         }
         if let Doing::Measuring(job) = &self.doing
@@ -1490,8 +1566,8 @@ impl Desk {
             Act::HostIt => self.host_it(),
             Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
-            // The loop's: closing is the window's own.
-            Act::Close => {}
+            // The loop's: closing is the window's own, and so is the clipboard.
+            Act::Close | Act::Copy(_) => {}
             Act::ShowWithout(at) => self.show(Shown::Without(at)),
             Act::ShowAlone(at) => self.show(Shown::Alone(at)),
             Act::ShowPrefix(at) => self.show(Shown::Prefix(at)),
@@ -1635,6 +1711,11 @@ impl Desk {
                             .get("takes")
                             .filter(|takes| !matches!(takes, Value::Null))
                             .map(mcf_serve::takes::Takes::from_value),
+                        api_key: answer
+                            .body
+                            .get("settings")
+                            .and_then(|settings| settings.get("api_key"))
+                            .is_some_and(|key| !matches!(key, Value::Null)),
                     }),
                 // Served, and nothing is held: that is an answer, and it clears.
                 Ok(answer) if answer.served => None,
@@ -1648,12 +1729,18 @@ impl Desk {
         self.hosted = read;
     }
 
-    /// Holds the chosen model under the settings as they stand.
+    /// Holds the chosen model under the settings as they stand, and goes to
+    /// the page that shows it loading, then answering: one page for the
+    /// thing being held rather than a button here, a clock there and an ask
+    /// box somewhere else.
     pub fn host_it(&mut self) {
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             self.no_settings = Some("choose a model first".to_owned());
             return;
         };
+        self.host_refused = None;
+        self.freed = None;
+        self.page = Page::Hosting;
         // No engine is not a refusal but a step: MCF names what it would
         // build, and Host builds it — on screen, with the name, and recorded —
         // and holds the model once it is there. The operator pressed Host;
@@ -1714,8 +1801,66 @@ impl Desk {
 
     /// Stops holding whatever is held.
     pub fn stop_hosting(&mut self) {
-        let _answered = ask(&self.socket, &Request::Unhost);
-        self.hosted = None;
+        let answered = ask(&self.socket, &Request::Unhost);
+        let was = self.hosted.take();
+        self.freed = answered.ok().map(|answer| {
+            let figure = |key: &str| {
+                answer
+                    .body
+                    .get(key)
+                    .and_then(Value::as_integer)
+                    .and_then(|held| u64::try_from(held).ok())
+                    .map(view::gigabytes)
+            };
+            let name = was.map_or_else(|| "it".to_owned(), |held| held.name());
+            match (figure("freed_bytes"), figure("freed_card_bytes")) {
+                (Some(memory), Some(card)) => format!(
+                    "{name} is no longer held — {memory} of memory and {card} on the card freed"
+                ),
+                (Some(memory), None) => format!("{name} is no longer held — {memory} freed"),
+                (None, Some(card)) => {
+                    format!("{name} is no longer held — {card} on the card freed")
+                }
+                (None, None) => format!("{name} is no longer held"),
+            }
+        });
+    }
+
+    /// How the load is going, where one is: what the engine holds of the
+    /// model so far, after how long, and about how long is left once there
+    /// is a rate to read that off. `None` where nothing is loading.
+    #[must_use]
+    pub fn loading_line(&self) -> Option<String> {
+        let Doing::Hosting(job) = &self.doing else {
+            return None;
+        };
+        if job.finished {
+            return None;
+        }
+        let latest = job
+            .answers
+            .iter()
+            .rev()
+            .find_map(|body| body.get("loading"));
+        let figure = |key: &str| {
+            latest
+                .and_then(|loading| loading.get(key))
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+        };
+        // Onto a card, the card's memory is the figure that grows; the
+        // engine's own does not show weights that went there.
+        let read = match figure("card_bytes") {
+            Some(on_card) => Some((on_card, true)),
+            None => figure("resident_bytes").map(|resident| (resident, false)),
+        };
+        Some(match read {
+            Some((read, on_card)) => loading_said(read, on_card, figure("of_bytes"), job.ran()),
+            None => format!(
+                "loading — {} s so far; the engine has not said how far it has got",
+                job.ran()
+            ),
+        })
     }
 
     /// The model behind whatever is being held, where this window is also
@@ -2393,7 +2538,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         }
 
         if let Some(act) = view::draw(&mut paint, &desk, &mouse) {
-            desk.act(act);
+            taken(&mut paint, &mut desk, act);
             acted = true;
         }
         let _ = acted;
@@ -2401,6 +2546,17 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         // Nothing to do until something happens.
         std::thread::sleep(std::time::Duration::from_millis(16));
     }
+}
+
+/// One act from the screen, done: by the window where it is the window's —
+/// the clipboard — and by the desk otherwise.
+fn taken(paint: &mut paint::Painter, desk: &mut Desk, act: Act) {
+    if let Act::Copy(text) = &act
+        && let Some(window) = paint.window()
+    {
+        let _went = window.put_on_clipboard(text);
+    }
+    desk.act(act);
 }
 
 /// A pointer position in pixels, as the points everything is laid out in.

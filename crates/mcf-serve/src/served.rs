@@ -500,6 +500,7 @@ impl Served {
         llama: &ProvisionedLlama,
         model: &Path,
         settings: &crate::hosting::Hosting,
+        report: &mut dyn FnMut(u64),
     ) -> Result<Self, Failure> {
         let binary = llama.prefix.join("build").join("bin").join("llama-server");
         if !binary.exists() {
@@ -550,7 +551,7 @@ impl Served {
             started: settings.started,
         };
         served
-            .wait_until_answering(settings.port, ATTEMPTS)
+            .wait_until_answering(settings.port, ATTEMPTS, report)
             .map_err(|failure| served.with_last_words(failure))?;
         Ok(served)
     }
@@ -560,8 +561,22 @@ impl Served {
     /// A model is loaded before it answers, and on a large one that is tens of
     /// seconds — during which the engine answers `503 Loading model`. Treating
     /// that as *up* would hand a caller a server that refuses everything.
-    fn wait_until_answering(&mut self, port: u16, attempts: usize) -> Result<(), Failure> {
-        for _ in 0..attempts.saturating_mul(4) {
+    /// **And says how far the load has got while it waits.** A model is read
+    /// from disk before the server answers, and on a large one that is
+    /// minutes of silence; the engine's resident memory grows as the pages
+    /// come in, and once a second that figure goes to `report`, which is
+    /// what a screen needs to say *6 GB of 17 read* rather than only how long
+    /// it has waited (A7).
+    fn wait_until_answering(
+        &mut self,
+        port: u16,
+        attempts: usize,
+        report: &mut dyn FnMut(u64),
+    ) -> Result<(), Failure> {
+        for glance in 0..attempts.saturating_mul(4) {
+            if glance % 4 == 3 {
+                report(self.resident_bytes().unwrap_or(0));
+            }
             if let Some(status) = self.child.try_wait().ok().flatten() {
                 return Err(Failure::new(
                     Category::EngineSpawnRefused,

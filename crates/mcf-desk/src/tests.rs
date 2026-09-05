@@ -970,6 +970,7 @@ fn what_is_hosted_carries_where_it_answers() {
         context: Some(8192),
         projector: None,
         takes: None,
+        api_key: false,
     });
     let hosting = desk.hosted.as_ref().expect("just set");
     // The screen shows the name, not the path: a path is where a file is.
@@ -1038,6 +1039,7 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
         context: Some(4096),
         projector: None,
         takes: None,
+        api_key: false,
     });
     // Nothing answers, so nothing is learned — and nothing is forgotten.
     desk.read_hosted();
@@ -1412,4 +1414,33 @@ fn a_run_under_way_is_said_on_every_page() {
         job.finished = true;
     }
     assert_eq!(desk.state_word(), "MCF");
+}
+
+/// A load says how far it has got in bytes read of bytes to read, after how
+/// long, and about how long is left once there is a rate to read that off —
+/// never a promise before there is one (A6, A7).
+#[test]
+fn a_load_says_how_far_and_about_how_long() {
+    let said = crate::loading_said(6_100_000_000, false, Some(17_600_000_000), 12);
+    assert!(
+        said.starts_with("loading — 6.1 GB of 17.6 GB of weights, 12 s so far"),
+        "{said}"
+    );
+    assert!(said.ends_with("about 22 s to go"), "{said}");
+    let nothing_yet = crate::loading_said(100_000_000, false, Some(17_600_000_000), 3);
+    assert!(
+        !nothing_yet.contains("to go"),
+        "no estimate off the first crumbs: {nothing_yet}"
+    );
+    let past = crate::loading_said(21_200_000_000, true, Some(16_300_000_000), 2);
+    assert!(
+        past.contains("weights are on") && !past.contains("to go"),
+        "past the weights, what follows is not the file's to size: {past}"
+    );
+    let without_size = crate::loading_said(6_100_000_000, true, None, 12);
+    assert_eq!(without_size, "loading onto the card — 6.1 GB, 12 s so far");
+
+    // And the desk says nothing about loading where nothing loads.
+    let desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    assert!(desk.loading_line().is_none());
 }

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 122 |
+| **Version** | 123 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 176 | [F176 — Hosting is one page, and a load onto a card is read off the card: the engine's own memory held 0.1 GiB throughout a 16 GiB load onto the Radeon while the card's memory rose 8.5, 16.3, 21.2, 23.2 GiB in three seconds, a stop gave the 23.2 back, and a processor hold read 6.7 GiB into memory and freed it (B-470, B-467, A7, A6, §3.15)](#176--f176--hosting-is-one-page-and-a-load-onto-a-card-is-read-off-the-card-the-engines-own-memory-held-01-gib-throughout-a-16-gib-load-onto-the-radeon-while-the-cards-memory-rose-85-163-212-232-gib-in-three-seconds-a-stop-gave-the-232-back-and-a-processor-hold-read-67-gib-into-memory-and-freed-it-b-470-b-467-a7-a6-315) |
 | 175 | [F175 — A rung read off one pair has no spread: a spread of nought was printed for one sample beside a spread of two milliseconds for three, every pair is now counted by what became of it, and GLM-4.7-Flash on the card read 17.98 ms a token over two pairs of three at 512 deep with one that did not separate (B-469, F174, F53, A7, A9)](#175--f175--a-rung-read-off-one-pair-has-no-spread-a-spread-of-nought-was-printed-for-one-sample-beside-a-spread-of-two-milliseconds-for-three-every-pair-is-now-counted-by-what-became-of-it-and-glm-47-flash-on-the-card-read-1798-ms-a-token-over-two-pairs-of-three-at-512-deep-with-one-that-did-not-separate-b-469-f174-f53-a7-a9) |
 | 174 | [F174 — A diagnostic says which device it is on, and a Radeon is one: the profiler reads the 8060S from its driver's files, a Vulkan build of the reference drives it, GLM-4.7-Flash decodes at 16.1 ms a token on the card against 33.9 on the processor, a processor run reused the card's server until the build and the layers joined the reuse rule, and a run is cut short from wherever it was started (B-467, B-468, B-072, F133, A7, A21, §3.4)](#174--f174--a-diagnostic-says-which-device-it-is-on-and-a-radeon-is-one-the-profiler-reads-the-8060s-from-its-drivers-files-a-vulkan-build-of-the-reference-drives-it-glm-47-flash-decodes-at-161-ms-a-token-on-the-card-against-339-on-the-processor-a-processor-run-reused-the-cards-server-until-the-build-and-the-layers-joined-the-reuse-rule-and-a-run-is-cut-short-from-wherever-it-was-started-b-467-b-468-b-072-f133-a7-a21-34) |
 | 173 | [F173 — A budget measured on a probe's question bounds that question and no other: GLM-4.7-Flash's stop-conditions budget of 247 was 244 tokens of thought about a river's name, the thinking probe raised it to 279, and a two-sentence question thought for 297 (B-466, F172, F106, B-451, A7, D42)](#173--f173--a-budget-measured-on-a-probes-question-bounds-that-question-and-no-other-glm-47-flashs-stop-conditions-budget-of-247-was-244-tokens-of-thought-about-a-rivers-name-the-thinking-probe-raised-it-to-279-and-a-two-sentence-question-thought-for-297-b-466-f172-f106-b-451-a7-d42) |
@@ -9598,6 +9599,57 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 176 · F176 — Hosting is one page, and a load onto a card is read off the card: the engine's own memory held 0.1 GiB throughout a 16 GiB load onto the Radeon while the card's memory rose 8.5, 16.3, 21.2, 23.2 GiB in three seconds, a stop gave the 23.2 back, and a processor hold read 6.7 GiB into memory and freed it (B-470, B-467, A7, A6, §3.15)
+
+Hosting a model from the window was a button on one page, a clock on
+another and an ask box on a third; the load said only how long it had
+waited; the address was text nobody could select; a refusal was a red
+line on the page the person had already left; and Stop said nothing about
+what it gave back. All of that is one page now, and the figures on it are
+measured.
+
+**Where the load's figure comes from, and where it does not.** The daemon
+now answers a hold in many lines: once a second while the engine comes up,
+what it has read of the model so far, then the answer `mcf hosted` gives,
+marked done. The first cut read the engine's resident memory, which is
+what a processor hold grows by: GLM-4.7-Flash on the processor read *0.1
+GiB, 0.1 GiB, 0.1 GiB, 6.7 GiB* over its first seconds and stopped there,
+the rest of the file being mapped and touched later, and a stop freed the
+6.7. On the card the same figure read *0.1 GiB of 16.3 GiB* for the whole
+load and then *hosting*: weights that go to a card are not in the engine's
+own memory, and a line that guessed *about 296 s to go* off a rate of
+nothing was a line inventing a reading (A7). The card's memory is a file
+the driver publishes — its own and the system memory it addresses, summed
+across the cards here — and read against what the card held before the
+load began it rose **8.5, 16.3, 21.2, 23.2 GiB in three seconds** for a
+16.3 GiB file, the last seven being the cache for a 131,072-token window
+and the engine's buffers, which the file does not size. So a load onto a
+card is read off the card, the estimate of what is left is given only once
+a twentieth of the weights is on and not at all past them, and past them
+the line says the cache and the buffers follow. A stop reads the card
+before and after the engine goes: *freed 0.1 GiB of memory and 23.2 GiB
+on the card*.
+
+**What the page says.** Host leads to the page the model answers on. Held,
+it shows *reachable at http://127.0.0.1:17817* with a Copy button, that
+this is an OpenAI-compatible endpoint to give a tool as its base URL,
+whether a key guards it, the window and since when, and what the engine
+said it takes. Loading, it shows the line above, with the same figure on
+the Monitor's card and under the Models page's actions. Refused, the
+reason stays there until the next hold is pressed for. Stopped, it says
+what the stop freed, and the Stop button said what it would free before it
+was pressed: the weights and the cache the hold reserved. The ask box is
+on the page either way, because a question goes through MCF's own engine,
+loaded for it, whether or not the model is held on a port — and the page
+says so where it is not.
+
+**What is not done here.** The processor hold above ran through the Vulkan
+build with nought layers, because the settings name the engine MCF
+recommended and only the layer count was moved; the plain build was there
+and would have been the honest choice for a processor hold. That is the
+device choice on the Host page, which B-471 is for, with the cost said
+before the button and the build offered as its own.
+
 ## 175 · F175 — A rung read off one pair has no spread: a spread of nought was printed for one sample beside a spread of two milliseconds for three, every pair is now counted by what became of it, and GLM-4.7-Flash on the card read 17.98 ms a token over two pairs of three at 512 deep with one that did not separate (B-469, F174, F53, A7, A9)
 
 F174 left a figure standing that should not have: the card's first rung on
@@ -12180,6 +12232,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 123 — hosting is one page
+
+F176: a hold is loaded, refused, answered from and stopped on one page; a
+load onto a card is read off the card's memory, which rose past the file
+to the cache; a stop says what it freed in memory and on the card (B-470).
 
 ### Version 122 — over how many pairs
 
