@@ -465,6 +465,46 @@ fn explained(body: &Value, at: Option<u64>) -> String {
 }
 
 /// What is being hosted and where.
+/// What a held model is doing, from the engine's own counters where it
+/// published them: the same figures the window's Running page draws (A22).
+fn in_use_lines(body: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    let Some(in_use) = body.get("use") else {
+        return lines;
+    };
+    let figure = |key: &str| {
+        in_use.get(key).and_then(|held| match held {
+            Value::Text(text) => Some(text.clone()),
+            Value::Integer(number) => Some(number.to_string()),
+            _ => None,
+        })
+    };
+    if let (Some(generated), Some(prompted)) =
+        (figure("generated_tokens"), figure("prompted_tokens"))
+    {
+        lines.push(format!(
+            "  tokens         {generated} generated, {prompted} prompted"
+        ));
+    }
+    if let Some(rate) = figure("generated_tokens_per_second") {
+        lines.push(format!("  tokens/s       {rate} generating now"));
+    }
+    if let (Some(processing), Some(queued)) =
+        (figure("requests_processing"), figure("requests_queued"))
+    {
+        lines.push(format!(
+            "  requests       {processing} in hand, {queued} queued"
+        ));
+    }
+    if let Some(ratio) = figure("cache_used_ratio") {
+        lines.push(format!("  cache          {ratio} of the window in use"));
+    }
+    if let Some(up) = in_use.get("uptime_seconds").and_then(Value::as_integer) {
+        lines.push(format!("  up             {}", ago_said(up)));
+    }
+    lines
+}
+
 fn hosting(body: &Value) -> String {
     let text = |key: &str| body.get(key).and_then(Value::as_text).unwrap_or("?");
     let settings = body.get("settings");
@@ -514,6 +554,7 @@ fn hosting(body: &Value) -> String {
         ),
         format!("  since          {}", text("since")),
     ];
+    lines.extend(in_use_lines(body));
     // What reaches the model through the port, as the engine reported it
     // after it came up. Absent where the engine did not answer, which is
     // said rather than shown as nothing taken (A7).

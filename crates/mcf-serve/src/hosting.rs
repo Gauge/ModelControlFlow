@@ -216,6 +216,10 @@ impl Hosting {
             // MCF draws its own interface and reads its own answers; a web
             // page served alongside is a surface nobody asked for.
             "--no-webui".to_owned(),
+            // The engine's own counters, published on its port for the
+            // Running page to read: what it has prompted and predicted, at
+            // what rate, with how much cache in use (D49).
+            "--metrics".to_owned(),
         ];
         if self.flash_attention {
             out.push("--flash-attn".to_owned());

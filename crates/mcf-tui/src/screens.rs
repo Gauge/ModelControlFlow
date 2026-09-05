@@ -43,12 +43,11 @@ pub enum Where {
 
 impl Where {
     /// Every item, in the order they sit along the top.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::Monitor,
         Self::Models,
         Self::Diagnostics,
         Self::Components,
-        Self::Settings,
         Self::Exit,
     ];
 
@@ -56,10 +55,10 @@ impl Where {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Monitor => "Monitor",
+            Self::Monitor => "Machine",
             Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
-            Self::Components => "Components",
+            Self::Components => "Engines",
             Self::Prompt => "Prompt",
             Self::Settings => "Settings",
             Self::Exit => "Exit",
@@ -71,10 +70,10 @@ impl Where {
     #[must_use]
     pub const fn title(self) -> &'static str {
         match self {
-            Self::Monitor => "MCF",
+            Self::Monitor => "This machine",
             Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
-            Self::Components => "What MCF can build",
+            Self::Components => "Engines: what MCF has built and can build",
             Self::Prompt => "What a prompt does",
             Self::Settings => "Settings",
             Self::Exit => "Exit",

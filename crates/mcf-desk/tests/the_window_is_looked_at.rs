@@ -922,7 +922,7 @@ fn every_menu_entry_can_be_pressed_from_every_screen() {
         desk.page = *from;
         for (to, label) in Page::MENU {
             assert!(
-                act_within(&desk, &mcf_desk::Act::Go(*to), (0.0, 46.0)),
+                act_somewhere(&desk, &mcf_desk::Act::Go(*to)),
                 "{label} cannot be reached from {from:?}"
             );
         }
@@ -1078,11 +1078,11 @@ fn the_price_of_a_window_is_shown_where_it_is_chosen() {
     );
 }
 
-/// And on the monitor, for the window actually being held.
+/// And on Running, for the window actually being held.
 #[test]
-fn the_monitor_says_what_the_held_window_costs() {
+fn running_says_what_the_held_window_costs() {
     let mut desk = four_models();
-    desk.page = Page::Monitor;
+    desk.page = Page::Hosting;
     desk.hosted = Some(mcf_desk::Hosted {
         model: desk.models[0].path.clone(),
         address: "http://127.0.0.1:17817".to_owned(),
@@ -1091,11 +1091,12 @@ fn the_monitor_says_what_the_held_window_costs() {
         projector: None,
         takes: None,
         api_key: false,
+        in_use: None,
     });
     // The same window, held under a model this list does not carry: the
     // address and the context still show, the price cannot.
     let mut unknown = four_models();
-    unknown.page = Page::Monitor;
+    unknown.page = Page::Hosting;
     unknown.hosted = Some(mcf_desk::Hosted {
         model: "/models/one-this-window-is-not-listing.gguf".to_owned(),
         address: "http://127.0.0.1:17817".to_owned(),
@@ -1104,14 +1105,15 @@ fn the_monitor_says_what_the_held_window_costs() {
         projector: None,
         takes: None,
         api_key: false,
+        in_use: None,
     });
 
     let ground = DAY.ground;
-    let priced = drawn(&desk, DAY, "monitor-priced").inked(ground);
-    let bare = drawn(&unknown, DAY, "monitor-unpriced").inked(ground);
+    let priced = drawn(&desk, DAY, "running-priced").inked(ground);
+    let bare = drawn(&unknown, DAY, "running-unpriced").inked(ground);
     assert!(
         priced > bare,
-        "the monitor does not say what the window it is holding costs: {priced} marks against \
+        "Running does not say what the window it is holding costs: {priced} marks against \
          {bare} (§3.15)"
     );
 }

@@ -103,7 +103,7 @@ pub const ACTIONS: &[Action] = &[
 ];
 
 /// What is being held, as the monitor needs it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Hosted {
     /// Which model, by the path the daemon holds it under.
     pub model: String,
@@ -119,6 +119,77 @@ pub struct Hosted {
     pub takes: Option<mcf_serve::takes::Takes>,
     /// Whether callers must present a key.
     pub api_key: bool,
+    /// What it is doing now, where the daemon read the engine's counters.
+    pub in_use: Option<Use>,
+}
+
+/// What a held model is doing right now, as the daemon read it off the
+/// engine's own counters and the machine. Every figure is optional: the
+/// engine publishes them only where it was started with counters on, and a
+/// tile that has nothing says so rather than showing nought (A7).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Use {
+    /// Tokens the engine has predicted since it came up.
+    pub generated: Option<u64>,
+    /// Tokens of prompt it has read since it came up.
+    pub prompted: Option<u64>,
+    /// Its predicting rate now, tokens a second.
+    pub generated_per_second: Option<f32>,
+    /// Its prompt-reading rate now, tokens a second.
+    pub prompted_per_second: Option<f32>,
+    /// How much of its cache is in use, nought to one.
+    pub cache_used: Option<f32>,
+    /// Requests it is answering now.
+    pub processing: Option<u64>,
+    /// Requests waiting behind them.
+    pub queued: Option<u64>,
+    /// What the engine holds in memory.
+    pub resident: Option<u64>,
+    /// What this hold has on the card.
+    pub card: Option<u64>,
+    /// How long it has been up.
+    pub uptime_seconds: Option<u64>,
+}
+
+impl Use {
+    /// Reads one from the daemon's answer.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Self {
+        let count = |key: &str| match value.get(key) {
+            Some(Value::Integer(held)) => u64::try_from(*held).ok(),
+            Some(Value::Text(text)) => text.trim().parse::<f32>().ok().map(|held| {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a count the engine wrote as a float"
+                )]
+                let whole = held.max(0.0) as u64;
+                whole
+            }),
+            _ => None,
+        };
+        let rate = |key: &str| match value.get(key) {
+            Some(Value::Text(text)) => text.trim().parse::<f32>().ok(),
+            Some(Value::Integer(held)) => {
+                #[expect(clippy::cast_precision_loss, reason = "a rate, shown to one decimal")]
+                let held = *held as f32;
+                Some(held)
+            }
+            _ => None,
+        };
+        Self {
+            generated: count("generated_tokens"),
+            prompted: count("prompted_tokens"),
+            generated_per_second: rate("generated_tokens_per_second"),
+            prompted_per_second: rate("prompt_tokens_per_second"),
+            cache_used: rate("cache_used_ratio"),
+            processing: count("requests_processing"),
+            queued: count("requests_queued"),
+            resident: count("resident_bytes"),
+            card: count("card_bytes"),
+            uptime_seconds: count("uptime_seconds"),
+        }
+    }
 }
 
 impl Hosted {
@@ -444,11 +515,10 @@ impl Page {
     /// *where things are* a fact about which surface you happened to open
     /// (B-072).
     pub const MENU: &'static [(Self, &'static str)] = &[
-        (Self::Monitor, "Monitor"),
+        (Self::Monitor, "Machine"),
         (Self::Models, "Models"),
+        (Self::Hosting, "Running"),
         (Self::Diagnostics, "Diagnostics"),
-        (Self::Components, "Components"),
-        (Self::Settings, "Settings"),
         (Self::Exit, "Exit"),
     ];
 
@@ -456,20 +526,19 @@ impl Page {
     #[must_use]
     pub fn section(self) -> Self {
         match self {
-            Self::Monitor => Self::Monitor,
             // Host was a second entry for the list Models already shows —
             // `view::host` draws both — so the column carried one screen
             // twice. The screens its actions lead to belong to Models now,
             // and the menu still shows where you came from.
-            Self::Host
-            | Self::Adding
-            | Self::Hosting
-            | Self::Anatomy
-            | Self::Vocabulary
-            | Self::Models => Self::Models,
+            Self::Host | Self::Adding | Self::Anatomy | Self::Vocabulary | Self::Models => {
+                Self::Models
+            }
+            // Running is what is held: its own place (D49).
+            Self::Hosting => Self::Hosting,
             Self::Diagnostics | Self::Prompt => Self::Diagnostics,
-            Self::Components => Self::Components,
-            Self::Settings => Self::Settings,
+            // The engines are part of the machine, and the empty settings
+            // page went with the redesign; both land on Machine.
+            Self::Monitor | Self::Components | Self::Settings => Self::Monitor,
             Self::Exit => Self::Exit,
         }
     }
@@ -1394,6 +1463,10 @@ pub struct Desk {
     /// What was last held, where nothing is: read from the daemon, which
     /// read it from the record, so it survives a restart of either (A1).
     pub last_hold: Option<LastHold>,
+    /// The held engine's predicting rate, one reading a second while the
+    /// Running page is looked at, newest last, for the line that shows it
+    /// moving. Cleared when the hold changes.
+    pub rates: std::collections::VecDeque<f32>,
     /// Why the last hold was refused, kept until the next is pressed for:
     /// a person who went to ask the model a question is owed the reason it
     /// is not there to ask, on that page (A2).
@@ -1469,6 +1542,7 @@ impl Desk {
             build_failed: None,
             hosted: None,
             last_hold: None,
+            rates: std::collections::VecDeque::new(),
             host_refused: None,
             freed: None,
             anatomy: None,
@@ -2022,6 +2096,7 @@ impl Desk {
                             .get("settings")
                             .and_then(|settings| settings.get("api_key"))
                             .is_some_and(|key| !matches!(key, Value::Null)),
+                        in_use: answer.body.get("use").map(Use::from_value),
                     }),
                 // Served, and nothing is held: that is an answer, and it clears.
                 Ok(answer) if answer.served => None,
@@ -2032,6 +2107,21 @@ impl Desk {
                 }
             };
         self.busy = false;
+        // The rate, kept: a hold that changed starts its line afresh.
+        match (&self.hosted, &read) {
+            (Some(was), Some(now)) if was.model == now.model => {}
+            _ => self.rates.clear(),
+        }
+        if let Some(rate) = read
+            .as_ref()
+            .and_then(|hosting| hosting.in_use.as_ref())
+            .and_then(|in_use| in_use.generated_per_second)
+        {
+            self.rates.push_back(rate);
+            while self.rates.len() > 120 {
+                self.rates.pop_front();
+            }
+        }
         self.hosted = read;
         self.last_hold = answered
             .as_ref()
@@ -3045,9 +3135,15 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         // A second between readings, and only where they are shown — the same
         // rule the console follows, for the same reason: an idle window should
         // not be why a fan is running (B-071).
-        let due = desk.page == Page::Monitor && last.elapsed() >= std::time::Duration::from_secs(1);
+        let due = matches!(desk.page, Page::Monitor | Page::Hosting)
+            && last.elapsed() >= std::time::Duration::from_secs(1);
         if due {
-            desk.sample();
+            match desk.page {
+                Page::Monitor => desk.sample(),
+                // Running: what the held engine is doing, read off its own
+                // counters once a second while somebody is looking (B-071).
+                _ => desk.read_hosted(),
+            }
             last = std::time::Instant::now();
             acted = true;
         }

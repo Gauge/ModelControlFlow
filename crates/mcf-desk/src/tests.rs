@@ -49,7 +49,7 @@ fn nothing_in_the_menu_leads_nowhere() {
     // screens its actions lead to are lit under Models, which is where a
     // person clicked to reach them.
     assert_eq!(Page::Adding.section(), Page::Models);
-    assert_eq!(Page::Hosting.section(), Page::Models);
+    assert_eq!(Page::Hosting.section(), Page::Hosting);
     assert_eq!(Page::Anatomy.section(), Page::Models);
     assert_eq!(Page::Vocabulary.section(), Page::Models);
     assert_eq!(Page::Host.section(), Page::Models);
@@ -261,15 +261,8 @@ fn every_menu_entry_reaches_something_built() {
     let named: Vec<&str> = Page::MENU.iter().map(|(_, label)| *label).collect();
     assert_eq!(
         named,
-        [
-            "Monitor",
-            "Models",
-            "Diagnostics",
-            "Components",
-            "Settings",
-            "Exit"
-        ],
-        "the window's menu has drifted from the console's"
+        ["Machine", "Models", "Running", "Diagnostics", "Exit"],
+        "the window's places are the four D49 names, and Exit"
     );
     for (page, label) in Page::MENU {
         assert_eq!(page.section(), *page, "{label} is not a section of its own");
@@ -977,6 +970,7 @@ fn what_is_hosted_carries_where_it_answers() {
         projector: None,
         takes: None,
         api_key: false,
+        in_use: None,
     });
     let hosting = desk.hosted.as_ref().expect("just set");
     // The screen shows the name, not the path: a path is where a file is.
@@ -1046,6 +1040,7 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
         projector: None,
         takes: None,
         api_key: false,
+        in_use: None,
     });
     // Nothing answers, so nothing is learned — and nothing is forgotten.
     desk.read_hosted();

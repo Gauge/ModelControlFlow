@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 125 |
+| **Version** | 126 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 179 | [F179 — Four places down the left and a Running page that reads the held engine's own counters: Qwen3-VL-2B on the card answered one request and Running said 41 generated, 16 prompted, 151.8 tokens a second, nought in hand, and what the hold has in memory and on the card, once a second while somebody looks (B-474, D49, A7, B4)](#179--f179--four-places-down-the-left-and-a-running-page-that-reads-the-held-engines-own-counters-qwen3-vl-2b-on-the-card-answered-one-request-and-running-said-41-generated-16-prompted-1518-tokens-a-second-nought-in-hand-and-what-the-hold-has-in-memory-and-on-the-card-once-a-second-while-somebody-looks-b-474-d49-a7-b4) |
 | 178 | [F178 — The model page, first tab: every setting a hold takes with the control its value wants, a typed window whose reserve follows the typing, a word typed where a number goes refused with the word, and Host as the last button; the probes' applied addressing and budget travel with the model so a hold is configured whole (B-473, D49, §3.15, A7)](#178--f178--the-model-page-first-tab-every-setting-a-hold-takes-with-the-control-its-value-wants-a-typed-window-whose-reserve-follows-the-typing-a-word-typed-where-a-number-goes-refused-with-the-word-and-host-as-the-last-button-the-probes-applied-addressing-and-budget-travel-with-the-model-so-a-hold-is-configured-whole-b-473-d49-315-a7) |
 | 177 | [F177 — A hold goes where a person puts it with the build that fits: the daemon lists the placements, GLM-4.7-Flash on the processor by choice ran through the plain build and read 36.7 GiB into memory for a 131,072-token window, on the card through the Vulkan build and 23.2 GiB onto it, and the page says what a hold will take of what is free before the button (B-471, F176, §3.15, A21)](#177--f177--a-hold-goes-where-a-person-puts-it-with-the-build-that-fits-the-daemon-lists-the-placements-glm-47-flash-on-the-processor-by-choice-ran-through-the-plain-build-and-read-367-gib-into-memory-for-a-131072-token-window-on-the-card-through-the-vulkan-build-and-232-gib-onto-it-and-the-page-says-what-a-hold-will-take-of-what-is-free-before-the-button-b-471-f176-315-a21) |
 | 176 | [F176 — Hosting is one page, and a load onto a card is read off the card: the engine's own memory held 0.1 GiB throughout a 16 GiB load onto the Radeon while the card's memory rose 8.5, 16.3, 21.2, 23.2 GiB in three seconds, a stop gave the 23.2 back, and a processor hold read 6.7 GiB into memory and freed it (B-470, B-467, A7, A6, §3.15)](#176--f176--hosting-is-one-page-and-a-load-onto-a-card-is-read-off-the-card-the-engines-own-memory-held-01-gib-throughout-a-16-gib-load-onto-the-radeon-while-the-cards-memory-rose-85-163-212-232-gib-in-three-seconds-a-stop-gave-the-232-back-and-a-processor-hold-read-67-gib-into-memory-and-freed-it-b-470-b-467-a7-a6-315) |
@@ -9601,6 +9602,46 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 179 · F179 — Four places down the left and a Running page that reads the held engine's own counters: Qwen3-VL-2B on the card answered one request and Running said 41 generated, 16 prompted, 151.8 tokens a second, nought in hand, and what the hold has in memory and on the card, once a second while somebody looks (B-474, D49, A7, B4)
+
+D49's four places are a column down the left now — *Machine, Models,
+Running, Diagnostics*, and *Exit* at the foot — one word each, with what
+MCF is doing right now under them on every page. The bar across the top
+and its six entries are gone; so is the empty settings page. Machine is the
+processor, the card, memory, storage and temperatures, and under them the
+engines MCF has built and can build, each with its build button, because
+an engine is a fact about the machine and no model. The console keeps the
+same names, *Machine* and *Engines* among them.
+
+**Running.** A hold's page opens with what the engine is doing, read off
+the engine's own counters: the provisioned server is started with them on
+and publishes them on its port, the daemon reads them on request and never
+on a timer (B4), and the window asks once a second while the page is
+looked at. Ten tiles, one or two words each: *Tokens/s, Prompt/s,
+Generated, Prompted, Cache, Requests, Queued, Memory, Card, Up*; under
+them the predicting rate over the last two minutes as bars, newest at the
+right, against the highest seen. The engine's figures are passed on as it
+wrote them — a rate is a fraction it computed and MCF makes no number of
+its own out of it — and a tile the engine did not publish says unmeasured
+rather than nought (A1, A7). Under the tiles, where it answers with the
+Copy button, the window's cost, what reaches it, and the box to ask it
+from; a model held that this list does not carry is still shown, by the
+name the hold gives it, without the ask box.
+
+**What ran.** Qwen3-VL-2B held on the Radeon with an 8,192-token window,
+one request through the port for a count from one to twenty in words, and
+`mcf hosted` read *41 generated, 16 prompted; 151.767 tokens a second
+generating now; 0 in hand, 0 queued; up 0 s* — the same figures the tiles
+draw. The cache tile stays unmeasured on this build of the engine, which
+publishes no cache ratio at this commit; the tile says so rather than
+showing a figure from nowhere.
+
+**What is left of B-474.** The model page's Statistics tab still shows the
+detail block and the measured figures the old pane showed, and Contents
+still sends to the tensor and vocabulary pages; folding the ladder, the
+cross-check, the prompt reports, the probes and the last hold into
+Statistics, and the two pages into Contents, is the rest of the row.
+
 ## 178 · F178 — The model page, first tab: every setting a hold takes with the control its value wants, a typed window whose reserve follows the typing, a word typed where a number goes refused with the word, and Host as the last button; the probes' applied addressing and budget travel with the model so a hold is configured whole (B-473, D49, §3.15, A7)
 
 D49 made a model the centre of the window; this is its first tab. The
@@ -12328,6 +12369,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 126 — the four places, and what a hold is doing
+
+F179: four places down the left, the engines on Machine, and Running
+reading the held engine's own counters once a second (B-474, D49).
 
 ### Version 125 — the model page, first tab
 

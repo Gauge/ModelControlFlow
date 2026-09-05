@@ -36,8 +36,8 @@ use crate::{Act, Caret, Desk, Doing, Model, Page, Picker, windows};
 use mcf_record::json::Value;
 use mcf_serve::anatomy::SaidVocabulary;
 
-/// The bar across the top, in points.
-const MENU: f32 = 46.0;
+/// The column down the left, in points.
+const SIDE: f32 = 168.0;
 /// The breathing room around a screen's content.
 const PAD: f32 = 26.0;
 
@@ -61,16 +61,16 @@ pub const UNKNOWN: &str = "Unknown";
 pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     let (width, height) = paint.size();
     paint.begin();
-    let mut act = menu_bar(paint, desk, mouse, width);
+    let mut act = side_bar(paint, desk, mouse, height);
 
     let main = Box::new(
+        SIDE + PAD,
         PAD,
-        MENU + PAD,
-        (width - PAD * 2.0).max(10.0),
-        (height - MENU - PAD * 2.0).max(10.0),
+        (width - SIDE - PAD * 2.0).max(10.0),
+        (height - PAD * 2.0).max(10.0),
     );
     let went = match desk.page {
-        Page::Monitor => monitor(paint, desk, main),
+        Page::Monitor => monitor(paint, desk, mouse, main),
         Page::Host | Page::Models => host(paint, desk, mouse, main),
         Page::Diagnostics => diagnostics(paint, desk, mouse, main),
         Page::Adding => adding(paint, desk, mouse, main),
@@ -87,57 +87,51 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     act
 }
 
-/// The menu across the top: the console's entries, in the console's order.
-fn menu_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, width: f32) -> Option<Act> {
+/// The column down the left: the four places and Exit, and under them
+/// what MCF is doing right now, on every page (D49).
+fn side_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, height: f32) -> Option<Act> {
     let ink = paint.ink;
-    paint.rect(Box::new(0.0, 0.0, width, MENU), ink.sunk);
-    paint.rule((0.0, MENU), (width, MENU), ink.line, 255);
+    paint.rect(Box::new(0.0, 0.0, SIDE, height), ink.sunk);
+    paint.rule((SIDE, 0.0), (SIDE, height), ink.line, 255);
+    paint.say_at(18.0, 16.0, "MCF", Weight::Bold, size::HEAD, ink.ink);
 
     let mut act = None;
-    let mut x = 14.0;
+    let mut y = 56.0;
     for (page, label) in Page::MENU {
-        let wide = paint.measure(label, Weight::Bold, size::BODY) + 26.0;
-        let area = Box::new(x, 8.0, wide, 30.0);
-        let here = desk.page.section() == *page;
-        if here {
-            paint.panel(area, ui::RADIUS, ink.accent, 255);
-        } else if mouse.over(area) {
-            paint.panel(area, ui::RADIUS, ink.line, 130);
+        if *page == Page::Exit {
+            continue;
         }
-        paint.say_centred(
-            area,
-            label,
-            if here { Weight::Bold } else { Weight::Regular },
-            size::BODY,
-            if here { ink.accent_ink } else { ink.quiet },
-        );
-        if mouse.clicked(area) {
+        let area = Box::new(10.0, y, SIDE - 20.0, 32.0);
+        if ui::nav(paint, mouse, area, label, desk.page.section() == *page) {
             act = Some(Act::Go(*page));
         }
-        x += wide + 4.0;
+        y += 36.0;
     }
-
-    // What MCF is, at the right, where the console puts it — and what it is
-    // doing and for how long, where it is doing anything, on every page. Cut
-    // to the room left of the menu rather than drawn over it.
-    let said = paint.elide(
-        &desk.state_word(),
-        Weight::Bold,
-        size::SMALL,
-        (width - 16.0 - x - 12.0).max(40.0),
-    );
-    paint.say_right(
-        width - 16.0,
-        15.0,
-        &said,
-        Weight::Bold,
-        size::SMALL,
-        if desk.doing.busy() {
-            ink.accent
-        } else {
-            ink.faint
-        },
-    );
+    // What MCF is doing, where a person's eye rests between pages: the job
+    // and its clock, or nothing.
+    let said = desk.state_word();
+    let lines = paint.wrap(&said, Weight::Regular, size::SMALL, SIDE - 28.0);
+    #[allow(clippy::cast_precision_loss, reason = "at most three lines")]
+    let mut at = height - 92.0 - 16.0 * lines.len().min(3) as f32;
+    for line in lines.iter().take(3) {
+        paint.say_at(
+            14.0,
+            at,
+            line,
+            Weight::Regular,
+            size::SMALL,
+            if desk.doing.busy() {
+                ink.accent
+            } else {
+                ink.faint
+            },
+        );
+        at += 16.0;
+    }
+    let exit = Box::new(10.0, height - 46.0, SIDE - 20.0, 32.0);
+    if ui::nav(paint, mouse, exit, "Exit", desk.page == Page::Exit) {
+        act = Some(Act::Go(Page::Exit));
+    }
     act
 }
 
@@ -285,157 +279,6 @@ pub fn reserve_line(held: &Model, context: u64) -> Option<String> {
     })
 }
 
-/// What the window now being held is costing, where that can be said.
-///
-/// Asked before the card is laid out as well as inside it, because a card
-/// sized for four lines and drawn with five puts the fifth through its own
-/// border.
-fn held_window_cost(desk: &Desk) -> Option<String> {
-    let context = desk.hosted.as_ref()?.context?;
-    reserve_line(desk.hosted_model()?, context)
-}
-
-/// The card while a model loads: how far the load has got, in the same
-/// words the hosting page and the actions panel use.
-fn loading_card(paint: &mut Painter, desk: &Desk, at: Box) -> Option<f32> {
-    let ink = paint.ink;
-    let loading = desk.loading_line()?;
-    let shown = paint.elide(&loading, Weight::Bold, size::BODY, at.w - 28.0);
-    paint.say_at(
-        at.x + 14.0,
-        at.y + 20.0,
-        &shown,
-        Weight::Bold,
-        size::BODY,
-        ink.ink,
-    );
-    Some(at.bottom())
-}
-
-fn hosted_card(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
-    let ink = paint.ink;
-    ui::card(paint, at, desk.hosted.is_some());
-    let Some(hosting) = &desk.hosted else {
-        if let Some(bottom) = loading_card(paint, desk, at) {
-            return bottom;
-        }
-        paint.say_at(
-            at.x + 14.0,
-            at.y + 20.0,
-            "nothing is being served",
-            Weight::Bold,
-            size::BODY,
-            ink.quiet,
-        );
-        paint.say_at(
-            at.x + 14.0,
-            at.y + 42.0,
-            "Models holds one here, and this screen then says where it answers.",
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        return at.bottom();
-    };
-
-    // The name, not the path: a path is where a file is, and the question this
-    // screen answers is what is answering.
-    let name = hosting
-        .model
-        .rsplit('/')
-        .next()
-        .unwrap_or(&hosting.model)
-        .to_owned();
-    let shown = paint.elide(&name, Weight::Bold, size::HEAD, at.w - 190.0);
-    paint.say_at(
-        at.x + 14.0,
-        at.y + 14.0,
-        &shown,
-        Weight::Bold,
-        size::HEAD,
-        ink.ink,
-    );
-    let _wide = ui::tag(
-        paint,
-        (at.right() - 120.0, at.y + 15.0),
-        "Resident",
-        ink.accent_soft,
-        ink.good,
-    );
-
-    paint.say_at(
-        at.x + 14.0,
-        at.y + 40.0,
-        "reachable at",
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    let after = paint.measure("reachable at", Weight::Regular, size::SMALL);
-    paint.say_at(
-        at.x + 14.0 + after + 8.0,
-        at.y + 40.0,
-        &hosting.address,
-        Weight::Bold,
-        size::BODY,
-        ink.accent,
-    );
-    paint.say_at(
-        at.x + 14.0,
-        at.y + 58.0,
-        "an OpenAI-compatible endpoint: give this to a tool as its base URL",
-        Weight::Regular,
-        size::SMALL,
-        ink.quiet,
-    );
-
-    // What it is held under. Conditions, beside the thing they condition.
-    let context = hosting
-        .context
-        .map_or_else(|| UNKNOWN.to_owned(), |context| format!("{context} tokens"));
-    paint.say_at(
-        at.x + 14.0,
-        at.y + 76.0,
-        &format!("context {context}   ·   since {}", hosting.since),
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    // **And what that window is costing right now.** The context is the one
-    // condition on this card somebody chose, and until this line it was the
-    // one whose price was invisible: a model of 17.5 GB held 38.6 GB, and the
-    // difference was the window (§3.15).
-    let mut y = at.y + 93.0;
-    if let Some(said) = held_window_cost(desk) {
-        paint.say_at(
-            at.x + 14.0,
-            y,
-            &said,
-            Weight::Regular,
-            size::SMALL,
-            ink.quiet,
-        );
-        y += 17.0;
-    }
-    takes_row(paint, hosting, at, y, ink.quiet);
-    at.bottom()
-}
-
-/// **What reaches it through the port, as the engine reported.** A model
-/// hosted with its projector takes pictures; one hosted without takes text
-/// and declines the rest without a word, so the card says which (A21,
-/// §3.15). And what its template does with tools and thinking, because
-/// those are the capabilities a caller on the port is choosing it for.
-fn takes_row(paint: &mut Painter, hosting: &crate::Hosted, at: Box, y: f32, colour: Rgb) {
-    let shown = paint.elide(
-        &takes_line(hosting),
-        Weight::Regular,
-        size::SMALL,
-        at.w - 28.0,
-    );
-    paint.say_at(at.x + 14.0, y, &shown, Weight::Regular, size::SMALL, colour);
-}
-
 /// What the engine said it takes, on one line.
 fn takes_line(hosting: &crate::Hosted) -> String {
     let projector = hosting.projector.as_ref().map_or_else(
@@ -455,75 +298,48 @@ fn takes_line(hosting: &crate::Hosted) -> String {
     )
 }
 
-/// What using it costs.
-///
-/// **Nothing has been timed, so nothing is claimed.** An empty figure carrying
-/// the reason it is empty beats a zero that reads as a measurement (A7, §3.4).
-fn cost_tiles(paint: &mut Painter, at: Box) {
-    let ink = paint.ink;
-    let across = (at.w - 3.0 * 10.0) / 4.0;
-    for (index, (label, why)) in [
-        ("Generation", "no engine is provisioned"),
-        ("Prompt reading", "no engine is provisioned"),
-        ("First token", "no engine is provisioned"),
-        ("Energy", "this machine publishes no counter"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        #[allow(
-            clippy::cast_precision_loss,
-            reason = "four tiles: the index is never large enough to lose one"
-        )]
-        let tile = Box::new(at.x + (across + 10.0) * index as f32, at.y, across, 58.0);
-        ui::card(paint, tile, false);
-        spaced(paint, tile.x + 12.0, tile.y + 12.0, label, ink.faint);
-        paint.say_at(
-            tile.x + 12.0,
-            tile.y + 28.0,
-            words::UNMEASURED,
-            Weight::Bold,
-            size::BODY,
-            ink.quiet,
-        );
-        let reason = paint.elide(why, Weight::Regular, size::SMALL, across - 24.0);
-        paint.say_at(
-            tile.x + 12.0,
-            tile.y + 44.0,
-            &reason,
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-    }
-}
-
-fn monitor(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
+fn monitor(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let wide = area.w.min(940.0);
 
-    // Section one: what is being served, and what it costs to use.
-    spaced(paint, area.x, area.y, "hosted", ink.faint);
-    // Tall enough for what it will actually say.
-    let tall = if held_window_cost(desk).is_some() {
-        133.0
-    } else {
-        113.0
-    };
-    let mut y = hosted_card(paint, desk, Box::new(area.x, area.y + 20.0, wide, tall));
-    cost_tiles(paint, Box::new(area.x, y + 12.0, wide, 58.0));
-
-    // Section two: the machine every one of those figures would be taken on.
-    y += 82.0;
-    spaced(paint, area.x, y, "this machine", ink.faint);
-    y += 20.0;
+    // The machine's own figures, then its engines; what is held is on
+    // Running (D49).
+    spaced(paint, area.x, area.y, "this machine", ink.faint);
+    let mut y = area.y + 20.0;
     y = processors_table(paint, Box::new(area.x, y, wide, 0.0), desk);
     y = memory_table(paint, Box::new(area.x, y + 14.0, wide, 0.0), desk);
-    let _bottom = storage_table(
+    y = storage_table(
         paint,
-        Box::new(area.x, y + 14.0, wide, area.bottom() - y - 88.0),
+        Box::new(
+            area.x,
+            y + 14.0,
+            wide,
+            130.0_f32.min(area.bottom() - y - 260.0),
+        ),
         desk,
     );
+    // The engines: what MCF has built here and what it can build, each a
+    // card with its build button, on the page about the machine.
+    y += 18.0;
+    spaced(paint, area.x, y, "engines", ink.faint);
+    y += 20.0;
+    let mut act = None;
+    for component in &desk.components {
+        let tall = 86.0;
+        if y + tall > area.bottom() - 70.0 {
+            break;
+        }
+        act = component_card(
+            paint,
+            desk,
+            mouse,
+            component,
+            Box::new(area.x, y, wide, tall),
+        )
+        .or(act);
+        y += tall + 10.0;
+    }
+    let _ = y;
 
     // The divider and the state line sit against the bottom, as the console
     // has them, so the tables above can grow without moving them.
@@ -546,7 +362,7 @@ fn monitor(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
         size::BODY,
         ink.quiet,
     );
-    None
+    act
 }
 
 /// The processor and every card, with what each is doing.
@@ -2992,6 +2808,178 @@ fn downloading_line(job: &crate::job::Job) -> String {
 }
 
 /// A model, held and answering.
+/// The box a question is typed into, the button that sends it, and the
+/// turn it goes inside: the same switches `mcf run` takes, so what a person
+/// can ask at the prompt they can ask here (A22, B-462). Returns what was
+/// pressed and where the next thing goes.
+fn ask_box(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: Box,
+    held: &Model,
+) -> (Option<Act>, f32) {
+    let mut act = None;
+    let field = Box::new(at.x, at.y, (at.w - 120.0).min(640.0), 32.0);
+    if ui::field(
+        paint,
+        mouse,
+        field,
+        &desk.typed,
+        "Ask it something",
+        desk.caret == Caret::Document,
+    ) {
+        act = Some(Act::Focus(Caret::Document));
+    }
+    let (asked, _) = ui::fitted(
+        paint,
+        mouse,
+        (field.right() + 10.0, at.y),
+        "Ask",
+        Kind::Primary,
+    );
+    if asked
+        && !desk.doing.busy()
+        && let Some(index) = desk
+            .models
+            .iter()
+            .position(|listed| listed.path == held.path)
+    {
+        act = Some(Act::Ask { at: index });
+    }
+    let (turn_act, after) = the_turn(
+        paint,
+        desk,
+        mouse,
+        Box::new(at.x, at.y + 42.0, field.w, 0.0),
+    );
+    (act.or(turn_act), after + 10.0)
+}
+
+/// What the held engine is doing, as the engine counts it, before where
+/// it answers: the tiles and the rate line. Returns where the next thing
+/// goes; nothing is drawn where nothing is held.
+fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
+    let Some(in_use) = desk
+        .hosted
+        .as_ref()
+        .and_then(|hosting| hosting.in_use.as_ref())
+    else {
+        return at.y;
+    };
+    let y = use_tiles(paint, in_use, Box::new(at.x, at.y, at.w.min(900.0), 0.0));
+    let y = rate_line(
+        paint,
+        &desk.rates,
+        Box::new(at.x, y + 8.0, at.w.min(900.0), 48.0),
+    );
+    y + 16.0
+}
+
+/// What the held engine is doing, as tiles: a short label over a figure,
+/// two rows of five. A figure the engine did not publish is drawn as
+/// unmeasured, not as nought (A7).
+fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
+    let ink = paint.ink;
+    let rate = |held: Option<f32>| held.map(|rate| format!("{rate:.1}"));
+    let count = |held: Option<u64>| held.map(words::grouped);
+    let bytes = |held: Option<u64>| held.map(gigabytes);
+    let tiles: [(&str, Option<String>); 10] = [
+        ("Tokens/s", rate(in_use.generated_per_second)),
+        ("Prompt/s", rate(in_use.prompted_per_second)),
+        ("Generated", count(in_use.generated)),
+        ("Prompted", count(in_use.prompted)),
+        (
+            "Cache",
+            in_use
+                .cache_used
+                .map(|ratio| format!("{:.0}%", (ratio * 100.0).clamp(0.0, 100.0))),
+        ),
+        ("Requests", count(in_use.processing)),
+        ("Queued", count(in_use.queued)),
+        ("Memory", bytes(in_use.resident)),
+        ("Card", bytes(in_use.card)),
+        ("Up", in_use.uptime_seconds.map(crate::ago_said)),
+    ];
+    let across = (at.w - 4.0 * 10.0) / 5.0;
+    let mut y = at.y;
+    for (index, (label, figure)) in tiles.into_iter().enumerate() {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "ten tiles: the index is never large enough to lose one"
+        )]
+        let column = (index % 5) as f32;
+        if index == 5 {
+            y += 66.0;
+        }
+        let tile = Box::new(at.x + (across + 10.0) * column, y, across, 58.0);
+        ui::card(paint, tile, false);
+        spaced(paint, tile.x + 12.0, tile.y + 12.0, label, ink.faint);
+        let (said, colour) = figure.map_or_else(
+            || (words::UNMEASURED.to_owned(), ink.faint),
+            |said| (said, ink.ink),
+        );
+        let shown = paint.elide(&said, Weight::Bold, size::HEAD, across - 24.0);
+        paint.say_at(
+            tile.x + 12.0,
+            tile.y + 28.0,
+            &shown,
+            Weight::Bold,
+            size::HEAD,
+            colour,
+        );
+    }
+    y + 66.0
+}
+
+/// The predicting rate over the last two minutes, one bar a second, newest
+/// at the right, against the highest seen in that time.
+fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: Box) -> f32 {
+    let ink = paint.ink;
+    let peak = rates.iter().copied().fold(0.0_f32, f32::max);
+    spaced(paint, at.x, at.y, "tokens/s, last two minutes", ink.faint);
+    let plot = Box::new(at.x, at.y + 16.0, at.w, at.h - 16.0);
+    paint.edge(plot, 6.0, ink.line, ink.card);
+    if peak <= 0.0 {
+        paint.say_at(
+            plot.x + 12.0,
+            plot.y + 8.0,
+            "nothing predicted yet",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return plot.bottom();
+    }
+    let slot = (plot.w - 8.0) / 120.0;
+    let mut x = plot.right() - 4.0;
+    for rate in rates.iter().rev() {
+        let tall = ((rate / peak) * (plot.h - 8.0)).max(1.0);
+        paint.rect(
+            Box::new(
+                x - slot + 1.0,
+                plot.bottom() - 4.0 - tall,
+                (slot - 2.0).max(1.0),
+                tall,
+            ),
+            ink.accent,
+        );
+        x -= slot;
+        if x < plot.x + 4.0 {
+            break;
+        }
+    }
+    paint.say_right(
+        plot.right() - 8.0,
+        plot.y + 4.0,
+        &format!("peak {peak:.1}"),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    plot.bottom()
+}
+
 /// The state of the hold, on the page a person asks the model from: where
 /// it answers, with a button that copies the address and a line saying what
 /// the address is; or how far the load has got; or the engine being built
@@ -3009,7 +2997,7 @@ fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Opti
         .filter(|(hosting, held)| hosting.model == held.path)
         .map(|(hosting, _)| hosting);
     if let Some(hosting) = this_one {
-        return where_it_answers(paint, mouse, hosting, at);
+        return where_it_answers(paint, mouse, hosting, desk.hosted_model(), at);
     }
     let said: (String, Rgb) = if let Some(loading) = desk.loading_line() {
         (loading, ink.quiet)
@@ -3048,6 +3036,7 @@ fn where_it_answers(
     paint: &mut Painter,
     mouse: &Mouse,
     hosting: &crate::Hosted,
+    model: Option<&Model>,
     at: Box,
 ) -> (Option<Act>, f32) {
     let ink = paint.ink;
@@ -3096,8 +3085,17 @@ fn where_it_answers(
                 .map_or_else(|| UNKNOWN.to_owned(), |context| format!("{context} tokens")),
             hosting.since
         ),
+        // What the held window costs, where the model is listed here and
+        // its cache per token is known (§3.15).
+        model
+            .zip(hosting.context)
+            .and_then(|(model, context)| reserve_line(model, context))
+            .unwrap_or_default(),
         takes_line(hosting),
     ] {
+        if line.is_empty() {
+            continue;
+        }
         let shown = paint.elide(&line, Weight::Regular, size::SMALL, at.w);
         paint.say_at(at.x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
         y += 17.0;
@@ -3107,19 +3105,34 @@ fn where_it_answers(
 
 fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
-        paint.say_at(
-            area.x,
-            area.y,
-            "Choose a model on the Models screen first.",
-            Weight::Regular,
-            size::BODY,
-            ink.quiet,
-        );
-        return None;
+    // The held model first, whatever is chosen on Models; the chosen one
+    // where nothing is held, because a question can still be asked of it
+    // through MCF's own engine.
+    let held = desk
+        .hosted_model()
+        .or_else(|| desk.chosen.and_then(|at| desk.models.get(at)));
+    // A model can be held that this list does not carry — the daemon's
+    // store moved under it, or another client held it — and it is still
+    // running: its name comes from the hold, and there is no ask box for
+    // it because the box needs the model to be listed.
+    let name = match (held, desk.hosted.as_ref()) {
+        (Some(held), _) => held.name.clone(),
+        (None, Some(hosting)) => hosting.name(),
+        (None, None) => {
+            spaced(paint, area.x, area.y, "running", ink.faint);
+            paint.say_at(
+                area.x,
+                area.y + 28.0,
+                "Nothing is held. Models — choose one — Configure — Host.",
+                Weight::Regular,
+                size::BODY,
+                ink.quiet,
+            );
+            return None;
+        }
     };
-    spaced(paint, area.x, area.y, "hosting", ink.faint);
-    let name = paint.elide(&held.name, Weight::Bold, size::HEAD, area.w);
+    spaced(paint, area.x, area.y, "running", ink.faint);
+    let name = paint.elide(&name, Weight::Bold, size::HEAD, area.w);
     paint.say_at(
         area.x,
         area.y + 24.0,
@@ -3128,9 +3141,23 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
         size::HEAD,
         ink.ink,
     );
-    let mut y = area.y + 62.0;
+    let mut y = in_use_block(paint, desk, Box::new(area.x, area.y + 62.0, area.w, 0.0));
 
     let mut act = None;
+    let Some(held) = held else {
+        // Held and not listed: where it answers, and nothing to ask it with.
+        if let Some(hosting) = desk.hosted.as_ref() {
+            let (pressed, _) = where_it_answers(
+                paint,
+                mouse,
+                hosting,
+                None,
+                Box::new(area.x, y, area.w.min(640.0), 0.0),
+            );
+            act = pressed;
+        }
+        return act;
+    };
     // What is held, or how the hold is going, or why it is not: the one
     // place for it, before anything can be asked (A2, A7).
     let (held_act, after) = held_block(
@@ -3141,37 +3168,9 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     );
     act = held_act.or(act);
     y = after;
-    let field = Box::new(area.x, y, (area.w - 120.0).min(640.0), 32.0);
-    if ui::field(
-        paint,
-        mouse,
-        field,
-        &desk.typed,
-        "Ask it something",
-        desk.caret == Caret::Document,
-    ) {
-        act = Some(Act::Focus(Caret::Document));
-    }
-    let (asked, _) = ui::fitted(
-        paint,
-        mouse,
-        (field.right() + 10.0, y),
-        "Ask",
-        Kind::Primary,
-    );
-    if asked
-        && !desk.doing.busy()
-        && let Some(at) = desk.chosen
-    {
-        act = Some(Act::Ask { at });
-    }
-    y += 42.0;
-    // What the question is asked inside, and what goes with it: the same
-    // switches `mcf run` takes, so what a person can ask at the prompt they
-    // can ask here (A22, B-462).
-    let (turn_act, after) = the_turn(paint, desk, mouse, Box::new(area.x, y, field.w, 0.0));
-    act = act.or(turn_act);
-    y = after + 10.0;
+    let (asked, after) = ask_box(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0), held);
+    act = asked.or(act);
+    y = after;
 
     if let Doing::Answering(job) = &desk.doing
         && let Some(why) = &job.refused

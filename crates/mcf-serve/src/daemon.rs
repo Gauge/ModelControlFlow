@@ -1031,6 +1031,69 @@ fn a_load_so_far(
     ])
 }
 
+/// What a held model is doing right now: the engine's own counters from its
+/// port — prompted and predicted tokens, their rates, the cache in use, the
+/// requests in hand — and what the machine says it holds in memory and on
+/// the card, and for how long it has been up.
+///
+/// The engine's figures are passed on as it wrote them, as text: a rate is
+/// a fraction the engine computed, and MCF neither rounds it nor makes a
+/// number of its own out of it (A1, A7). Absent where the port did not
+/// answer or was started without counters.
+fn in_use(held: &Holding) -> Value {
+    let mut fields: Vec<(&'static str, Value)> = Vec::new();
+    if let Some(metrics) = crate::served::metrics_on(held.settings.port) {
+        for line in metrics.lines() {
+            let line = line.trim();
+            if line.starts_with('#') {
+                continue;
+            }
+            let Some((name, value)) = line.split_once(' ') else {
+                continue;
+            };
+            let key = match name.trim_start_matches("llamacpp:") {
+                "prompt_tokens_total" => "prompted_tokens",
+                "tokens_predicted_total" => "generated_tokens",
+                "prompt_tokens_seconds" => "prompt_tokens_per_second",
+                "predicted_tokens_seconds" => "generated_tokens_per_second",
+                "kv_cache_usage_ratio" => "cache_used_ratio",
+                "kv_cache_tokens" => "cache_tokens",
+                "requests_processing" => "requests_processing",
+                "requests_deferred" => "requests_queued",
+                "n_decode_total" => "decodes",
+                _ => continue,
+            };
+            fields.push((key, Value::text(value.trim().to_owned())));
+        }
+    }
+    fields.push((
+        "resident_bytes",
+        held.served.resident_bytes().map_or(Value::Null, as_whole),
+    ));
+    fields.push((
+        "card_bytes",
+        held.card_before
+            .and_then(|before| {
+                crate::engines::card_memory_used().map(|now| now.saturating_sub(before))
+            })
+            .map_or(Value::Null, as_whole),
+    ));
+    let up = Timestamp::now()
+        .utc_nanos()
+        .saturating_sub(held.since.utc_nanos())
+        .max(0);
+    #[expect(
+        clippy::integer_division,
+        reason = "nanoseconds to whole seconds; the remainder is under a second"
+    )]
+    let seconds = up / 1_000_000_000;
+    fields.push((
+        "uptime_seconds",
+        Value::Integer(i64::try_from(seconds).unwrap_or(i64::MAX)),
+    ));
+    Value::map(fields)
+}
+
 /// What letting a model go gave back: which model, what the engine held in
 /// memory, and what it held on the card where it was on one.
 struct Freed {
@@ -1506,6 +1569,9 @@ struct Holding {
     takes: Option<crate::takes::Takes>,
     /// When it started.
     since: Timestamp,
+    /// What the cards held before the load, so what this hold has on the
+    /// card is a difference read off the driver rather than a guess.
+    card_before: Option<u64>,
 }
 
 /// Whether a header is describing the file it came from.
@@ -4331,6 +4397,20 @@ impl Daemon {
         say(writer, &answer);
     }
 
+    /// Keeps what was just held as the last hold, for a person coming back
+    /// to a daemon that holds nothing (A1).
+    fn remember_hold(&self, path: &Path, settings: &crate::hosting::Hosting, at: Timestamp) {
+        if let Ok(mut last) = self.last_hold.lock() {
+            *last = Some(Value::map([
+                ("model", Value::text(path.display().to_string())),
+                ("engine", Value::text(settings.engine.clone())),
+                ("device", Value::text(settings.device.clone())),
+                ("since", mcf_record::encode::timestamp(at)),
+                ("until", Value::Null),
+            ]));
+        }
+    }
+
     /// Where a model lands and how much of it: the device MCF resolves it to
     /// and the layers the engine is told to put there.
     fn placed(&self, named: &str, on: Option<crate::control::On>) -> Option<(String, u32)> {
@@ -4810,8 +4890,10 @@ impl Daemon {
             ));
         }
 
-        let of = std::fs::metadata(&path).map(|about| about.len()).ok();
-        let began = std::time::Instant::now();
+        let (of, began) = (
+            std::fs::metadata(&path).map(|about| about.len()).ok(),
+            std::time::Instant::now(),
+        );
         // Where the model goes onto a card, the card's memory is what grows
         // as it loads, and the engine's own does not; read against what the
         // card held before the load began.
@@ -4874,16 +4956,9 @@ impl Daemon {
                     recommended: recommended.clone(),
                     takes,
                     since: at,
+                    card_before,
                 });
-                if let Ok(mut last) = self.last_hold.lock() {
-                    *last = Some(Value::map([
-                        ("model", Value::text(path.display().to_string())),
-                        ("engine", Value::text(settings.engine.clone())),
-                        ("device", Value::text(settings.device.clone())),
-                        ("since", mcf_record::encode::timestamp(at)),
-                        ("until", Value::Null),
-                    ]));
-                }
+                self.remember_hold(&path, &settings, at);
                 Answer::served(Value::map([
                     ("hosting", Value::text(path.display().to_string())),
                     ("address", Value::text(settings.address())),
@@ -4950,6 +5025,9 @@ impl Daemon {
                         .map_or(Value::Null, crate::takes::Takes::to_value),
                 ),
                 ("since", Value::text(held.since.to_string())),
+                // What it is doing now, read off the engine's own counters
+                // and the machine, on this request and no timer (B4, D49).
+                ("use", in_use(held)),
             ]),
         }
     }

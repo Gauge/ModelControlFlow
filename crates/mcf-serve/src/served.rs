@@ -138,23 +138,38 @@ impl Completed {
 /// asked is *are you up*, and a client for that would be a client MCF
 /// maintains for one question.
 fn ready_on(port: u16) -> bool {
+    // `200` and a body that says so. A `503 Loading model` is the engine
+    // answering that it is not ready, which is a different thing from up.
+    got_on(port, "/health")
+        .is_some_and(|said| said.contains("200 OK") && said.contains("\"status\":\"ok\""))
+}
+
+/// The engine's own counters, as it publishes them on `/metrics` when
+/// started with them on: tokens prompted and predicted, the rates, the
+/// cache in use, requests in hand. Read on request and never on a timer
+/// (B4). `None` where the port does not answer.
+#[must_use]
+pub fn metrics_on(port: u16) -> Option<String> {
+    let said = got_on(port, "/metrics")?;
+    let (_, body) = said.split_once("\r\n\r\n")?;
+    Some(body.to_owned())
+}
+
+/// One GET on the engine's port, bounded: the status line and a short body.
+fn got_on(port: u16, path: &str) -> Option<String> {
     use std::io::{Read as _, Write as _};
     let Ok(mut connection) = std::net::TcpStream::connect((crate::hosting::LOOPBACK, port)) else {
-        return false;
+        return None;
     };
     let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(2)));
-    // A blank line ends the head, and a request without one is a request the
-    // server is still waiting for. `writeln!` would end it `\r\n\n`, which is
-    // not that — and the symptom is a health check that hangs rather than one
-    // that fails, which is the worst shape a check can have.
     if write!(
         connection,
-        "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
     )
     .and_then(|()| connection.flush())
     .is_err()
     {
-        return false;
+        return None;
     }
     let mut said = String::new();
     // Bounded: what is wanted is the first line and a short body, and a server
@@ -167,13 +182,11 @@ fn ready_on(port: u16) -> bool {
         said.push_str(&String::from_utf8_lossy(
             held.get(..read).unwrap_or_default(),
         ));
-        if said.len() > 8192 {
+        if said.len() > 65_536 {
             break;
         }
     }
-    // `200` and a body that says so. A `503 Loading model` is the engine
-    // answering that it is not ready, which is a different thing from up.
-    said.contains("200 OK") && said.contains("\"status\":\"ok\"")
+    Some(said)
 }
 
 /// How far the engine has got with the request in flight, published for
