@@ -1448,6 +1448,18 @@ fn configure_foot(
         }
         x += drawn.w + 12.0;
     }
+    // What it was last held under, where that is not what is set now: one
+    // press puts the settings back the way they were (B-475).
+    if let Some((last, _)) = &desk.last_settings
+        && !settings.differs_from(last).is_empty()
+    {
+        let (again, drawn) =
+            ui::fitted(paint, mouse, (x, y), "As you set it last time", Kind::Quiet);
+        if again {
+            act = Some(Act::LastSettings);
+        }
+        x += drawn.w + 12.0;
+    }
     let waits = desk.needs_engine.is_some();
     let (host, _) = ui::fitted(
         paint,

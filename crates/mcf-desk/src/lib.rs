@@ -1374,6 +1374,8 @@ pub enum Act {
     Cycle(usize),
     /// Put every setting back to what MCF recommended.
     Recommended,
+    /// Put every setting back to what the model was last held under.
+    LastSettings,
     /// Hold the chosen model under the settings as they stand.
     HostIt,
     /// Build one component, by name, from the Components screen.
@@ -1543,6 +1545,10 @@ pub struct Desk {
     pub recommended: Option<mcf_serve::hosting::Hosting>,
     /// Why there are no settings, where there are none.
     pub no_settings: Option<String>,
+    /// The settings the chosen model was last held under, and since when,
+    /// where it has been held: offered on Configure as *as you set it last
+    /// time* beside the recommendation (B-475).
+    pub last_settings: Option<(mcf_serve::hosting::Hosting, String)>,
     /// The engine MCF said it would build for the chosen model, where there
     /// are no settings because there is nothing to run it on. Named by the
     /// daemon, not worked out here, so that what Host builds is what MCF
@@ -1661,6 +1667,7 @@ impl Desk {
             settings: None,
             recommended: None,
             no_settings: None,
+            last_settings: None,
             needs_engine: None,
             host_after: None,
             building: None,
@@ -2044,6 +2051,11 @@ impl Desk {
             }
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
+            Act::LastSettings => {
+                if let Some((last, _)) = &self.last_settings {
+                    self.settings = Some(last.clone());
+                }
+            }
             Act::HostIt => self.host_it(),
             Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
@@ -2087,6 +2099,7 @@ impl Desk {
         self.settings = None;
         self.recommended = None;
         self.no_settings = None;
+        self.last_settings = None;
         self.needs_engine = None;
         self.placements.clear();
         self.editing = None;
@@ -2109,6 +2122,25 @@ impl Desk {
                     )
                 });
                 self.settings.clone_from(&recommended);
+                self.last_settings = answer
+                    .body
+                    .get("last")
+                    .filter(|held| !matches!(held, Value::Null))
+                    .and_then(|last| {
+                        let against = recommended.as_ref()?;
+                        let held =
+                            mcf_serve::hosting::Hosting::from_value(last.get("settings")?, against);
+                        // To the second: what a person reads *since* by.
+                        let since = last
+                            .get("since")
+                            .and_then(|at| mcf_record::decode::timestamp(at).ok())
+                            .map(|at| at.to_string())
+                            .map_or_else(
+                                || "?".to_owned(),
+                                |at| at.get(..19).map_or(at.clone(), |head| format!("{head}Z")),
+                            );
+                        Some((held, since))
+                    });
                 self.recommended = recommended;
                 self.declared = answer
                     .body

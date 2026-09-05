@@ -1563,3 +1563,31 @@ fn the_capabilities_card_asks_for_the_probes_ticked() {
     assert_eq!(probed[0].0, "stop-conditions");
     assert_eq!(probed[0].1.len(), 2);
 }
+
+/// The settings a model was last held under come back with one press, and
+/// the recommendation with another (B-475).
+#[test]
+fn the_last_hold_settings_come_back_with_one_press() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let recommended = mcf_serve::hosting::Hosting::recommended(
+        "llama.cpp",
+        "CPU",
+        false,
+        32_768,
+        Some(8),
+        false,
+        None,
+    );
+    let mut last = recommended.clone();
+    last.context = 8_192;
+    desk.recommended = Some(recommended.clone());
+    desk.settings = Some(recommended.clone());
+    desk.last_settings = Some((last.clone(), "2026-09-05".to_owned()));
+    desk.act(crate::Act::LastSettings);
+    assert_eq!(desk.settings.as_ref().map(|held| held.context), Some(8_192));
+    desk.act(crate::Act::Recommended);
+    assert_eq!(
+        desk.settings.as_ref().map(|held| held.context),
+        Some(32_768)
+    );
+}

@@ -1869,6 +1869,43 @@ fn newest_of(journal: &Path, kind: EntryKind) -> std::collections::BTreeMap<Path
     newest
 }
 
+/// The settings each model was last held under, with when: the newest
+/// hold entry a model in the record (B-475).
+fn newest_hosted(journal: &Path) -> std::collections::BTreeMap<PathBuf, Value> {
+    let mut newest = std::collections::BTreeMap::new();
+    if !journal.exists() {
+        return newest;
+    }
+    let Ok(index) = mcf_record::journal::Index::over(
+        journal,
+        &mcf_record::journal::index::default_path(journal),
+    ) else {
+        return newest;
+    };
+    for located in index.entries() {
+        if located.kind() != EntryKind::ModelHosted {
+            continue;
+        }
+        let Ok(entry) = index.read(located) else {
+            continue;
+        };
+        let (Some(model), Some(settings)) = (
+            entry.body().get("model").and_then(Value::as_text),
+            entry.body().get("settings"),
+        ) else {
+            continue;
+        };
+        let _replaced = newest.insert(
+            PathBuf::from(model),
+            Value::map([
+                ("settings", settings.clone()),
+                ("since", mcf_record::encode::timestamp(entry.recorded_at())),
+            ]),
+        );
+    }
+    newest
+}
+
 /// The newest probe entry per method for each model — or for one model,
 /// where a path is given — as the page lists them: the method, the engine,
 /// when, and the finding as a sentence, in the order the run makes them.
@@ -1968,6 +2005,10 @@ pub struct Daemon {
     /// The newest prompt report of each model, from the record, kept the
     /// same way (B-432).
     prompt_reports: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
+    /// The settings each model was last held under, from the record at
+    /// start and from each hold after, so Configure can offer *as you set
+    /// it last time* beside the recommendation (B-475).
+    last_settings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
     /// What the probes last found on each model, by the record's method
     /// name: read from the record at start and again after a run, so a
     /// model probed yesterday shows its findings today (B-483, A1).
@@ -2139,6 +2180,7 @@ impl Daemon {
                 EntryKind::PromptReported,
             )),
             probed: std::sync::Mutex::new(newest_probes(&places.journal, None)),
+            last_settings: std::sync::Mutex::new(newest_hosted(&places.journal)),
             holding: std::sync::Mutex::new(None),
             places,
             listener,
@@ -4769,6 +4811,15 @@ impl Daemon {
     /// Keeps what was just held as the last hold, for a person coming back
     /// to a daemon that holds nothing (A1).
     fn remember_hold(&self, path: &Path, settings: &crate::hosting::Hosting, at: Timestamp) {
+        if let Ok(mut held) = self.last_settings.lock() {
+            let _replaced = held.insert(
+                path.to_path_buf(),
+                Value::map([
+                    ("settings", settings.to_value()),
+                    ("since", mcf_record::encode::timestamp(at)),
+                ]),
+            );
+        }
         if let Ok(mut last) = self.last_hold.lock() {
             *last = Some(Value::map([
                 ("model", Value::text(path.display().to_string())),
@@ -4960,6 +5011,16 @@ impl Daemon {
                 ("recommended", recommended.to_value()),
                 ("settings", recommended.to_value()),
                 ("placements", self.placements(named, &recommended)),
+                // What it was last held under, and since when, so that a
+                // hold can be pressed for as it was set last time (B-475).
+                (
+                    "last",
+                    self.last_settings
+                        .lock()
+                        .ok()
+                        .and_then(|held| held.get(&path).cloned())
+                        .unwrap_or(Value::Null),
+                ),
                 // What the file declares that these settings do not start,
                 // so that a person choosing them sees what the plain load
                 // leaves in the file before they spend it (B-456).

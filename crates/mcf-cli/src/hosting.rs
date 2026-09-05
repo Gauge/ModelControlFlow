@@ -398,6 +398,10 @@ fn explained(body: &Value, at: Option<u64>) -> String {
         }
         lines.push(String::new());
     }
+    if let Some(said) = last_held_under(body) {
+        lines.push(said);
+        lines.push(String::new());
+    }
     for setting in body.get("explains").and_then(Value::as_list).unwrap_or(&[]) {
         let text = |key: &str| setting.get(key).and_then(Value::as_text).unwrap_or("?");
         let (name, value, recommended) = (text("name"), text("value"), text("recommended"));
@@ -611,4 +615,35 @@ fn hosting(body: &Value) -> String {
             .to_owned(),
     );
     lines.join("\n")
+}
+
+/// What the model was last held under, where it has been: what moved off
+/// the recommendation, or that nothing did, and since when (B-475).
+fn last_held_under(body: &Value) -> Option<String> {
+    let last = body
+        .get("last")
+        .filter(|held| !matches!(held, Value::Null))?;
+    let bare = mcf_serve::hosting::Hosting::recommended("", "", false, 0, None, false, None);
+    let recommended = mcf_serve::hosting::Hosting::from_value(body.get("recommended")?, &bare);
+    let held = mcf_serve::hosting::Hosting::from_value(last.get("settings")?, &recommended);
+    let moved = held.differs_from(&recommended);
+    let since = last
+        .get("since")
+        .and_then(|at| mcf_record::decode::timestamp(at).ok())
+        .map_or_else(|| "?".to_owned(), |at| to_the_second(&at.to_string()));
+    Some(format!(
+        "  {:<20} {} — since {since}",
+        "last held under",
+        if moved.is_empty() {
+            "as recommended".to_owned()
+        } else {
+            moved.join(", ")
+        }
+    ))
+}
+
+/// A timestamp to the second: what a person reads *since* by.
+fn to_the_second(at: &str) -> String {
+    at.get(..19)
+        .map_or_else(|| at.to_owned(), |head| format!("{head}Z"))
 }

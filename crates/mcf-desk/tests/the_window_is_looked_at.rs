@@ -2159,6 +2159,9 @@ fn every_page_is_drawn_for_review() {
     let mut moved = recommended.clone();
     moved.context = 16_384;
     desk.settings = Some(moved);
+    let mut last = recommended.clone();
+    last.context = 8_192;
+    desk.last_settings = Some((last, "2026-09-04T22:00:00Z".to_owned()));
     desk.placements = placements.clone();
     desk.models[0].applied_addressing = Some(
         "user…assistant, thinking open — set by the chat-template probe at 2026-09-04T22:53:58"

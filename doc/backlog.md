@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 265 |
+| **Version** | 266 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **376 items: 57 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 7
-decided, 23 resolved) and 319 build items (226 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 38 open).** Every item cites
+decided, 23 resolved) and 319 build items (227 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 37 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -305,7 +305,7 @@ first and importance second.
 | B-472 | The Host page remembers the last model held across restarts: which, on what, since when and until when, read from the record on start, with a button that holds it again | A1, §3.15, B-030, B-470 | After a restart the page names the last hold and one press holds it again | done. F177: the daemon reads the last `model_hosted` and `model_unhosted` entries on start and keeps them current; `mcf hosted` and the Models page say what was last held, on what, and how long ago, with *Host again* |
 | B-473 | The model page's Configure tab: every setting a hold takes with the control its value wants — the placement as a list with the build that fits, the window, threads, batch and port as numbers typed in with what the window reserves recomputed as it is typed, flash attention and residency as switches, the key as text, the draft head and the rope scaling from what the file declares, the projector as text-only or the one beside the file — with what MCF recommended beside anything moved, what the hold will take of what is free, what the probes applied and its provenance, and Host as the last button | D49, §3.15, A7, B-470, B-471 | A hold is configured whole on one tab before it is pressed for; a typed window shows its reserve as it is typed; a value that is not a number is said to be one and not sent | done. F178: the Models page's right pane is the model page with Configure, Statistics and Contents; the placement and the rope scaling are lists, the window, threads, batch, port, key and rope factor are typed fields parsed on Enter, flash attention, residency, the draft head and the projector are switches; the window's reserve follows what is typed; the probes' applied addressing and budget travel with the model; Host is the last button |
 | B-474 | The four places: Machine takes the monitor and the components, Models is the library with the figures that decide a choice and the button that adds one, Running is what is held, Diagnostics is the runs; the model page's Statistics tab holds every figure measured or read about it and its Contents tab the tensors and the vocabulary; the empty settings page goes; the console keeps the same four names | D49, §V, A22, B-072 | The menu has four places and Exit; a model's readings, cross-check, prompt reports, probes and last hold are on its Statistics tab; the anatomy and vocabulary pages are its Contents tab | done. F179: the four places are a column down the left with one-word names, Machine carries the engines, Running shows what the held engine is doing off its own counters once a second — tokens a second, prompted, generated, cache, requests, queued, memory, card, up — with the rate over the last two minutes, and holds a model this list does not carry; Statistics holds the ladder and what was read off it, the cross-check, the prompt report, the probes applied and the last hold, and Contents the tensors and the vocabulary with a switch between them |
-| B-475 | A hold's settings are remembered per model: the last settings a model was held under are read from the record and offered on Configure as *as you set it last time* beside MCF's recommendation, and a hold pressed for under them says so | D49, A1, §3.15, B-472 | After a restart the Configure tab offers the settings a model was last held under, and one press holds it under them | open |
+| B-475 | A hold's settings are remembered per model: the last settings a model was held under are read from the record and offered on Configure as *as you set it last time* beside MCF's recommendation, and a hold pressed for under them says so | D49, A1, §3.15, B-472 | After a restart the Configure tab offers the settings a model was last held under, and one press holds it under them | done. F186: the daemon keeps each model's last hold settings from the record; Configure offers them as one press and `mcf settings` prints them |
 | B-476 | A word on the add-model page searches the hub: what a person types is a reference — owner/name, with a file or a revision, or a repository URL — or a word, and a word is answered with the repositories the hub lists for it that publish GGUF files, most downloaded first, each a press away from its files; `mcf pull <word>` answers the same; the page says which it takes | A2, A22, B-023, D49 | Typing a word on the add-model page or after `mcf pull` lists repositories to pick; a reference still lists files; a phrase that is neither is refused with the word | done. F180 |
 | B-477 | The Diagnostics page is one card per run: throughput, cross-check, capabilities, prompt analysis, comparison, each naming what it answers, its controls — device, depths, repeats, which probes, what to apply — with the recommendation as the default, its cost before its own Run, its step and a Stop while it goes, and its figures on the model's Statistics tab after; the checkbox rows go | D50, §3.15, A7, B-467, B-468 | No control on the page stands for a thing a run does not separately do; every run is started from its own card with its own controls | in progress. F184: the page is one card per run in the window, the checkbox rows gone; the capabilities card runs the probes (F185); the comparison card offers the command until the daemon carries the bench |
 | B-478 | The probes are a run the daemon carries: `mcf probe`'s orchestration moves into the daemon as a streamed request, each probe announced as it starts and its finding as it lands, with `--apply` as a switch, so the window's capabilities card and the console have what the command line has | D50, A22, B-072, B-442 | The window runs the probes on a model and applies what they find without the command line; `mcf probe` prints the same stream | done. F185: one request, each probe announced and its finding streamed, the capabilities card runs and stops it, and the Statistics tab shows one line a probe |
@@ -493,6 +493,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 266 — a hold's settings remembered per model
+
+B-475 done: the settings a model was last held under are offered on
+Configure and printed by `mcf settings` (F186).
 
 ### Version 265 — the probes as a run the daemon carries
 
