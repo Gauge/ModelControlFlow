@@ -240,13 +240,17 @@ impl Hosting {
     /// recommended beside what it is set to.
     #[must_use]
     pub fn listed(&self, against: &Self) -> Vec<Setting> {
+        // The three words the diagnostics use for the same choice, with the
+        // layer count as their consequence rather than the control: what a
+        // person wants to know is whether the figure will be the card's or
+        // the processor's, and *999 layers* does not say that (B-467).
         let layers = |held: u32| {
             if held == 0 {
-                "none — the processor".to_owned()
+                "the processor, nothing on a card".to_owned()
             } else if held >= 999 {
-                "all of them".to_owned()
+                "the card, the whole model on it".to_owned()
             } else {
-                held.to_string()
+                format!("the card, {held} layers of the model on it")
             }
         };
         let yes_no = |held: bool| if held { "on" } else { "off" }.to_owned();
@@ -259,11 +263,12 @@ impl Hosting {
                           memory on the device the model runs on",
             },
             Setting {
-                name: "layers on the card",
+                name: "put it on",
                 value: layers(self.gpu_layers),
                 recommended: layers(against.gpu_layers),
-                because: "how much of the model the graphics card holds. All of it is \
-                          several times quicker where it fits",
+                because: "where the model goes: the whole of it on the card is several times \
+                          quicker where it fits, and the build that drives the card is chosen \
+                          with it",
             },
             Setting {
                 name: "engine",

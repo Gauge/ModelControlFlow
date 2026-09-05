@@ -135,6 +135,157 @@ impl Hosted {
     }
 }
 
+/// What was last held, as the record has it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastHold {
+    /// The model's path.
+    pub model: String,
+    /// The device it was on.
+    pub device: String,
+    /// The build it ran through.
+    pub engine: String,
+    /// Whether a stop was recorded after it.
+    pub stopped: bool,
+    /// How long ago it ended, or began where no end was recorded.
+    pub ago_seconds: Option<u64>,
+}
+
+impl LastHold {
+    /// Reads one from the daemon's answer.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Option<Self> {
+        let text = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
+        Some(Self {
+            model: text("model")?,
+            device: text("device").unwrap_or_else(|| "?".to_owned()),
+            engine: text("engine").unwrap_or_else(|| "?".to_owned()),
+            stopped: !matches!(value.get("until"), None | Some(Value::Null)),
+            ago_seconds: value
+                .get("ago_seconds")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+        })
+    }
+
+    /// The name, not the path.
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.model
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.model)
+            .trim_end_matches(".gguf")
+            .to_owned()
+    }
+
+    /// One line: what, on what, and when it ended.
+    #[must_use]
+    pub fn said(&self) -> String {
+        let ago = self.ago_seconds.map_or_else(String::new, |seconds| {
+            format!(", {} ago", ago_said(seconds))
+        });
+        format!(
+            "last held: {} on {}, {}{ago}",
+            self.name(),
+            self.device,
+            if self.stopped {
+                "stopped"
+            } else {
+                "held until MCF stopped"
+            }
+        )
+    }
+}
+
+/// Seconds as a span a person says: *40 s*, *12 min*, *2 h 5 min*.
+#[must_use]
+pub fn ago_said(seconds: u64) -> String {
+    #[expect(
+        clippy::integer_division,
+        reason = "whole minutes and hours, and the rest"
+    )]
+    let (hours, minutes, rest) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    match (hours, minutes) {
+        (0, 0) => format!("{rest} s"),
+        (0, minutes) => format!("{minutes} min"),
+        (hours, minutes) => format!("{hours} h {minutes} min"),
+    }
+}
+
+/// One place a hold can put the model, as the daemon listed it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placement {
+    /// `resolved`, `processor` or `card`.
+    pub on: String,
+    /// The build that fits it.
+    pub engine: String,
+    /// The device.
+    pub device: String,
+    /// How much of the model goes on a card there.
+    pub gpu_layers: u32,
+    /// What the device has free, where the engine said.
+    pub free: Option<u64>,
+}
+
+impl Placement {
+    /// Reads one from the daemon's list.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Option<Self> {
+        let text = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
+        Some(Self {
+            on: text("on")?,
+            engine: text("engine")?,
+            device: text("device")?,
+            gpu_layers: value
+                .get("gpu_layers")
+                .and_then(Value::as_integer)
+                .and_then(|held| u32::try_from(held).ok())?,
+            free: value
+                .get("free_bytes")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+        })
+    }
+}
+
+/// What a hold will take against what the device it goes to has free, as
+/// a sentence with a verdict: the weights and the cache for the window,
+/// against the free figure the engine reported for the device the settings
+/// name (§3.15). `None` where either side is unknown.
+#[must_use]
+pub fn will_take(
+    held: &Model,
+    settings: &mcf_serve::hosting::Hosting,
+    placements: &[Placement],
+) -> Option<(String, bool)> {
+    let (_, total) = view::reserve_of(held, settings.context)?;
+    let total = total?;
+    let free = placements
+        .iter()
+        .find(|placement| placement.device == settings.device)
+        .and_then(|placement| placement.free)
+        .or(held.device_free)?;
+    let fits = total <= free;
+    Some((
+        if fits {
+            format!(
+                "will take {} of the {} free on {}",
+                view::gigabytes(total),
+                view::gigabytes(free),
+                settings.device
+            )
+        } else {
+            format!(
+                "will not fit: {} against the {} free on {}",
+                view::gigabytes(total),
+                view::gigabytes(free),
+                settings.device
+            )
+        },
+        fits,
+    ))
+}
+
 /// A load's progress as a sentence: what has been read of the weights, after
 /// how long, and about how long is left once a twentieth is read and there
 /// is a rate to read that off; past the weights, that the cache and the
@@ -348,6 +499,8 @@ pub struct Model {
     pub engine: Option<String>,
     /// The device it would run on.
     pub device: Option<String>,
+    /// What that device had free when MCF resolved it.
+    pub device_free: Option<u64>,
     /// Whether that device is a graphics card.
     pub on_a_card: bool,
     /// Why it will not run, where it will not.
@@ -599,6 +752,11 @@ fn model_from(held: &Value) -> Model {
             .and_then(|number| u64::try_from(number).ok()),
         engine: known.then(|| resolved_text("engine")).flatten(),
         device: known.then(|| resolved_text("device")).flatten(),
+        device_free: resolved
+            .as_ref()
+            .and_then(|resolved| resolved.get("device_free_bytes"))
+            .and_then(Value::as_integer)
+            .and_then(|number| u64::try_from(number).ok()),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
@@ -884,6 +1042,8 @@ pub enum Act {
     RunChosen,
     /// Cut the run that is going short.
     Stop,
+    /// Hold the model that was last held, again.
+    HostAgain,
     /// Put this text on the clipboard — the loop's, because the clipboard is
     /// the window's and not the desk's.
     Copy(String),
@@ -1100,6 +1260,9 @@ pub struct Desk {
     /// beside the models, because it is a fact about the machine and not
     /// about any one of them (A21).
     pub card_unused: Option<(String, String)>,
+    /// Where a hold can put the chosen model, as the daemon listed them:
+    /// each with the build that fits and what the device has free.
+    pub placements: Vec<Placement>,
     /// Where the next run puts the model, where the person chose: `None` is
     /// where MCF resolves it to.
     pub on: Option<mcf_serve::control::On>,
@@ -1122,6 +1285,9 @@ pub struct Desk {
     pub build_failed: Option<(String, String)>,
     /// What is being hosted: where it is reachable, and since when.
     pub hosted: Option<Hosted>,
+    /// What was last held, where nothing is: read from the daemon, which
+    /// read it from the record, so it survives a restart of either (A1).
+    pub last_hold: Option<LastHold>,
     /// Why the last hold was refused, kept until the next is pressed for:
     /// a person who went to ask the model a question is owed the reason it
     /// is not there to ask, on that page (A2).
@@ -1161,6 +1327,7 @@ impl Desk {
             page: Page::Models,
             models: Vec::new(),
             card_unused: None,
+            placements: Vec::new(),
             on: None,
             shown: None,
             scroll: 0.0,
@@ -1191,6 +1358,7 @@ impl Desk {
             building: None,
             build_failed: None,
             hosted: None,
+            last_hold: None,
             host_refused: None,
             freed: None,
             anatomy: None,
@@ -1516,6 +1684,7 @@ impl Desk {
             Act::LookUp => self.look_up(),
             Act::Download { reference, file } => self.download(&reference, &file),
             Act::Stop => self.stop_run(),
+            Act::HostAgain => self.host_again(),
             Act::SetOn(on) => {
                 self.on = on;
                 self.open = None;
@@ -1606,6 +1775,7 @@ impl Desk {
         self.recommended = None;
         self.no_settings = None;
         self.needs_engine = None;
+        self.placements.clear();
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             return;
         };
@@ -1624,6 +1794,12 @@ impl Desk {
                 });
                 self.settings.clone_from(&recommended);
                 self.recommended = recommended;
+                self.placements = answer
+                    .body
+                    .get("placements")
+                    .and_then(Value::as_list)
+                    .map(|listed| listed.iter().filter_map(Placement::from_value).collect())
+                    .unwrap_or_default();
             }
             Ok(answer) => {
                 self.no_settings = Some(refused_because(&answer.body));
@@ -1674,6 +1850,7 @@ impl Desk {
         // Held rather than replaced: a poll that went unanswered says nothing
         // about what is hosted, and blanking the screen on it would report
         // MCF's own busyness as the model being gone.
+        let answered = ask_within(&self.socket, &Request::Hosted, POLL).ok();
         let read =
             match ask_within(&self.socket, &Request::Hosted, POLL) {
                 Ok(answer) if answer.served => answer
@@ -1727,6 +1904,10 @@ impl Desk {
             };
         self.busy = false;
         self.hosted = read;
+        self.last_hold = answered
+            .as_ref()
+            .and_then(|answer| answer.body.get("last"))
+            .and_then(LastHold::from_value);
     }
 
     /// Holds the chosen model under the settings as they stand, and goes to
@@ -1897,7 +2078,30 @@ impl Desk {
                     settings.context.saturating_mul(2)
                 };
             }
-            1 => settings.gpu_layers = if settings.gpu_layers == 0 { 999 } else { 0 },
+            // Where the model goes, in the daemon's own list: the next
+            // placement after the one the settings are at, and with it the
+            // build that fits — never the card's build with its layers moved
+            // (F176). Without a list, the layers alone, as before.
+            1 => {
+                if self.placements.is_empty() {
+                    settings.gpu_layers = if settings.gpu_layers == 0 { 999 } else { 0 };
+                } else {
+                    let at = self
+                        .placements
+                        .iter()
+                        .position(|held| {
+                            held.engine == settings.engine
+                                && held.device == settings.device
+                                && held.gpu_layers == settings.gpu_layers
+                        })
+                        .map_or(0, |at| (at + 1) % self.placements.len());
+                    if let Some(next) = self.placements.get(at) {
+                        settings.engine.clone_from(&next.engine);
+                        settings.device.clone_from(&next.device);
+                        settings.gpu_layers = next.gpu_layers;
+                    }
+                }
+            }
             4 => {
                 settings.threads = match settings.threads {
                     held if held >= 64 => 1,
@@ -2023,6 +2227,21 @@ impl Desk {
         } else if cross_check {
             self.cross_check(at);
         }
+    }
+
+    /// Holds again what was last held: the model is chosen by its path, its
+    /// settings read as they would be for any hold, and Host pressed.
+    pub fn host_again(&mut self) {
+        let Some(path) = self.last_hold.as_ref().map(|last| last.model.clone()) else {
+            return;
+        };
+        let Some(at) = self.models.iter().position(|held| held.path == path) else {
+            self.no_settings = Some(format!("{path} is not among the models here any more"));
+            return;
+        };
+        self.chosen = Some(at);
+        self.read_settings();
+        self.host_it();
     }
 
     /// Cuts the run that is going short: the ladder or the cross-check. The

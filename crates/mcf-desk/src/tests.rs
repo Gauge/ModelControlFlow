@@ -82,6 +82,7 @@ fn an_unmeasured_model_never_reports_a_speed() {
         name: "never timed".to_owned(),
         engine: Some("llama.cpp".to_owned()),
         device: Some("NVIDIA".to_owned()),
+        device_free: None,
         on_a_card: true,
         ..Model::default()
     };
@@ -117,6 +118,7 @@ fn nothing_is_thrown_away_on_the_way_to_a_plain_sentence() {
         context: Some(32_768),
         engine: Some("llama.cpp-cuda".to_owned()),
         device: Some("NVIDIA GeForce RTX 5080".to_owned()),
+        device_free: None,
         on_a_card: true,
         speed: Some(155.0),
         ..Model::default()

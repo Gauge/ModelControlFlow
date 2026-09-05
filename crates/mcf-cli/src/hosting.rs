@@ -39,6 +39,49 @@ pub(crate) fn settings(model: &str, at: Option<u64>) -> Response {
 
 /// Holds a model and answers on a port.
 pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
+    // `--on` names a placement; the daemon lists them with the build that
+    // fits each, and the choice becomes the engine, the device and the
+    // layers of that placement rather than the recommended build with its
+    // layers moved (F176).
+    let mut changes: Vec<(String, Value)> = changes.to_vec();
+    if let Some(at) = changes.iter().position(|(name, _)| name == "on") {
+        let (_, wanted) = changes.remove(at);
+        let wanted = wanted.as_text().unwrap_or_default().to_owned();
+        let listed = match ask(&Request::Settings {
+            model: model.to_owned(),
+        }) {
+            Ok(body) => body,
+            Err(text) => {
+                return Response {
+                    text,
+                    served: false,
+                };
+            }
+        };
+        let Some(placement) =
+            listed
+                .get("placements")
+                .and_then(Value::as_list)
+                .and_then(|placements| {
+                    placements
+                        .iter()
+                        .find(|held| held.get("on").and_then(Value::as_text) == Some(&wanted))
+                })
+        else {
+            return Response {
+                text: format!(
+                    "mcf: nothing here puts this model on the {wanted}\n  `mcf settings {model}` \
+                     lists where it can go"
+                ),
+                served: false,
+            };
+        };
+        for key in ["engine", "device", "gpu_layers"] {
+            if let Some(value) = placement.get(key) {
+                changes.push((key.to_owned(), value.clone()));
+            }
+        }
+    }
     let settings = if changes.is_empty() {
         Value::Null
     } else {
@@ -141,6 +184,59 @@ pub(crate) fn load_line(
     }
 }
 
+/// What was last held, where the record says: which model, on what, since
+/// when and until when, and how long ago that was.
+pub(crate) fn last_held(body: &Value) -> String {
+    let Some(last) = body.get("last").filter(|held| !matches!(held, Value::Null)) else {
+        return String::new();
+    };
+    let text = |key: &str| last.get(key).and_then(Value::as_text).unwrap_or("?");
+    // The times are the record's, in its shape; shown as the record shows
+    // them elsewhere.
+    let when = |key: &str| {
+        last.get(key)
+            .and_then(|at| mcf_record::decode::timestamp(at).ok())
+            .map_or_else(|| "?".to_owned(), |at| at.to_string())
+    };
+    let ago = last
+        .get("ago_seconds")
+        .and_then(Value::as_integer)
+        .map_or_else(String::new, |seconds| {
+            format!(", {} ago", ago_said(seconds))
+        });
+    format!(
+        "\n  last held      {}\n  on             {} through {}\n  {:<14} {}{ago}\n  `mcf host {}` holds it again",
+        text("model"),
+        text("device"),
+        text("engine"),
+        if matches!(last.get("until"), None | Some(Value::Null)) {
+            "held from"
+        } else {
+            "stopped"
+        },
+        if matches!(last.get("until"), None | Some(Value::Null)) {
+            when("since")
+        } else {
+            when("until")
+        },
+        text("model")
+    )
+}
+
+/// Seconds as a span a person says: *40 s*, *12 min*, *2 h 5 min*.
+pub(crate) fn ago_said(seconds: i64) -> String {
+    #[expect(
+        clippy::integer_division,
+        reason = "whole minutes and hours, and the rest"
+    )]
+    let (hours, minutes, rest) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    match (hours, minutes) {
+        (0, 0) => format!("{rest} s"),
+        (0, minutes) => format!("{minutes} min"),
+        (hours, minutes) => format!("{hours} h {minutes} min"),
+    }
+}
+
 /// What a stop gave back, where the daemon measured it: the engine's own
 /// memory, and the card's where the model was on one.
 pub(crate) fn freed_said(body: &Value) -> String {
@@ -200,7 +296,10 @@ pub(crate) fn held() -> Response {
         },
         |body| {
             let text = if matches!(body.get("hosting"), None | Some(Value::Null)) {
-                "mcf: nothing is being hosted\n  `mcf host <model>` holds one".to_owned()
+                format!(
+                    "mcf: nothing is being hosted\n  `mcf host <model>` holds one{}",
+                    last_held(&body)
+                )
             } else {
                 hosting(&body)
             };
@@ -270,6 +369,35 @@ fn explained(body: &Value, at: Option<u64>) -> String {
         "{}\n",
         body.get("model").and_then(Value::as_text).unwrap_or("?")
     )];
+    // Where it can go, each with the build that fits and what the device
+    // has free — the choice `--on` makes, listed before the settings it
+    // changes (§3.15).
+    if let Some(placements) = body.get("placements").and_then(Value::as_list) {
+        for placement in placements {
+            let text = |key: &str| placement.get(key).and_then(Value::as_text).unwrap_or("?");
+            let free = placement
+                .get("free_bytes")
+                .and_then(Value::as_integer)
+                .map_or_else(String::new, |free| format!(", {} free", in_gigabytes(free)));
+            lines.push(format!(
+                "  {:<20} {} — {} on {}{free}",
+                if text("on") == "resolved" {
+                    "where it can go"
+                } else {
+                    ""
+                },
+                match text("on") {
+                    "resolved" => "as resolved (--on not given)",
+                    "processor" => "--on cpu",
+                    "card" => "--on gpu",
+                    other => other,
+                },
+                text("engine"),
+                text("device")
+            ));
+        }
+        lines.push(String::new());
+    }
     for setting in body.get("explains").and_then(Value::as_list).unwrap_or(&[]) {
         let text = |key: &str| setting.get(key).and_then(Value::as_text).unwrap_or("?");
         let (name, value, recommended) = (text("name"), text("value"), text("recommended"));

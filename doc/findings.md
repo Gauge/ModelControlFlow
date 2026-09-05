@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 123 |
+| **Version** | 124 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 177 | [F177 — A hold goes where a person puts it with the build that fits: the daemon lists the placements, GLM-4.7-Flash on the processor by choice ran through the plain build and read 36.7 GiB into memory for a 131,072-token window, on the card through the Vulkan build and 23.2 GiB onto it, and the page says what a hold will take of what is free before the button (B-471, F176, §3.15, A21)](#177--f177--a-hold-goes-where-a-person-puts-it-with-the-build-that-fits-the-daemon-lists-the-placements-glm-47-flash-on-the-processor-by-choice-ran-through-the-plain-build-and-read-367-gib-into-memory-for-a-131072-token-window-on-the-card-through-the-vulkan-build-and-232-gib-onto-it-and-the-page-says-what-a-hold-will-take-of-what-is-free-before-the-button-b-471-f176-315-a21) |
 | 176 | [F176 — Hosting is one page, and a load onto a card is read off the card: the engine's own memory held 0.1 GiB throughout a 16 GiB load onto the Radeon while the card's memory rose 8.5, 16.3, 21.2, 23.2 GiB in three seconds, a stop gave the 23.2 back, and a processor hold read 6.7 GiB into memory and freed it (B-470, B-467, A7, A6, §3.15)](#176--f176--hosting-is-one-page-and-a-load-onto-a-card-is-read-off-the-card-the-engines-own-memory-held-01-gib-throughout-a-16-gib-load-onto-the-radeon-while-the-cards-memory-rose-85-163-212-232-gib-in-three-seconds-a-stop-gave-the-232-back-and-a-processor-hold-read-67-gib-into-memory-and-freed-it-b-470-b-467-a7-a6-315) |
 | 175 | [F175 — A rung read off one pair has no spread: a spread of nought was printed for one sample beside a spread of two milliseconds for three, every pair is now counted by what became of it, and GLM-4.7-Flash on the card read 17.98 ms a token over two pairs of three at 512 deep with one that did not separate (B-469, F174, F53, A7, A9)](#175--f175--a-rung-read-off-one-pair-has-no-spread-a-spread-of-nought-was-printed-for-one-sample-beside-a-spread-of-two-milliseconds-for-three-every-pair-is-now-counted-by-what-became-of-it-and-glm-47-flash-on-the-card-read-1798-ms-a-token-over-two-pairs-of-three-at-512-deep-with-one-that-did-not-separate-b-469-f174-f53-a7-a9) |
 | 174 | [F174 — A diagnostic says which device it is on, and a Radeon is one: the profiler reads the 8060S from its driver's files, a Vulkan build of the reference drives it, GLM-4.7-Flash decodes at 16.1 ms a token on the card against 33.9 on the processor, a processor run reused the card's server until the build and the layers joined the reuse rule, and a run is cut short from wherever it was started (B-467, B-468, B-072, F133, A7, A21, §3.4)](#174--f174--a-diagnostic-says-which-device-it-is-on-and-a-radeon-is-one-the-profiler-reads-the-8060s-from-its-drivers-files-a-vulkan-build-of-the-reference-drives-it-glm-47-flash-decodes-at-161-ms-a-token-on-the-card-against-339-on-the-processor-a-processor-run-reused-the-cards-server-until-the-build-and-the-layers-joined-the-reuse-rule-and-a-run-is-cut-short-from-wherever-it-was-started-b-467-b-468-b-072-f133-a7-a21-34) |
@@ -9599,6 +9600,51 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 177 · F177 — A hold goes where a person puts it with the build that fits: the daemon lists the placements, GLM-4.7-Flash on the processor by choice ran through the plain build and read 36.7 GiB into memory for a 131,072-token window, on the card through the Vulkan build and 23.2 GiB onto it, and the page says what a hold will take of what is free before the button (B-471, F176, §3.15, A21)
+
+F176 left a processor hold running through the Vulkan build with its
+layers moved to nought, because the settings named the engine MCF
+recommended and only the layer count was a control. Now the daemon lists,
+beside the recommendation, where a hold can go — where MCF resolves it,
+the processor, the card — each with the build that fits it and what that
+device has free, read from the same engines the diagnostics use; the
+window's *put it on* row and `mcf host --on cpu|gpu` move engine, device
+and layers together, and the row's words are the diagnostics' three.
+
+**What ran.** `mcf settings` on GLM-4.7-Flash: *as resolved —
+llama.cpp-vulkan on Radeon 8060S Graphics, 93.9 GiB free; --on cpu —
+llama.cpp on CPU, 39.9 GiB free; --on gpu — llama.cpp-vulkan on Radeon
+8060S Graphics, 93.9 GiB free*. The processor's free figure is the 40 GiB
+the daemon's scope allows it, which is what MCF reads there rather than
+the machine's 125 GiB (F144's lesson). `mcf host --on cpu` ran through the
+plain build and its load read *17.2, 20.4, 23.7, 26.9, 30.1, 36.7 GiB*
+into the engine's memory over five seconds — the 16.3 GiB of weights and
+twenty more of cache for the 131,072-token window MCF resolved, which on
+the processor is allocated in memory rather than on a card — and a stop
+freed the 36.7. `--on gpu` ran through the Vulkan build, put 23.2 GiB on
+the card, and freed it. The two builds are what a processor timing and a
+card timing are of, and a hold now says which.
+
+**Before the button.** The Host page says, in bold above the settings,
+*will take X of the Y free on Z* — the weights and the cache for the
+window against the free figure for the device the settings name — and
+*will not fit* in the warning colour where it does not, so the one number
+that decides whether Host will work is read before Host is pressed
+(§3.15). A build is its own button: *Build llama.cpp-vulkan first* where no
+engine here runs the model, with Host quiet until it is there; *Build
+llama.cpp-vulkan for the card* beside Host where a card is here that
+nothing drives. What a build takes in minutes is not said, because MCF
+has not measured one; that is a figure the record can carry from the next
+build and does not yet.
+
+**What is remembered.** The daemon reads the record on start for the last
+model held and the stop recorded after it, and keeps that current as it
+holds and lets go; where nothing is held, `mcf hosted` and the Models page
+say *last held: GLM-4.7-Flash on Radeon 8060S Graphics, stopped 2 min
+ago* with one press to hold it again, and a hold the daemon was stopped
+under says *held until MCF stopped* rather than claiming an end nobody
+recorded (A1, B-472).
+
 ## 176 · F176 — Hosting is one page, and a load onto a card is read off the card: the engine's own memory held 0.1 GiB throughout a 16 GiB load onto the Radeon while the card's memory rose 8.5, 16.3, 21.2, 23.2 GiB in three seconds, a stop gave the 23.2 back, and a processor hold read 6.7 GiB into memory and freed it (B-470, B-467, A7, A6, §3.15)
 
 Hosting a model from the window was a button on one page, a clock on
@@ -12232,6 +12278,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 124 — where a hold goes
+
+F177: a hold goes where a person puts it with the build that fits, the
+placements are listed with what each device has free, and the Host page
+says what a hold will take before the button (B-471).
 
 ### Version 123 — hosting is one page
 

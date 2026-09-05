@@ -801,6 +801,27 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
         Box::new(right, area.y, area.right() - right, area.h),
         held,
     );
+    // The one number that decides whether Host will work, before the
+    // button: what the hold takes against what the device has free (§3.15).
+    let after = match desk
+        .settings
+        .as_ref()
+        .and_then(|settings| crate::will_take(held, settings, &desk.placements))
+    {
+        Some((said, fits)) => {
+            let shown = paint.elide(&said, Weight::Bold, size::BODY, area.right() - right);
+            paint.say_at(
+                right,
+                after + 4.0,
+                &shown,
+                Weight::Bold,
+                size::BODY,
+                if fits { ink.ink } else { ink.warn },
+            );
+            after + 26.0
+        }
+        None => after,
+    };
     settings_table(
         paint,
         desk,
@@ -1028,6 +1049,76 @@ fn building(paint: &mut Painter, job: &crate::job::Job, x: f32, mut y: f32, wide
 
 /// What can be done with the model on the left, and where it is reachable
 /// when it is being held.
+/// The buttons for the chosen model: ask and stop where it is held; else
+/// Host — and a build as its own button, said as one, because minutes of
+/// container build is not what a person pressing Host expects Host to do
+/// (§3.15, B-367). Where no engine here runs the model at all, the build
+/// comes first and Host waits on it; where a card's build is missing, it
+/// is offered beside Host.
+fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(String, Kind, Act)> {
+    if this_one {
+        return vec![
+            (
+                "Ask it something".to_owned(),
+                Kind::Primary,
+                Act::Go(Page::Hosting),
+            ),
+            (stop_label, Kind::Ordinary, Act::StopHosting),
+        ];
+    }
+    let mut listed = Vec::new();
+    if let Some(engine) = &desk.needs_engine {
+        listed.push((
+            format!("Build {engine} first"),
+            Kind::Primary,
+            Act::Build(engine.clone()),
+        ));
+        listed.push(("Host this model".to_owned(), Kind::Quiet, Act::HostIt));
+    } else {
+        listed.push(("Host this model".to_owned(), Kind::Primary, Act::HostIt));
+        if let Some((component, _)) = &desk.card_unused {
+            listed.push((
+                format!("Build {component} for the card"),
+                Kind::Ordinary,
+                Act::Build(component.clone()),
+            ));
+        }
+    }
+    listed.push((
+        "Run diagnostics".to_owned(),
+        Kind::Ordinary,
+        Act::Go(Page::Diagnostics),
+    ));
+    listed
+}
+
+/// What was last held, in a line, and a button that holds it again.
+fn last_hold_offer(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    last: &crate::LastHold,
+    at: Box,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let mut y = at.y;
+    for line in paint
+        .wrap(&last.said(), Weight::Regular, size::SMALL, at.w - 20.0)
+        .iter()
+        .take(2)
+    {
+        paint.say_at(at.x, y + 4.0, line, Weight::Regular, size::SMALL, ink.quiet);
+        y += 16.0;
+    }
+    let where_ = Box::new(at.x, y + 8.0, at.w - 20.0, 30.0);
+    let label = paint.elide(
+        &format!("Host {} again", last.name()),
+        Weight::Regular,
+        size::BODY,
+        at.w - 40.0,
+    );
+    ui::button(paint, mouse, where_, &label, Kind::Ordinary).then_some(Act::HostAgain)
+}
+
 fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let list = area.w;
@@ -1059,34 +1150,40 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
             || "Stop hosting".to_owned(),
             |total| format!("Stop hosting — frees {}", gigabytes(total)),
         );
-    let actions: [(&str, Kind, Act); 4] = if this_one {
-        [
-            ("Ask it something", Kind::Primary, Act::Go(Page::Hosting)),
-            (stop_label.as_str(), Kind::Ordinary, Act::StopHosting),
-            ("What is in it", Kind::Ordinary, Act::Go(Page::Anatomy)),
-            ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
-        ]
-    } else {
-        [
-            ("Host this model", Kind::Primary, Act::HostIt),
-            (
-                "Run diagnostics",
-                Kind::Ordinary,
-                Act::Go(Page::Diagnostics),
-            ),
-            ("What is in it", Kind::Ordinary, Act::Go(Page::Anatomy)),
-            ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
-        ]
-    };
+    let mut actions = action_buttons(desk, this_one, stop_label);
+    actions.push((
+        "What is in it".to_owned(),
+        Kind::Ordinary,
+        Act::Go(Page::Anatomy),
+    ));
+    actions.push((
+        "Add a model".to_owned(),
+        Kind::Ordinary,
+        Act::Go(Page::Adding),
+    ));
     for (label, kind, what) in actions {
         let where_ = Box::new(area.x, y, list - 20.0, 30.0);
         let needs_one = what != Act::Go(Page::Adding);
-        if ui::button(paint, mouse, where_, label, kind) && (!needs_one || desk.chosen.is_some()) {
+        // Host waits on a build where none of the engines here can run
+        // the model: the button is drawn quiet and does nothing.
+        let waits = what == Act::HostIt && desk.needs_engine.is_some();
+        if ui::button(paint, mouse, where_, &label, kind)
+            && (!needs_one || desk.chosen.is_some())
+            && !waits
+        {
             act = Some(what);
         }
         y += 36.0;
     }
     // Where a caller reaches it. The one fact an API is for.
+    // What was last held, where nothing is now and nothing is loading: one
+    // line and one press to hold it again (A1).
+    if desk.hosted.is_none()
+        && !desk.doing.busy()
+        && let Some(last) = &desk.last_hold
+    {
+        return last_hold_offer(paint, mouse, last, Box::new(area.x, y, list, 0.0)).or(act);
+    }
     if let Some(hosting) = &desk.hosted {
         paint.say_at(
             area.x,

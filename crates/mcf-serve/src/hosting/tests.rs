@@ -96,7 +96,7 @@ fn a_setting_that_was_moved_says_so() {
     let moved = chosen.differs_from(&recommended);
     assert_eq!(moved.len(), 2, "{moved:?}");
     assert!(
-        moved.iter().any(|said| said.contains("layers on the card")),
+        moved.iter().any(|said| said.contains("put it on")),
         "{moved:?}"
     );
     assert!(

@@ -37,6 +37,7 @@ fn four_models() -> Desk {
             context: Some(32_768),
             engine: Some("llama.cpp-cuda".to_owned()),
             device: Some("NVIDIA GeForce RTX 5080".to_owned()),
+            device_free: None,
             on_a_card: true,
             speed: Some(155.0),
             start_up: Some("412.7".to_owned()),
@@ -55,6 +56,7 @@ fn four_models() -> Desk {
             context: Some(8_192),
             engine: Some("llama.cpp-cuda".to_owned()),
             device: Some("NVIDIA".to_owned()),
+            device_free: None,
             on_a_card: true,
             ..Model::default()
         },

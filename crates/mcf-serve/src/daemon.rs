@@ -1646,6 +1646,86 @@ fn shape_from_a_published_header(
 /// reads is the entries whose kind says they are the one asked for, newest
 /// last, and it keeps one per model — the model being what the entry's
 /// conditions name.
+/// The last model the record says was held: which, under what, since when,
+/// and until when where a stop was recorded after it — or `until` absent
+/// where none was, which is a daemon that stopped holding it.
+fn last_hold_in(journal: &Path) -> Option<Value> {
+    if !journal.exists() {
+        return None;
+    }
+    let index = mcf_record::journal::Index::over(
+        journal,
+        &mcf_record::journal::index::default_path(journal),
+    )
+    .ok()?;
+    let mut last: Option<Value> = None;
+    for located in index.entries() {
+        match located.kind() {
+            EntryKind::ModelHosted => {
+                let Ok(entry) = index.read(located) else {
+                    continue;
+                };
+                let text = |key: &str| {
+                    entry
+                        .body()
+                        .get("settings")
+                        .and_then(|settings| settings.get(key))
+                        .and_then(Value::as_text)
+                        .unwrap_or("?")
+                        .to_owned()
+                };
+                let Some(model) = entry.body().get("model").and_then(Value::as_text) else {
+                    continue;
+                };
+                last = Some(Value::map([
+                    ("model", Value::text(model.to_owned())),
+                    ("engine", Value::text(text("engine"))),
+                    ("device", Value::text(text("device"))),
+                    ("since", mcf_record::encode::timestamp(entry.recorded_at())),
+                    ("until", Value::Null),
+                ]));
+            }
+            EntryKind::ModelUnhosted => {
+                if let (Some(Value::Map(fields)), Ok(entry)) = (last.as_mut(), index.read(located))
+                {
+                    fields.insert(
+                        "until".to_owned(),
+                        mcf_record::encode::timestamp(entry.recorded_at()),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    last
+}
+
+/// The last hold with how long ago it ended — or began, where no end was
+/// recorded — in seconds, for a surface to say *stopped two hours ago*.
+fn with_ago(mut last: Value) -> Value {
+    let ended = last
+        .get("until")
+        .filter(|held| !matches!(held, Value::Null))
+        .or_else(|| last.get("since"))
+        .and_then(|at| mcf_record::decode::timestamp(at).ok());
+    if let (Some(ended), Value::Map(fields)) = (ended, &mut last) {
+        #[expect(
+            clippy::integer_division,
+            reason = "nanoseconds to whole seconds; the remainder is under a second"
+        )]
+        let ago = Timestamp::now()
+            .utc_nanos()
+            .saturating_sub(ended.utc_nanos())
+            .max(0)
+            / 1_000_000_000;
+        fields.insert(
+            "ago_seconds".to_owned(),
+            Value::Integer(i64::try_from(ago).unwrap_or(i64::MAX)),
+        );
+    }
+    last
+}
+
 fn newest_of(journal: &Path, kind: EntryKind) -> std::collections::BTreeMap<PathBuf, Value> {
     let mut newest = std::collections::BTreeMap::new();
     if !journal.exists() {
@@ -1712,6 +1792,11 @@ pub struct Daemon {
     /// and re-reading a journal of thousands of entries once a model would
     /// make a listing cost the record's whole length (F118).
     timings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
+    /// The last model held, read from the record on start and kept current:
+    /// which, under what, since when and until when. A daemon that recovers
+    /// its record and holds nothing still knows what it last held, and a
+    /// person coming back wants that before anything else (A1).
+    last_hold: std::sync::Mutex<Option<Value>>,
     /// The newest cross-check of each model, from the record, kept the way
     /// the timings are and for the same reason: a listing that re-read the
     /// record once a model would cost its whole length once a row (F118).
@@ -1876,6 +1961,7 @@ impl Daemon {
         let engines = discover_engines(&places);
         let daemon = Self {
             timings: std::sync::Mutex::new(newest_of(&places.journal, EntryKind::ModelTimed)),
+            last_hold: std::sync::Mutex::new(last_hold_in(&places.journal)),
             cross_checks: std::sync::Mutex::new(newest_of(
                 &places.journal,
                 EntryKind::CrossChecked,
@@ -2117,6 +2203,9 @@ impl Daemon {
                                 }),
                             ),
                             ("context", shape(Some(choice.context))),
+                            // What the device has free, for the page that
+                            // says what a hold will take of it (§3.15).
+                            ("device_free_bytes", shape(choice.device.free)),
                         ])
                     },
                 ),
@@ -4344,6 +4433,42 @@ impl Daemon {
         ]))
     }
 
+    /// Where a hold can put the model, each with the build that fits it:
+    /// where MCF resolves it, the processor with the processor's build, and
+    /// the card with a build that drives one — so that a person choosing
+    /// the processor gets the processor's build rather than the card's with
+    /// its layers moved (F176), and each with what that device has free.
+    fn placements(&self, named: &str, recommended: &crate::hosting::Hosting) -> Value {
+        let held = self.engines_held();
+        let free_on = |device: &str| {
+            held.iter()
+                .flat_map(|(_, devices)| devices.iter())
+                .find(|found| found.name == device)
+                .and_then(|found| found.free)
+        };
+        let one = |on: &str, engine: &str, device: &str, layers: u32| {
+            Value::map([
+                ("on", Value::text(on.to_owned())),
+                ("engine", Value::text(engine.to_owned())),
+                ("device", Value::text(device.to_owned())),
+                ("gpu_layers", Value::Integer(i64::from(layers))),
+                ("free_bytes", free_on(device).map_or(Value::Null, as_whole)),
+            ])
+        };
+        let mut placements = vec![one(
+            "resolved",
+            &recommended.engine,
+            &recommended.device,
+            recommended.gpu_layers,
+        )];
+        for on in [crate::control::On::Processor, crate::control::On::Card] {
+            if let Ok((llama, layers, _, device)) = self.picked_engine_on(named, Some(on)) {
+                placements.push(one(on.as_str(), &llama.component, &device, layers));
+            }
+        }
+        Value::List(placements)
+    }
+
     /// What MCF would run a model under, and what it recommends.
     ///
     /// Nothing is started. A surface asks this to fill in a form.
@@ -4353,6 +4478,7 @@ impl Daemon {
                 ("model", Value::text(named.to_owned())),
                 ("recommended", recommended.to_value()),
                 ("settings", recommended.to_value()),
+                ("placements", self.placements(named, &recommended)),
                 // What the file declares that these settings do not start,
                 // so that a person choosing them sees what the plain load
                 // leaves in the file before they spend it (B-456).
@@ -4717,6 +4843,15 @@ impl Daemon {
                     takes,
                     since: at,
                 });
+                if let Ok(mut last) = self.last_hold.lock() {
+                    *last = Some(Value::map([
+                        ("model", Value::text(path.display().to_string())),
+                        ("engine", Value::text(settings.engine.clone())),
+                        ("device", Value::text(settings.device.clone())),
+                        ("since", mcf_record::encode::timestamp(at)),
+                        ("until", Value::Null),
+                    ]));
+                }
                 Answer::served(Value::map([
                     ("hosting", Value::text(path.display().to_string())),
                     ("address", Value::text(settings.address())),
@@ -4748,7 +4883,19 @@ impl Daemon {
             Err(poisoned) => poisoned.into_inner(),
         };
         match holding.as_ref() {
-            None => Value::map([("hosting", Value::Null)]),
+            None => Value::map([
+                ("hosting", Value::Null),
+                // What was last held, so a person coming back is told
+                // before they look for it (A1).
+                (
+                    "last",
+                    self.last_hold
+                        .lock()
+                        .ok()
+                        .and_then(|last| last.clone())
+                        .map_or(Value::Null, with_ago),
+                ),
+            ]),
             Some(held) => Value::map([
                 ("hosting", Value::text(held.model.display().to_string())),
                 ("address", Value::text(held.settings.address())),
@@ -4814,9 +4961,10 @@ impl Daemon {
             resident,
             card,
         };
+        let at = Timestamp::now();
         let _recorded = self.note(
             EntryKind::ModelUnhosted,
-            Timestamp::now(),
+            at,
             Value::map([
                 ("model", Value::text(freed.model.clone())),
                 ("reason", Value::text(why.to_owned())),
@@ -4824,6 +4972,11 @@ impl Daemon {
                 ("freed_card_bytes", freed.card.map_or(Value::Null, as_whole)),
             ]),
         );
+        if let Ok(mut last) = self.last_hold.lock()
+            && let Some(Value::Map(fields)) = last.as_mut()
+        {
+            fields.insert("until".to_owned(), mcf_record::encode::timestamp(at));
+        }
         Some(freed)
     }
 

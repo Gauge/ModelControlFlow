@@ -1198,6 +1198,18 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
         let change = match *flag {
             "--context" => number("context")?,
             "--gpu-layers" => number("gpu_layers")?,
+            // Where the model goes, in the daemon's own list of placements,
+            // with the build that fits: resolved into engine, device and
+            // layers before the hold is asked for.
+            "--on" => (
+                "on".to_owned(),
+                Value::text(
+                    mcf_serve::control::On::parse(said.ok_or("--on with no value")?)
+                        .ok_or("--on wants cpu or gpu")?
+                        .as_str()
+                        .to_owned(),
+                ),
+            ),
             "--threads" => number("threads")?,
             "--batch" => number("batch")?,
             "--port" => number("port")?,
@@ -1913,12 +1925,13 @@ const COMMANDS: &str = "\
     \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
     \x20 mcf host <model> [--context <n>]    hold a model on a port where\n\
     \x20      [--port <n>] [--engine <name>] another program can reach it;\n\
-    \x20      [--gpu-layers <n>] [--threads <n>] it prints the settings it\n\
-    \x20      [--batch <n>] [--api-key <key>] chose and what they cost\n\
-    \x20      [--flash-attention]            — including the model's own\n\
-    \x20      [--draft-head on|off]          draft head, which a file can\n\
-    \x20      [--rope-scaling <kind>]        carry and the engine leaves\n\
-    \x20      [--rope-scale <n>]             in it unless it is asked for\n\
+    \x20      [--on cpu|gpu] [--gpu-layers <n>] it prints the settings it\n\
+    \x20      [--threads <n>]                chose and what they cost\n\
+    \x20      [--batch <n>] [--api-key <key>] — including the model's own\n\
+    \x20      [--flash-attention]            draft head, which a file can\n\
+    \x20      [--draft-head on|off]          carry and the engine leaves\n\
+    \x20      [--rope-scaling <kind>]        in it unless it is asked for;\n\
+    \x20      [--rope-scale <n>]             --on puts it where you say\n\
     \x20 mcf hosted                          what is being held, and where\n\
     \x20 mcf measure <model>                 time it at doubling context\n\
     \x20         [--deepest <n>]             depths, so the cost of a longer\n\
