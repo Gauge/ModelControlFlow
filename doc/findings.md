@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 124 |
+| **Version** | 125 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 178 | [F178 — The model page, first tab: every setting a hold takes with the control its value wants, a typed window whose reserve follows the typing, a word typed where a number goes refused with the word, and Host as the last button; the probes' applied addressing and budget travel with the model so a hold is configured whole (B-473, D49, §3.15, A7)](#178--f178--the-model-page-first-tab-every-setting-a-hold-takes-with-the-control-its-value-wants-a-typed-window-whose-reserve-follows-the-typing-a-word-typed-where-a-number-goes-refused-with-the-word-and-host-as-the-last-button-the-probes-applied-addressing-and-budget-travel-with-the-model-so-a-hold-is-configured-whole-b-473-d49-315-a7) |
 | 177 | [F177 — A hold goes where a person puts it with the build that fits: the daemon lists the placements, GLM-4.7-Flash on the processor by choice ran through the plain build and read 36.7 GiB into memory for a 131,072-token window, on the card through the Vulkan build and 23.2 GiB onto it, and the page says what a hold will take of what is free before the button (B-471, F176, §3.15, A21)](#177--f177--a-hold-goes-where-a-person-puts-it-with-the-build-that-fits-the-daemon-lists-the-placements-glm-47-flash-on-the-processor-by-choice-ran-through-the-plain-build-and-read-367-gib-into-memory-for-a-131072-token-window-on-the-card-through-the-vulkan-build-and-232-gib-onto-it-and-the-page-says-what-a-hold-will-take-of-what-is-free-before-the-button-b-471-f176-315-a21) |
 | 176 | [F176 — Hosting is one page, and a load onto a card is read off the card: the engine's own memory held 0.1 GiB throughout a 16 GiB load onto the Radeon while the card's memory rose 8.5, 16.3, 21.2, 23.2 GiB in three seconds, a stop gave the 23.2 back, and a processor hold read 6.7 GiB into memory and freed it (B-470, B-467, A7, A6, §3.15)](#176--f176--hosting-is-one-page-and-a-load-onto-a-card-is-read-off-the-card-the-engines-own-memory-held-01-gib-throughout-a-16-gib-load-onto-the-radeon-while-the-cards-memory-rose-85-163-212-232-gib-in-three-seconds-a-stop-gave-the-232-back-and-a-processor-hold-read-67-gib-into-memory-and-freed-it-b-470-b-467-a7-a6-315) |
 | 175 | [F175 — A rung read off one pair has no spread: a spread of nought was printed for one sample beside a spread of two milliseconds for three, every pair is now counted by what became of it, and GLM-4.7-Flash on the card read 17.98 ms a token over two pairs of three at 512 deep with one that did not separate (B-469, F174, F53, A7, A9)](#175--f175--a-rung-read-off-one-pair-has-no-spread-a-spread-of-nought-was-printed-for-one-sample-beside-a-spread-of-two-milliseconds-for-three-every-pair-is-now-counted-by-what-became-of-it-and-glm-47-flash-on-the-card-read-1798-ms-a-token-over-two-pairs-of-three-at-512-deep-with-one-that-did-not-separate-b-469-f174-f53-a7-a9) |
@@ -9600,6 +9601,55 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 178 · F178 — The model page, first tab: every setting a hold takes with the control its value wants, a typed window whose reserve follows the typing, a word typed where a number goes refused with the word, and Host as the last button; the probes' applied addressing and budget travel with the model so a hold is configured whole (B-473, D49, §3.15, A7)
+
+D49 made a model the centre of the window; this is its first tab. The
+Models page's right pane, which was a detail block and a table of rows
+that cycled when clicked, is now the model page: the name, three tabs, and
+the tab that is open. Configure is the one a hold is pressed for from.
+
+**A control per setting.** Where the model goes is a list of the
+placements the daemon offers, each with the build that fits — *the
+processor — llama.cpp on CPU*, *the card — llama.cpp-vulkan on Radeon
+8060S Graphics* — so that choosing the processor changes the engine with
+the layers (F176). The window is a field: what is typed is parsed on
+Enter or on the next press, a thousands separator is allowed, a value
+under 512 is refused as too small and a word is refused *with the word* —
+*the context window wants a whole number, not "lots"* — and the window
+stays as it was, because a word read as nought would be a setting nobody
+chose (A7, §3.15). While the typing goes on, the line under the field
+recomputes what that window reserves in cache and with the weights, so
+the cost is read before the number is taken. Threads, batch and port are
+fields too, the port refusing anything under 1024 as needing rights MCF
+does not ask for; the key is a field whose placeholder says what its
+absence means; flash attention and keeping the pages resident are
+switches; the draft head is a switch where the file carries one and *the
+file carries none* where it does not; the rope scaling is a list — as the
+file has it, off, linear, yarn — with a factor field beside it where one
+applies; the projector is a switch where one sits beside the file and
+*none beside the file — text only* where none does. Beside anything moved,
+*MCF recommends* what it recommended; the mouse over a row puts what the
+row is for at the foot of the tab.
+
+**The foot.** *Will take X of the Y free on Z* in bold, or *will not fit*
+in the warning colour, from the placement the settings name; then what
+the probes applied to this model — an addressing and a budget with their
+provenance, or *nothing applied by a probe — `mcf probe --apply` writes
+what it finds* — because a hold runs under those too and a page that
+configures a hold whole shows them with the rest. The daemon now carries
+them with each model in its listing. Then *Back to recommended* where
+anything moved, and Host, last; where no engine here runs the model, Host
+says it needs the build first and does nothing, and the build is the
+button in the actions column. A model that will not run at all says why
+in the refusal colour at the top of the tab, and Host is still there so
+that pressing it says why in words rather than doing nothing — the shape
+one test holds the page to.
+
+**What Statistics and Contents are, for now.** Statistics is the detail
+block and the measured figures the pane used to show; Contents is two
+buttons to the tensor and vocabulary pages. Folding everything measured
+or read about a model into those two tabs is B-474, with the four places.
+
 ## 177 · F177 — A hold goes where a person puts it with the build that fits: the daemon lists the placements, GLM-4.7-Flash on the processor by choice ran through the plain build and read 36.7 GiB into memory for a 131,072-token window, on the card through the Vulkan build and 23.2 GiB onto it, and the page says what a hold will take of what is free before the button (B-471, F176, §3.15, A21)
 
 F176 left a processor hold running through the Vulkan build with its
@@ -12278,6 +12328,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 125 — the model page, first tab
+
+F178: the Configure tab, with a real control on every setting a hold
+takes, the reserve following a typed window, a word refused with the word,
+and Host last (B-473, D49).
 
 ### Version 124 — where a hold goes
 

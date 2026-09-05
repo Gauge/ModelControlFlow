@@ -2248,6 +2248,38 @@ impl Daemon {
             ("trained_context", shape(trained)),
             ("cache_bytes_per_token", shape(cache)),
             ("resolved", resolved),
+            // What the probes applied to this model, by provenance: a hold
+            // runs under these too, and a page that configures a hold
+            // whole shows them with the rest (§3.15, D49).
+            ("configured", self.applied_to(path)),
+        ])
+    }
+
+    /// What somebody applied to a model from a probe's finding, each part
+    /// with its provenance, or null where nothing was.
+    fn applied_to(&self, path: &std::path::Path) -> Value {
+        let Some(home) = self.places.models.parent() else {
+            return Value::Null;
+        };
+        let derived = crate::configured::read_derived(home, path);
+        if derived.is_empty() {
+            return Value::Null;
+        }
+        Value::map([
+            (
+                "addressing",
+                derived
+                    .addressing
+                    .as_ref()
+                    .map_or(Value::Null, |held| Value::text(held.provenance())),
+            ),
+            (
+                "budget",
+                derived
+                    .budget
+                    .as_ref()
+                    .map_or(Value::Null, |held| Value::text(held.provenance())),
+            ),
         ])
     }
 

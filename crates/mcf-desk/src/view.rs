@@ -796,42 +796,12 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
         );
         return act;
     };
-    let after = detail(
-        paint,
-        Box::new(right, area.y, area.right() - right, area.h),
-        held,
-    );
-    // The one number that decides whether Host will work, before the
-    // button: what the hold takes against what the device has free (§3.15).
-    let after = match desk
-        .settings
-        .as_ref()
-        .and_then(|settings| crate::will_take(held, settings, &desk.placements))
-    {
-        Some((said, fits)) => {
-            let shown = paint.elide(&said, Weight::Bold, size::BODY, area.right() - right);
-            paint.say_at(
-                right,
-                after + 4.0,
-                &shown,
-                Weight::Bold,
-                size::BODY,
-                if fits { ink.ink } else { ink.warn },
-            );
-            after + 26.0
-        }
-        None => after,
-    };
-    settings_table(
+    model_page(
         paint,
         desk,
         mouse,
-        Box::new(
-            right,
-            after + 18.0,
-            area.right() - right,
-            (area.bottom() - after - 18.0).max(10.0),
-        ),
+        Box::new(right, area.y, area.right() - right, area.h),
+        held,
     )
     .or(act)
 }
@@ -872,142 +842,685 @@ fn no_settings(paint: &mut Painter, desk: &Desk, area: Box, why: &str) {
 /// started with the layer count written into the source as zero, so a model
 /// resolved to a graphics card ran on the processor and nothing said so. A
 /// default nobody can see is a decision nobody made (§3.15, F133).
-fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+/// The chosen model's own page: its name, three tabs, and the tab that is
+/// open. Configure is every setting a hold takes with a control on each,
+/// Statistics everything measured or read about it, Contents what the file
+/// holds (D49).
+fn model_page(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    held: &Model,
+) -> Option<Act> {
     let ink = paint.ink;
-    if let Some(why) = &desk.no_settings {
-        no_settings(paint, desk, area, why);
-        return None;
-    }
-    let (Some(settings), Some(recommended)) = (desk.settings.as_ref(), desk.recommended.as_ref())
-    else {
-        return None;
-    };
-    let wide = area.w.min(430.0);
     let mut act = None;
-    let table = Box::new(area.x, area.y, wide, 0.0);
-    let mut y = heads(
-        paint,
-        table,
-        "settings",
-        &[Column {
-            head: "value",
-            at: wide,
-            right: true,
-        }],
-    );
-
-    for (at, setting) in settings.listed(recommended).into_iter().enumerate() {
-        if y > area.bottom() - 40.0 {
-            break;
-        }
-        let moved = setting.value != setting.recommended;
-        // Only the settings with a small set of sensible values can be
-        // cycled; the engine and the device are what MCF resolved together,
-        // and moving one without the other would be asking a build to use a
-        // device it cannot.
-        let can_cycle = matches!(at, 0 | 1 | 4 | 5 | 6 | 7 | 8);
-        let hit = Box::new(area.x - 6.0, y - 4.0, wide + 12.0, 21.0);
-        if can_cycle && mouse.over(hit) {
-            paint.panel(hit, 6.0, ink.line, 90);
-        }
-        paint.say_at(
-            area.x,
-            y,
-            setting.name,
-            Weight::Regular,
-            size::BODY,
-            ink.quiet,
-        );
-        let colour = if moved { ink.warn } else { ink.ink };
-        let shown = paint.elide(&setting.value, Weight::Bold, size::BODY, wide - 170.0);
-        paint.say_right(area.x + wide, y, &shown, Weight::Bold, size::BODY, colour);
-        if can_cycle && mouse.clicked(hit) {
-            act = Some(Act::Cycle(at));
-        }
-        y += 21.0;
-        // **What this window will reserve, under the window itself.** The
-        // context is chosen here and paid for in memory later, and the two
-        // were on different screens — one of them `free -h`, after the fact.
-        // It is recomputed from the value shown rather than fetched, so it
-        // moves when the setting moves (§3.15, B-423).
-        if at == 0 {
-            y = what_the_window_costs(
-                paint,
-                desk,
-                (area.x + wide, y),
-                settings.context,
-                recommended.context,
-            );
-        }
-        // What MCF advised, under anything moved off it — a run under a
-        // changed setting is not a run under the recommended one, and both
-        // are facts (A6, §3.15).
-        if moved {
-            paint.say_right(
-                area.x + wide,
-                y,
-                &format!("MCF recommends {}", setting.recommended),
-                Weight::Regular,
-                size::SMALL,
-                ink.faint,
-            );
-            y += 17.0;
-        }
-    }
-
-    if !settings.differs_from(recommended).is_empty() {
-        let (reset, _) = ui::fitted(
+    let name = paint.elide(&held.name, Weight::Bold, size::HEAD, area.w);
+    paint.say_at(area.x, area.y, &name, Weight::Bold, size::HEAD, ink.ink);
+    let mut x = area.x;
+    let y = area.y + 34.0;
+    for tab in crate::Tab::ALL {
+        let wide = paint.measure(tab.label(), Weight::Bold, size::BODY) + 26.0;
+        if ui::nav(
             paint,
             mouse,
-            (area.x - 8.0, y + 4.0),
-            "Back to recommended",
-            Kind::Quiet,
-        );
-        if reset {
-            act = Some(Act::Recommended);
+            Box::new(x, y, wide, 30.0),
+            tab.label(),
+            desk.tab == tab,
+        ) {
+            act = Some(Act::Tab(tab));
         }
+        x += wide + 6.0;
+    }
+    paint.rule((area.x, y + 38.0), (area.right(), y + 38.0), ink.line, 255);
+    let below = Box::new(
+        area.x,
+        y + 52.0,
+        area.w,
+        (area.bottom() - y - 52.0).max(10.0),
+    );
+    let drawn = match desk.tab {
+        crate::Tab::Configure => configure_tab(paint, desk, mouse, below, held),
+        crate::Tab::Statistics => {
+            let after = detail(paint, below, held);
+            let _bottom = what_was_measured(
+                paint,
+                Box::new(
+                    below.x,
+                    after + 10.0,
+                    below.w,
+                    (below.bottom() - after).max(10.0),
+                ),
+                held,
+            );
+            None
+        }
+        crate::Tab::Contents => contents_tab(paint, desk, mouse, below),
+    };
+    drawn.or(act)
+}
+
+/// Until the tensors and the vocabulary are drawn here (B-474): the two
+/// pages that hold them, a press away.
+fn contents_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    paint.say_at(
+        area.x,
+        area.y,
+        "read from the file, not measured: its tensor directory and its vocabulary",
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    let mut act = None;
+    let mut x = area.x;
+    for (label, page) in [
+        ("What is in it", Page::Anatomy),
+        ("Its vocabulary", Page::Vocabulary),
+    ] {
+        let (pressed, drawn) = ui::fitted(paint, mouse, (x, area.y + 30.0), label, Kind::Ordinary);
+        if pressed && desk.chosen.is_some() {
+            act = Some(Act::Go(page));
+        }
+        x += drawn.w + 12.0;
     }
     act
 }
 
-/// The chosen window's price, written under the window itself.
-///
-/// Returns where the next row starts, which is unmoved when there is no figure
-/// to give: a model whose header does not say what a token of cache costs is
-/// one MCF cannot price, and a blank where a number belongs is better than a
-/// zero that reads like one (A7).
-fn what_the_window_costs(
+/// One row of the Configure tab: the setting's name at the left, its
+/// control at the column, and — where the mouse is over it — what it does,
+/// kept for the foot of the tab.
+struct Row {
+    /// The setting's name, as `Hosting::listed` names it.
+    name: &'static str,
+    /// What the row is for, shown at the foot while the mouse is over it.
+    because: &'static str,
+}
+
+/// Every setting a hold takes, each with the control its value wants, then
+/// what the hold will take of what is free, and Host last (D49, §3.15).
+#[expect(
+    clippy::too_many_lines,
+    reason = "one row per setting a hold takes, in order"
+)]
+fn configure_tab(
     paint: &mut Painter,
     desk: &Desk,
-    at: (f32, f32),
-    context: u64,
-    largest: u64,
-) -> f32 {
+    mouse: &Mouse,
+    area: Box,
+    held: &Model,
+) -> Option<Act> {
     let ink = paint.ink;
-    let (right, mut y) = at;
-    let Some(said) = desk
-        .chosen
-        .and_then(|at| desk.models.get(at))
-        .and_then(|held| reserve_line(held, context))
-    else {
-        return y;
-    };
-    let ceiling = context >= largest;
-    let colour = if ceiling { ink.warn } else { ink.faint };
-    paint.say_right(right, y, &said, Weight::Regular, size::SMALL, colour);
-    y += 17.0;
-    if ceiling {
-        paint.say_right(
-            right,
-            y,
-            "the largest window this machine can hold",
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        y += 17.0;
+    let mut y = area.y;
+    // A model that will not run says why first, in the refusal colour, and
+    // nothing below pretends it can be configured into running (A2).
+    if let Some(why) = &held.refused {
+        for line in paint
+            .wrap(why, Weight::Regular, size::BODY, area.w)
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::BODY, ink.bad);
+            y += 20.0;
+        }
+        y += 8.0;
     }
-    y
+    let (Some(settings), Some(recommended)) = (desk.settings.as_ref(), desk.recommended.as_ref())
+    else {
+        // Nothing to configure yet: MCF has not said what this model would
+        // run under, or said why it cannot. The reason is here, and Host is
+        // still here — pressing it says why in words rather than doing
+        // nothing (§3.15).
+        if let Some(why) = &desk.no_settings {
+            no_settings(paint, desk, Box::new(area.x, y, area.w, 0.0), why);
+            y += 90.0;
+        } else if held.refused.is_none() {
+            paint.say_at(
+                area.x,
+                y,
+                "MCF has not said what this model would run under",
+                Weight::Regular,
+                size::BODY,
+                ink.quiet,
+            );
+            y += 30.0;
+        }
+        let (host, _) = ui::fitted(
+            paint,
+            mouse,
+            (area.x, y + 6.0),
+            "Host this model",
+            Kind::Quiet,
+        );
+        return (host && !desk.doing.busy()).then_some(Act::HostIt);
+    };
+    let listed = settings.listed(recommended);
+    let because_of = |name: &str| {
+        listed
+            .iter()
+            .find(|setting| setting.name == name)
+            .map_or("", |setting| setting.because)
+    };
+    let recommended_for = |name: &str| {
+        listed
+            .iter()
+            .find(|setting| setting.name == name)
+            .filter(|setting| setting.value != setting.recommended)
+            .map(|setting| setting.recommended.clone())
+    };
+    let column = area.x + 190.0;
+    let control = (area.w - 190.0).min(300.0);
+    let mut act = None;
+    let mut hovered: Option<&'static str> = None;
+    let mut menu: Option<(Picker, Box)> = None;
+
+    let label = |paint: &mut Painter, y: f32, row: Row, hovered: &mut Option<&'static str>| {
+        let hit = Box::new(area.x, y - 4.0, area.w, 26.0);
+        if mouse.over(hit) {
+            *hovered = Some(row.because);
+        }
+        paint.say_at(area.x, y, row.name, Weight::Regular, size::BODY, ink.quiet);
+    };
+    let recommends = |paint: &mut Painter, y: &mut f32, name: &str| {
+        if let Some(was) = recommended_for(name) {
+            paint.say_at(
+                column,
+                *y,
+                &format!("MCF recommends {was}"),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            *y += 16.0;
+        }
+    };
+    let typed_in = |paint: &mut Painter,
+                    mouse: &Mouse,
+                    y: f32,
+                    field: crate::Field,
+                    now: String,
+                    placeholder: &str|
+     -> (bool, String) {
+        let focused = desk
+            .editing
+            .as_ref()
+            .is_some_and(|(editing, _)| *editing == field);
+        let text = if focused {
+            desk.being_typed().to_owned()
+        } else {
+            now
+        };
+        let pressed = ui::field(
+            paint,
+            mouse,
+            Box::new(column, y - 6.0, control, 28.0),
+            &text,
+            placeholder,
+            focused,
+        );
+        (pressed, text)
+    };
+    let switch = |paint: &mut Painter, mouse: &Mouse, y: f32, on: bool| -> bool {
+        let square = Box::new(column, y - 3.0, 20.0, 20.0);
+        paint.edge(
+            square,
+            5.0,
+            if on { ink.accent } else { ink.line },
+            ink.card,
+        );
+        if on {
+            ui::tick(
+                paint,
+                Box::new(square.x + 4.0, square.y + 4.0, 12.0, 12.0),
+                ink.accent,
+            );
+        }
+        paint.say_at(
+            column + 30.0,
+            y,
+            if on { "on" } else { "off" },
+            Weight::Bold,
+            size::BODY,
+            ink.ink,
+        );
+        mouse.clicked(Box::new(column, y - 6.0, 90.0, 28.0))
+    };
+
+    // Where it goes.
+    label(
+        paint,
+        y,
+        Row {
+            name: "put it on",
+            because: because_of("put it on"),
+        },
+        &mut hovered,
+    );
+    let placed = desk
+        .placed_at()
+        .and_then(|at| desk.placements.get(at))
+        .map_or_else(
+            || format!("{} on {}", settings.engine, settings.device),
+            placement_label,
+        );
+    let box_of = Box::new(column, y - 6.0, control, 28.0);
+    let open = desk.open == Some(Picker::Placement);
+    if ui::picker(paint, mouse, box_of, &placed, open) {
+        act = Some(Act::Open(Picker::Placement));
+    }
+    if open {
+        menu = Some((Picker::Placement, box_of));
+    }
+    y += 34.0;
+    recommends(paint, &mut y, "put it on");
+
+    // The window, with what it reserves as it is typed.
+    label(
+        paint,
+        y,
+        Row {
+            name: "context window",
+            because: because_of("context window"),
+        },
+        &mut hovered,
+    );
+    let (pressed, text) = typed_in(
+        paint,
+        mouse,
+        y,
+        crate::Field::Context,
+        settings.context.to_string(),
+        "tokens",
+    );
+    if pressed {
+        act = Some(Act::Edit(crate::Field::Context));
+    }
+    y += 34.0;
+    let typed_window = text.trim().replace([',', '_'], "").parse::<u64>().ok();
+    if let Some(said) = reserve_line(held, typed_window.unwrap_or(settings.context)) {
+        paint.say_at(column, y, &said, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    recommends(paint, &mut y, "context window");
+
+    // Numbers.
+    for (name, field, now) in [
+        (
+            "threads",
+            crate::Field::Threads,
+            settings.threads.to_string(),
+        ),
+        (
+            "batch size",
+            crate::Field::Batch,
+            settings.batch.to_string(),
+        ),
+        ("port", crate::Field::Port, settings.port.to_string()),
+    ] {
+        label(
+            paint,
+            y,
+            Row {
+                name,
+                because: because_of(name),
+            },
+            &mut hovered,
+        );
+        let (pressed, _) = typed_in(paint, mouse, y, field, now, "");
+        if pressed {
+            act = Some(Act::Edit(field));
+        }
+        y += 34.0;
+        recommends(paint, &mut y, name);
+    }
+
+    // Switches.
+    for (name, which, on) in [
+        (
+            "flash attention",
+            crate::Switch::FlashAttention,
+            settings.flash_attention,
+        ),
+        (
+            "keep resident",
+            crate::Switch::KeepResident,
+            settings.keep_resident,
+        ),
+    ] {
+        label(
+            paint,
+            y,
+            Row {
+                name,
+                because: because_of(name),
+            },
+            &mut hovered,
+        );
+        if switch(paint, mouse, y, on) {
+            act = Some(Act::Switch(which));
+        }
+        y += 30.0;
+        recommends(paint, &mut y, name);
+    }
+
+    // The key.
+    label(
+        paint,
+        y,
+        Row {
+            name: "API key",
+            because: because_of("API key"),
+        },
+        &mut hovered,
+    );
+    let (pressed, _) = typed_in(
+        paint,
+        mouse,
+        y,
+        crate::Field::ApiKey,
+        settings.api_key.clone().unwrap_or_default(),
+        "none — anything on this computer can use it",
+    );
+    if pressed {
+        act = Some(Act::Edit(crate::Field::ApiKey));
+    }
+    y += 34.0;
+
+    // What the file declares and whether to start it.
+    label(
+        paint,
+        y,
+        Row {
+            name: "draft head",
+            because: "the draft head the file carries, started or left in it",
+        },
+        &mut hovered,
+    );
+    match desk
+        .declared
+        .as_ref()
+        .and_then(|declared| declared.draft_head)
+    {
+        Some(layers) => {
+            if switch(paint, mouse, y, settings.started.draft_head) {
+                act = Some(Act::Switch(crate::Switch::DraftHead));
+            }
+            paint.say_at(
+                column + 90.0,
+                y,
+                &format!("the file carries one of {layers} layer(s)"),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+        }
+        None => paint.say_at(
+            column,
+            y,
+            "the file carries none",
+            Weight::Regular,
+            size::BODY,
+            ink.faint,
+        ),
+    }
+    y += 30.0;
+    label(
+        paint,
+        y,
+        Row {
+            name: "rope scaling",
+            because: "how the window is stretched past what the model was trained for: as the file has it, off, linear or yarn, by a factor",
+        },
+        &mut hovered,
+    );
+    let rope_at = crate::ROPE_CHOICES
+        .iter()
+        .position(|choice| *choice == settings.started.rope)
+        .unwrap_or(0);
+    let rope_box = Box::new(column, y - 6.0, 150.0, 28.0);
+    let open = desk.open == Some(Picker::Rope);
+    if ui::picker(paint, mouse, rope_box, rope_label(rope_at), open) {
+        act = Some(Act::Open(Picker::Rope));
+    }
+    if open {
+        menu = Some((Picker::Rope, rope_box));
+    }
+    if settings
+        .started
+        .rope
+        .is_some_and(|rope| rope != mcf_serve::declared::Scaling::Off)
+    {
+        let focused = desk
+            .editing
+            .as_ref()
+            .is_some_and(|(editing, _)| *editing == crate::Field::RopeFactor);
+        let text = if focused {
+            desk.being_typed().to_owned()
+        } else {
+            settings
+                .started
+                .factor
+                .map_or_else(String::new, |factor| factor.to_string())
+        };
+        if ui::field(
+            paint,
+            mouse,
+            Box::new(column + 160.0, y - 6.0, 100.0, 28.0),
+            &text,
+            "factor",
+            focused,
+        ) {
+            act = Some(Act::Edit(crate::Field::RopeFactor));
+        }
+    }
+    y += 34.0;
+
+    // The projector.
+    label(
+        paint,
+        y,
+        Row {
+            name: "projector",
+            because: because_of("projector"),
+        },
+        &mut hovered,
+    );
+    match recommended.projector.as_deref() {
+        Some(path) => {
+            if switch(paint, mouse, y, settings.projector.is_some()) {
+                act = Some(Act::Switch(crate::Switch::Projector));
+            }
+            let named = path.rsplit('/').next().unwrap_or(path);
+            let shown = paint.elide(
+                &format!("{named}, beside the file; off is text only"),
+                Weight::Regular,
+                size::SMALL,
+                area.right() - column - 96.0,
+            );
+            paint.say_at(
+                column + 90.0,
+                y,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+        }
+        None => paint.say_at(
+            column,
+            y,
+            "none beside the file — text only",
+            Weight::Regular,
+            size::BODY,
+            ink.faint,
+        ),
+    }
+    y += 34.0;
+
+    // A typed value that was not taken, said where it was typed.
+    if let Some(why) = &desk.edit_refused {
+        paint.say_at(area.x, y, why, Weight::Regular, size::SMALL, ink.warn);
+        y += 18.0;
+    }
+    // What the hold will take of what is free, then the buttons.
+    let (pressed, _after) = configure_foot(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, y, area.w, area.bottom() - y),
+        held,
+        settings,
+        hovered,
+    );
+    if let Some(pressed) = pressed {
+        act = Some(pressed);
+    }
+    if let Some((picker, at)) = menu
+        && let Some(picked) = configure_menu(paint, desk, mouse, picker, at)
+    {
+        act = Some(picked);
+    }
+    act
+}
+
+/// The foot of the Configure tab: what the hovered row is for, what the
+/// hold will take, what the probes applied, and the buttons — Back to
+/// recommended, and Host last.
+fn configure_foot(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    held: &Model,
+    settings: &mcf_serve::hosting::Hosting,
+    hovered: Option<&'static str>,
+) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let mut y = area.y + 6.0;
+    let mut act = None;
+    if let Some(because) = hovered {
+        for line in paint
+            .wrap(because, Weight::Regular, size::SMALL, area.w)
+            .iter()
+            .take(2)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.quiet);
+            y += 16.0;
+        }
+    } else {
+        y += 16.0;
+    }
+    y += 6.0;
+    if let Some((said, fits)) = crate::will_take(held, settings, &desk.placements) {
+        let shown = paint.elide(&said, Weight::Bold, size::BODY, area.w);
+        paint.say_at(
+            area.x,
+            y,
+            &shown,
+            Weight::Bold,
+            size::BODY,
+            if fits { ink.ink } else { ink.warn },
+        );
+        y += 24.0;
+    }
+    // What the probes applied: a hold runs under these too (§3.15).
+    for (what, applied) in [
+        ("addressing", held.applied_addressing.as_deref()),
+        ("budget", held.applied_budget.as_deref()),
+    ] {
+        let said = applied.map_or_else(
+            || {
+                format!(
+                    "{what}: nothing applied by a probe — `mcf probe --apply` writes what it finds"
+                )
+            },
+            |applied| format!("{what}: {applied}"),
+        );
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w);
+        paint.say_at(area.x, y, &shown, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    y += 10.0;
+    let mut x = area.x;
+    if desk
+        .recommended
+        .as_ref()
+        .is_some_and(|recommended| !settings.differs_from(recommended).is_empty())
+    {
+        let (reset, drawn) = ui::fitted(paint, mouse, (x, y), "Back to recommended", Kind::Quiet);
+        if reset {
+            act = Some(Act::Recommended);
+        }
+        x += drawn.w + 12.0;
+    }
+    let waits = desk.needs_engine.is_some();
+    let (host, _) = ui::fitted(
+        paint,
+        mouse,
+        (x, y),
+        if waits {
+            "Host (needs the build first)"
+        } else {
+            "Host this model"
+        },
+        if waits { Kind::Quiet } else { Kind::Primary },
+    );
+    if host && !waits && !desk.doing.busy() {
+        act = Some(Act::HostIt);
+    }
+    (act, y + 40.0)
+}
+
+/// The words for one placement in the list.
+fn placement_label(placement: &crate::Placement) -> String {
+    let where_ = match placement.on.as_str() {
+        "resolved" => "as MCF resolves it",
+        "processor" => "the processor",
+        "card" => "the card",
+        other => other,
+    };
+    format!("{where_} — {} on {}", placement.engine, placement.device)
+}
+
+/// The words for one rope choice in the list.
+fn rope_label(at: usize) -> &'static str {
+    match at {
+        1 => "off",
+        2 => "linear",
+        3 => "yarn",
+        _ => "as the file has it",
+    }
+}
+
+/// Whichever of the Configure tab's lists is open, and what was picked.
+fn configure_menu(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    picker: Picker,
+    at: Box,
+) -> Option<Act> {
+    match picker {
+        Picker::Placement => {
+            let labels: Vec<String> = desk.placements.iter().map(placement_label).collect();
+            if labels.is_empty() {
+                return None;
+            }
+            ui::options(paint, mouse, at, &labels, desk.placed_at()).map(Act::Place)
+        }
+        Picker::Rope => {
+            let labels: Vec<String> = (0..crate::ROPE_CHOICES.len())
+                .map(|at| rope_label(at).to_owned())
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                crate::ROPE_CHOICES
+                    .iter()
+                    .position(|choice| *choice == settings.started.rope)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::Rope)
+        }
+        Picker::Model | Picker::Window | Picker::On => None,
+    }
 }
 
 /// The build, as it goes: what is being built and for what, how long so far,
@@ -1066,6 +1579,8 @@ fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(Strin
             (stop_label, Kind::Ordinary, Act::StopHosting),
         ];
     }
+    // Host is the last button on the Configure tab, after the settings are
+    // read whole (D49); the builds stay here, said as builds.
     let mut listed = Vec::new();
     if let Some(engine) = &desk.needs_engine {
         listed.push((
@@ -1073,16 +1588,12 @@ fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(Strin
             Kind::Primary,
             Act::Build(engine.clone()),
         ));
-        listed.push(("Host this model".to_owned(), Kind::Quiet, Act::HostIt));
-    } else {
-        listed.push(("Host this model".to_owned(), Kind::Primary, Act::HostIt));
-        if let Some((component, _)) = &desk.card_unused {
-            listed.push((
-                format!("Build {component} for the card"),
-                Kind::Ordinary,
-                Act::Build(component.clone()),
-            ));
-        }
+    } else if let Some((component, _)) = &desk.card_unused {
+        listed.push((
+            format!("Build {component} for the card"),
+            Kind::Ordinary,
+            Act::Build(component.clone()),
+        ));
     }
     listed.push((
         "Run diagnostics".to_owned(),
@@ -1749,6 +2260,8 @@ fn open_menu(
                 .and_then(|index| ON_CHOICES.get(index).copied())
                 .map(Act::SetOn)
         }
+        // The Configure tab's lists are drawn by the model page.
+        Picker::Placement | Picker::Rope => None,
         Picker::Window => {
             let offered = windows();
             let labels: Vec<String> = offered

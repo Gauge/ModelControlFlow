@@ -379,6 +379,8 @@ pub fn component_from(held: &Value) -> Component {
 /// Which field on the prompt screen typing goes into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Caret {
+    /// A setting on the model page's Configure tab.
+    Setting,
     /// The prompt being taken apart.
     #[default]
     Document,
@@ -501,6 +503,10 @@ pub struct Model {
     pub device: Option<String>,
     /// What that device had free when MCF resolved it.
     pub device_free: Option<u64>,
+    /// The addressing a probe applied, by provenance, where one was.
+    pub applied_addressing: Option<String>,
+    /// The budget a probe applied, by provenance, where one was.
+    pub applied_budget: Option<String>,
     /// Whether that device is a graphics card.
     pub on_a_card: bool,
     /// Why it will not run, where it will not.
@@ -757,6 +763,16 @@ fn model_from(held: &Value) -> Model {
             .and_then(|resolved| resolved.get("device_free_bytes"))
             .and_then(Value::as_integer)
             .and_then(|number| u64::try_from(number).ok()),
+        applied_addressing: held
+            .get("configured")
+            .and_then(|applied| applied.get("addressing"))
+            .and_then(Value::as_text)
+            .map(str::to_owned),
+        applied_budget: held
+            .get("configured")
+            .and_then(|applied| applied.get("budget"))
+            .and_then(Value::as_text)
+            .map(str::to_owned),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
@@ -979,7 +995,77 @@ pub enum Picker {
     Window,
     /// Where the model goes: as MCF resolves it, the processor, or the card.
     On,
+    /// Where a hold puts the model, from the daemon's list of placements.
+    Placement,
+    /// The rope scaling a hold starts with.
+    Rope,
 }
+
+/// Which tab of the model page is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tab {
+    /// Every setting a hold takes, with a control on each.
+    #[default]
+    Configure,
+    /// Everything measured or read about the model.
+    Statistics,
+    /// What the file holds: tensors and vocabulary.
+    Contents,
+}
+
+impl Tab {
+    /// The three, in order.
+    pub const ALL: [Self; 3] = [Self::Configure, Self::Statistics, Self::Contents];
+
+    /// The word on the tab.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Configure => "Configure",
+            Self::Statistics => "Statistics",
+            Self::Contents => "Contents",
+        }
+    }
+}
+
+/// A setting on the Configure tab that takes typing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Field {
+    /// The context window, in tokens.
+    Context,
+    /// Processor threads.
+    Threads,
+    /// The prompt batch.
+    Batch,
+    /// The port.
+    Port,
+    /// The key callers present.
+    ApiKey,
+    /// The rope scaling's factor.
+    RopeFactor,
+}
+
+/// A setting on the Configure tab that is a switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Switch {
+    /// The attention kernel that reads less memory.
+    FlashAttention,
+    /// Holding the pages in memory.
+    KeepResident,
+    /// Starting the draft head the file carries.
+    DraftHead,
+    /// Loading the projector beside the file.
+    Projector,
+}
+
+/// The rope scalings a hold can start with, in the order the list offers
+/// them: as the file has it, off, linear, yarn.
+pub const ROPE_CHOICES: [Option<mcf_serve::declared::Scaling>; 4] = [
+    None,
+    Some(mcf_serve::declared::Scaling::Off),
+    Some(mcf_serve::declared::Scaling::Linear),
+    Some(mcf_serve::declared::Scaling::Yarn),
+];
 
 /// The context windows a measurement can be set up for.
 ///
@@ -1044,6 +1130,16 @@ pub enum Act {
     Stop,
     /// Hold the model that was last held, again.
     HostAgain,
+    /// Open a tab of the model page.
+    Tab(Tab),
+    /// Start typing into a setting.
+    Edit(Field),
+    /// Flip a switch.
+    Switch(Switch),
+    /// Put the hold where the daemon's list says, by index.
+    Place(usize),
+    /// Start with this rope scaling, by index into `ROPE_CHOICES`.
+    Rope(usize),
     /// Put this text on the clipboard — the loop's, because the clipboard is
     /// the window's and not the desk's.
     Copy(String),
@@ -1266,6 +1362,16 @@ pub struct Desk {
     /// Where the next run puts the model, where the person chose: `None` is
     /// where MCF resolves it to.
     pub on: Option<mcf_serve::control::On>,
+    /// Which tab of the model page is open.
+    pub tab: Tab,
+    /// The setting being typed into, and what has been typed so far. Applied
+    /// on Enter or when another control is pressed; a value that is not a
+    /// number is said to be one and not sent (§3.15).
+    pub editing: Option<(Field, String)>,
+    /// Why the last typed value was not taken.
+    pub edit_refused: Option<String>,
+    /// What the chosen model's file declares that a hold may start.
+    pub declared: Option<mcf_serve::declared::Declared>,
     /// The model to hold once the engine being built is there — the one Host
     /// was pressed for, so that a model chosen meanwhile is not held by a
     /// press that was for another.
@@ -1329,6 +1435,10 @@ impl Desk {
             card_unused: None,
             placements: Vec::new(),
             on: None,
+            tab: Tab::default(),
+            editing: None,
+            edit_refused: None,
+            declared: None,
             shown: None,
             scroll: 0.0,
             reading: mcf_tui::machine::Reading::default(),
@@ -1374,6 +1484,7 @@ impl Desk {
     #[must_use]
     pub fn takes_typing(&self) -> bool {
         matches!(self.page, Page::Adding | Page::Hosting | Page::Prompt)
+            || (matches!(self.page, Page::Models | Page::Host) && self.editing.is_some())
     }
 
     /// The longest a pasted value may be, on a screen whose field takes a
@@ -1440,6 +1551,9 @@ impl Desk {
     /// The field typing goes into: whichever of the prompt screen's fields
     /// has the caret, the one field every other screen has otherwise.
     pub fn typing(&mut self) -> &mut String {
+        if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_mut()) {
+            return typed;
+        }
         match (self.page, self.caret) {
             (Page::Prompt, Caret::Temperature) => &mut self.temperature,
             // The ask screen's own fields, and only there: a caret left
@@ -1455,6 +1569,9 @@ impl Desk {
     /// The same field, to read.
     #[must_use]
     pub fn being_typed(&self) -> &str {
+        if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_ref()) {
+            return typed;
+        }
         match (self.page, self.caret) {
             (Page::Prompt, Caret::Temperature) => &self.temperature,
             (Page::Hosting, Caret::System) => &self.system,
@@ -1518,6 +1635,7 @@ impl Desk {
     /// What Return runs on the screen showing.
     pub fn entered(&mut self) {
         match self.page {
+            Page::Models | Page::Host => self.apply_edit(),
             Page::Adding => self.look_up(),
             Page::Prompt => self.report_prompt(),
             Page::Hosting => {
@@ -1685,6 +1803,9 @@ impl Desk {
             Act::Download { reference, file } => self.download(&reference, &file),
             Act::Stop => self.stop_run(),
             Act::HostAgain => self.host_again(),
+            Act::Tab(_) | Act::Edit(_) | Act::Switch(_) | Act::Place(_) | Act::Rope(_) => {
+                self.configure(&act);
+            }
             Act::SetOn(on) => {
                 self.on = on;
                 self.open = None;
@@ -1746,6 +1867,7 @@ impl Desk {
             Act::Choose(at) => {
                 self.chosen = Some(at);
                 self.open = None;
+                self.tab = Tab::Configure;
                 // **What this model would be held under.** `host_it` needs it
                 // and nothing fetched it: `read_settings` existed, was never
                 // called, and so `settings` was `None` for the life of the
@@ -1776,6 +1898,9 @@ impl Desk {
         self.no_settings = None;
         self.needs_engine = None;
         self.placements.clear();
+        self.editing = None;
+        self.edit_refused = None;
+        self.declared = None;
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             return;
         };
@@ -1794,6 +1919,10 @@ impl Desk {
                 });
                 self.settings.clone_from(&recommended);
                 self.recommended = recommended;
+                self.declared = answer
+                    .body
+                    .get("declares")
+                    .map(mcf_serve::declared::Declared::from_value);
                 self.placements = answer
                     .body
                     .get("placements")
@@ -2227,6 +2356,173 @@ impl Desk {
         } else if cross_check {
             self.cross_check(at);
         }
+    }
+
+    /// One act on the Configure tab. Whatever was being typed is applied
+    /// first, so that a value left in a field is not lost to the next press.
+    fn configure(&mut self, act: &Act) {
+        match *act {
+            Act::Tab(tab) => {
+                self.apply_edit();
+                self.tab = tab;
+                self.open = None;
+            }
+            Act::Edit(field) => self.edit(field),
+            Act::Switch(switch) => {
+                self.apply_edit();
+                self.flip(switch);
+            }
+            Act::Place(at) => {
+                self.apply_edit();
+                self.place(at);
+                self.open = None;
+            }
+            Act::Rope(at) => {
+                self.apply_edit();
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.started.rope = ROPE_CHOICES.get(at).copied().flatten();
+                    if settings.started.rope.is_none() {
+                        settings.started.factor = None;
+                    }
+                }
+                self.open = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// Starts typing into a setting, with what it holds now as the text;
+    /// whatever was being typed before is applied first.
+    pub fn edit(&mut self, field: Field) {
+        self.apply_edit();
+        let Some(settings) = self.settings.as_ref() else {
+            return;
+        };
+        let now = match field {
+            Field::Context => settings.context.to_string(),
+            Field::Threads => settings.threads.to_string(),
+            Field::Batch => settings.batch.to_string(),
+            Field::Port => settings.port.to_string(),
+            Field::ApiKey => settings.api_key.clone().unwrap_or_default(),
+            Field::RopeFactor => settings
+                .started
+                .factor
+                .map_or_else(String::new, |factor| factor.to_string()),
+        };
+        self.editing = Some((field, now));
+        self.edit_refused = None;
+        self.caret = Caret::Setting;
+    }
+
+    /// Takes what was typed into the setting it was typed for, or says why
+    /// not and leaves the setting as it was. A number is a number: a window
+    /// of *lots* is refused with the word, not read as nought (A7, §3.15).
+    pub fn apply_edit(&mut self) {
+        let Some((field, typed)) = self.editing.take() else {
+            return;
+        };
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        let typed = typed.trim().replace([',', '_'], "");
+        let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
+        self.edit_refused = match field {
+            Field::Context => match typed.parse::<u64>() {
+                Ok(tokens) if tokens >= 512 => {
+                    settings.context = tokens;
+                    None
+                }
+                Ok(_) => Some("the window wants at least 512 tokens".to_owned()),
+                Err(_) => not_a_number("the context window"),
+            },
+            Field::Threads => match typed.parse::<u32>() {
+                Ok(threads) if threads >= 1 => {
+                    settings.threads = threads;
+                    None
+                }
+                _ => not_a_number("threads"),
+            },
+            Field::Batch => match typed.parse::<u32>() {
+                Ok(batch) if batch >= 1 => {
+                    settings.batch = batch;
+                    None
+                }
+                _ => not_a_number("the batch size"),
+            },
+            Field::Port => match typed.parse::<u16>() {
+                Ok(port) if port >= 1024 => {
+                    settings.port = port;
+                    None
+                }
+                Ok(_) => Some("a port below 1024 needs rights MCF does not ask for".to_owned()),
+                Err(_) => not_a_number("the port"),
+            },
+            Field::ApiKey => {
+                settings.api_key = Some(typed).filter(|key| !key.is_empty());
+                None
+            }
+            Field::RopeFactor => {
+                if typed.is_empty() {
+                    settings.started.factor = None;
+                    None
+                } else {
+                    match typed.parse::<u32>() {
+                        Ok(factor) if factor >= 1 => {
+                            settings.started.factor = Some(factor);
+                            None
+                        }
+                        _ => not_a_number("the rope factor"),
+                    }
+                }
+            }
+        };
+    }
+
+    /// Flips a switch on the Configure tab.
+    pub fn flip(&mut self, switch: Switch) {
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        match switch {
+            Switch::FlashAttention => settings.flash_attention = !settings.flash_attention,
+            Switch::KeepResident => settings.keep_resident = !settings.keep_resident,
+            Switch::DraftHead => settings.started.draft_head = !settings.started.draft_head,
+            // Text only, or the one beside the file: the recommendation
+            // knows which projector that is, and *on* means that one.
+            Switch::Projector => {
+                settings.projector = if settings.projector.is_some() {
+                    None
+                } else {
+                    self.recommended
+                        .as_ref()
+                        .and_then(|recommended| recommended.projector.clone())
+                };
+            }
+        }
+    }
+
+    /// Puts the hold where the daemon's list says, engine, device and layers
+    /// together (F176).
+    pub fn place(&mut self, at: usize) {
+        let Some(placement) = self.placements.get(at) else {
+            return;
+        };
+        if let Some(settings) = self.settings.as_mut() {
+            settings.engine.clone_from(&placement.engine);
+            settings.device.clone_from(&placement.device);
+            settings.gpu_layers = placement.gpu_layers;
+        }
+    }
+
+    /// Which placement the settings are at, where they are at one.
+    #[must_use]
+    pub fn placed_at(&self) -> Option<usize> {
+        let settings = self.settings.as_ref()?;
+        self.placements.iter().position(|held| {
+            held.engine == settings.engine
+                && held.device == settings.device
+                && held.gpu_layers == settings.gpu_layers
+        })
     }
 
     /// Holds again what was last held: the model is chosen by its path, its

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 49 |
+| **Version** | 50 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4740,6 +4740,70 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 
 ---
 
+### D49 — The window is arranged around a model's configuration and its statistics *(on the operator's instruction)*
+
+**The window has four places — the machine, the models, what is running,
+and the diagnostics — and a model is the centre of it: choosing one opens
+its own page, whose first tab is every setting a hold takes with a real
+control on each, whose second is everything MCF has measured or read about
+it, and whose third is what the file holds. Hosting is the last button on
+the first tab, pressed after the configuration is read whole; it is never
+the first thing a page offers.**
+
+**What was wrong, as the window stood.** Twelve screens under six menu
+entries. Configuration was a table on the Models page whose rows moved to
+their next value when clicked — a context window that doubled, a port that
+counted up by one — with no field a number could be typed into and a
+Settings page that said *nothing to set yet*; the one choice the
+diagnostics offered, where the model goes, was on a different page from the
+same choice for a hold. Statistics were wherever the code that produced
+them happened to draw: the machine's on Monitor, a model's measured speed
+in the Models detail, a run's readings under the Diagnostics table, a
+file's tensors and vocabulary on two pages of their own, and what a held
+model takes on the Hosting page. A person who wanted to know one thing
+about one model visited four places, and a person who wanted to set one
+thing found a row that cycled.
+
+**The four places.** *Machine* is what this computer is and has: processor,
+card, memory, storage, temperatures, the engines built here and the ones
+MCF can build, and the daemon's own state — the statistics that are about
+the machine and no model. *Models* is the library, listed with the figures
+that decide a choice: size, architecture, trained window, where it
+resolves, its measured speed where a run has been taken, when it was last
+held. *Running* is what is held now: where it answers, how the load is
+going, what reaches it, what it holds on the card and in memory, and the
+box to ask it from. *Diagnostics* is the runs — the ladder, the
+cross-check, the prompt analysis — with the same device choice a hold
+offers, and their readings go to the model they were taken on. The library
+is where a model is added from; the file's contents are the model's third
+tab; the empty settings page is gone.
+
+**The model page.** *Configure* shows every setting a hold takes, each
+with the control its value wants: where it goes as a list of the placements
+the daemon offers with the build that fits each; the window as a number
+typed in, with the memory it reserves recomputed as it is typed; threads,
+batch and port as numbers; flash attention and keeping the pages resident
+as switches; the key as text; the draft head and the rope scaling as what
+the file declares and whether to start them; the projector as text-only or
+the one beside the file. What MCF recommended stands beside anything
+moved, and *what this will take of what is free* is read before the button.
+Below the settings, what the probes applied — an addressing, a budget —
+with its provenance, because a hold runs under those too. *Statistics* is
+everything measured or read about this model, in one place: the ladder's
+readings and the fall-off, the cross-check, the prompt reports, what the
+probes found, the last hold and what it took. *Contents* is the tensor
+directory and the vocabulary, read and not measured, which were two pages
+and are one tab.
+
+**What this keeps.** Every figure is still the daemon's, drawn where a
+person looks for it rather than where it was computed; a control that
+changes a condition still shows the condition; nothing is set without
+being shown with its source (§3.15); the console keeps the same four names,
+and what the window can do the headless path can do (A22). The work is
+three items: the model page with its Configure tab, the four places with
+Statistics and Contents folded in, and the hold's settings remembered per
+model so that *as you set it last time* is a thing the page can offer.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -4769,6 +4833,13 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 50 — the window around a model
+
+D49 written on the operator's instruction: the window is four places — the
+machine, the models, what is running, the diagnostics — with a model's own
+page at the centre, whose tabs are its configuration with a real control on
+every setting, its statistics in one place, and its contents.
 
 ### Version 49 — two answers from the operator, one of them a question first
 

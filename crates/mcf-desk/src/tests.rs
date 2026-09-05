@@ -83,6 +83,8 @@ fn an_unmeasured_model_never_reports_a_speed() {
         engine: Some("llama.cpp".to_owned()),
         device: Some("NVIDIA".to_owned()),
         device_free: None,
+        applied_addressing: None,
+        applied_budget: None,
         on_a_card: true,
         ..Model::default()
     };
@@ -119,6 +121,8 @@ fn nothing_is_thrown_away_on_the_way_to_a_plain_sentence() {
         engine: Some("llama.cpp-cuda".to_owned()),
         device: Some("NVIDIA GeForce RTX 5080".to_owned()),
         device_free: None,
+        applied_addressing: None,
+        applied_budget: None,
         on_a_card: true,
         speed: Some(155.0),
         ..Model::default()
@@ -1445,4 +1449,71 @@ fn a_load_says_how_far_and_about_how_long() {
     // And the desk says nothing about loading where nothing loads.
     let desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
     assert!(desk.loading_line().is_none());
+}
+
+/// A setting typed into the Configure tab is taken as typed where it is a
+/// number the setting can hold, and refused with the word where it is not —
+/// never read as nought and never sent (§3.15, A7).
+#[test]
+fn a_typed_setting_is_taken_or_refused_with_the_word() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    let recommended = mcf_serve::hosting::Hosting::recommended(
+        "llama.cpp",
+        "CPU",
+        false,
+        4096,
+        Some(8),
+        true,
+        None,
+    );
+    desk.settings = Some(recommended.clone());
+    desk.recommended = Some(recommended);
+    desk.page = Page::Models;
+
+    desk.edit(crate::Field::Context);
+    assert!(
+        desk.takes_typing(),
+        "a field being typed into takes the keys"
+    );
+    desk.typing().clear();
+    desk.typing().push_str("32,768");
+    desk.apply_edit();
+    assert_eq!(
+        desk.settings.as_ref().map(|held| held.context),
+        Some(32_768)
+    );
+    assert!(desk.edit_refused.is_none());
+
+    desk.edit(crate::Field::Context);
+    desk.typing().clear();
+    desk.typing().push_str("lots");
+    desk.apply_edit();
+    assert_eq!(
+        desk.settings.as_ref().map(|held| held.context),
+        Some(32_768),
+        "a word is not a window, and the window stays as it was"
+    );
+    let why = desk.edit_refused.clone().unwrap_or_default();
+    assert!(
+        why.contains("lots"),
+        "the refusal names what was typed: {why}"
+    );
+
+    desk.edit(crate::Field::Port);
+    desk.typing().clear();
+    desk.typing().push_str("80");
+    desk.apply_edit();
+    assert!(
+        desk.edit_refused
+            .as_deref()
+            .is_some_and(|why| why.contains("1024")),
+        "a port MCF cannot bind without rights is refused, not tried"
+    );
+
+    desk.flip(crate::Switch::FlashAttention);
+    assert_eq!(
+        desk.settings.as_ref().map(|held| held.flash_attention),
+        Some(true)
+    );
+    assert!(!desk.takes_typing(), "nothing is being typed into now");
 }
