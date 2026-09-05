@@ -587,6 +587,10 @@ pub(crate) fn serve_generation(
     // Nothing here is inferred from the file — a feature a file declares is
     // reported and left alone until somebody asks for it (B-456, D43).
     started: crate::declared::Started,
+    // The server hosted for this model, where one is held: the request
+    // goes to it rather than to a second engine MCF starts beside it, so
+    // the model is loaded once and the server's counters move (B-480).
+    held: Option<&Served>,
     // Who is waiting, so that the engine's request is closed when they
     // leave and its progress reaches them while they stay (D48).
     waiting: crate::served::Waiting<'_>,
@@ -616,6 +620,7 @@ pub(crate) fn serve_generation(
         context,
         server,
         started,
+        held,
     };
     // The picture is read before anything is started: a file that is not
     // there is the caller's to fix, and loading a model to find that out
@@ -683,8 +688,8 @@ pub(crate) fn serve_generation(
                         shown,
                     };
                     through_served(
-                        store, &llama, server, runtime, named, &sent, draw, gpu_layers, context,
-                        started, &declared, waiting, writer,
+                        store, &llama, server, held, runtime, named, &sent, draw, gpu_layers,
+                        context, started, &declared, waiting, writer,
                     )
                 }
                 None => {
@@ -881,6 +886,8 @@ struct Place<'a> {
     /// What the engine is started with beyond the plain load, so that the
     /// engine that frames a turn is the engine that answers it.
     started: crate::declared::Started,
+    /// The server hosted for this model, where one is held (B-480).
+    held: Option<&'a Served>,
 }
 
 impl<'a> Place<'a> {
@@ -895,6 +902,7 @@ impl<'a> Place<'a> {
                 gpu_layers: self.gpu_layers,
                 context: self.context,
                 started: self.started,
+                held: self.held,
             },
             server: self.server,
         }
@@ -1091,10 +1099,8 @@ impl Tokenizer<'_> {
                 where_it_lives,
                 server,
             } => {
-                let mut slot = server.lock().map_err(|_poisoned| {
-                    unavailable("the served engine's slot was left poisoned by an earlier failure")
-                })?;
-                let (engine, _reused) = serving(&mut slot, where_it_lives, SMALLEST_WINDOW)?;
+                let mut slot = Slot::for_request(server, where_it_lives.held)?;
+                let (engine, _reused) = slot.engine(where_it_lives, SMALLEST_WINDOW)?;
                 engine.tokenize(text, with_beginning, false)
             }
         }
@@ -1114,10 +1120,8 @@ impl Tokenizer<'_> {
                 where_it_lives,
                 server,
             } => {
-                let mut slot = server.lock().map_err(|_poisoned| {
-                    unavailable("the served engine's slot was left poisoned by an earlier failure")
-                })?;
-                let (engine, _reused) = serving(&mut slot, where_it_lives, SMALLEST_WINDOW)?;
+                let mut slot = Slot::for_request(server, where_it_lives.held)?;
+                let (engine, _reused) = slot.engine(where_it_lives, SMALLEST_WINDOW)?;
                 crate::turn::frame(engine, turn)
             }
         }
@@ -1144,10 +1148,8 @@ impl Tokenizer<'_> {
                 where_it_lives,
                 server,
             } => {
-                let mut slot = server.lock().map_err(|_poisoned| {
-                    unavailable("the served engine's slot was left poisoned by an earlier failure")
-                })?;
-                let (engine, _reused) = serving(&mut slot, where_it_lives, SMALLEST_WINDOW)?;
+                let mut slot = Slot::for_request(server, where_it_lives.held)?;
+                let (engine, _reused) = slot.engine(where_it_lives, SMALLEST_WINDOW)?;
                 engine.tokenize(text, with_beginning, true)
             }
         }
@@ -1416,6 +1418,46 @@ pub(crate) struct Where<'a> {
     /// What the engine is started with beyond the plain load. An engine
     /// started under one set of these is not the engine for another.
     pub started: crate::declared::Started,
+    /// The server hosted for this model, where one is held: the request
+    /// goes to it, reuse only — never started here, never replaced by a
+    /// request — so the model is loaded once and the server's own counters
+    /// move for what the window sends it (B-480).
+    pub held: Option<&'a Served>,
+}
+
+/// The engine a request goes to: the server hosted for the model where one
+/// is held, or MCF's own served slot, locked for the request. The hosted
+/// server is not locked — it answers callers on its port beside this one,
+/// and a request to it cuts nothing short (B-480).
+enum Slot<'a> {
+    Held(&'a Served),
+    Mine(std::sync::MutexGuard<'a, Option<Served>>),
+}
+
+impl<'a> Slot<'a> {
+    fn for_request(
+        server: &'a std::sync::Mutex<Option<Served>>,
+        held: Option<&'a Served>,
+    ) -> Result<Self, Failure> {
+        match held {
+            Some(held) => Ok(Self::Held(held)),
+            None => server.lock().map(Self::Mine).map_err(|_poisoned| {
+                unavailable("the served engine's slot was left poisoned by an earlier failure")
+            }),
+        }
+    }
+
+    /// The engine, and whether it was already holding the model.
+    fn engine(
+        &mut self,
+        where_it_lives: &Where<'_>,
+        window: u64,
+    ) -> Result<(&Served, bool), Failure> {
+        match self {
+            Self::Held(held) => Ok((held, true)),
+            Self::Mine(slot) => serving(slot, where_it_lives, window),
+        }
+    }
 }
 
 /// How many positions of a prompt are ranked before MCF stops.
@@ -1459,11 +1501,8 @@ pub(crate) fn ranks_over(
     from: usize,
     most: usize,
 ) -> Result<Vec<Ranked>, Failure> {
-    let mut slot = server.lock().map_err(|_poisoned| {
-        unavailable("the served engine's slot was left poisoned by an earlier failure")
-    })?;
-    let (engine, _reused) = serving(
-        &mut slot,
+    let mut slot = Slot::for_request(server, where_it_lives.held)?;
+    let (engine, _reused) = slot.engine(
         where_it_lives,
         window_for(tokens.len(), 0, where_it_lives.context),
     )?;
@@ -1507,6 +1546,7 @@ fn serving<'slot>(
         gpu_layers,
         context: _,
         started,
+        held: _,
     } = *where_it_lives;
     let path = resolved(store, named);
     // **And started with the same switches.** An engine holding this model
@@ -1584,6 +1624,7 @@ fn through_served(
     store: &Path,
     llama: &crate::adapters::ProvisionedLlama,
     server: &std::sync::Mutex<Option<Served>>,
+    held: Option<&Served>,
     runtime: &Path,
     named: &str,
     sent: &Sent<'_>,
@@ -1604,14 +1645,12 @@ fn through_served(
     } = *sent;
     let path = resolved(store, named);
     let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
-    let held = metadata.len();
+    let size = metadata.len();
     if shown.is_some() {
         projector_present(&path)?;
     }
 
-    let mut slot = server.lock().map_err(|_poisoned| {
-        unavailable("the served engine's slot was left poisoned by an earlier failure")
-    })?;
+    let mut slot = Slot::for_request(server, held)?;
     let where_it_lives = Where {
         store,
         llama,
@@ -1620,10 +1659,11 @@ fn through_served(
         gpu_layers,
         context,
         started,
+        held,
     };
     let room = if shown.is_some() { PICTURE_ROOM } else { 0 };
     let window = window_for(tokens.len().saturating_add(room), limit, context);
-    let (engine, reused) = serving(&mut slot, &where_it_lives, window)?;
+    let (engine, reused) = slot.engine(&where_it_lives, window)?;
 
     let text = shown.map(|shown| shown.placed_by(engine)).transpose()?;
     let prompt = match (shown, &text) {
@@ -1641,7 +1681,7 @@ fn through_served(
     let (before, text) = streamed(engine, &path, sent, &completed)?;
     whole_where_nothing_arrived(writer, pieces, &text);
 
-    let mut conditions = conditions(named, Some((&path, held)), draw, limit);
+    let mut conditions = conditions(named, Some((&path, size)), draw, limit);
     if let Value::Map(fields) = &mut conditions {
         fields.insert("engine".to_owned(), Value::text(served_engine_name(llama)));
         fields.insert(
@@ -1650,7 +1690,9 @@ fn through_served(
         );
         fields.insert(
             "loaded".to_owned(),
-            Value::text(if reused {
+            Value::text(if held.is_some() {
+                "resident_in_hosted_server"
+            } else if reused {
                 "resident_in_server"
             } else {
                 "loaded_for_this_request"

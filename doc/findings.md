@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 131 |
+| **Version** | 132 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 183 | [F183 — A request goes to the server hosted for its model: a run and a prompt report on Qwen3-VL-2B while it was hosted ran through the hosted server on its port, one engine process throughout, its counters at 45 generated and 155 prompted, and an unhost with a 300-token run in flight waited 1.8 s for the run to finish before the card gave back 3.3 GiB (B-480, B-468, A7, A27, B4)](#183--f183-a-request-goes-to-the-server-hosted-for-its-model-a-run-and-a-prompt-report-on-qwen3-vl-2b-while-it-was-hosted-ran-through-the-hosted-server-on-its-port-one-engine-process-throughout-its-counters-at-45-generated-and-155-prompted-and-an-unhost-with-a-300-token-run-in-flight-waited-18-s-for-the-run-to-finish-before-the-card-gave-back-33-gib-b-480-b-468-a7-a27-b4) |
 | 182 | [F182 — A prompt analysis says which generation it is on: the daemon announces each of a planned count before it asks it, the plan and the run are one arithmetic, 34 generations on Qwen3-VL-2B streamed as generation n of 34 and took 19.8 s, and a run cut at three seconds asked the six it had announced and no more, recording nothing (B-479, B-468, A6, A7, A22)](#182--f182-a-prompt-analysis-says-which-generation-it-is-on-the-daemon-announces-each-of-a-planned-count-before-it-asks-it-the-plan-and-the-run-are-one-arithmetic-34-generations-on-qwen3-vl-2b-streamed-as-generation-n-of-34-and-took-198-s-and-a-run-cut-at-three-seconds-asked-the-six-it-had-announced-and-no-more-recording-nothing-b-479-b-468-a6-a7-a22) |
 | 181 | [F181 — The window is read from its own renders: the review pass drew every page as a person meets it and found the throughput table twice, a right column cut at the pane, two columns drawn over each other at 670 pixels, a peak label over its bars, a recommendation crowding the next row and a line that read "?" (B-481, A22, §3.15, D49)](#181--f181-the-window-is-read-from-its-own-renders-the-review-pass-drew-every-page-as-a-person-meets-it-and-found-the-throughput-table-twice-a-right-column-cut-at-the-pane-two-columns-drawn-over-each-other-at-670-pixels-a-peak-label-over-its-bars-a-recommendation-crowding-the-next-row-and-a-line-that-read-b-481-a22-315-d49) |
 | 180 | [F180 — A word searches the hub: the add-model page took only owner/repository and refused everything else in the reference parser's words, and now a word lists the repositories with GGUF files the hub has for it, most downloaded first, twenty for gemma, each a press from its files; mcf pull answers a word the same way (B-476, A2, A22)](#180--f180--a-word-searches-the-hub-the-add-model-page-took-only-ownerrepository-and-refused-everything-else-in-the-reference-parsers-words-and-now-a-word-lists-the-repositories-with-gguf-files-the-hub-has-for-it-most-downloaded-first-twenty-for-gemma-each-a-press-from-its-files-mcf-pull-answers-a-word-the-same-way-b-476-a2-a22) |
@@ -9605,6 +9606,51 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 183 · F183 — A request goes to the server hosted for its model: a run and a prompt report on Qwen3-VL-2B while it was hosted ran through the hosted server on its port, one engine process throughout, its counters at 45 generated and 155 prompted, and an unhost with a 300-token run in flight waited 1.8 s for the run to finish before the card gave back 3.3 GiB (B-480, B-468, A7, A27, B4)
+
+The operator saw that some of the figures for an active model stayed at
+nought, and asked that a test prompt never kill a prompt already being
+worked on. F179 had found the first: a message from the window's Server
+page went to the daemon as a generation, and the daemon served every
+generation through an engine it starts for itself on a socket of its own
+— so beside the server a person had hosted on a port there stood a
+second engine holding the same model, the window's messages went to the
+second, and the first's counters never moved for them. Two loads of one
+model on a machine three other projects share (A27), and a page that
+said *0 generated* over a model that was answering.
+
+**What changed.** The served engine is reached one of two ways now — the
+socket it was started on, or the port it was hosted on, with the key
+somebody set — through one request path (B-072): the same head, the same
+stream reader, the same watcher that closes a request when the client
+that asked has gone. Where a hold matches the model a request names, and
+the request asks for nothing the hold was not started with, the daemon
+sends it to the hosted server under the hold's settings — engine, layers
+on the card, window — and the account says *loaded
+resident_in_hosted_server*. A message from the window, `mcf run`, and a
+prompt report's generations, tokenizing and ranking all go this way; a
+measurement does not, because a timing is taken under its own conditions
+and never through a server somebody hosted under theirs. A request that
+named MCF's own engine is not sent to the hold.
+
+**Nothing started from the window cuts short a request in flight.** The
+hosted server is shared rather than owned: a request holds a handle to it
+while it is answered, and stopping the hold — from the Server page, from
+`mcf unhost`, from hosting another model in its place — waits for the
+handles to go, up to a minute, before the server does. A request the
+window sends goes to the server beside the requests other clients have in
+flight on the port, as one more of them.
+
+**What ran.** Qwen3-VL-2B hosted on the Radeon with an 8,192-token
+window. One engine process before, during and after: a five-generation
+prompt report (the server's counters at 42 generated, 137 prompted after
+it), then `mcf run` (45 and 155), each accounted as loaded in the hosted
+server. `mcf run --engine stand-in` was not routed and was refused by
+MCF's own engine for the architecture, as before. A 300-token run started
+and, 1.5 s in, `mcf unhost`: the run produced its 300 tokens, the unhost
+took 1.8 s and then reported 3.3 GiB given back on the card, and no
+engine process was left.
+
 ## 182 · F182 — A prompt analysis says which generation it is on: the daemon announces each of a planned count before it asks it, the plan and the run are one arithmetic, 34 generations on Qwen3-VL-2B streamed as generation n of 34 and took 19.8 s, and a run cut at three seconds asked the six it had announced and no more, recording nothing (B-479, B-468, A6, A7, A22)
 
 The operator asked that prompt analysis give better feedback on what it is
@@ -12518,6 +12564,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 132 — a request goes to the hosted server
+
+F183: a request on a hosted model goes to the server hosted for it, one
+engine process for the model, and a stop waits for requests in flight
+(B-480).
 
 ### Version 131 — a report says which generation it is on
 

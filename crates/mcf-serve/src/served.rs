@@ -301,8 +301,8 @@ const TOLD_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
 /// tells the client every ten seconds where the engine has got to; and
 /// closes the engine's request when nobody is waiting for it any more.
 fn watched(
-    socket: &Path,
-    request: &UnixStream,
+    reach: &Reach,
+    request: &Link,
     waiting: Waiting<'_>,
     done: &AtomicBool,
 ) -> Option<Closed> {
@@ -338,7 +338,7 @@ fn watched(
             None
         };
         if let Some(closed) = closed {
-            let _closed = request.shutdown(std::net::Shutdown::Both);
+            request.shutdown();
             return Some(closed);
         }
         if waiting.progress.is_none() && waiting.told.is_none() {
@@ -349,7 +349,7 @@ fn watched(
             continue;
         }
         last_told = Some(std::time::Instant::now());
-        if let Some((read, of, produced)) = slot_progress(socket) {
+        if let Some((read, of, produced)) = slot_progress(reach) {
             if let Some(progress) = waiting.progress {
                 progress.take(read, of, produced);
             }
@@ -373,8 +373,8 @@ fn watched(
 /// The processing slot's reading: identifiers read, of how many, and how
 /// many produced. `None` where no slot is processing or the answer could
 /// not be read.
-fn slot_progress(socket: &Path) -> Option<(u64, u64, u64)> {
-    let answer = plain_request(socket, "GET", "/slots", None).ok()?;
+fn slot_progress(reach: &Reach) -> Option<(u64, u64, u64)> {
+    let answer = plain_request(reach, "GET", "/slots", None).ok()?;
     let slots = json::parse(&answer).ok()?;
     let Value::List(slots) = slots else {
         return None;
@@ -422,7 +422,8 @@ fn slot_progress(socket: &Path) -> Option<(u64, u64, u64)> {
 #[derive(Debug)]
 pub struct Served {
     child: Child,
-    socket: PathBuf,
+    /// Where it answers: a socket of its own, or the port it was hosted on.
+    reach: Reach,
     /// The last of what the engine wrote to its error stream, kept by a
     /// thread as it arrives.
     ///
@@ -471,6 +472,110 @@ pub struct Served {
     /// arrangement of the same weights — so the caller compares before it
     /// reuses one (B-456).
     pub started: crate::declared::Started,
+}
+
+/// Where a server answers: a socket of its own under MCF's runtime
+/// directory, or the port somebody hosted it on, with the key they set.
+///
+/// One request path for both (B-072, B-480): a message from the window
+/// goes to the server hosted for its model the same way a diagnostic goes
+/// to the one MCF started for itself, and the hosted server's own counters
+/// move for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reach {
+    /// A socket file the server was told to listen on.
+    Socket(PathBuf),
+    /// A loopback port, and the key a caller must present where one is set.
+    Port {
+        /// The port it listens on.
+        port: u16,
+        /// The key it wants, where somebody set one.
+        key: Option<String>,
+    },
+}
+
+impl Reach {
+    /// Whether there is anything to connect to yet: a socket file appears
+    /// before the server listens on it; a port has nothing to appear.
+    fn appeared(&self) -> bool {
+        match self {
+            Self::Socket(socket) => socket.exists(),
+            Self::Port { .. } => true,
+        }
+    }
+
+    /// The place, for a failure's context.
+    #[must_use]
+    pub fn said(&self) -> String {
+        match self {
+            Self::Socket(socket) => socket.display().to_string(),
+            Self::Port { port, .. } => format!("{}:{port}", crate::hosting::LOOPBACK),
+        }
+    }
+}
+
+/// One connection to a server, by whichever way it is reached.
+enum Link {
+    Socket(UnixStream),
+    Port(std::net::TcpStream, Option<String>),
+}
+
+impl Link {
+    fn open(reach: &Reach) -> std::io::Result<Self> {
+        match reach {
+            Reach::Socket(socket) => UnixStream::connect(socket).map(Self::Socket),
+            Reach::Port { port, key } => {
+                std::net::TcpStream::connect((crate::hosting::LOOPBACK, *port))
+                    .map(|stream| Self::Port(stream, key.clone()))
+            }
+        }
+    }
+
+    /// Closes both directions, which is how a request in flight is ended.
+    fn shutdown(&self) {
+        let _closed = match self {
+            Self::Socket(stream) => stream.shutdown(std::net::Shutdown::Both),
+            Self::Port(stream, _) => stream.shutdown(std::net::Shutdown::Both),
+        };
+    }
+
+    /// The head of one request: the line, the host, the body's type and
+    /// length, and the key where the server wants one.
+    fn head(&self, method: &str, path: &str, length: usize) -> String {
+        let key = match self {
+            Self::Port(_, Some(key)) => format!("Authorization: Bearer {key}\r\n"),
+            Self::Port(_, None) | Self::Socket(_) => String::new(),
+        };
+        format!(
+            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
+             Content-Length: {length}\r\n{key}Connection: close\r\n\r\n"
+        )
+    }
+}
+
+impl std::io::Read for &Link {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match *self {
+            Link::Socket(stream) => (&*stream).read(buf),
+            Link::Port(stream, _) => (&*stream).read(buf),
+        }
+    }
+}
+
+impl std::io::Write for &Link {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match *self {
+            Link::Socket(stream) => (&*stream).write(buf),
+            Link::Port(stream, _) => (&*stream).write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match *self {
+            Link::Socket(stream) => (&*stream).flush(),
+            Link::Port(stream, _) => (&*stream).flush(),
+        }
+    }
 }
 
 impl Served {
@@ -545,14 +650,17 @@ impl Served {
             )
             .with_context("error", error.to_string())
         })?;
-        // A hosted server answers over a port rather than a socket, so the
-        // socket field names where it *would* have been rather than a file
-        // that exists. Nothing reads it for a hosted server, and leaving it
-        // empty would make a path field that is sometimes a path.
+        // A hosted server answers over its port, with the key somebody set
+        // on it where they set one, so a request MCF sends it — a message
+        // from the window, a run — reaches the same engine a caller on the
+        // port sees (B-480).
         let last_words = kept_last_words(&mut child);
         let mut served = Self {
             child,
-            socket: PathBuf::from(settings.address()),
+            reach: Reach::Port {
+                port: settings.port,
+                key: settings.api_key.clone(),
+            },
             last_words,
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
@@ -740,7 +848,7 @@ impl Served {
         let last_words = kept_last_words(&mut child);
         let mut served = Self {
             child,
-            socket,
+            reach: Reach::Socket(socket),
             last_words,
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
@@ -782,7 +890,7 @@ impl Served {
                 )
                 .with_context("exit", status.to_string()));
             }
-            if self.socket.exists()
+            if self.reach.appeared()
                 && self
                     .request("GET", "/health", None)
                     .is_ok_and(|answer| answer.contains("\"status\":\"ok\""))
@@ -798,7 +906,7 @@ impl Served {
             Subsystem::new("mcf-serve::served"),
             "the provisioned server did not begin listening",
         )
-        .with_context("socket", self.socket.display().to_string())
+        .with_context("reach", self.reach.said())
         .with_context(
             "waited",
             format!("{} ms", attempts as u128 * BETWEEN.as_millis()),
@@ -954,7 +1062,7 @@ impl Served {
         waiting: Waiting<'_>,
         on_event: &mut dyn FnMut(&str),
     ) -> Result<String, Failure> {
-        match while_watched(&self.socket, waiting, |connection| {
+        match while_watched(&self.reach, waiting, |connection| {
             sent_and_streamed(connection, "POST", path, body, on_event)
         }) {
             Ok(answer) => Ok(answer),
@@ -1167,7 +1275,7 @@ impl Served {
             )
             .with_context("error", error.to_string())
         };
-        let answer = match exchange(&self.socket, method, path, body, waiting) {
+        let answer = match exchange(&self.reach, method, path, body, waiting) {
             Ok(answer) => answer,
             Err(Interrupted::Closed(closed)) => {
                 return Err(closed_failure(&self.model, closed, waiting.progress));
@@ -1241,13 +1349,13 @@ use Interrupted::{Reading, Sending};
 /// the daemon stops, and the engine's progress reaches `waiting` while it
 /// runs.
 fn exchange(
-    socket: &Path,
+    reach: &Reach,
     method: &str,
     path: &str,
     body: Option<&str>,
     waiting: Waiting<'_>,
 ) -> Result<String, Interrupted> {
-    while_watched(socket, waiting, |connection| {
+    while_watched(reach, waiting, |connection| {
         sent_and_read(connection, method, path, body)
     })
 }
@@ -1260,16 +1368,16 @@ fn exchange(
 /// for. Written once, because a second copy of it would be a second answer
 /// to *when does a request end* (B-072).
 fn while_watched<T>(
-    socket: &Path,
+    reach: &Reach,
     waiting: Waiting<'_>,
-    work: impl FnOnce(&UnixStream) -> Result<T, Interrupted>,
+    work: impl FnOnce(&Link) -> Result<T, Interrupted>,
 ) -> Result<T, Interrupted> {
-    let connection = UnixStream::connect(socket).map_err(Interrupted::Connecting)?;
+    let connection = Link::open(reach).map_err(Interrupted::Connecting)?;
     let done = AtomicBool::new(false);
     let (answer, closed) = std::thread::scope(|scope| {
         let watcher = waiting
             .watches_anything()
-            .then(|| scope.spawn(|| watched(socket, &connection, waiting, &done)));
+            .then(|| scope.spawn(|| watched(reach, &connection, waiting, &done)));
         let answer = work(&connection);
         done.store(true, Ordering::Release);
         let closed = watcher.and_then(|watcher| watcher.join().ok().flatten());
@@ -1311,7 +1419,13 @@ pub fn asked_while(
         )
         .with_context("error", error.to_string())
     };
-    match exchange(socket, method, path, body, waiting) {
+    match exchange(
+        &Reach::Socket(socket.to_path_buf()),
+        method,
+        path,
+        body,
+        waiting,
+    ) {
         Ok(answer) => Ok(answer),
         Err(Interrupted::Closed(closed)) => Err(closed_failure(model, closed, waiting.progress)),
         Err(Interrupted::Connecting(error)) => {
@@ -1363,17 +1477,13 @@ fn closed_failure(model: &Path, closed: Closed, progress: Option<&Progress>) -> 
 
 /// Writes one request and reads the whole answer.
 fn sent_and_read(
-    mut connection: &UnixStream,
+    mut connection: &Link,
     method: &str,
     path: &str,
     body: Option<&str>,
 ) -> Result<String, Interrupted> {
     let body = body.unwrap_or("");
-    let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
+    let request = format!("{}{body}", connection.head(method, path, body.len()));
     connection
         .write_all(request.as_bytes())
         .and_then(|()| connection.flush())
@@ -1395,17 +1505,13 @@ fn sent_and_read(
 /// Each event is a `data:` line of server-sent events. Returns the last one,
 /// which is the engine's account of the whole turn.
 fn sent_and_streamed(
-    mut connection: &UnixStream,
+    mut connection: &Link,
     method: &str,
     path: &str,
     body: &str,
     on_event: &mut dyn FnMut(&str),
 ) -> Result<String, Interrupted> {
-    let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
+    let request = format!("{}{body}", connection.head(method, path, body.len()));
     connection
         .write_all(request.as_bytes())
         .and_then(|()| connection.flush())
@@ -1476,7 +1582,7 @@ fn deliver(event: &str, last: &mut String, on_event: &mut dyn FnMut(&str)) {
 }
 
 /// The next chunk of a chunked body, or nothing at its end.
-fn next_chunk(reader: &mut std::io::BufReader<&UnixStream>) -> Result<Option<String>, Interrupted> {
+fn next_chunk(reader: &mut std::io::BufReader<&Link>) -> Result<Option<String>, Interrupted> {
     let mut line = String::new();
     let read = reader.read_line(&mut line).map_err(Reading)?;
     if read == 0 {
@@ -1497,12 +1603,12 @@ fn next_chunk(reader: &mut std::io::BufReader<&UnixStream>) -> Result<Option<Str
 /// A request to a server by its socket alone, with nobody watching: what
 /// the watcher itself asks the slot with.
 fn plain_request(
-    socket: &Path,
+    reach: &Reach,
     method: &str,
     path: &str,
     body: Option<&str>,
 ) -> Result<String, Interrupted> {
-    let connection = UnixStream::connect(socket).map_err(Sending)?;
+    let connection = Link::open(reach).map_err(Sending)?;
     let answer = sent_and_read(&connection, method, path, body)?;
     Ok(answer
         .split_once("\r\n\r\n")
@@ -1823,7 +1929,9 @@ impl Drop for Served {
     fn drop(&mut self) {
         let _killed = self.child.kill();
         let _waited = self.child.wait();
-        let _gone = std::fs::remove_file(&self.socket);
+        if let Reach::Socket(socket) = &self.reach {
+            let _gone = std::fs::remove_file(socket);
+        }
     }
 }
 
@@ -2193,7 +2301,7 @@ mod streaming_tests {
     use std::io::Write as _;
     use std::os::unix::net::{UnixListener, UnixStream};
 
-    use super::sent_and_streamed;
+    use super::{Link, Reach, plain_request, sent_and_streamed};
 
     /// The events of a stream as the engine frames them: each one a chunk
     /// of its own true length, and the zero chunk that ends the body.
@@ -2213,7 +2321,7 @@ mod streaming_tests {
     }
 
     /// A server that writes one answer and closes, on a socket of its own.
-    fn answering(name: &str, answer: String) -> (UnixStream, std::thread::JoinHandle<()>) {
+    fn answering(name: &str, answer: String) -> (Link, std::thread::JoinHandle<()>) {
         let socket = std::env::temp_dir().join(format!("mcf-stream-{}-{name}", std::process::id()));
         let _gone = std::fs::remove_file(&socket);
         let listener = UnixListener::bind(&socket).expect("the socket binds");
@@ -2229,7 +2337,7 @@ mod streaming_tests {
         });
         let connection = UnixStream::connect(&socket).expect("a connection");
         let _gone = std::fs::remove_file(&socket);
-        (connection, serving)
+        (Link::Socket(connection), serving)
     }
 
     /// An answer sent in chunked pieces arrives as its events, in order.
@@ -2277,5 +2385,44 @@ mod streaming_tests {
         let _joined = serving.join();
         assert_eq!(seen, vec![body.to_owned()]);
         assert_eq!(last, body);
+    }
+
+    /// A server reached by its port gets the same request as one reached by
+    /// its socket, with the key it was hosted under where one was set: what
+    /// lets a message from the window reach a hosted server (B-480).
+    #[test]
+    fn a_port_is_reached_with_its_key() {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind((crate::hosting::LOOPBACK, 0)).expect("a port");
+        let port = listener.local_addr().expect("an address").port();
+        let serving = std::thread::spawn(move || {
+            let (mut connection, _) = listener.accept().expect("a caller");
+            let mut request = [0_u8; 1024];
+            let read = connection.read(&mut request).unwrap_or(0);
+            let heard =
+                String::from_utf8_lossy(request.get(..read).unwrap_or_default()).into_owned();
+            let body = "{\"status\":\"ok\"}";
+            let _written = write!(
+                connection,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            heard
+        });
+        let reach = Reach::Port {
+            port,
+            key: Some("s3cret".to_owned()),
+        };
+        let answer = plain_request(&reach, "GET", "/health", None)
+            .unwrap_or_else(|why| panic!("the port answers: {why:?}"));
+        let heard = serving.join().expect("the server's side");
+        assert_eq!(answer, "{\"status\":\"ok\"}");
+        assert!(heard.starts_with("GET /health HTTP/1.1\r\n"), "{heard}");
+        assert!(
+            heard.contains("Authorization: Bearer s3cret\r\n"),
+            "{heard}"
+        );
+        assert_eq!(reach.said(), format!("127.0.0.1:{port}"));
+        assert!(reach.appeared());
     }
 }

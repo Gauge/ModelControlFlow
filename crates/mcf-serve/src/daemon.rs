@@ -335,6 +335,19 @@ fn clause_value(clause: &crate::prompt::Clause) -> Value {
 /// tell a second run of the same text from a run of a changed one — and the
 /// answer as its length.
 /// The conditions a recorded prompt report carries (§3.4).
+/// The engine a model resolves to — the build, the layers on the card and
+/// the window — or the sentence saying why none does.
+type PickedOrWhy = core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String>;
+
+/// A hosted server a request goes to, with the conditions it was hosted
+/// under: what the account names as the engine, the layers on the card
+/// and the window (B-480).
+struct HeldFor {
+    picked: (crate::adapters::ProvisionedLlama, u32, u64),
+    started: crate::declared::Started,
+    served: std::sync::Arc<crate::served::Served>,
+}
+
 /// What a report's generations leave behind between them, beside the
 /// answers the report reads.
 #[derive(Default)]
@@ -1579,9 +1592,12 @@ fn could_not_compare(path: &Path, why: &str) -> Failure {
 struct Holding {
     /// The engine.
     ///
-    /// Held and never read: dropping it is what stops the server, so the
-    /// field's whole job is to be owned until somebody unhosts (A27).
-    served: crate::served::Served,
+    /// Dropping the last handle is what stops the server, so the field's
+    /// job is to be owned until somebody unhosts (A27). Shared, because a
+    /// request from the window or `mcf run` goes to this server while it is
+    /// held, and a request in flight is finished before the server goes
+    /// (B-480).
+    served: std::sync::Arc<crate::served::Served>,
     /// Which model.
     model: PathBuf,
     /// What it was started under.
@@ -2825,7 +2841,17 @@ impl Daemon {
         // discovery matched a name, found the processor build every time, and
         // every generation ran there under a label that said otherwise
         // (F133).
-        let picked = self.picked_engine(named);
+        // **The server hosted for this model answers for it** (B-480). A
+        // message from the window went to a second engine MCF started
+        // beside the hosted one, so the model was loaded twice and the
+        // server's own counters never moved for what its page sent it
+        // (F179). Where a hold matches, the request goes to it under the
+        // hold's settings; where none does, the engine MCF resolved.
+        let hosted = self.hosted_for(named, started, engine);
+        let (picked, started) = hosted.as_ref().map_or_else(
+            || (self.picked_engine(named), started),
+            |hosted| (Some(hosted.picked.clone()), hosted.started),
+        );
         let produced = crate::generation::serve_generation(
             &self.places.models,
             &mcf_home,
@@ -2847,6 +2873,7 @@ impl Daemon {
             turn,
             picture,
             started,
+            hosted.as_ref().map(|hosted| &*hosted.served),
             waiting,
             writer,
         );
@@ -2914,6 +2941,7 @@ impl Daemon {
         named: &str,
         prompt: &str,
         picked: core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String>,
+        held: Option<&crate::served::Served>,
     ) -> RankedPrompt {
         // **Why it is missing, where it is missing.** An empty list and a list
         // MCF could not take look the same on the page, and the first draft of
@@ -2973,6 +3001,7 @@ impl Daemon {
             // load: a draft head guesses tokens and does not change how
             // they are spelled (B-456).
             started: crate::declared::Started::default(),
+            held,
         };
         let ranked = match crate::generation::ranks_over(
             &where_it_lives,
@@ -3047,6 +3076,10 @@ impl Daemon {
     /// is generated. Where no reading could be taken, the sentence saying
     /// why: the report shows that apart from a rank, and a reading that was
     /// not taken says so in words rather than in a dash (A2, A7).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one reading's conditions, and the server it goes to"
+    )]
     fn forced(
         &self,
         tokenizer: &Result<crate::generation::Tokenizer<'_>>,
@@ -3055,6 +3088,7 @@ impl Daemon {
         opening: &[usize],
         picked: core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String>,
         turn: Option<&crate::turn::Turn>,
+        held: Option<&crate::served::Served>,
     ) -> core::result::Result<crate::prompt::Held, String> {
         let (llama, gpu_layers, context) =
             picked.map_err(|why| format!("no engine resolves this model: {why}"))?;
@@ -3092,6 +3126,7 @@ impl Daemon {
             // load: a draft head guesses tokens and does not change how
             // they are spelled (B-456).
             started: crate::declared::Started::default(),
+            held,
         };
         let ranked = crate::generation::ranks_over(
             &where_it_lives,
@@ -3135,6 +3170,7 @@ impl Daemon {
         &'a self,
         named: &'a str,
         picked: Option<&'a (crate::adapters::ProvisionedLlama, u32, u64)>,
+        held: Option<&'a crate::served::Served>,
     ) -> Result<crate::generation::Tokenizer<'a>> {
         match picked {
             Some((llama, gpu_layers, context)) => Ok(crate::generation::Tokenizer::Engine {
@@ -3150,6 +3186,7 @@ impl Daemon {
                     started: crate::declared::Started::default(),
                     gpu_layers: *gpu_layers,
                     context: *context,
+                    held,
                 },
                 server: &self.server,
             }),
@@ -3209,6 +3246,13 @@ impl Daemon {
             let mut end = &theirs;
             let _emptied = std::io::copy(&mut end, &mut std::io::sink());
         });
+        // A report on a hosted model reads it through the server hosted for
+        // it, as a message does (B-480).
+        let hosted = self.hosted_for(named, crate::declared::Started::default(), None);
+        let (picked, started) = hosted.as_ref().map_or_else(
+            || (picked, crate::declared::Started::default()),
+            |hosted| (Some(hosted.picked.clone()), hosted.started),
+        );
         let produced = {
             let mut into = &mine;
             crate::generation::serve_generation(
@@ -3233,7 +3277,8 @@ impl Daemon {
                 false,
                 turn,
                 None,
-                crate::declared::Started::default(),
+                started,
+                hosted.as_ref().map(|hosted| &*hosted.served),
                 waiting,
                 &mut into,
             )
@@ -3280,7 +3325,8 @@ impl Daemon {
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
-        let picked = self.picked_engine_or_why(named);
+        let (hosted, picked) = self.report_engine(named);
+        let held = hosted.as_ref().map(|hosted| &*hosted.served);
         let settle = match self.settle_asked(named, settle) {
             Ok(settle) => settle,
             Err(failure) => return Self::write_refusal(writer, &Answer::refused(&failure)),
@@ -3322,7 +3368,7 @@ impl Daemon {
                 &mut tally,
             )
         };
-        let tokenizer = self.tokenizer_for(named, picked.as_ref().ok());
+        let tokenizer = self.tokenizer_for(named, picked.as_ref().ok(), held);
         let mut not_held: Option<String> = None;
         let mut force = |prompt: &str, opening: &[usize]| match self.forced(
             &tokenizer,
@@ -3331,6 +3377,7 @@ impl Daemon {
             opening,
             picked.clone(),
             turn,
+            held,
         ) {
             Ok(held) => Some(held),
             Err(why) => {
@@ -3364,7 +3411,7 @@ impl Daemon {
         // **Where the model ranked each word of the question.** A second
         // reading that does not compare two answers, so the drift that makes
         // the ablation an ordering does not touch it (§3.8).
-        let ranked = self.ranked_prompt(&tokenizer, named, prompt, picked.clone());
+        let ranked = self.ranked_prompt(&tokenizer, named, prompt, picked.clone(), held);
         let read_by = tokenizer.as_ref().map_or_else(
             |failure| format!("nothing: {failure}"),
             crate::generation::Tokenizer::named,
@@ -3394,6 +3441,18 @@ impl Daemon {
         let answer = Answer::served(served);
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
+    }
+
+    /// The engine a report reads and asks through: the server hosted for
+    /// the model where one is held, so the model is loaded once (B-480);
+    /// the engine the model resolves to otherwise, or why none does.
+    fn report_engine(&self, named: &str) -> (Option<HeldFor>, PickedOrWhy) {
+        let hosted = self.hosted_for(named, crate::declared::Started::default(), None);
+        let picked = hosted.as_ref().map_or_else(
+            || self.picked_engine_or_why(named),
+            |hosted| Ok(hosted.picked.clone()),
+        );
+        (hosted, picked)
     }
 
     /// Writes a refusal as the answer, and does not mind a client that left.
@@ -3913,6 +3972,46 @@ impl Daemon {
         self.picked_engine_or_why(named).ok()
     }
 
+    /// The server hosted for this model, where one is held and the request
+    /// can go to it: the same file, and either the switches it was started
+    /// with or none asked for beyond the plain load. A caller that named
+    /// MCF's own engine, or switches the hold was not started under, is not
+    /// sent to it (B-480, B-456).
+    fn hosted_for(
+        &self,
+        named: &str,
+        started: crate::declared::Started,
+        engine: Option<&str>,
+    ) -> Option<HeldFor> {
+        if engine.is_some_and(|engine| engine != "provisioned") {
+            return None;
+        }
+        let holding = self
+            .holding
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let held = holding.as_ref()?;
+        if held.model != crate::generation::resolved(&self.places.models, named) {
+            return None;
+        }
+        if started.asks_anything() && started != held.served.started {
+            return None;
+        }
+        Some(HeldFor {
+            picked: (
+                crate::adapters::ProvisionedLlama {
+                    prefix: held.served.prefix.clone(),
+                    commit: held.served.commit.clone(),
+                    component: held.settings.engine.clone(),
+                },
+                held.settings.gpu_layers,
+                held.settings.context,
+            ),
+            started: held.served.started,
+            served: std::sync::Arc::clone(&held.served),
+        })
+    }
+
     /// The engine this model resolves to, or the sentence saying why none
     /// does.
     ///
@@ -4216,6 +4315,9 @@ impl Daemon {
                 None,
                 None,
                 started,
+                // A timing is taken under its own conditions, never through
+                // a server somebody hosted under theirs.
+                None,
                 waiting,
                 &mut writer,
             )
@@ -4744,7 +4846,7 @@ impl Daemon {
             Some("stand-in") => None,
             _ => self.picked_engine(named),
         };
-        let tokenizer = match self.tokenizer_for(named, picked.as_ref()) {
+        let tokenizer = match self.tokenizer_for(named, picked.as_ref(), None) {
             Ok(tokenizer) => tokenizer,
             Err(failure) => return Answer::refused(&failure),
         };
@@ -5021,7 +5123,7 @@ impl Daemon {
                     ]),
                 );
                 *holding = Some(Holding {
-                    served,
+                    served: std::sync::Arc::new(served),
                     model: path.clone(),
                     settings: settings.clone(),
                     recommended: recommended.clone(),
@@ -5116,6 +5218,17 @@ impl Daemon {
             Err(poisoned) => poisoned.into_inner(),
         };
         let held = holding.take()?;
+        // **A request in flight is finished before the server goes**
+        // (B-480). A message from the window or a run holds a handle to the
+        // server while it is answered; the server is stopped when the last
+        // handle is dropped, and this one waits for the others first, up
+        // to a minute, rather than cut an answer short under somebody.
+        for _ in 0..240 {
+            if std::sync::Arc::strong_count(&held.served) == 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
         let model = held.model.display().to_string();
         let resident = held.served.resident_bytes();
         // The card's memory before and after the engine goes: what it gave

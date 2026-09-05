@@ -52,7 +52,7 @@ impl Warmth {
     #[must_use]
     pub fn from_account(loaded: Option<&str>) -> Self {
         match loaded {
-            Some("resident" | "resident_in_server") => Self::Warm,
+            Some("resident" | "resident_in_server" | "resident_in_hosted_server") => Self::Warm,
             Some("loaded" | "loaded_for_this_request" | "per_request_subprocess") => Self::Cold,
             _ => Self::Unstated,
         }
