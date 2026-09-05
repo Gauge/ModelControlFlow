@@ -44,6 +44,8 @@ fn four_models() -> Desk {
             applied_addressing: None,
             applied_budget: None,
             probed: Vec::new(),
+            repository: None,
+            file: String::new(),
             on_a_card: true,
             speed: Some(155.0),
             start_up: Some("412.7".to_owned()),
@@ -69,6 +71,8 @@ fn four_models() -> Desk {
             applied_addressing: None,
             applied_budget: None,
             probed: Vec::new(),
+            repository: None,
+            file: String::new(),
             on_a_card: true,
             ..Model::default()
         },
@@ -2257,6 +2261,8 @@ fn every_page_is_drawn_for_review() {
     let _ = drawn(&desk, DAY, "review-diagnostics-probing");
     desk.doing = mcf_desk::Doing::Nothing;
 
+    review_the_library(&recommended);
+
     // The library searched: words nothing here matches, the hub asked and
     // answered, and one of its repositories opened (D51).
     let mut searched = four_models();
@@ -2303,6 +2309,47 @@ fn a_files_answer() -> mcf_desk::Doing {
             ("done", Value::Bool(true)),
         ])],
     ))
+}
+
+/// A model as a repository: its quantizations picked on Configure, the
+/// ones here and the ones the hub publishes, and one not here as the
+/// page's subject (D51, B-486).
+fn review_the_library(recommended: &mcf_serve::hosting::Hosting) {
+    let mut grouped = four_models();
+    grouped.page = Page::Models;
+    grouped.chosen = Some(0);
+    grouped.recommended = Some(recommended.clone());
+    grouped.settings = Some(recommended.clone());
+    grouped.placements = three_placements();
+    for (at, file) in [
+        (0, "Assistant-8B-Instruct-Q4_K_M.gguf"),
+        (1, "Assistant-8B-Instruct-Q8_0.gguf"),
+    ] {
+        if let Some(held) = grouped.models.get_mut(at) {
+            held.repository = Some("owner/Assistant-8B-Instruct-GGUF".to_owned());
+            file.clone_into(&mut held.file);
+        }
+    }
+    let _replaced = grouped.offered.insert(
+        "owner/Assistant-8B-Instruct-GGUF".to_owned(),
+        vec![
+            mcf_desk::OfferedFile {
+                file: "Assistant-8B-Instruct-Q8_0.gguf".to_owned(),
+                bytes: Some(8_500_000_000),
+                fits: Some(true),
+            },
+            mcf_desk::OfferedFile {
+                file: "Assistant-8B-Instruct-BF16.gguf".to_owned(),
+                bytes: Some(16_100_000_000),
+                fits: Some(false),
+            },
+        ],
+    );
+    grouped.open = Some(mcf_desk::Picker::Quantization);
+    let _ = drawn(&grouped, DAY, "review-library-quantizations");
+    grouped.open = None;
+    grouped.pick_quantization(2);
+    let _ = drawn(&grouped, DAY, "review-library-pending");
 }
 
 /// Where a hold can go on this machine: as resolved, the processor, the card.

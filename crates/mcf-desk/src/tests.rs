@@ -1617,17 +1617,23 @@ fn the_search_field_narrows_the_library() {
         model("Coder-30B-Q4_K_XL", "a-moe-architecture"),
         model("Tiny-135M", "llama"),
     ];
-    assert_eq!(desk.library(), vec![0, 1, 2]);
+    let members = |desk: &Desk| -> Vec<usize> {
+        desk.library()
+            .into_iter()
+            .flat_map(|group| group.members)
+            .collect()
+    };
+    assert_eq!(members(&desk), vec![0, 1, 2]);
     desk.filter = "LLAMA".to_owned();
     assert_eq!(
-        desk.library(),
+        members(&desk),
         vec![0, 2],
         "the architecture counts, case aside"
     );
     desk.filter = "q4_k".to_owned();
-    assert_eq!(desk.library(), vec![0, 1]);
+    assert_eq!(members(&desk), vec![0, 1]);
     desk.filter = "coder xl".to_owned();
-    assert_eq!(desk.library(), vec![1], "every word must match");
+    assert_eq!(members(&desk), vec![1], "every word must match");
     desk.filter = "gemma".to_owned();
     assert!(desk.library().is_empty());
     assert!(!desk.hub_matches(), "nothing has been asked of the hub");
@@ -1671,4 +1677,72 @@ fn the_hubs_answer_is_kept_for_its_words() {
     assert!(desk.hub_matches());
     desk.filter = "gemma 4".to_owned();
     assert!(!desk.hub_matches(), "other words are another question");
+}
+
+/// Files held from one repository are one entry of the library, and the
+/// page's quantizations are those files then what the hub publishes that
+/// is not here; picking one here changes the subject, picking one on the
+/// hub makes it the subject as not downloaded (D51, B-486).
+#[test]
+fn a_model_is_a_repository_with_its_quantizations() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let held = |file: &str, repository: Option<&str>| Model {
+        name: file.trim_end_matches(".gguf").to_owned(),
+        path: format!("/store/{file}"),
+        file: file.to_owned(),
+        repository: repository.map(str::to_owned),
+        bytes: Some(1),
+        ..Model::default()
+    };
+    desk.models = vec![
+        held("Model-Q4_K_M.gguf", Some("owner/Model-GGUF")),
+        held("Other.gguf", None),
+        held("Model-Q8_0.gguf", Some("owner/Model-GGUF")),
+    ];
+    let groups = desk.library();
+    assert_eq!(groups.len(), 2, "{groups:?}");
+    assert_eq!(groups[0].members, vec![0, 2]);
+    assert_eq!(groups[0].name(&desk.models), "Model-GGUF");
+    assert_eq!(groups[1].name(&desk.models), "Other");
+    desk.chosen = Some(0);
+    let _replaced = desk.offered.insert(
+        "owner/Model-GGUF".to_owned(),
+        vec![
+            crate::OfferedFile {
+                file: "Model-Q8_0.gguf".to_owned(),
+                bytes: Some(2),
+                fits: Some(true),
+            },
+            crate::OfferedFile {
+                file: "Model-BF16.gguf".to_owned(),
+                bytes: Some(4),
+                fits: Some(false),
+            },
+        ],
+    );
+    let listed = desk.quantizations();
+    let files: Vec<&str> = listed.iter().map(|quant| quant.file.as_str()).collect();
+    assert_eq!(
+        files,
+        vec!["Model-Q4_K_M.gguf", "Model-Q8_0.gguf", "Model-BF16.gguf"],
+        "here first, then the hub's, and a file here is not listed twice"
+    );
+    assert_eq!(desk.quantization_at(), Some(0));
+    desk.pick_quantization(1);
+    assert_eq!(
+        desk.chosen,
+        Some(2),
+        "a quantization here becomes the subject"
+    );
+    assert!(desk.pending.is_none());
+    desk.pick_quantization(2);
+    assert_eq!(
+        desk.pending.as_ref().map(|pending| pending.file.as_str()),
+        Some("Model-BF16.gguf"),
+        "a quantization on the hub is the subject as not downloaded"
+    );
+    assert_eq!(desk.quantization_at(), Some(2));
+    desk.pick_quantization(0);
+    assert!(desk.pending.is_none());
+    assert_eq!(desk.chosen, Some(0));
 }

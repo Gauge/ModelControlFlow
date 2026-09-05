@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 138 |
+| **Version** | 139 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 190 | [F190 — A model is a repository with its quantizations: the files held from one repository are one entry of the library, the page's Quantization row lists the ones here and the ones the hub publishes with each one's size and whether it would run here, and a quantization picked that is not here is the page's subject as not downloaded (B-486, D51, A7, B-023)](#190--f190-a-model-is-a-repository-with-its-quantizations-the-files-held-from-one-repository-are-one-entry-of-the-library-the-pages-quantization-row-lists-the-ones-here-and-the-ones-the-hub-publishes-with-each-ones-size-and-whether-it-would-run-here-and-a-quantization-picked-that-is-not-here-is-the-pages-subject-as-not-downloaded-b-486-d51-a7-b-023) |
 | 189 | [F189 — The library is one search: words typed narrow what is held as they are typed, words nothing here matches offer the hub from the list itself and its answer is listed under what is here, a hub repository's page lists its files to get, and the daemon keeps what the hub answered for a day and says when it read it (B-485, B-488, D51, A2, A7)](#189--f189-the-library-is-one-search-words-typed-narrow-what-is-held-as-they-are-typed-words-nothing-here-matches-offer-the-hub-from-the-list-itself-and-its-answer-is-listed-under-what-is-here-a-hub-repositorys-page-lists-its-files-to-get-and-the-daemon-keeps-what-the-hub-answered-for-a-day-and-says-when-it-read-it-b-485-b-488-d51-a2-a7) |
 | 188 | [F188 — The console's Diagnostics screen follows the window: the checkbox rows go, each run is a button with its cost under it — Quick run, Run, Cross-check, Capabilities — one line a run says what it answers, and what the last runs found is drawn under them; the probes run from the console as they do from the window (B-482, D50, A22, B-072)](#188--f188-the-consoles-diagnostics-screen-follows-the-window-the-checkbox-rows-go-each-run-is-a-button-with-its-cost-under-it-quick-run-run-cross-check-capabilities-one-line-a-run-says-what-it-answers-and-what-the-last-runs-found-is-drawn-under-them-the-probes-run-from-the-console-as-they-do-from-the-window-b-482-d50-a22-b-072) |
 | 187 | [F187 — The library lists the figures that decide a choice: under each model's name its architecture, trained window, device kind and measured speed, and the review pass found the Statistics column grown past the window once Capabilities joined it, which its duplicate of the left column's last-served line and button had left no room for (B-484, D49, F181, §3.15)](#187--f187-the-library-lists-the-figures-that-decide-a-choice-under-each-models-name-its-architecture-trained-window-device-kind-and-measured-speed-and-the-review-pass-found-the-statistics-column-grown-past-the-window-once-capabilities-joined-it-which-its-duplicate-of-the-left-columns-last-served-line-and-button-had-left-no-room-for-b-484-d49-f181-315) |
@@ -9612,6 +9613,40 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 190 · F190 — A model is a repository with its quantizations: the files held from one repository are one entry of the library, the page's Quantization row lists the ones here and the ones the hub publishes with each one's size and whether it would run here, and a quantization picked that is not here is the page's subject as not downloaded (B-486, D51, A7, B-023)
+
+A model held in two quantizations was two entries, told apart by reading
+their file names; a person who wanted a third went to the hub page and
+read its file names there. D51 says a model is a repository and its
+quantizations are picked on its page.
+
+**The library's entries.** Each held model carries the hub repository its
+provenance names, and the library groups the models that pass the search
+field by it: one row a repository, named by the repository's own name,
+with the figures that decide a choice under it and how many
+quantizations are here; a file whose provenance names no repository is a
+row of its own. Pressing a row makes its chosen member the page's
+subject, or its first.
+
+**The Quantization row.** First on Configure, a picker listing the
+repository's files: those here, each with its size and *here*; then, once
+the hub has been asked, the ones it publishes that are not here, each
+with its size and whether MCF says it would run here by the shape the
+repository states. The hub is asked when the list is first opened and
+its answer kept for the window's life beside what the daemon kept for
+the day. Picking a file that is here makes it the subject; picking one
+that is not makes it the subject as *not downloaded*: the page names it,
+its repository, its size and whether it runs here, keeps the Quantization
+row to pick another, and offers Download. The button that downloads and
+then does the thing is B-487.
+
+**What ran.** The Configure tab drawn with the list open over a
+repository held in two quantizations and offered in a third, and the
+page of the third as the subject not here, in the review pass (F181).
+The window's own tests hold the grouping to the repository, the list to
+here-first with a file here never listed twice, and the pick to what it
+makes the subject.
+
 ## 189 · F189 — The library is one search: words typed narrow what is held as they are typed, words nothing here matches offer the hub from the list itself and its answer is listed under what is here, a hub repository's page lists its files to get, and the daemon keeps what the hub answered for a day and says when it read it (B-485, B-488, D51, A2, A7)
 
 The operator asked for a search bar on the models page that filters what
@@ -12780,6 +12815,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 139 — a model is a repository
+
+F190: the library groups by repository, and the page picks a
+quantization among the files here and on the hub (B-486).
 
 ### Version 138 — the library is one search
 

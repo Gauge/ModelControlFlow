@@ -80,7 +80,13 @@ fn the_terms_are_offered_with_the_files() {
 /// A string that is not a reference is refused by name rather than attempted.
 #[test]
 fn a_reference_that_is_not_one_is_refused() {
-    let response = run("not a reference at all", None, None, Offered::Nothing, false);
+    let response = run(
+        "not a reference at all",
+        None,
+        None,
+        Offered::Nothing,
+        false,
+    );
     assert!(!response.served);
     assert!(
         response.text.contains("not a reference"),
@@ -114,7 +120,13 @@ fn the_wire_is_chosen_by_the_scheme() {
 /// And a hub that is not a URL is refused before anything is opened.
 #[test]
 fn a_hub_that_is_not_a_url_is_refused() {
-    let response = run("owner/model", Some("not-a-hub"), None, Offered::Nothing, false);
+    let response = run(
+        "owner/model",
+        Some("not-a-hub"),
+        None,
+        Offered::Nothing,
+        false,
+    );
     assert!(!response.served);
     assert!(response.text.contains("not a hub"), "{}", response.text);
 }

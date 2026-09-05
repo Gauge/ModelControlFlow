@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 270 |
+| **Version** | 271 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **383 items: 58 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 8
-decided, 23 resolved) and 325 build items (231 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 39 open).** Every item cites
+decided, 23 resolved) and 325 build items (232 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 38 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -317,7 +317,7 @@ first and importance second.
 | B-483 | What the probes found is read back from the record when the window starts, so the Statistics tab's Capabilities section survives a restart the way the measurement and the cross-check do | A1, B-386, B-478 | A model probed yesterday shows its findings on Statistics today without running again | done. F185: the newest entry a probe for each model, as one sentence from its figures, read at start and after a run |
 | B-484 | The library lists the figures that decide a choice under each model's name: architecture, trained window, device kind, measured speed, and that it will not run here where it will not — each only where known | D49, A7, §3.15, B-474 | A person choosing between models reads what each is and how it went without opening each one | done. F187: a second line a row, read off the render; the Statistics column's duplicate last-served section and button removed with it |
 | B-485 | A search field at the top of the library filters what is held as it is typed — by name, architecture, repository and quantization — and, when the field is not empty, the list ends with a row that searches the hub for the same words, Return pressing it when nothing here matches; what the hub answers is listed under what is here with its downloads, and choosing a row opens its page | D51, DEC-058, A2, §3.15, B-476 | Typing a word narrows the list; a word nothing here matches offers the hub and lists what it found; the separate add page goes | done. F189: the field narrows by name, architecture and path; the hub is offered from the list and its answer listed under what is here; the add button is gone, the page kept for a pasted reference until B-486 |
-| B-486 | A model is a repository with its quantizations: the files held from one repository are one entry, and the page's Configure tab has a Quantization row listing every GGUF file the repository publishes — here and on the hub — with its size and whether it would run here; picking one here makes it the subject, picking one not here makes it the subject as not downloaded | D51, DEC-058, A7, B-023 | A model held in three quantizations is one entry whose page picks among them, and a hub repository's page picks the same way | open |
+| B-486 | A model is a repository with its quantizations: the files held from one repository are one entry, and the page's Configure tab has a Quantization row listing every GGUF file the repository publishes — here and on the hub — with its size and whether it would run here; picking one here makes it the subject, picking one not here makes it the subject as not downloaded | D51, DEC-058, A7, B-023 | A model held in three quantizations is one entry whose page picks among them, and a hub repository's page picks the same way | done. F190: one row a repository, the Quantization row here-first then the hub's, a pick not here the subject as not downloaded; a hub repository's page still lists its files with Get, which B-487's button makes the same |
 | B-487 | Download and run: on a subject not downloaded, Start server reads *Download and start server* and a diagnostics card's Run reads *Download and run*; the download goes first with its progress where the button was, and the run follows on the file once it is here | D51, DEC-058, A7, B-468 | One press on a quantization not here downloads it and then does the thing the button named | open |
 | B-488 | The daemon keeps what the hub answered — a search, a repository's files — beside the store for a day, says when it read it, and asks the hub again on request | D51, DEC-058, A1, A7 | A search repeated within the day is answered from what was kept and says so; a search asked again fresh reaches the hub | done. F189: kept beside the store under a digest of the question with when it was read; `mcf pull --fresh` asks again; a refusal is not kept |
 | B-489 | A Filters toggle beside the search field opens pickers — architecture, fits here, size — applied with the words to what is here and to what the hub found, each *any* until set | D51, DEC-058, §3.15, A7 | The list narrows by architecture, by whether a file fits here, and by size, and says nothing matched rather than hiding a filter | open |
@@ -500,6 +500,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 271 — a model is a repository
+
+B-486 done (F190).
 
 ### Version 270 — the search field and the hub's answers kept
 

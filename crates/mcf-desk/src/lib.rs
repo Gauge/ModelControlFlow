@@ -582,6 +582,12 @@ pub struct Model {
     /// What the probes last found on it, by probe: the name and the lines
     /// the daemon wrote for it (B-478).
     pub probed: Vec<(String, Vec<String>)>,
+    /// The hub repository it came from, where its provenance names one: a
+    /// model is a repository with its quantizations, and this is which
+    /// (D51, B-486).
+    pub repository: Option<String>,
+    /// The file it is, by name: which quantization of its repository.
+    pub file: String,
     /// Whether that device is a graphics card.
     pub on_a_card: bool,
     /// Why it will not run, where it will not.
@@ -776,15 +782,44 @@ impl Model {
 }
 
 /// Reads a model out of what the daemon answered.
+/// The hub repository a held model's provenance names, where it names one.
+fn repository_of(held: &Value) -> Option<String> {
+    held.get("provenance")
+        .and_then(|provenance| provenance.get("origin"))
+        .filter(|origin| origin.get("kind").and_then(Value::as_text) == Some("hub"))
+        .and_then(|origin| origin.get("repository"))
+        .and_then(Value::as_text)
+        .map(str::to_owned)
+}
+
+/// What the record holds of the probes, one sentence a probe (B-483).
+fn probed_of(held: &Value) -> Vec<(String, Vec<String>)> {
+    held.get("probed")
+        .and_then(Value::as_list)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|found| {
+            let method = found.get("method")?.as_text()?.to_owned();
+            let said = found.get("said")?.as_text()?.to_owned();
+            Some((method, vec![said]))
+        })
+        .collect()
+}
+
 fn model_from(held: &Value) -> Model {
     let text = |key: &str| held.get(key).and_then(Value::as_text).map(str::to_owned);
     let path = text("path").unwrap_or_default();
-    let name = path
+    let file = path
         .rsplit(['/', '\\'])
         .find(|part| !part.is_empty())
-        .unwrap_or("a model")
-        .trim_end_matches(".gguf")
+        .unwrap_or_default()
         .to_owned();
+    let name = file.trim_end_matches(".gguf").to_owned();
+    let name = if name.is_empty() {
+        "a model".to_owned()
+    } else {
+        name
+    };
     let bytes = held
         .get("bytes")
         .and_then(Value::as_integer)
@@ -852,18 +887,9 @@ fn model_from(held: &Value) -> Model {
             .and_then(|applied| applied.get("budget"))
             .and_then(Value::as_text)
             .map(str::to_owned),
-        // What the record holds of the probes, one sentence a probe (B-483).
-        probed: held
-            .get("probed")
-            .and_then(Value::as_list)
-            .unwrap_or(&[])
-            .iter()
-            .filter_map(|found| {
-                let method = found.get("method")?.as_text()?.to_owned();
-                let said = found.get("said")?.as_text()?.to_owned();
-                Some((method, vec![said]))
-            })
-            .collect(),
+        repository: repository_of(held),
+        file,
+        probed: probed_of(held),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
@@ -1115,6 +1141,8 @@ pub enum Picker {
     Placement,
     /// The rope scaling a hold starts with.
     Rope,
+    /// Which quantization of the repository the page is about (B-486).
+    Quantization,
 }
 
 /// What the hub answered a search with: the words, and the repositories
@@ -1147,6 +1175,93 @@ impl HubRepo {
                 .and_then(Value::as_integer)
                 .and_then(|held| u64::try_from(held).ok()),
         })
+    }
+}
+
+/// One GGUF file a repository publishes, as the daemon lists it (B-486).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferedFile {
+    /// The file's name in the repository.
+    pub file: String,
+    /// Its size, where the hub says.
+    pub bytes: Option<u64>,
+    /// Whether MCF says it would run here; `None` where it could not say.
+    pub fits: Option<bool>,
+}
+
+impl OfferedFile {
+    /// One file as the daemon lists it.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            file: value.get("file")?.as_text()?.to_owned(),
+            bytes: value
+                .get("bytes")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+            fits: match value.get("fits") {
+                Some(Value::Bool(fits)) => Some(*fits),
+                _ => None,
+            },
+        })
+    }
+}
+
+/// A quantization picked that is not here yet: the page's subject as *not
+/// downloaded* (B-486, B-487).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pending {
+    /// The repository it is a file of.
+    pub repository: String,
+    /// The file.
+    pub file: String,
+    /// Its size, where the hub says.
+    pub bytes: Option<u64>,
+    /// Whether it would run here, where MCF could say.
+    pub fits: Option<bool>,
+}
+
+/// One quantization of the page's repository, as the picker lists it:
+/// here, by its place in the library, or on the hub (B-486).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Quant {
+    /// The file.
+    pub file: String,
+    /// Its size, where known.
+    pub bytes: Option<u64>,
+    /// Which held model it is, where it is here.
+    pub here: Option<usize>,
+    /// Whether it would run here, where MCF said.
+    pub fits: Option<bool>,
+}
+
+/// One entry of the library: a repository and the held files that are its
+/// quantizations, or a file no repository is known for (D51, B-486).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Group {
+    /// The repository, where the members' provenance names one.
+    pub repository: Option<String>,
+    /// The held models in it, by their place in the list.
+    pub members: Vec<usize>,
+}
+
+impl Group {
+    /// The name the list shows: the repository's own name, or the one
+    /// member's.
+    #[must_use]
+    pub fn name(&self, models: &[Model]) -> String {
+        match &self.repository {
+            Some(repository) => repository
+                .rsplit('/')
+                .next()
+                .unwrap_or(repository)
+                .to_owned(),
+            None => self
+                .members
+                .first()
+                .and_then(|at| models.get(*at))
+                .map_or_else(|| "a model".to_owned(), |held| held.name.clone()),
+        }
     }
 }
 
@@ -1344,6 +1459,9 @@ pub enum Act {
     Run(Card),
     /// Search the hub for the words in the library's field (D51).
     SearchHub,
+    /// Pick one quantization of the page's repository, by its place in
+    /// the list the page offers: here first, then the hub's (B-486).
+    Quantization(usize),
     /// Open the page of one repository the hub listed, by its place.
     PickHub(usize),
     /// Turn one probe on or off on the capabilities card.
@@ -1541,6 +1659,13 @@ pub struct Desk {
     /// Which hub repository's page is open, where one is, by its place in
     /// the hub's list; `None` is a held model's page (B-485).
     pub hub_chosen: Option<usize>,
+    /// What the hub publishes for each repository asked about, by
+    /// repository: every GGUF file with its size and whether it would run
+    /// here, kept for the window's life (B-486).
+    pub offered: std::collections::BTreeMap<String, Vec<OfferedFile>>,
+    /// A quantization picked that is not here: the page's subject as *not
+    /// downloaded*, until it is got or another is picked (B-486).
+    pub pending: Option<Pending>,
     /// The temperature to draw the settledness seeds at, as typed; empty
     /// asks the question nothing, and the page says so (B-431).
     pub temperature: String,
@@ -1717,6 +1842,8 @@ impl Desk {
             filter: String::new(),
             hub: None,
             hub_chosen: None,
+            offered: std::collections::BTreeMap::new(),
+            pending: None,
             needs_engine: None,
             host_after: None,
             building: None,
@@ -1981,6 +2108,7 @@ impl Desk {
             && job.finished
         {
             self.keep_the_hub();
+            self.keep_the_files();
         }
         // The engine just built is what the model was waiting for: the
         // settings are asked again, now that there is something to run it
@@ -2093,6 +2221,7 @@ impl Desk {
             }
             Act::Run(card) => self.run_card(card),
             Act::SearchHub => self.search_hub(),
+            Act::Quantization(at) => self.pick_quantization(at),
             Act::PickHub(at) => self.pick_hub(at),
             Act::ToggleProbe(at) => {
                 if let Some(wanted) = self.probes_wanted.get_mut(at) {
@@ -2106,13 +2235,7 @@ impl Desk {
             }
             // A second click on the open picker shuts it, which is what every
             // dropdown does and what a reader tries first.
-            Act::Open(picker) => {
-                self.open = if self.open == Some(picker) {
-                    None
-                } else {
-                    Some(picker)
-                };
-            }
+            Act::Open(picker) => self.open_picker(picker),
             Act::Shut => self.open = None,
             Act::SetWindow(window) => {
                 self.window = window;
@@ -2140,6 +2263,10 @@ impl Desk {
                 self.chosen = Some(at);
                 self.open = None;
                 self.tab = Tab::Configure;
+                // A held model chosen is the page's subject: nothing pending
+                // and no hub page over it (B-485, B-486).
+                self.pending = None;
+                self.hub_chosen = None;
                 // **What this model would be held under.** `host_it` needs it
                 // and nothing fetched it: `read_settings` existed, was never
                 // called, and so `settings` was `None` for the life of the
@@ -2693,31 +2820,185 @@ impl Desk {
         }
     }
 
-    /// The held models the search field lets through, by their place in
-    /// the list: every one where the field is empty; else those whose name,
-    /// architecture or path carry the words, case aside (D51).
+    /// The library's entries, one a repository, each with the held models
+    /// that are its quantizations and pass the search field: every one where
+    /// the field is empty; else those whose name, architecture or path carry
+    /// the words, case aside (D51, B-485, B-486).
     #[must_use]
-    pub fn library(&self) -> Vec<usize> {
+    pub fn library(&self) -> Vec<Group> {
         let wanted = self.filter.trim().to_lowercase();
         let words: Vec<&str> = wanted.split_whitespace().collect();
-        self.models
-            .iter()
-            .enumerate()
-            .filter(|(_, held)| {
-                if words.is_empty() {
-                    return true;
+        let passes = |held: &Model| {
+            if words.is_empty() {
+                return true;
+            }
+            let haystack = format!(
+                "{} {} {}",
+                held.name,
+                held.architecture.as_deref().unwrap_or(""),
+                held.path
+            )
+            .to_lowercase();
+            words.iter().all(|word| haystack.contains(word))
+        };
+        let mut groups: Vec<Group> = Vec::new();
+        for (at, held) in self.models.iter().enumerate() {
+            if !passes(held) {
+                continue;
+            }
+            let joined = held.repository.as_ref().and_then(|repository| {
+                groups
+                    .iter_mut()
+                    .find(|group| group.repository.as_ref() == Some(repository))
+            });
+            match joined {
+                Some(group) => group.members.push(at),
+                None => groups.push(Group {
+                    repository: held.repository.clone(),
+                    members: vec![at],
+                }),
+            }
+        }
+        groups
+    }
+
+    /// The quantizations of the page's repository: the files held, then the
+    /// files the hub publishes that are not here, where the hub has been
+    /// asked (B-486).
+    #[must_use]
+    pub fn quantizations(&self) -> Vec<Quant> {
+        let repository = self.subject_repository();
+        let mut listed: Vec<Quant> = Vec::new();
+        for (at, held) in self.models.iter().enumerate() {
+            let same = match (&repository, &held.repository) {
+                (Some(wanted), Some(held)) => wanted == held,
+                (None, _) => self.chosen == Some(at),
+                _ => false,
+            };
+            if same {
+                listed.push(Quant {
+                    file: held.file.clone(),
+                    bytes: held.bytes,
+                    here: Some(at),
+                    fits: None,
+                });
+            }
+        }
+        if let Some(offered) = repository.as_ref().and_then(|held| self.offered.get(held)) {
+            for file in offered {
+                if listed.iter().any(|quant| quant.file == file.file) {
+                    continue;
                 }
-                let haystack = format!(
-                    "{} {} {}",
-                    held.name,
-                    held.architecture.as_deref().unwrap_or(""),
-                    held.path
-                )
-                .to_lowercase();
-                words.iter().all(|word| haystack.contains(word))
-            })
-            .map(|(at, _)| at)
-            .collect()
+                listed.push(Quant {
+                    file: file.file.clone(),
+                    bytes: file.bytes,
+                    here: None,
+                    fits: file.fits,
+                });
+            }
+        }
+        listed
+    }
+
+    /// The repository the page is about: the pending quantization's, or the
+    /// chosen model's.
+    #[must_use]
+    pub fn subject_repository(&self) -> Option<String> {
+        if let Some(pending) = &self.pending {
+            return Some(pending.repository.clone());
+        }
+        self.chosen
+            .and_then(|at| self.models.get(at))
+            .and_then(|held| held.repository.clone())
+    }
+
+    /// Which quantization the page is on, by its place in the list.
+    #[must_use]
+    pub fn quantization_at(&self) -> Option<usize> {
+        let listed = self.quantizations();
+        match &self.pending {
+            Some(pending) => listed.iter().position(|quant| quant.file == pending.file),
+            None => listed.iter().position(|quant| quant.here == self.chosen),
+        }
+    }
+
+    /// A second click on the open picker shuts it, which is what every
+    /// dropdown does and what a reader tries first. Opening the quantization
+    /// list asks the hub what else the repository publishes, once (B-486).
+    fn open_picker(&mut self, picker: Picker) {
+        self.open = if self.open == Some(picker) {
+            None
+        } else {
+            Some(picker)
+        };
+        if self.open == Some(Picker::Quantization) {
+            self.look_up_files();
+        }
+    }
+
+    /// Picks one quantization: one here becomes the page's subject; one on
+    /// the hub becomes the subject as not downloaded (B-486).
+    pub fn pick_quantization(&mut self, at: usize) {
+        self.open = None;
+        let Some(quant) = self.quantizations().get(at).cloned() else {
+            return;
+        };
+        match quant.here {
+            Some(held) => {
+                self.pending = None;
+                self.act(Act::Choose(held));
+            }
+            None => {
+                if let Some(repository) = self.subject_repository() {
+                    self.pending = Some(Pending {
+                        repository,
+                        file: quant.file,
+                        bytes: quant.bytes,
+                        fits: quant.fits,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Asks the hub what the page's repository publishes, where it has not
+    /// been asked and nothing else is going.
+    pub fn look_up_files(&mut self) {
+        let Some(repository) = self.subject_repository() else {
+            return;
+        };
+        if self.offered.contains_key(&repository) || self.doing.busy() {
+            return;
+        }
+        self.doing = Doing::Listing(job::Job::start(
+            &self.socket,
+            Request::Offered {
+                reference: repository.clone(),
+                from: None,
+                fresh: false,
+            },
+            format!("looking up {repository}"),
+        ));
+    }
+
+    /// Keeps what the hub publishes for a repository, once the job has it.
+    fn keep_the_files(&mut self) {
+        let Doing::Listing(job) = &self.doing else {
+            return;
+        };
+        let Some(found) = job.conclusion().or_else(|| job.latest()) else {
+            return;
+        };
+        let (Some(repository), Some(files)) = (
+            found.get("repository").and_then(Value::as_text),
+            found.get("files").and_then(Value::as_list),
+        ) else {
+            return;
+        };
+        let _replaced = self.offered.insert(
+            repository.to_owned(),
+            files.iter().filter_map(OfferedFile::from_value).collect(),
+        );
     }
 
     /// Whether the hub's answer on show is for the words in the field.

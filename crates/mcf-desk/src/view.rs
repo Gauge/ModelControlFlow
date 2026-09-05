@@ -605,6 +605,9 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     if desk.hub_chosen.is_some() {
         return hub_page(paint, desk, mouse, pane).or(act);
     }
+    if desk.pending.is_some() {
+        return pending_page(paint, desk, mouse, pane).or(act);
+    }
     let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
         paint.say_at(
             right,
@@ -617,6 +620,97 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
         return act;
     };
     model_page(paint, desk, mouse, pane, held).or(act)
+}
+
+/// The page of a quantization picked that is not here: what the hub says
+/// of it, the quantization row to pick another, and a way to get it (D51,
+/// B-486; the button that downloads and runs is B-487).
+fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let pending = desk.pending.as_ref()?;
+    let mut act = None;
+    let name = paint.elide(
+        pending.file.trim_end_matches(".gguf"),
+        Weight::Bold,
+        size::HEAD,
+        area.w,
+    );
+    paint.say_at(area.x, area.y, &name, Weight::Bold, size::HEAD, ink.ink);
+    paint.say_at(
+        area.x,
+        area.y + 30.0,
+        &format!("On the hub — not downloaded · {}", pending.repository),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let mut y = area.y + 70.0;
+    let column = area.x + 190.0;
+    paint.say_at(
+        area.x,
+        y,
+        "Quantization",
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    let now = desk
+        .quantizations()
+        .get(desk.quantization_at().unwrap_or(usize::MAX))
+        .map_or_else(|| pending.file.clone(), quant_label);
+    let box_of = Box::new(column, y - 6.0, (area.w - 190.0).min(360.0), 28.0);
+    let open = desk.open == Some(Picker::Quantization);
+    if ui::picker(paint, mouse, box_of, &now, open) {
+        act = Some(Act::Open(Picker::Quantization));
+    }
+    y += 34.0;
+    for (name, value) in [
+        (
+            "Size",
+            pending.bytes.map_or_else(|| UNKNOWN.to_owned(), gigabytes),
+        ),
+        (
+            "Runs here",
+            match pending.fits {
+                Some(true) => "yes, by the shape the repository states".to_owned(),
+                Some(false) => "no, by the shape the repository states".to_owned(),
+                None => "MCF could not say".to_owned(),
+            },
+        ),
+    ] {
+        paint.say_at(area.x, y, name, Weight::Regular, size::BODY, ink.quiet);
+        paint.say_at(column, y, &value, Weight::Bold, size::BODY, ink.ink);
+        y += 30.0;
+    }
+    y += 10.0;
+    if let Doing::Downloading(job) = &desk.doing {
+        paint.say_at(area.x, y, &job.what, Weight::Bold, size::BODY, ink.ink);
+        ui::progress(
+            paint,
+            Box::new(area.x, y + 24.0, area.w.min(520.0), 8.0),
+            crate::job::fraction(job),
+        );
+        paint.say_at(
+            area.x,
+            y + 46.0,
+            &downloading_line(job),
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+    } else {
+        let (get, _) = ui::fitted(paint, mouse, (area.x, y), "Download", Kind::Primary);
+        if get && !desk.doing.busy() {
+            act = Some(Act::Download {
+                reference: pending.repository.clone(),
+                file: pending.file.clone(),
+            });
+        }
+    }
+    if open && let Some(picked) = configure_menu(paint, desk, mouse, Picker::Quantization, box_of) {
+        act = Some(picked);
+    }
+    act
 }
 
 /// A hub repository's page: its files with their sizes and whether each
@@ -1133,6 +1227,33 @@ fn configure_tab(
     };
 
     // Where it goes.
+    // Which quantization of the repository: the files here, then what the
+    // hub publishes, once asked (D51, B-486).
+    if desk.subject_repository().is_some() {
+        label(
+            paint,
+            y,
+            Row {
+                name: "Quantization",
+                because: "which file of the repository the page is about: the ones here, \
+                          and the ones the hub publishes that are not",
+            },
+            &mut hovered,
+        );
+        let now = desk
+            .quantizations()
+            .get(desk.quantization_at().unwrap_or(usize::MAX))
+            .map_or_else(|| held.file.clone(), quant_label);
+        let box_of = Box::new(column, y - 6.0, control, 28.0);
+        let open = desk.open == Some(Picker::Quantization);
+        if ui::picker(paint, mouse, box_of, &now, open) {
+            act = Some(Act::Open(Picker::Quantization));
+        }
+        if open {
+            menu = Some((Picker::Quantization, box_of));
+        }
+        y += 34.0;
+    }
     label(
         paint,
         y,
@@ -1573,8 +1694,30 @@ fn configure_menu(
             });
             ui::options(paint, mouse, at, &labels, now).map(Act::Rope)
         }
+        Picker::Quantization => {
+            let labels: Vec<String> = desk.quantizations().iter().map(quant_label).collect();
+            if labels.is_empty() {
+                return None;
+            }
+            ui::options(paint, mouse, at, &labels, desk.quantization_at()).map(Act::Quantization)
+        }
         Picker::Model | Picker::Window | Picker::On => None,
     }
+}
+
+/// One quantization as the picker lists it: the file, its size, and
+/// whether it is here or on the hub and would run here (A7).
+fn quant_label(quant: &crate::Quant) -> String {
+    let size = quant
+        .bytes
+        .map_or_else(String::new, |bytes| format!(" · {}", gigabytes(bytes)));
+    let where_ = match (quant.here, quant.fits) {
+        (Some(_), _) => "here",
+        (None, Some(true)) => "on the hub · would run here",
+        (None, Some(false)) => "on the hub · would not run here",
+        (None, None) => "on the hub",
+    };
+    format!("{}{size} · {where_}", quant.file)
 }
 
 /// The build, as it goes: what is being built and for what, how long so far,
@@ -1818,10 +1961,7 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         paint.say_at(area.x, y, note, Weight::Regular, size::BODY, ink.faint);
         y += 24.0;
     }
-    for (count, at) in shown.iter().copied().enumerate() {
-        let Some(held) = desk.models.get(at) else {
-            continue;
-        };
+    for (count, group) in shown.iter().enumerate() {
         if y > actions_at - 62.0 {
             paint.say_at(
                 area.x,
@@ -1834,51 +1974,9 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
             y = actions_at;
             break;
         }
-        let where_ = Box::new(area.x - 6.0, y - 4.0, list, 40.0);
-        let chosen = desk.chosen == Some(at) && desk.hub_chosen.is_none();
-        if chosen {
-            paint.panel(where_, 6.0, ink.accent_soft, 255);
-        } else if mouse.over(where_) {
-            paint.panel(where_, 6.0, ink.line, 110);
-        }
-        let name = paint.elide(&held.name, Weight::Regular, size::BODY, list - 80.0);
-        paint.say_at(
-            area.x,
-            y,
-            &name,
-            if chosen {
-                Weight::Bold
-            } else {
-                Weight::Regular
-            },
-            size::BODY,
-            if chosen { ink.accent } else { ink.ink },
-        );
-        paint.say_right(
-            area.x + list - 14.0,
-            y,
-            &held.bytes.map_or_else(
-                || UNKNOWN.to_owned(),
-                |bytes| format!("{:.2}G", bytes as f64 / 1e9),
-            ),
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        // The figures that decide a choice, under the name (D49): what it
-        // is, how long a conversation it was trained for, where it lands,
-        // and how fast it went where a run has been taken.
-        let figures = paint.elide(&chooses_by(held), Weight::Regular, size::SMALL, list - 14.0);
-        paint.say_at(
-            area.x,
-            y + 18.0,
-            &figures,
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        if mouse.clicked(where_) {
-            act = Some(Act::Choose(at));
+        if let Some(pressed) = group_row(paint, desk, mouse, group, Box::new(area.x, y, list, 40.0))
+        {
+            act = Some(pressed);
         }
         y += 40.0;
     }
@@ -2014,6 +2112,81 @@ fn hub_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
         y += 40.0;
     }
     act
+}
+
+/// One entry of the library: the repository's name, or the file's where
+/// no repository is known, with the figures that decide a choice under it
+/// and how many quantizations are here (D51, B-486). Pressing it makes the
+/// entry's chosen member the subject, or its first.
+fn group_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    group: &crate::Group,
+    at: Box,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let member = group
+        .members
+        .iter()
+        .copied()
+        .find(|member| desk.chosen == Some(*member))
+        .or_else(|| group.members.first().copied())?;
+    let held = desk.models.get(member)?;
+    let where_ = Box::new(at.x - 6.0, at.y - 4.0, at.w, 40.0);
+    let chosen = desk
+        .chosen
+        .is_some_and(|chosen| group.members.contains(&chosen))
+        && desk.hub_chosen.is_none()
+        && desk.pending.is_none();
+    if chosen {
+        paint.panel(where_, 6.0, ink.accent_soft, 255);
+    } else if mouse.over(where_) {
+        paint.panel(where_, 6.0, ink.line, 110);
+    }
+    let name = paint.elide(
+        &group.name(&desk.models),
+        Weight::Regular,
+        size::BODY,
+        at.w - 80.0,
+    );
+    paint.say_at(
+        at.x,
+        at.y,
+        &name,
+        if chosen {
+            Weight::Bold
+        } else {
+            Weight::Regular
+        },
+        size::BODY,
+        if chosen { ink.accent } else { ink.ink },
+    );
+    paint.say_right(
+        at.x + at.w - 14.0,
+        at.y,
+        &held.bytes.map_or_else(
+            || UNKNOWN.to_owned(),
+            |bytes| format!("{:.2}G", bytes as f64 / 1e9),
+        ),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let mut figures = chooses_by(held);
+    if group.members.len() > 1 {
+        figures = format!("{} quantizations · {figures}", group.members.len());
+    }
+    let figures = paint.elide(&figures, Weight::Regular, size::SMALL, at.w - 14.0);
+    paint.say_at(
+        at.x,
+        at.y + 18.0,
+        &figures,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    mouse.clicked(where_).then_some(Act::Choose(member))
 }
 
 /// One model's figures in a line: architecture, trained window, device
@@ -2879,7 +3052,7 @@ fn open_menu(
                 .map(Act::SetOn)
         }
         // The Configure tab's lists are drawn by the model page.
-        Picker::Placement | Picker::Rope => None,
+        Picker::Placement | Picker::Rope | Picker::Quantization => None,
         Picker::Window => {
             let offered = windows();
             let labels: Vec<String> = offered
