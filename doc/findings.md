@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 132 |
+| **Version** | 133 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 184 | [F184 — The Diagnostics page is one card per run: the six checkbox rows, five of which were one ladder's results drawn as choices, are gone, and throughput, cross-check, capabilities, prompt analysis and comparison each have a card with their own controls, cost and Run, the two the daemon does not carry yet saying so and offering the command (B-477, D50, §3.15, A22)](#184--f184-the-diagnostics-page-is-one-card-per-run-the-six-checkbox-rows-five-of-which-were-one-ladders-results-drawn-as-choices-are-gone-and-throughput-cross-check-capabilities-prompt-analysis-and-comparison-each-have-a-card-with-their-own-controls-cost-and-run-the-two-the-daemon-does-not-carry-yet-saying-so-and-offering-the-command-b-477-d50-315-a22) |
 | 183 | [F183 — A request goes to the server hosted for its model: a run and a prompt report on Qwen3-VL-2B while it was hosted ran through the hosted server on its port, one engine process throughout, its counters at 45 generated and 155 prompted, and an unhost with a 300-token run in flight waited 1.8 s for the run to finish before the card gave back 3.3 GiB (B-480, B-468, A7, A27, B4)](#183--f183-a-request-goes-to-the-server-hosted-for-its-model-a-run-and-a-prompt-report-on-qwen3-vl-2b-while-it-was-hosted-ran-through-the-hosted-server-on-its-port-one-engine-process-throughout-its-counters-at-45-generated-and-155-prompted-and-an-unhost-with-a-300-token-run-in-flight-waited-18-s-for-the-run-to-finish-before-the-card-gave-back-33-gib-b-480-b-468-a7-a27-b4) |
 | 182 | [F182 — A prompt analysis says which generation it is on: the daemon announces each of a planned count before it asks it, the plan and the run are one arithmetic, 34 generations on Qwen3-VL-2B streamed as generation n of 34 and took 19.8 s, and a run cut at three seconds asked the six it had announced and no more, recording nothing (B-479, B-468, A6, A7, A22)](#182--f182-a-prompt-analysis-says-which-generation-it-is-on-the-daemon-announces-each-of-a-planned-count-before-it-asks-it-the-plan-and-the-run-are-one-arithmetic-34-generations-on-qwen3-vl-2b-streamed-as-generation-n-of-34-and-took-198-s-and-a-run-cut-at-three-seconds-asked-the-six-it-had-announced-and-no-more-recording-nothing-b-479-b-468-a6-a7-a22) |
 | 181 | [F181 — The window is read from its own renders: the review pass drew every page as a person meets it and found the throughput table twice, a right column cut at the pane, two columns drawn over each other at 670 pixels, a peak label over its bars, a recommendation crowding the next row and a line that read "?" (B-481, A22, §3.15, D49)](#181--f181-the-window-is-read-from-its-own-renders-the-review-pass-drew-every-page-as-a-person-meets-it-and-found-the-throughput-table-twice-a-right-column-cut-at-the-pane-two-columns-drawn-over-each-other-at-670-pixels-a-peak-label-over-its-bars-a-recommendation-crowding-the-next-row-and-a-line-that-read-b-481-a22-315-d49) |
@@ -9606,6 +9607,51 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 184 · F184 — The Diagnostics page is one card per run: the six checkbox rows, five of which were one ladder's results drawn as choices, are gone, and throughput, cross-check, capabilities, prompt analysis and comparison each have a card with their own controls, cost and Run, the two the daemon does not carry yet saying so and offering the command (B-477, D50, §3.15, A22)
+
+The operator did not understand what the checkbox tests were for, and
+asked for a full evaluation and a plan to make the diagnostics more
+configurable. D50 gave the evaluation: five of the six rows were the
+results of one climb of the depth ladder drawn as if they were five runs
+a person could choose between, and a checkbox that cannot be ticked alone
+is not a choice. This is the page D50 decided.
+
+**What the page is now.** The model at the top, and one card per run.
+*Throughput* on the left, the run with the most to set and to show: the
+device and the context length as pickers with MCF's recommendation as
+the default, where the model lands, the depths the window implies, and
+two ways to run it — Quick run and Run — each with its cost under it;
+while the ladder climbs the card shows the estimate, each reading as it
+lands, the step it is on and a Stop; when it is done it says the figures
+are on the model's Statistics tab and offers the way there. Down the
+right: *Cross-check*, with its cost and its own Run, its progress in the
+daemon's sentences while it reads; *Capabilities*, naming what the
+probes read and what they last applied to this model; *Prompt analysis*,
+which opens the prompt page; *Comparison*. The capabilities and
+comparison runs are at the command line until the daemon carries them
+(B-478), and their cards say so in one line and offer the command with
+a Copy rather than a button that would do nothing (§3.15). A run's card
+starts that run and no other, a test holds each to it, and a second run
+is not offered while one goes.
+
+**What went.** The checkbox rows, the results column and the panel that
+opened under the table, *Run selected* and the rule that ticked five rows
+together, and the cross-check that Run selected owed once the ladder had
+finished: each card runs on its own press. The figures a run leaves are
+on the Statistics tab, where a person looks for a model's figures, and
+nowhere twice.
+
+**Left as found.** The console's Diagnostics screen still has the rows
+the window lost; it follows (B-482). Two cards run at the command line
+for now (B-478).
+
+**What ran.** The page drawn to images at rest and with a ladder two
+rungs in, read in the review pass (F181): the cards sit in two columns
+in the 1180-pixel window with nothing over the edge, the throughput
+card's readings under its buttons, and the comparison card's two-line
+command inside its frame once the card was sized by the command it
+shows rather than by a short name.
+
 ## 183 · F183 — A request goes to the server hosted for its model: a run and a prompt report on Qwen3-VL-2B while it was hosted ran through the hosted server on its port, one engine process throughout, its counters at 45 generated and 155 prompted, and an unhost with a 300-token run in flight waited 1.8 s for the run to finish before the card gave back 3.3 GiB (B-480, B-468, A7, A27, B4)
 
 The operator saw that some of the figures for an active model stayed at
@@ -12564,6 +12610,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 133 — one card per run
+
+F184: the Diagnostics page is one card per run, the checkbox rows gone
+(B-477).
 
 ### Version 132 — a request goes to the hosted server
 

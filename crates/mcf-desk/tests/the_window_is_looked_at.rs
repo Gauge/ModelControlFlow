@@ -366,177 +366,24 @@ fn an_open_dropdown_is_drawn_over_the_page() {
     );
 }
 
-/// A run's result opens under the table, and does not cover it.
-///
-/// The table is the thing being read: a panel over the rows would answer
-/// *what did this find* by hiding *which of them it was about*.
+/// Every run has a card with its own Run: the ladder, the cross-check and
+/// the prompt analysis each start from the Diagnostics page, and nothing
+/// there toggles a row (D50, B-477).
 #[test]
-fn a_result_opens_under_the_tests_rather_than_over_them() {
+fn every_run_starts_from_its_own_card() {
     let mut desk = four_models();
     desk.page = Page::Diagnostics;
     desk.chosen = Some(0);
-    if let Some(test) = desk.tests.first_mut() {
-        test.ran = Some(184);
-        test.result = Some(vec![
-            "at 512 tokens   6.43 ms a token".to_owned(),
-            "at 1 024 tokens   6.71 ms a token".to_owned(),
-            "measured on llama.cpp-cuda".to_owned(),
-        ]);
+    for wanted in [
+        mcf_desk::Act::Run(mcf_desk::Card::Throughput),
+        mcf_desk::Act::Run(mcf_desk::Card::CrossCheck),
+        mcf_desk::Act::Go(Page::Prompt),
+    ] {
+        assert!(
+            act_somewhere(&desk, &wanted),
+            "nothing on Diagnostics starts {wanted:?}"
+        );
     }
-    let shut = drawn(&desk, NIGHT, "result-shut");
-    if shut.width == 1 {
-        return; // no font here
-    }
-    desk.showing = Some(0);
-    let open = drawn(&desk, NIGHT, "result-open");
-
-    // The first test's own row must be identical: the panel is under the
-    // table, so opening it cannot have redrawn the row it belongs to.
-    let mut changed_low = 0_usize;
-    let mut changed_high = 0_usize;
-    // Halved to say *above or below*; the exact middle row does not matter.
-    #[expect(clippy::integer_division, reason = "a midpoint, in whole rows")]
-    let half = open.height / 2;
-    for y in 0..open.height {
-        for x in 0..open.width {
-            if shut.at(x, y) != open.at(x, y) {
-                if y < half {
-                    changed_low += 1;
-                } else {
-                    changed_high += 1;
-                }
-            }
-        }
-    }
-    assert!(
-        changed_high > changed_low,
-        "the result drew {changed_low} pixels in the top half and {changed_high} \
-         in the bottom: it is not opening under the table"
-    );
-    assert!(
-        changed_high > 500,
-        "the result drew {changed_high} pixels: nothing opened"
-    );
-}
-
-/// The memory figure a real ladder read on this machine: Qwen3-VL-2B to
-/// 8,192, on the processor.
-fn a_memory_figure() -> mcf_record::json::Value {
-    use mcf_record::json::Value;
-    Value::map([
-        ("measured", Value::Bool(true)),
-        ("per_token_bytes", Value::Integer(117_346)),
-        (
-            "between_windows",
-            Value::List(vec![Value::Integer(4096), Value::Integer(16418)]),
-        ),
-        (
-            "at_deepest",
-            Value::map([
-                ("depth", Value::Integer(8192)),
-                ("window", Value::Integer(16418)),
-                ("bytes", Value::Integer(3_645_382_656)),
-            ]),
-        ),
-        ("planned_per_token_bytes", Value::Integer(114_688)),
-        (
-            "largest_context",
-            Value::map([
-                ("measured", Value::Integer(262_144)),
-                ("planned", Value::Integer(262_144)),
-            ]),
-        ),
-        (
-            "what",
-            Value::text(
-                "the engine process's peak resident memory, read from the kernel's high-water \
-                 mark, over the window each rung ran in; a device's memory is not in it",
-            ),
-        ),
-    ])
-}
-
-/// The three rows the ladder now answers open like the ladder's own, in the
-/// daemon's sentences.
-///
-/// The sentences are composed in `mcf_serve::ladder` — the same ones the
-/// console prints — so this draws what a run leaves behind, and asserts
-/// that opening the memory row shows something under the table (B-424).
-#[test]
-fn the_rows_read_off_the_rungs_open_in_the_daemons_words() {
-    use mcf_record::json::Value;
-    let mut desk = four_models();
-    desk.page = Page::Diagnostics;
-    desk.chosen = Some(0);
-    let first_token = Value::map([
-        ("measured", Value::Bool(true)),
-        ("depth", Value::Integer(512)),
-        ("ms", Value::text("1257.235")),
-        (
-            "includes",
-            Value::text(
-                "loading the model, reading 512 tokens and producing one — with the file \
-                 already in the page cache, which is a second request's cost and not the \
-                 first's after a reboot",
-            ),
-        ),
-    ]);
-    let prompt_reading = Value::map([
-        ("measured", Value::Bool(false)),
-        (
-            "why",
-            Value::text("only one rung measured a first token, and a cost is read between two"),
-        ),
-    ]);
-    let memory = a_memory_figure();
-    for test in &mut desk.tests {
-        match test.name {
-            "Memory ceiling — largest context" => {
-                test.ran = Some(41);
-                test.result = Some(mcf_serve::ladder::memory_said(Some(&memory)));
-            }
-            "Generation speed against depth" => {
-                test.ran = Some(41);
-                test.result = Some(vec![
-                    "at 512 tokens   15.321 ms a token".to_owned(),
-                    "measured on provisioned llama.cpp server @925e1179947e".to_owned(),
-                ]);
-            }
-            "Prompt reading speed" => {
-                test.ran = Some(41);
-                test.result = Some(mcf_serve::ladder::prompt_reading_said(Some(
-                    &prompt_reading,
-                )));
-            }
-            "Start-up to first token" => {
-                test.ran = Some(41);
-                test.result = Some(mcf_serve::ladder::first_token_said(Some(&first_token)));
-            }
-            _ => {}
-        }
-    }
-    let shut = drawn(&desk, DAY, "rungs-shut");
-    if shut.width == 1 {
-        return; // no font here
-    }
-    desk.showing = desk
-        .tests
-        .iter()
-        .position(|test| test.name == "Memory ceiling — largest context");
-    assert!(desk.showing.is_some(), "no memory row to open");
-    let open = drawn(&desk, DAY, "rungs-open");
-    let mut changed = 0_usize;
-    for y in 0..open.height {
-        for x in 0..open.width {
-            if shut.at(x, y) != open.at(x, y) {
-                changed += 1;
-            }
-        }
-    }
-    assert!(
-        changed > 500,
-        "opening the memory row changed {changed} pixels: nothing opened"
-    );
 }
 
 /// The cross-check row is a run of its own: it carries a checkbox, and its
@@ -550,12 +397,6 @@ fn the_cross_check_row_runs_from_the_window() {
     let mut desk = four_models();
     desk.page = Page::Diagnostics;
     desk.chosen = Some(0);
-    let cross_check = desk
-        .tests
-        .iter()
-        .position(|test| test.run == mcf_desk::Run::CrossCheck)
-        .unwrap_or_else(|| panic!("no cross-check row"));
-    desk.act(mcf_desk::Act::Toggle(cross_check));
     let last = Value::map([
         ("cross_checked", Value::text("a-model")),
         (
@@ -605,31 +446,28 @@ fn the_cross_check_row_runs_from_the_window() {
             last,
         ],
     ));
+    // Still going: the daemon's last line is the reading, not the end.
+    if let mcf_desk::Doing::CrossChecking(job) = &mut desk.doing {
+        job.finished = false;
+    }
     let running = drawn(&desk, DAY, "cross-check-running");
     if running.width == 1 {
         return; // no font here
     }
-    // Filled the way `keep_the_cross_check` fills it — the daemon's
-    // sentences, then which engine ran — which the unit tests hold it to.
-    let sentences = desk
-        .doing
-        .job()
-        .and_then(mcf_desk::job::Job::conclusion)
-        .and_then(|body| body.get("said"))
-        .and_then(Value::as_list)
-        .map(|said| {
-            said.iter()
-                .filter_map(Value::as_text)
-                .map(str::to_owned)
-                .chain(std::iter::once(
-                    "against provisioned llama.cpp server @925e1179947e".to_owned(),
-                ))
-                .collect::<Vec<String>>()
-        });
-    desk.tests[cross_check].ran = Some(97);
-    desk.tests[cross_check].result = sentences;
-    desk.showing = Some(cross_check);
-    let _open = drawn(&desk, DAY, "cross-check-open");
+    // Finished: the card says the figures are on Statistics and offers the
+    // way there, rather than opening a panel of its own (D50).
+    if let mcf_desk::Doing::CrossChecking(job) = &mut desk.doing {
+        job.finished = true;
+    }
+    let done = drawn(&desk, DAY, "cross-check-done");
+    assert!(
+        done.pixels != running.pixels,
+        "a finished cross-check draws the same as one running"
+    );
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::SeeStatistics),
+        "a finished run does not lead to its figures"
+    );
 }
 
 /// A small rise is drawn as a small rise.
@@ -2308,29 +2146,7 @@ fn every_page_is_drawn_for_review() {
         true,
         None,
     );
-    let placements = vec![
-        mcf_desk::Placement {
-            on: "resolved".to_owned(),
-            engine: "llama.cpp-vulkan".to_owned(),
-            device: "Radeon 8060S Graphics".to_owned(),
-            gpu_layers: 999,
-            free: Some(97_000_000_000),
-        },
-        mcf_desk::Placement {
-            on: "processor".to_owned(),
-            engine: "llama.cpp".to_owned(),
-            device: "CPU".to_owned(),
-            gpu_layers: 0,
-            free: Some(40_000_000_000),
-        },
-        mcf_desk::Placement {
-            on: "card".to_owned(),
-            engine: "llama.cpp-vulkan".to_owned(),
-            device: "Radeon 8060S Graphics".to_owned(),
-            gpu_layers: 999,
-            free: Some(97_000_000_000),
-        },
-    ];
+    let placements = three_placements();
 
     // Configure, with one setting moved and the mouse over a row.
     let mut desk = four_models();
@@ -2399,12 +2215,100 @@ fn every_page_is_drawn_for_review() {
     let _ = drawn(&desk, DAY, "review-server-running");
     let _ = drawn(&desk, NIGHT, "review-server-running-night");
 
+    // Diagnostics: the cards, and the throughput card with a run going.
+    desk.page = Page::Diagnostics;
+    desk.tab = mcf_desk::Tab::Configure;
+    desk.placements = placements.clone();
+    let _ = drawn(&desk, DAY, "review-diagnostics");
+    desk.doing = mcf_desk::Doing::Measuring(a_ladder_under_way());
+    let _ = drawn(&desk, NIGHT, "review-diagnostics-running");
+    desk.doing = mcf_desk::Doing::Nothing;
+
     // Add model, with search results.
     let mut adding = four_models();
     adding.page = Page::Adding;
     adding.typed = "gemma".to_owned();
     adding.doing = a_search_answer();
     let _ = drawn(&adding, DAY, "review-add-search");
+}
+
+/// Where a hold can go on this machine: as resolved, the processor, the card.
+fn three_placements() -> Vec<mcf_desk::Placement> {
+    vec![
+        mcf_desk::Placement {
+            on: "resolved".to_owned(),
+            engine: "llama.cpp-vulkan".to_owned(),
+            device: "Radeon 8060S Graphics".to_owned(),
+            gpu_layers: 999,
+            free: Some(97_000_000_000),
+        },
+        mcf_desk::Placement {
+            on: "processor".to_owned(),
+            engine: "llama.cpp".to_owned(),
+            device: "CPU".to_owned(),
+            gpu_layers: 0,
+            free: Some(40_000_000_000),
+        },
+        mcf_desk::Placement {
+            on: "card".to_owned(),
+            engine: "llama.cpp-vulkan".to_owned(),
+            device: "Radeon 8060S Graphics".to_owned(),
+            gpu_layers: 999,
+            free: Some(97_000_000_000),
+        },
+    ]
+}
+
+/// A ladder two rungs in: its estimate, one reading, and the second rung
+/// announced.
+fn a_ladder_under_way() -> mcf_desk::job::Job {
+    let mut going = mcf_desk::job::Job::already(
+        "measuring Assistant-8B".to_owned(),
+        vec![
+            mcf_record::json::Value::map([
+                ("measuring", mcf_record::json::Value::text("a-model")),
+                (
+                    "depths",
+                    mcf_record::json::Value::List(vec![
+                        mcf_record::json::Value::Integer(512),
+                        mcf_record::json::Value::Integer(1024),
+                    ]),
+                ),
+                ("estimate_low_seconds", mcf_record::json::Value::Integer(40)),
+                (
+                    "estimate_high_seconds",
+                    mcf_record::json::Value::Integer(90),
+                ),
+                ("done", mcf_record::json::Value::Bool(false)),
+            ]),
+            mcf_record::json::Value::map([
+                ("measuring", mcf_record::json::Value::text("a-model")),
+                (
+                    "reading",
+                    mcf_record::json::Value::map([
+                        ("depth", mcf_record::json::Value::Integer(512)),
+                        ("ms_per_token", mcf_record::json::Value::text("6.43")),
+                        ("measured", mcf_record::json::Value::Bool(true)),
+                    ]),
+                ),
+                ("done", mcf_record::json::Value::Bool(false)),
+            ]),
+            mcf_record::json::Value::map([
+                ("measuring", mcf_record::json::Value::text("a-model")),
+                (
+                    "starting",
+                    mcf_record::json::Value::map([
+                        ("depth", mcf_record::json::Value::Integer(1024)),
+                        ("step", mcf_record::json::Value::Integer(2)),
+                        ("of", mcf_record::json::Value::Integer(2)),
+                    ]),
+                ),
+                ("done", mcf_record::json::Value::Bool(false)),
+            ]),
+        ],
+    );
+    going.finished = false;
+    going
 }
 
 /// A measurement as the daemon answers it: three rungs on the card.

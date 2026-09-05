@@ -1102,6 +1102,75 @@ pub enum Picker {
     Rope,
 }
 
+/// One run the Diagnostics page offers, each on its own card with its own
+/// controls, cost and Run (D50, B-477).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Card {
+    /// The depth ladder: speed at each depth, and what a window costs.
+    Throughput,
+    /// MCF's own engine reading what the provisioned one produced.
+    CrossCheck,
+    /// The probes: what the template and the model do.
+    Capabilities,
+    /// What each part of a prompt does to the answer.
+    Prompt,
+    /// Two models on one question under one engine.
+    Comparison,
+}
+
+impl Card {
+    /// Every card, in the order the page shows them.
+    pub const ALL: [Self; 5] = [
+        Self::Throughput,
+        Self::CrossCheck,
+        Self::Capabilities,
+        Self::Prompt,
+        Self::Comparison,
+    ];
+
+    /// The card's name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Throughput => "Throughput",
+            Self::CrossCheck => "Cross-check",
+            Self::Capabilities => "Capabilities",
+            Self::Prompt => "Prompt analysis",
+            Self::Comparison => "Comparison",
+        }
+    }
+
+    /// What the run answers, in one line.
+    #[must_use]
+    pub const fn answers(self) -> &'static str {
+        match self {
+            Self::Throughput => {
+                "Generation speed at each depth, prefill rate, time to first token, KV cache memory"
+            }
+            Self::CrossCheck => {
+                "Whether MCF's own engine agrees with the provisioned engine's tokens"
+            }
+            Self::Capabilities => {
+                "Chat template, stop conditions, thinking, tool calls, context, language cost, vision"
+            }
+            Self::Prompt => "What each part of a prompt does to the answer",
+            Self::Comparison => "Two models on one question under one engine",
+        }
+    }
+
+    /// The command that runs it, for the runs the daemon does not carry
+    /// yet (B-478): the window says so and offers the command rather than
+    /// a button that does nothing (§3.15).
+    #[must_use]
+    pub fn command(self, model: &str) -> Option<String> {
+        match self {
+            Self::Capabilities => Some(format!("mcf probe {model} --apply")),
+            Self::Comparison => Some(format!("mcf bench {model} <other-model> --prompt \"…\"")),
+            Self::Throughput | Self::CrossCheck | Self::Prompt => None,
+        }
+    }
+}
+
 /// Which tab of the model page is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
@@ -1224,9 +1293,10 @@ pub enum Act {
         /// The deepest context to sample.
         deepest: u64,
     },
-    /// Run what is ticked on the chosen model: the ladder to the chosen
-    /// window, the cross-check, or both in turn.
-    RunChosen,
+    /// Start one run's card on the chosen model (D50).
+    Run(Card),
+    /// Read a run's figures where they are kept: the model's Statistics tab.
+    SeeStatistics,
     /// Cut the run that is going short.
     Stop,
     /// Hold the model that was last held, again.
@@ -1282,10 +1352,6 @@ pub enum Act {
     Shut,
     /// Set the context window to one of the offered powers of two.
     SetWindow(u64),
-    /// Show, or hide, what one test's last run found.
-    Result(usize),
-    /// Turn one test on or off.
-    Toggle(usize),
     /// Move one hosting setting on to its next value.
     Cycle(usize),
     /// Put every setting back to what MCF recommended.
@@ -1483,11 +1549,6 @@ pub struct Desk {
     /// was pressed for, so that a model chosen meanwhile is not held by a
     /// press that was for another.
     host_after: Option<String>,
-    /// Whether Run Selected still owes a cross-check once the ladder it
-    /// started has finished: one press, two runs, one after the other,
-    /// because the ladder and the cross-check both want the engine and the
-    /// machine's memory to themselves.
-    cross_check_after: bool,
     /// The component being built, by name, while a build runs — so the
     /// Components screen can show the build on the card it is for rather
     /// than somewhere else. Set on every build, whichever screen started it.
@@ -1530,8 +1591,6 @@ pub struct Desk {
     /// screen under both, and a click landing in the overlap would belong to
     /// whichever happened to be drawn second.
     pub open: Option<Picker>,
-    /// Which test's last run is being read, if any.
-    pub showing: Option<usize>,
     sampler: mcf_tui::machine::Sampler,
 }
 
@@ -1576,7 +1635,6 @@ impl Desk {
             no_settings: None,
             needs_engine: None,
             host_after: None,
-            cross_check_after: false,
             building: None,
             build_failed: None,
             hosted: None,
@@ -1588,7 +1646,6 @@ impl Desk {
             no_anatomy: None,
             window: 8192,
             open: None,
-            showing: None,
             sampler: mcf_tui::machine::Sampler::new(),
         }
     }
@@ -1811,14 +1868,6 @@ impl Desk {
             && job.finished
         {
             self.keep_the_run();
-            // The other half of what Run Selected was pressed for, now that
-            // the ladder has let the engine go — for the model it was
-            // pressed for, if it is still the one chosen.
-            if std::mem::take(&mut self.cross_check_after)
-                && let Some(at) = self.chosen
-            {
-                self.cross_check(at);
-            }
         }
         if let Doing::CrossChecking(job) = &self.doing
             && job.finished
@@ -1934,11 +1983,10 @@ impl Desk {
                     self.measure(at, deepest);
                 }
             }
-            Act::RunChosen => {
-                if let Some(at) = self.chosen {
-                    self.page = Page::Diagnostics;
-                    self.run_chosen(at);
-                }
+            Act::Run(card) => self.run_card(card),
+            Act::SeeStatistics => {
+                self.page = Page::Models;
+                self.tab = Tab::Statistics;
             }
             // A second click on the open picker shuts it, which is what every
             // dropdown does and what a reader tries first.
@@ -1954,21 +2002,6 @@ impl Desk {
                 self.window = window;
                 self.open = None;
             }
-            Act::Result(at) => {
-                self.showing = if self.showing == Some(at) {
-                    None
-                } else {
-                    Some(at)
-                };
-            }
-            // The console's rule: the rows one run answers flip together,
-            // and a row the window cannot run is not chosen (B-072, §3.15).
-            Act::Toggle(at) => mcf_tui::screens::diagnostics::toggle(
-                self.tests
-                    .iter_mut()
-                    .map(|test| (test.run, &mut test.chosen)),
-                at,
-            ),
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
             Act::HostIt => self.host_it(),
@@ -2493,14 +2526,23 @@ impl Desk {
     /// One after the other rather than at once, because both want the engine
     /// and the machine's memory to themselves, and a cross-check that ran
     /// beside a timing would have changed the timing (A6).
-    pub fn run_chosen(&mut self, at: usize) {
-        let chosen = |run: Run| self.tests.iter().any(|test| test.chosen && test.run == run);
-        let cross_check = chosen(Run::CrossCheck);
-        if chosen(Run::Ladder) {
-            self.cross_check_after = cross_check;
-            self.measure(at, self.window);
-        } else if cross_check {
-            self.cross_check(at);
+    pub fn run_card(&mut self, card: Card) {
+        let Some(at) = self.chosen else {
+            return;
+        };
+        match card {
+            Card::Throughput => {
+                self.page = Page::Diagnostics;
+                self.measure(at, self.window);
+            }
+            Card::CrossCheck => {
+                self.page = Page::Diagnostics;
+                self.cross_check(at);
+            }
+            Card::Prompt => self.page = Page::Prompt,
+            // Run at the command line until the daemon carries them
+            // (B-478); their cards say so and offer the command.
+            Card::Capabilities | Card::Comparison => {}
         }
     }
 
@@ -2697,11 +2739,9 @@ impl Desk {
     /// (A7, B-479).
     pub fn stop_run(&mut self) {
         match &mut self.doing {
-            Doing::Measuring(job) | Doing::CrossChecking(job) => {
+            Doing::Measuring(job) | Doing::CrossChecking(job) | Doing::Reporting(job) => {
                 job.stop();
-                self.cross_check_after = false;
             }
-            Doing::Reporting(job) => job.stop(),
             _ => {}
         }
     }
@@ -2969,20 +3009,12 @@ impl Desk {
         mcf_tui::screens::diagnostics::QUICK_DEPTH
     }
 
-    /// Whether anything is chosen: with every row unchosen, Run Selected has
-    /// nothing to run and says so, rather than climbing the ladder anyway
-    /// (§3.15).
-    #[must_use]
-    pub fn runs_something(&self) -> bool {
-        self.tests.iter().any(|test| test.chosen)
-    }
-
-    /// Roughly how long a run takes, as a range.
+    /// Roughly how long the throughput run takes, as a range: the whole
+    /// ladder to the chosen window, or the quick climb.
     ///
     /// A range because MCF's own estimates land between 0.58× and 1.42× of
     /// what runs actually take, and a single number would be a promise it
-    /// cannot keep. Each chosen run is counted once, on the row that names
-    /// it — five rows one ladder answers are one run's time, not five.
+    /// cannot keep.
     #[must_use]
     pub fn estimate(&self, quick: bool) -> (u64, u64) {
         // A quick run is the ladder only, and only to `QUICK_DEPTH`; the
@@ -2990,8 +3022,28 @@ impl Desk {
         let seconds: u64 = if quick {
             mcf_tui::screens::diagnostics::quick_seconds(&self.tests)
         } else {
-            mcf_tui::screens::diagnostics::chosen_seconds(&self.tests)
+            self.seconds_of(Run::Ladder)
         };
+        Self::spread(seconds)
+    }
+
+    /// Roughly how long the cross-check takes, as a range.
+    #[must_use]
+    pub fn cross_check_estimate(&self) -> (u64, u64) {
+        Self::spread(self.seconds_of(Run::CrossCheck))
+    }
+
+    /// The console's own estimate for one run, on the row that names it.
+    fn seconds_of(&self, run: Run) -> u64 {
+        self.tests
+            .iter()
+            .find(|test| test.run == run)
+            .and_then(|test| test.seconds)
+            .unwrap_or(30)
+    }
+
+    /// The range MCF's estimates land in against what runs take.
+    fn spread(seconds: u64) -> (u64, u64) {
         #[expect(
             clippy::integer_division,
             reason = "a range in whole seconds; the remainder of a second is \

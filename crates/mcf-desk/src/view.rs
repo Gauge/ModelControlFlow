@@ -32,7 +32,7 @@ use crate::font::Weight;
 use crate::paint::{Box, Painter, Rgb};
 use crate::ui::{self, Kind, Mouse};
 use crate::words;
-use crate::{Act, Caret, Desk, Doing, Model, Page, Picker, windows};
+use crate::{Act, Card, Caret, Desk, Doing, Model, Page, Picker, windows};
 use mcf_record::json::Value;
 use mcf_serve::anatomy::SaidVocabulary;
 
@@ -1918,117 +1918,153 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     y
 }
 
-/// The three buttons at the top of the page and the estimate under each of
-/// the two that run something.
-fn run_buttons(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    area: Box,
-    running: bool,
-) -> Option<Act> {
-    let ink = paint.ink;
-    let mut act = None;
-    let quick = Box::new(area.x, area.y, 150.0, 34.0);
-    let selected = Box::new(quick.right() + 18.0, area.y, 170.0, 34.0);
-    // Drawn quiet while a run is going: a button that will not do anything
-    // should not look like the one thing to do (§3.15).
-    let (quick_kind, selected_kind) = if running {
-        (Kind::Quiet, Kind::Quiet)
-    } else {
-        (Kind::Primary, Kind::Ordinary)
-    };
-    if ui::button(paint, mouse, quick, "Quick run", quick_kind) && !running {
-        act = Some(Act::Measure {
-            deepest: desk.quick_depth(),
-        });
-    }
-    if ui::button(paint, mouse, selected, "Run selected", selected_kind)
-        && !running
-        && desk.runs_something()
-    {
-        act = Some(Act::RunChosen);
-    }
-    // A prompt is a diagnostic about a prompt rather than about the model, so
-    // it is reached from here and not from the column (B-072).
-    let taking = Box::new(selected.right() + 18.0, area.y, 170.0, 34.0);
-    if ui::button(paint, mouse, taking, "Prompt analysis", Kind::Ordinary) && !running {
-        act = Some(Act::Go(Page::Prompt));
-    }
-    // Only while something runs: a run can be cut short, and the button
-    // that does it is there for as long as there is one to cut.
-    if running {
-        let stop = Box::new(taking.right() + 18.0, area.y, 110.0, 34.0);
-        if ui::button(paint, mouse, stop, "Stop", Kind::Primary) {
-            act = Some(Act::Stop);
-        }
-    }
-    let (low, high) = desk.estimate(true);
-    paint.say_centred(
-        Box::new(quick.x, quick.bottom(), quick.w, 20.0),
-        &span(low, high),
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    // Under Run Selected: the run's estimate, or that nothing chosen runs
-    // from here — a button that would do nothing says so first (§3.15).
-    let (low, high) = desk.estimate(false);
-    paint.say_centred(
-        Box::new(selected.x, selected.bottom(), selected.w, 20.0),
-        &if desk.runs_something() {
-            span(low, high)
-        } else {
-            "nothing chosen runs here".to_owned()
-        },
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    act
-}
-
-/// **Setting up a measurement.** Two buttons with what they cost, what will be
-/// measured, and the tests — the console's arrangement.
+/// **The Diagnostics page: one card per run** (D50, B-477). Each card names
+/// the run, says in one line what it answers, shows the controls the run
+/// takes with MCF's recommendation as the default, states what it will cost
+/// before its own Run, and shows its step and a Stop while it goes. When a
+/// run is done the card says so, and the figures are on the model's
+/// Statistics tab. No control here stands for a thing a run does not
+/// separately do: the checkbox rows that were one run's results drawn as
+/// five choices are gone.
 fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
-    let running = matches!(
-        &desk.doing,
-        Doing::Measuring(job) | Doing::CrossChecking(job) if !job.finished
-    );
-    let wide = area.w.min(680.0);
-
-    if let Some(said) = run_buttons(paint, desk, mouse, area, running) {
-        act = Some(said);
-    }
-    let mut y = area.y + 78.0;
-
-    spaced(paint, area.x, y, "setup", ink.faint);
-    y += 28.0;
-
-    // **The two pickers are dropdowns now, and were not before.** The model
-    // one navigated to the Host page and the window one cycled to the next
-    // power of two, while both wore a chevron. The list each opens is drawn
-    // last, over the table below, because in immediate mode the last thing
-    // painted is the thing on top.
     let mut menu: Option<(Picker, Box)> = None;
-    let mut act_from_card = None;
+
+    // The model every card runs on, first.
     let chosen_model = desk
         .chosen
         .and_then(|at| desk.models.get(at))
         .map_or_else(|| "none chosen".to_owned(), |held| held.name.clone());
+    paint.say_at(
+        area.x,
+        area.y,
+        "Model",
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    let box_of = Box::new(area.x + 110.0, area.y - 6.0, 420.0, 28.0);
+    let open = desk.open == Some(Picker::Model);
+    if ui::picker(paint, mouse, box_of, &chosen_model, open) {
+        act = Some(Act::Open(Picker::Model));
+    }
+    if open {
+        menu = Some((Picker::Model, box_of));
+    }
+    let top = area.y + 44.0;
+
+    // Two columns: the throughput run, which has the most to set and to
+    // show, on the left; the four others stacked on the right.
+    let left_w = (area.w * 0.56).min(600.0);
+    let left = Box::new(area.x, top, left_w, area.bottom() - top);
+    let right = Box::new(
+        left.right() + 24.0,
+        top,
+        (area.w - left_w - 24.0).max(280.0),
+        area.bottom() - top,
+    );
+    let (pressed, opened) = throughput_card(paint, desk, mouse, left);
+    act = pressed.or(act);
+    if let Some(opened) = opened {
+        menu = Some(opened);
+    }
+    let mut y = right.y;
+    for card in [
+        Card::CrossCheck,
+        Card::Capabilities,
+        Card::Prompt,
+        Card::Comparison,
+    ] {
+        let (pressed, below) =
+            small_card(paint, desk, mouse, Box::new(right.x, y, right.w, 0.0), card);
+        act = pressed.or(act);
+        y = below + 16.0;
+    }
+    if let Some((picker, at)) = menu
+        && let Some(picked) = open_menu(paint, desk, mouse, picker, at)
+    {
+        act = Some(picked);
+    }
+    act
+}
+
+/// A card's frame: the panel, its name and what it answers. Returns where
+/// the card's own rows begin.
+fn card_head(paint: &mut Painter, at: Box, card: Card) -> f32 {
+    let ink = paint.ink;
+    paint.panel(at, 10.0, ink.card, 255);
+    paint.edge(at, 10.0, ink.line, ink.card);
+    paint.say_at(
+        at.x + PAD,
+        at.y + 14.0,
+        card.name(),
+        Weight::Bold,
+        size::BODY,
+        ink.ink,
+    );
+    let mut y = at.y + 34.0;
+    for line in paint
+        .wrap(
+            card.answers(),
+            Weight::Regular,
+            size::SMALL,
+            at.w - 2.0 * PAD,
+        )
+        .iter()
+        .take(2)
+    {
+        paint.say_at(at.x + PAD, y, line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    y + 10.0
+}
+
+/// How tall a card's head is: its name and what it answers, wrapped to two
+/// lines at most.
+fn head_height(paint: &mut Painter, card: Card, w: f32) -> f32 {
+    let lines = paint
+        .wrap(card.answers(), Weight::Regular, size::SMALL, w - 2.0 * PAD)
+        .len()
+        .clamp(1, 2);
+    #[allow(clippy::cast_precision_loss, reason = "one or two lines")]
+    let lines = lines as f32;
+    34.0 + 16.0 * lines + 10.0
+}
+
+/// Whether a run is going, so that no card offers a second one meanwhile.
+fn a_run_is_going(desk: &Desk) -> bool {
+    matches!(
+        &desk.doing,
+        Doing::Measuring(job) | Doing::CrossChecking(job) if !job.finished
+    )
+}
+
+/// The throughput card: device and window pickers, where the model lands,
+/// the depths the window implies, two ways to run it with their cost, and
+/// the run's readings as they come.
+fn throughput_card(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: Box,
+) -> (Option<Act>, Option<(Picker, Box)>) {
+    let ink = paint.ink;
+    let mut act = None;
+    let mut menu = None;
+    let running = a_run_is_going(desk);
+    let inner = Box::new(at.x + PAD, at.y, at.w - 2.0 * PAD, at.h);
+    let mut y = card_head(paint, at, Card::Throughput);
     for (picker, label, value) in [
-        (Picker::Model, "Model", chosen_model),
+        (Picker::On, "Device", on_label(desk.on)),
         (
             Picker::Window,
             "Context length",
             format!("{} tokens", words::grouped(desk.window)),
         ),
-        (Picker::On, "Device", on_label(desk.on)),
     ] {
-        paint.say_at(area.x, y, label, Weight::Regular, size::BODY, ink.quiet);
-        let box_of = Box::new(area.x + 190.0, y - 6.0, 340.0, 28.0);
+        paint.say_at(inner.x, y, label, Weight::Regular, size::BODY, ink.quiet);
+        let box_of = Box::new(inner.x + 150.0, y - 6.0, (inner.w - 150.0).min(360.0), 28.0);
         let open = desk.open == Some(picker);
         if ui::picker(paint, mouse, box_of, &value, open) {
             act = Some(Act::Open(picker));
@@ -2038,57 +2074,306 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         }
         y += 34.0;
     }
-
-    y = placement_rows(paint, desk, area.x, y, wide);
+    y = placement_rows(paint, desk, inner.x, y, inner.w);
     if let Some((component, because)) = &desk.card_unused {
-        if let Some(act) = card_unused(
+        if let Some(pressed) = card_unused(
             paint,
             desk,
             mouse,
-            Box::new(area.x, y, wide, 0.0),
+            Box::new(inner.x, y, inner.w, 0.0),
             component,
             because,
         ) {
-            act_from_card = Some(act);
+            act = Some(pressed);
         }
-        y += card_unused_height(paint, desk, wide, because);
+        y += card_unused_height(paint, desk, inner.w, because);
     }
-
-    // Choosing a window implies every power of two below it, so the depths are
-    // stated under it rather than offered as a second set of choices somebody
-    // could contradict the first with.
-    paint.say_at(area.x, y, "Depths", Weight::Regular, size::BODY, ink.quiet);
-    paint.say_at(
-        area.x + 190.0,
-        y,
+    // Choosing a window implies every power of two below it, so the depths
+    // are stated rather than offered as a second set of choices.
+    paint.say_at(inner.x, y, "Depths", Weight::Regular, size::BODY, ink.quiet);
+    let depths = paint.elide(
         &desk.ladder_line(),
+        Weight::Regular,
+        size::BODY,
+        inner.w - 150.0,
+    );
+    paint.say_at(
+        inner.x + 150.0,
+        y,
+        &depths,
         Weight::Regular,
         size::BODY,
         ink.ink,
     );
-    paint.say_right(
-        area.x + wide,
+    y += 34.0;
+
+    let (pressed, below) = throughput_buttons(paint, desk, mouse, (inner.x, y), running);
+    act = pressed.or(act);
+    y = below;
+    readings(
+        paint,
+        desk,
+        Box::new(inner.x, y, inner.w, (at.bottom() - y).max(0.0)),
+    );
+    (act, menu)
+}
+
+/// Quick run and Run, each with its cost; Stop while the ladder climbs; and
+/// where the figures went once it has. Returns where the readings begin.
+fn throughput_buttons(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    (x, y): (f32, f32),
+    running: bool,
+) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let mut act = None;
+    let quick = Box::new(x, y, 130.0, 34.0);
+    let full = Box::new(quick.right() + 14.0, y, 110.0, 34.0);
+    let kind = |primary: bool| {
+        if running {
+            Kind::Quiet
+        } else if primary {
+            Kind::Primary
+        } else {
+            Kind::Ordinary
+        }
+    };
+    if ui::button(paint, mouse, quick, "Quick run", kind(false)) && !running {
+        act = Some(Act::Measure {
+            deepest: desk.quick_depth(),
+        });
+    }
+    if ui::button(paint, mouse, full, "Run", kind(true)) && !running {
+        act = Some(Act::Run(Card::Throughput));
+    }
+    let measuring = matches!(&desk.doing, Doing::Measuring(job) if !job.finished);
+    if measuring {
+        let stop = Box::new(full.right() + 14.0, y, 90.0, 34.0);
+        if ui::button(paint, mouse, stop, "Stop", Kind::Primary) {
+            act = Some(Act::Stop);
+        }
+    }
+    for (button, quick_one) in [(quick, true), (full, false)] {
+        let (low, high) = desk.estimate(quick_one);
+        paint.say_centred(
+            Box::new(button.x, button.bottom(), button.w, 20.0),
+            &span(low, high),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    let mut below = y + 34.0 + 22.0;
+    if let Some(pressed) = done_line(paint, desk, mouse, (x, below), Card::Throughput) {
+        act = Some(pressed);
+    }
+    if is_done(desk, Card::Throughput) {
+        below += 30.0;
+    }
+    (act, below + 12.0)
+}
+
+/// Whether this card's run has finished, with figures to read.
+fn is_done(desk: &Desk, card: Card) -> bool {
+    match (card, &desk.doing) {
+        (Card::Throughput, Doing::Measuring(job))
+        | (Card::CrossCheck, Doing::CrossChecking(job)) => job.finished && job.refused.is_none(),
+        _ => false,
+    }
+}
+
+/// *Done — figures on Statistics*, with the button that goes there, where
+/// the card's run has finished (D50).
+fn done_line(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    (x, y): (f32, f32),
+    card: Card,
+) -> Option<Act> {
+    if !is_done(desk, card) {
+        return None;
+    }
+    let ink = paint.ink;
+    paint.say_at(
+        x,
+        y + 8.0,
+        "Done — figures on the model's Statistics tab",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    let (pressed, _) = ui::fitted(paint, mouse, (x + 300.0, y), "Statistics", Kind::Ordinary);
+    pressed.then_some(Act::SeeStatistics)
+}
+
+/// One of the four smaller cards. Returns what was pressed and where the
+/// card ends.
+fn small_card(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: Box,
+    card: Card,
+) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let running = a_run_is_going(desk);
+    let inner_x = at.x + PAD;
+    let inner_w = at.w - 2.0 * PAD;
+    // The card's height is known before it is drawn: the frame is painted
+    // first and the rows go over it.
+    let model = desk
+        .chosen
+        .and_then(|at| desk.models.get(at))
+        .map_or_else(|| "<model>".to_owned(), |held| held.name.clone());
+    let height =
+        head_height(paint, card, at.w) + small_card_height(paint, desk, card, inner_w, &model);
+    let frame = Box::new(at.x, at.y, at.w, height);
+    let mut y = card_head(paint, frame, card);
+    let mut act = None;
+    match card {
+        Card::CrossCheck => {
+            let checking = matches!(&desk.doing, Doing::CrossChecking(job) if !job.finished);
+            let (pressed, button) = ui::fitted(
+                paint,
+                mouse,
+                (inner_x, y),
+                if checking { "Stop" } else { "Run" },
+                if running && !checking {
+                    Kind::Quiet
+                } else {
+                    Kind::Primary
+                },
+            );
+            if pressed && checking {
+                act = Some(Act::Stop);
+            } else if pressed && !running {
+                act = Some(Act::Run(Card::CrossCheck));
+            }
+            let (low, high) = desk.cross_check_estimate();
+            paint.say_at(
+                button.right() + 12.0,
+                y + 8.0,
+                &span(low, high),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            y += 44.0;
+            if let Some(pressed) = done_line(paint, desk, mouse, (inner_x, y), card) {
+                act = Some(pressed);
+            }
+            if let Doing::CrossChecking(job) = &desk.doing
+                && !is_done(desk, card)
+            {
+                cross_check_progress(paint, job, Box::new(inner_x, y + 12.0, inner_w, 120.0));
+            }
+        }
+        Card::Prompt => {
+            let (pressed, _) = ui::fitted(paint, mouse, (inner_x, y), "Open", Kind::Primary);
+            if pressed {
+                act = Some(Act::Go(Page::Prompt));
+            }
+        }
+        Card::Capabilities | Card::Comparison => {
+            if let Some(pressed) =
+                command_rows(paint, desk, mouse, (inner_x, y), inner_w, card, &model)
+            {
+                act = Some(pressed);
+            }
+        }
+        Card::Throughput => {}
+    }
+    (act, frame.bottom())
+}
+
+/// How tall a small card is, from what it shows.
+fn small_card_height(
+    paint: &mut Painter,
+    desk: &Desk,
+    card: Card,
+    inner_w: f32,
+    model: &str,
+) -> f32 {
+    match card {
+        Card::CrossCheck => {
+            let progress = match &desk.doing {
+                Doing::CrossChecking(_) if !is_done(desk, card) => 120.0,
+                _ => 0.0,
+            };
+            let done = if is_done(desk, card) { 34.0 } else { 0.0 };
+            44.0 + progress + done + 12.0
+        }
+        Card::Prompt => 34.0 + 16.0,
+        Card::Capabilities | Card::Comparison => {
+            let applied = applied_lines(desk, card).len() as f32 * 18.0;
+            let command = card.command(model).map_or(0.0, |command| {
+                paint
+                    .wrap(&command, Weight::Regular, size::SMALL, inner_w)
+                    .len() as f32
+                    * 16.0
+            });
+            applied + 20.0 + command + 40.0 + 12.0
+        }
+        Card::Throughput => 0.0,
+    }
+}
+
+/// What the probes applied to the chosen model, where they have run: the
+/// capabilities card shows the last findings that reached the model.
+fn applied_lines(desk: &Desk, card: Card) -> Vec<String> {
+    if card != Card::Capabilities {
+        return Vec::new();
+    }
+    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    if let Some(addressing) = &held.applied_addressing {
+        lines.push(format!("Chat template: {addressing}"));
+    }
+    if let Some(budget) = &held.applied_budget {
+        lines.push(format!("Token budget: {budget}"));
+    }
+    lines
+}
+
+/// The rows of a card whose run is at the command line for now: what the
+/// probes last applied, the sentence saying where it runs, the command,
+/// and Copy (B-478).
+fn command_rows(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    (x, mut y): (f32, f32),
+    wide: f32,
+    card: Card,
+    model: &str,
+) -> Option<Act> {
+    let ink = paint.ink;
+    for line in applied_lines(desk, card) {
+        let shown = paint.elide(&line, Weight::Regular, size::SMALL, wide);
+        paint.say_at(x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
+        y += 18.0;
+    }
+    paint.say_at(
+        x,
         y,
-        "every step",
+        "Runs at the command line for now:",
         Weight::Regular,
         size::SMALL,
         ink.faint,
     );
-    y += 42.0;
-
-    let (chose, below) = tests_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0));
-    act = chose.or(act_from_card).or(act);
-    readings(
-        paint,
-        desk,
-        Box::new(area.x, below, wide, area.bottom() - below),
-    );
-    if let Some((picker, at)) = menu
-        && let Some(picked) = open_menu(paint, desk, mouse, picker, at)
-    {
-        act = Some(picked);
+    y += 20.0;
+    let command = card.command(model)?;
+    for line in paint.wrap(&command, Weight::Regular, size::SMALL, wide) {
+        paint.say_at(x, y, &line, Weight::Regular, size::SMALL, ink.ink);
+        y += 16.0;
     }
-    act
+    let (pressed, _) = ui::fitted(paint, mouse, (x, y + 4.0), "Copy", Kind::Ordinary);
+    pressed.then_some(Act::Copy(command))
 }
 
 /// Where the model lands — engine and device — as MCF resolved them, in the
@@ -2238,180 +2523,6 @@ fn open_menu(
                 .map(Act::SetWindow)
         }
     }
-}
-
-/// The tests, one row each: what each needs, what it should cost, what it
-/// actually cost, and a way into what it found.
-///
-/// **There used to be a second table under this one** — *selected 2 of 5* and
-/// an estimate — and it said nothing this screen was not already saying: the
-/// estimate for the selection is printed under the Run Selected button it
-/// belongs to, and a count of ticks is a thing the ticks themselves show. It
-/// was two tables where one would do, so the columns it was standing in for
-/// are columns now.
-///
-/// **`time` became `estimate` because two different numbers cannot share a
-/// heading.** MCF's estimate lands between 0.58x and 1.42x of a real run, so
-/// the guess and the measurement sit in columns that say which they are.
-fn tests_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, table: Box) -> (Option<Act>, f32) {
-    let wide = table.w;
-    let mut act = None;
-    let mut y = heads(
-        paint,
-        table,
-        "tests",
-        &[
-            Column {
-                head: "devices",
-                at: wide - 250.0,
-                right: true,
-            },
-            Column {
-                head: "estimate",
-                at: wide - 160.0,
-                right: true,
-            },
-            Column {
-                head: "run time",
-                at: wide - 76.0,
-                right: true,
-            },
-            Column {
-                head: "results",
-                at: wide,
-                right: true,
-            },
-        ],
-    );
-    for at in 0..desk.tests.len() {
-        if let Some(said) = test_row(paint, desk, mouse, Box::new(table.x, y, wide, 0.0), at) {
-            act = Some(said);
-        }
-        y += 24.0;
-    }
-    y += 12.0;
-    y = found(paint, desk, Box::new(table.x, y, wide, 0.0));
-    (act, y + 18.0)
-}
-
-/// One test's row. Returns what a click on it meant.
-fn test_row(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    at_row: Box,
-    at: usize,
-) -> Option<Act> {
-    let ink = paint.ink;
-    let (x, y, wide) = (at_row.x, at_row.y, at_row.w);
-    let test = desk.tests.get(at)?;
-    let mut act = None;
-    // The row's hit area stops short of the results button, so a click meant
-    // for the button never also toggles the test under it.
-    let hit = Box::new(x - 6.0, y - 5.0, wide - 80.0, 24.0);
-    if mouse.over(hit) {
-        paint.panel(hit, 6.0, ink.line, 90);
-    }
-    let mark = Box::new(x, y + 2.0, 13.0, 13.0);
-    if test.chosen {
-        paint.panel(mark, 3.0, ink.accent, 255);
-        ui::tick(paint, mark, ink.accent_ink);
-    } else {
-        paint.edge(mark, 3.0, ink.line, ink.card);
-    }
-    let name = paint.elide(test.name, Weight::Regular, size::BODY, wide - 420.0);
-    paint.say_at(x + 26.0, y, &name, Weight::Regular, size::BODY, ink.ink);
-    paint.say_right(
-        x + wide - 250.0,
-        y,
-        test.devices,
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    // The estimate is the run's, on the row that names it; a row the same
-    // run answers says where its time is rather than inventing one (A7).
-    let (estimate, estimate_size) = test.seconds.map_or_else(
-        || {
-            let held_by = match test.run {
-                crate::Run::Ladder => "in the ladder",
-                crate::Run::CrossCheck => "in the cross-check",
-            };
-            (held_by.to_owned(), size::SMALL)
-        },
-        |seconds| (clock(seconds), size::BODY),
-    );
-    paint.say_right(
-        x + wide - 160.0,
-        y,
-        &estimate,
-        Weight::Regular,
-        estimate_size,
-        ink.quiet,
-    );
-    // **A test that has never run has no run time, and says so** (A7). A zero
-    // here would read as *instant*, which is the one thing it is not.
-    let (ran, weight, colour) = test.ran.map_or_else(
-        || (UNKNOWN.to_owned(), Weight::Regular, ink.faint),
-        |seconds| (clock(seconds), Weight::Bold, ink.ink),
-    );
-    paint.say_right(x + wide - 76.0, y, &ran, weight, size::BODY, colour);
-    // **The button only exists where there is something to read, and where
-    // there is not, the column is empty.** It said `Unknown` at first, beside
-    // the `Unknown` in the run-time column — two of them in a row, saying one
-    // thing. The run time is the reading that is absent (A7); a results button
-    // is furniture, and absent furniture is drawn by drawing nothing.
-    if test.result.is_some() {
-        let open = desk.showing == Some(at);
-        let button = Box::new(x + wide - 66.0, y - 4.0, 66.0, 22.0);
-        if ui::button(
-            paint,
-            mouse,
-            button,
-            if open { "Hide" } else { "View" },
-            if open { Kind::Primary } else { Kind::Ordinary },
-        ) {
-            act = Some(Act::Result(at));
-        }
-    }
-    if mouse.clicked(hit) {
-        act = Some(Act::Toggle(at));
-    }
-    act
-}
-
-/// What the run of one test found, opened under the table rather than over it.
-///
-/// **Under, because the table is the thing being read.** A panel that covered
-/// the rows would answer *what did this find* by hiding *which of them it was
-/// about*.
-fn found(paint: &mut Painter, desk: &Desk, area: Box) -> f32 {
-    let ink = paint.ink;
-    let Some(at) = desk.showing else {
-        return area.y;
-    };
-    let Some(test) = desk.tests.get(at) else {
-        return area.y;
-    };
-    let Some(lines) = test.result.as_ref() else {
-        return area.y;
-    };
-    let mut y = area.y;
-    paint.rule((area.x, y), (area.x + area.w, y), ink.line, 255);
-    y += 12.0;
-    paint.say_at(area.x, y, test.name, Weight::Bold, size::BODY, ink.ink);
-    y += 22.0;
-    for line in lines {
-        // A sentence the daemon wrote — what a start-up figure includes, why
-        // a cost could not be read — is longer than the panel is wide, and
-        // an ellipsis in it would cut the caveat off the figure (A7).
-        for shown in paint.wrap(line, Weight::Regular, size::BODY, area.w) {
-            let shown = paint.elide(&shown, Weight::Regular, size::BODY, area.w);
-            paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.quiet);
-            y += 20.0;
-        }
-    }
-    y
 }
 
 /// What a cross-check has said so far: which half is running, then the

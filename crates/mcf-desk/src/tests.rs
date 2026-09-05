@@ -438,63 +438,49 @@ fn a_test_that_never_ran_reports_neither_a_time_nor_a_result() {
     }
 }
 
-/// The rows one ladder answers are chosen together, the cross-check row is
-/// chosen alone, and Run Selected runs nothing when nothing is chosen
-/// (§3.15, B-072, B-424).
+/// Each card has its own cost: the throughput run's is one ladder's time
+/// and the cross-check's is its own, whatever else is on the page (D50,
+/// B-477).
 #[test]
-fn the_rows_one_run_answers_are_chosen_together() {
-    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    let ladder: Vec<usize> = desk
-        .tests
-        .iter()
-        .enumerate()
-        .filter(|(_, test)| test.run == crate::Run::Ladder)
-        .map(|(at, _)| at)
-        .collect();
-    assert_eq!(ladder.len(), 5);
-    let cross_check = desk
-        .tests
-        .iter()
-        .position(|test| test.run == crate::Run::CrossCheck)
-        .unwrap_or_else(|| panic!("no cross-check row"));
-    assert!(desk.runs_something());
-    assert_eq!(desk.estimate(false), (104, 255), "one run's time, not five");
-
-    desk.act(crate::Act::Toggle(ladder[1]));
-    assert!(ladder.iter().all(|&at| !desk.tests[at].chosen));
-    assert!(!desk.runs_something());
-    desk.act(crate::Act::Toggle(cross_check));
-    assert!(
-        desk.tests[cross_check].chosen,
-        "the cross-check row was not chosen"
-    );
-    assert!(
-        ladder.iter().all(|&at| !desk.tests[at].chosen),
-        "the ladder came with it"
-    );
-    assert!(desk.runs_something());
+fn each_card_has_its_own_cost() {
+    let desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    assert_eq!(desk.estimate(false), (104, 255), "one ladder's time");
     assert_eq!(
-        desk.estimate(false),
+        desk.cross_check_estimate(),
         (52, 127),
         "the cross-check's own time"
     );
-    desk.act(crate::Act::Toggle(ladder[3]));
-    assert!(ladder.iter().all(|&at| desk.tests[at].chosen));
+    let (low, high) = desk.estimate(true);
+    assert!(
+        low < 104 && high < 255,
+        "a quick run costs less than the ladder"
+    );
 }
 
-/// The results button opens what a run found, and the same button closes it.
+/// A run's card starts that run and no other: the throughput card climbs
+/// the ladder, the cross-check card reads with MCF's own engine, the prompt
+/// card opens the prompt page, and a card whose run is at the command line
+/// starts nothing (D50).
 #[test]
-fn a_result_is_opened_and_closed_by_the_one_button() {
+fn a_card_starts_its_own_run() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    assert_eq!(desk.showing, None);
-    desk.act(crate::Act::Result(0));
-    assert_eq!(desk.showing, Some(0));
-    desk.act(crate::Act::Result(0));
-    assert_eq!(desk.showing, None, "the same button did not close it");
-    // A different row replaces it rather than opening a second panel.
-    desk.act(crate::Act::Result(0));
-    desk.act(crate::Act::Result(3));
-    assert_eq!(desk.showing, Some(3));
+    desk.models = vec![Model::default()];
+    desk.chosen = Some(0);
+    desk.page = Page::Diagnostics;
+    desk.act(crate::Act::Run(crate::Card::Prompt));
+    assert_eq!(desk.page, Page::Prompt);
+    desk.page = Page::Diagnostics;
+    desk.act(crate::Act::Run(crate::Card::Capabilities));
+    assert!(matches!(desk.doing, crate::Doing::Nothing));
+    desk.act(crate::Act::Run(crate::Card::Comparison));
+    assert!(matches!(desk.doing, crate::Doing::Nothing));
+    assert_eq!(
+        crate::Card::Capabilities.command("a-model").as_deref(),
+        Some("mcf probe a-model --apply")
+    );
+    desk.act(crate::Act::SeeStatistics);
+    assert_eq!(desk.page, Page::Models);
+    assert_eq!(desk.tab, crate::Tab::Statistics);
 }
 
 /// A measurement in the record reaches the model's page.
