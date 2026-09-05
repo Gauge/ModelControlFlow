@@ -727,6 +727,111 @@ fn pressed_at(desk: &Desk, at: (f32, f32)) -> Option<mcf_desk::Act> {
     mcf_desk::view::draw(&mut paint, desk, &mouse)
 }
 
+/// What one frame with this mouse means, on a window of the given size.
+fn acted_with(desk: &Desk, mouse: &Mouse, size: (u32, u32)) -> Option<mcf_desk::Act> {
+    let mut paint = match Painter::on_paper(size.0, size.1, 1.0, NIGHT) {
+        Ok(paint) => paint,
+        Err(why) => {
+            eprintln!("skipped: {why}");
+            return None;
+        }
+    };
+    mcf_desk::view::draw(&mut paint, desk, mouse)
+}
+
+/// A window of the given size, drawn to paper.
+fn drawn_sized(desk: &Desk, ink: Ink, name: &str, size: (u32, u32)) -> mcf_desk::paper::Paper {
+    let mut paint = match Painter::on_paper(size.0, size.1, 1.0, ink) {
+        Ok(paint) => paint,
+        Err(why) => {
+            eprintln!("skipped: {why}");
+            return mcf_desk::paper::Paper::new(1, 1, 1.0);
+        }
+    };
+    let _going = mcf_desk::view::draw(&mut paint, desk, &Mouse::default());
+    let Some(paper) = paint.paper() else {
+        panic!("a paper painter drew somewhere else");
+    };
+    if let Ok(into) = std::env::var("MCF_LOOK") {
+        let _written = std::fs::write(format!("{into}/{name}.ppm"), paper.as_pixmap());
+    }
+    mcf_desk::paper::Paper::from_pixels(paper.width, paper.height, paper.pixels.clone())
+}
+
+/// A library of many models, more than a small window shows at once.
+fn many_models() -> Desk {
+    let mut desk = four_models();
+    for at in 0..14 {
+        let Some(mut held) = desk.models.get(1).cloned() else {
+            break;
+        };
+        held.name = format!("Model-{at:02}-Instruct-Q4_K_M");
+        held.path = format!("/home/a/.local/share/mcf/models/Model-{at:02}.gguf");
+        desk.models.push(held);
+    }
+    desk
+}
+
+/// The library scrolls by the wheel over it and shows a bar, the splitters
+/// move by dragging, and a splitter cannot be dragged past the room an area
+/// needs (B-490).
+#[test]
+fn the_library_scrolls_and_the_splitters_move() {
+    let desk = many_models();
+    let small = (900, 560);
+    let wheel = Mouse {
+        at: (260.0, 250.0),
+        down: false,
+        began: None,
+        click: None,
+        wheel: -1.0,
+    };
+    assert_eq!(
+        acted_with(&desk, &wheel, small),
+        Some(mcf_desk::Act::Scroll(mcf_desk::Region::Library, 48)),
+        "the wheel over the library does not scroll it"
+    );
+    let mut scrolled = many_models();
+    let _was = scrolled.scrolls.insert(mcf_desk::Region::Library, 48.0);
+    let still = drawn_sized(&desk, DAY, "scroll-library-top", small);
+    let moved = drawn_sized(&scrolled, DAY, "scroll-library-moved", small);
+    if still.width > 1 {
+        assert!(moved.pixels != still.pixels, "scrolling drew the same list");
+    }
+    // The splitter between the library and the page: pressed on the band,
+    // dragged to the right.
+    let band_x = desk.splits.side + 26.0 + desk.splits.list + 20.0;
+    let drag = Mouse {
+        at: (band_x + 60.0, 300.0),
+        down: true,
+        began: Some((band_x, 300.0)),
+        click: None,
+        wheel: 0.0,
+    };
+    let Some(mcf_desk::Act::Split(mcf_desk::Splitter::List, to)) = acted_with(&desk, &drag, small)
+    else {
+        panic!("dragging the band between the library and the page moved nothing");
+    };
+    let mut wider = many_models();
+    wider.act(mcf_desk::Act::Split(mcf_desk::Splitter::List, to));
+    assert!(
+        wider.splits.list > desk.splits.list,
+        "the library did not widen"
+    );
+    wider.act(mcf_desk::Act::Split(mcf_desk::Splitter::List, 10_000));
+    assert!(
+        (wider.splits.list - 520.0).abs() < 0.5,
+        "a splitter is kept inside its room: {}",
+        wider.splits.list
+    );
+    wider.act(mcf_desk::Act::Split(mcf_desk::Splitter::Side, 0));
+    assert!(
+        (wider.splits.side - 120.0).abs() < 0.5,
+        "the column is not kept inside its room: {}",
+        wider.splits.side
+    );
+}
+
 /// Finds the act a labelled control produces, by pressing everywhere it could
 /// be.
 ///
@@ -1435,7 +1540,7 @@ fn each_row_says_how_much_of_it_the_model_expected() {
     // The rows sit under the readings table, past the window's foot until
     // the report is scrolled up to them.
     let mut desk = a_report();
-    desk.scroll = 330.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 330.0);
     let found = match &desk.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -1449,7 +1554,7 @@ fn each_row_says_how_much_of_it_the_model_expected() {
     let ground = DAY.ground;
     let with = drawn(&desk, DAY, "prompt-report").inked(ground);
     let mut unread = a_report();
-    unread.scroll = 330.0;
+    let _was = unread.scrolls.insert(mcf_desk::Region::Prompt, 330.0);
     if let mcf_desk::Doing::Reporting(job) = &mut unread.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1472,11 +1577,11 @@ fn each_row_says_how_much_of_it_the_model_expected() {
 fn the_words_the_model_did_not_expect_come_first() {
     use mcf_record::json::Value;
     let mut desk = a_report();
-    desk.scroll = 200.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 200.0);
     let ground = DAY.ground;
     let with = drawn(&desk, DAY, "prompt-expected").inked(ground);
     let mut unread = a_report();
-    unread.scroll = 200.0;
+    let _was = unread.scrolls.insert(mcf_desk::Region::Prompt, 200.0);
     if let mcf_desk::Doing::Reporting(job) = &mut unread.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1502,7 +1607,7 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
     // The rows sit under the readings table, past the window's foot until
     // the report is scrolled up to them.
     let mut desk = a_report();
-    desk.scroll = 330.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 330.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowWithout(1), (540.0, 720.0)),
         "no sentence in the report could be pressed"
@@ -1511,7 +1616,7 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
     // And what is drawn changes: the answer without a sentence is not the
     // answer to the prompt as written.
     let mut chosen = a_report();
-    chosen.scroll = 330.0;
+    let _was = chosen.scrolls.insert(mcf_desk::Region::Prompt, 330.0);
     chosen.shown = Some(mcf_desk::Shown::Without(1));
     let ground = DAY.ground;
     let as_written = drawn(&desk, DAY, "answer-as-written").inked(ground);
@@ -1530,19 +1635,19 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
     // The alone table sits under the removed and floors tables, past the
     // window's foot: the page is scrolled to it, as a reader would.
     let mut desk = a_report();
-    desk.scroll = 780.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 780.0);
     let rows = (520.0, 640.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowAlone(1), rows),
         "no sentence alone in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1400.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut alone = a_report();
-    alone.scroll = 1400.0;
+    let _was = alone.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     alone.shown = Some(mcf_desk::Shown::Alone(1));
     let mut without = a_report();
-    without.scroll = 1400.0;
+    let _was = without.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     without.shown = Some(mcf_desk::Shown::Without(1));
     let ground = DAY.ground;
     let to_alone = drawn(&alone, DAY, "answer-alone").inked(ground);
@@ -1560,7 +1665,7 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
     // A report that did not ask has no alone line to press and none drawn
     // (A7): the lines say what was read, not what could have been.
     let mut unasked = a_report();
-    unasked.scroll = 780.0;
+    let _was = unasked.scrolls.insert(mcf_desk::Region::Prompt, 780.0);
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1571,7 +1676,7 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
         !act_within(&unasked, &mcf_desk::Act::ShowAlone(1), rows),
         "a sentence alone is offered where it was never read"
     );
-    desk.scroll = 780.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 780.0);
     assert_ne!(
         drawn(&desk, DAY, "prompt-report").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-alone").inked(ground),
@@ -1588,16 +1693,16 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
     // window's foot: the page is scrolled to them, which is how a reader
     // reaches them too.
     let mut desk = a_report();
-    desk.scroll = 980.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 980.0);
     let rows = (520.0, 640.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowPrefix(1), rows),
         "no prefix in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1400.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut prefix = a_report();
-    prefix.scroll = 1400.0;
+    let _was = prefix.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     prefix.shown = Some(mcf_desk::Shown::Prefix(1));
     let ground = DAY.ground;
     assert_ne!(
@@ -1606,7 +1711,7 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         "the answer to a prefix drew as the answer as written"
     );
     let mut unasked = a_report();
-    unasked.scroll = 980.0;
+    let _was = unasked.scrolls.insert(mcf_desk::Region::Prompt, 980.0);
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1616,7 +1721,7 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         !act_within(&unasked, &mcf_desk::Act::ShowPrefix(1), rows),
         "a prefix is offered where none was read"
     );
-    desk.scroll = 980.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 980.0);
     assert_ne!(
         drawn(&desk, DAY, "prompt-report").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-prefixes").inked(ground),
@@ -1632,16 +1737,16 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
     // The rows sit under the prefixes, past the window's foot: the page is
     // scrolled to them, which is how a reader reaches them too.
     let mut desk = a_report();
-    desk.scroll = 1105.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1105.0);
     let rows = (520.0, 640.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowSwap(1), rows),
         "no swap in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1400.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut swap = a_report();
-    swap.scroll = 1400.0;
+    let _was = swap.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     swap.shown = Some(mcf_desk::Shown::Swap(1));
     let ground = DAY.ground;
     assert_ne!(
@@ -1650,7 +1755,7 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
         "the answer to a swap drew as the answer as written"
     );
     let mut unasked = a_report();
-    unasked.scroll = 1105.0;
+    let _was = unasked.scrolls.insert(mcf_desk::Region::Prompt, 1105.0);
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1660,7 +1765,7 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
         !act_within(&unasked, &mcf_desk::Act::ShowSwap(1), rows),
         "a swap is offered where none was read"
     );
-    desk.scroll = 1105.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1105.0);
     assert_ne!(
         drawn(&desk, DAY, "prompt-report-swaps").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-swaps").inked(ground),
@@ -1676,7 +1781,7 @@ fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
     // The rows sit under the swaps, past the window's foot: the page is
     // scrolled to them, which is how a reader reaches them too.
     let mut desk = a_report();
-    desk.scroll = 1250.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1250.0);
     let rows = (400.0, 700.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowForm(3), rows),
@@ -1687,9 +1792,9 @@ fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
         "a form not rendered was offered as an answer"
     );
     let mut form = a_report();
-    form.scroll = 1400.0;
+    let _was = form.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     form.shown = Some(mcf_desk::Shown::Form(3));
-    desk.scroll = 1400.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let ground = DAY.ground;
     assert_ne!(
         drawn(&desk, DAY, "answer-as-written-formed").inked(ground),
@@ -1697,7 +1802,7 @@ fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
         "the answer to a form drew as the answer as written"
     );
     let mut unasked = a_report();
-    unasked.scroll = 1250.0;
+    let _was = unasked.scrolls.insert(mcf_desk::Region::Prompt, 1250.0);
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1707,7 +1812,7 @@ fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
         !act_within(&unasked, &mcf_desk::Act::ShowForm(3), rows),
         "a form is offered where none was read"
     );
-    desk.scroll = 1250.0;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1250.0);
     assert_ne!(
         drawn(&desk, DAY, "prompt-report-forms").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-forms").inked(ground),
@@ -1721,7 +1826,7 @@ fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
 fn the_report_scrolls_under_the_controls_and_not_over_them() {
     let still = a_report();
     let mut scrolled = a_report();
-    scrolled.scroll = 380.0;
+    let _was = scrolled.scrolls.insert(mcf_desk::Region::Prompt, 380.0);
     let before = drawn(&still, DAY, "prompt-report");
     let after = drawn(&scrolled, DAY, "prompt-report-scrolled");
     if before.width < 2 {
@@ -1757,9 +1862,9 @@ fn the_report_scrolls_under_the_controls_and_not_over_them() {
 fn the_seeds_section_says_how_the_draws_were_cut() {
     use mcf_record::json::Value;
     let mut stated = a_report();
-    stated.scroll = 1400.0;
+    let _was = stated.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut unstated = a_report();
-    unstated.scroll = 1400.0;
+    let _was = unstated.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut found = match &unstated.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -2097,7 +2202,7 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     // The legend sits under the rows, past the window's foot until the
     // report is scrolled up to it.
     let mut with = a_report();
-    with.scroll = 480.0;
+    let _was = with.scrolls.insert(mcf_desk::Region::Prompt, 480.0);
     let found = match &with.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -2112,7 +2217,7 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     );
     let spread = drawn(&with, DAY, "prompt-report").inked(ground);
     let mut one = a_report();
-    one.scroll = 480.0;
+    let _was = one.scrolls.insert(mcf_desk::Region::Prompt, 480.0);
     if let mcf_desk::Doing::Reporting(job) = &mut one.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -2290,6 +2395,26 @@ fn every_page_is_drawn_for_review() {
     review_the_library(&recommended);
 
     review_the_search();
+    review_small_windows();
+}
+
+/// The pages in a small window, where the library, the model page and the
+/// Diagnostics page overflow and show their bars (B-490).
+fn review_small_windows() {
+    let small = (900, 560);
+    let mut desk = many_models();
+    desk.page = Page::Models;
+    desk.chosen = Some(0);
+    desk.tab = mcf_desk::Tab::Statistics;
+    if let Some(held) = desk.models.get_mut(0) {
+        held.measured_body = Some(a_measurement());
+    }
+    let _ = drawn_sized(&desk, DAY, "review-small-statistics", small);
+    let _was = desk.scrolls.insert(mcf_desk::Region::Library, 120.0);
+    let _was = desk.scrolls.insert(mcf_desk::Region::Page, 80.0);
+    let _ = drawn_sized(&desk, DAY, "review-small-scrolled", small);
+    desk.page = Page::Diagnostics;
+    let _ = drawn_sized(&desk, NIGHT, "review-small-diagnostics", small);
 }
 
 /// A repository's files as the daemon lists them, for the hub page.

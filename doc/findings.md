@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 141 |
+| **Version** | 142 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 193 | [F193 — Every area that can overflow scrolls, and the areas resize: the library's rows, the model page under its tabs, a hub or pending page, the Diagnostics, Server, System and prompt pages each scroll by the wheel over them or a bar at their right edge, drawn only when the content is taller than the region, and the column, the library and the Diagnostics columns are dragged wider or narrower within the room each needs (B-490, §3.15, A7)](#193--f193-every-area-that-can-overflow-scrolls-and-the-areas-resize-the-librarys-rows-the-model-page-under-its-tabs-a-hub-or-pending-page-the-diagnostics-server-system-and-prompt-pages-each-scroll-by-the-wheel-over-them-or-a-bar-at-their-right-edge-drawn-only-when-the-content-is-taller-than-the-region-and-the-column-the-library-and-the-diagnostics-columns-are-dragged-wider-or-narrower-within-the-room-each-needs-b-490-315-a7) |
 | 192 | [F192 — Filters beside the search field: architecture, fits here and size, each any until set, applied with the words to what is here, so the list of a library of three under will run here is two and says nothing matched rather than hiding a filter; what the hub found stays outside them until its files are known (B-489, D51, A7, §3.15)](#192--f192-filters-beside-the-search-field-architecture-fits-here-and-size-each-any-until-set-applied-with-the-words-to-what-is-here-so-the-list-of-a-library-of-three-under-will-run-here-is-two-and-says-nothing-matched-rather-than-hiding-a-filter-what-the-hub-found-stays-outside-them-until-its-files-are-known-b-489-d51-a7-315) |
 | 191 | [F191 — Download and run: on a quantization not here the page's Start server reads Download and start server and a diagnostics card's Run reads Download and run, the download goes first with its progress where the button was, and the run follows on the file once the library holds it; a hub repository's file picked on its page is the same subject (B-487, D51, A7)](#191--f191-download-and-run-on-a-quantization-not-here-the-pages-start-server-reads-download-and-start-server-and-a-diagnostics-cards-run-reads-download-and-run-the-download-goes-first-with-its-progress-where-the-button-was-and-the-run-follows-on-the-file-once-the-library-holds-it-a-hub-repositorys-file-picked-on-its-page-is-the-same-subject-b-487-d51-a7) |
 | 190 | [F190 — A model is a repository with its quantizations: the files held from one repository are one entry of the library, the page's Quantization row lists the ones here and the ones the hub publishes with each one's size and whether it would run here, and a quantization picked that is not here is the page's subject as not downloaded (B-486, D51, A7, B-023)](#190--f190-a-model-is-a-repository-with-its-quantizations-the-files-held-from-one-repository-are-one-entry-of-the-library-the-pages-quantization-row-lists-the-ones-here-and-the-ones-the-hub-publishes-with-each-ones-size-and-whether-it-would-run-here-and-a-quantization-picked-that-is-not-here-is-the-pages-subject-as-not-downloaded-b-486-d51-a7-b-023) |
@@ -9615,6 +9616,47 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 193 · F193 — Every area that can overflow scrolls, and the areas resize: the library's rows, the model page under its tabs, a hub or pending page, the Diagnostics, Server, System and prompt pages each scroll by the wheel over them or a bar at their right edge, drawn only when the content is taller than the region, and the column, the library and the Diagnostics columns are dragged wider or narrower within the room each needs (B-490, §3.15, A7)
+
+The operator asked for scroll bars on the list, and potentially other
+areas, and for the areas to be resizable. The window did not scroll:
+the library cut its rows with *… and N more*, the Statistics column ran
+off the foot once it grew, the prompt page alone read the wheel, and
+every width was a constant.
+
+**Scrolling.** The painter now keeps the lowest edge anything reaches
+since a mark, so a region's content height is read off what was drawn
+rather than declared by every page. A region is drawn from its offset up,
+clipped to itself, and then given a bar at its right edge where the
+content is taller than it; the wheel over the region moves it a fixed
+step, the thumb is dragged, and an offset past what the content allows
+comes back up on the next frame — a region whose content shrank does not
+stay scrolled into nothing. Seven regions scroll on their own: the
+library's rows under the field and filters, the model page under its
+tabs, a hub repository's or pending file's page, the Diagnostics page,
+the Server page, the System page and the prompt page's report. Each
+region remembers its offset until the page changes, and choosing another
+model puts its page back at the top. The library's *… and N more* is
+gone, as is the Statistics tab's cut of its column: in a narrow pane the
+column stacks under the figures and the page scrolls.
+
+**Resizing.** Three boundaries are dragged: between the column down the
+left and the page, between the library and the model page, and between
+the Diagnostics page's two columns. Each is a band a few points wide
+that lights when the pointer is over it; pressing on it and moving sets
+the boundary where the pointer is, kept inside the room each area needs
+— the column between 120 and 320 points, the library between 180 and
+520, the Diagnostics column between 320 and 900 — so no drag makes a
+layout nothing can be read in.
+
+**What ran.** A window of 900 by 560 with eighteen models: the library
+shows its bar, the wheel over it is a scroll of 48 points, a scrolled
+library draws differently from one at the top, and the Statistics page
+stacks and scrolls with its own bar. A drag on the band between the
+library and the page widens the library; a drag past the room is kept
+at its edge, and the column likewise. Drawn to images and read (F181),
+and held by the window's own tests.
+
 ## 192 · F192 — Filters beside the search field: architecture, fits here and size, each any until set, applied with the words to what is here, so the list of a library of three under will run here is two and says nothing matched rather than hiding a filter; what the hub found stays outside them until its files are known (B-489, D51, A7, §3.15)
 
 D51's last part: a Filters toggle beside the field opening pickers that
@@ -12873,6 +12915,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 142 — scrolling and resizing
+
+F193: every area that can overflow scrolls with a bar, and the three
+boundaries are dragged (B-490).
 
 ### Version 141 — filters
 

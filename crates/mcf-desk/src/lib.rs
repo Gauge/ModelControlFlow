@@ -1151,6 +1151,88 @@ pub enum Picker {
     Size,
 }
 
+/// A region of the window that scrolls on its own (B-490).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Region {
+    /// The library's rows.
+    Library,
+    /// The model page under its tabs.
+    Page,
+    /// A hub repository's page, or a pending file's.
+    Hub,
+    /// The Diagnostics page.
+    Diagnostics,
+    /// The Server page.
+    Server,
+    /// The prompt page's report.
+    Prompt,
+    /// The System page.
+    Monitor,
+}
+
+/// A boundary a person can drag (B-490).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Splitter {
+    /// Between the column down the left and the page.
+    Side,
+    /// Between the library and the model page.
+    List,
+    /// Between the Diagnostics page's two columns.
+    Diagnostics,
+}
+
+/// Where the splitters sit: the column's width, the library's width, and
+/// the Diagnostics page's left column's width, in points (B-490).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Splits {
+    /// The column down the left.
+    pub side: f32,
+    /// The library.
+    pub list: f32,
+    /// The Diagnostics page's left column.
+    pub diagnostics: f32,
+}
+
+impl Default for Splits {
+    fn default() -> Self {
+        Self {
+            side: 168.0,
+            list: 250.0,
+            diagnostics: 540.0,
+        }
+    }
+}
+
+/// Whole points as the screen measures them.
+fn as_points(whole: i32) -> f32 {
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a point on the screen, exact in f32 at any window size"
+    )]
+    let at = whole as f32;
+    at
+}
+
+/// The room around a page, which a splitter's position is measured past.
+const PAGE_PAD: f32 = 26.0;
+
+impl Splits {
+    /// Moves one splitter to a position along the window, kept inside the
+    /// room each area needs: a column narrower than its words or a page
+    /// narrower than a control is no layout at all.
+    pub fn set(&mut self, splitter: Splitter, to: f32) {
+        match splitter {
+            Splitter::Side => self.side = to.clamp(120.0, 320.0),
+            Splitter::List => {
+                self.list = (to - self.side - PAGE_PAD).clamp(180.0, 520.0);
+            }
+            Splitter::Diagnostics => {
+                self.diagnostics = (to - self.side - PAGE_PAD).clamp(320.0, 900.0);
+            }
+        }
+    }
+}
+
 /// The filters beside the library's search field: applied with the words
 /// to what is here, each *any* until somebody sets it, so an empty list is
 /// a list nothing matched and not one a filter hid (D51, B-489).
@@ -1499,6 +1581,10 @@ pub enum Act {
     Run(Card),
     /// Search the hub for the words in the library's field (D51).
     SearchHub,
+    /// Scroll one region to an offset, in whole points (B-490).
+    Scroll(Region, i32),
+    /// Move one splitter to a position along its axis, in whole points.
+    Split(Splitter, i32),
     /// Show or hide the filters beside the search field (B-489).
     ToggleFilters,
     /// Set the architecture filter, by its place in the list offered.
@@ -1689,8 +1775,11 @@ pub struct Desk {
     /// Which answer is being shown on the prompt screen: one part's absence,
     /// or one part alone. `None` is the answer to the prompt as written.
     pub shown: Option<Shown>,
-    /// How far down a long list has been scrolled, in points.
-    pub scroll: f32,
+    /// How far each region that scrolls has been scrolled, in points
+    /// (B-490).
+    pub scrolls: std::collections::BTreeMap<Region, f32>,
+    /// Where the splitters between the window's areas sit.
+    pub splits: Splits,
     /// The last reading of the machine.
     pub reading: mcf_tui::machine::Reading,
     /// Why MCF could not be reached, when it could not.
@@ -1874,7 +1963,8 @@ impl Desk {
             edit_refused: None,
             declared: None,
             shown: None,
-            scroll: 0.0,
+            scrolls: std::collections::BTreeMap::new(),
+            splits: Splits::default(),
             reading: mcf_tui::machine::Reading::default(),
             refusal: None,
             busy: false,
@@ -2250,7 +2340,7 @@ impl Desk {
         match act {
             Act::Go(page) => {
                 if page != self.page {
-                    self.scroll = 0.0;
+                    self.scrolls.clear();
                     if page.section() == Page::Monitor {
                         self.sample();
                     }
@@ -2284,6 +2374,10 @@ impl Desk {
             }
             Act::Run(card) => self.run_card(card),
             Act::SearchHub => self.search_hub(),
+            Act::Scroll(region, to) => {
+                let _was = self.scrolls.insert(region, as_points(to.max(0)));
+            }
+            Act::Split(splitter, to) => self.splits.set(splitter, as_points(to)),
             Act::ToggleFilters | Act::SetArchitecture(_) | Act::SetFits(_) | Act::SetSize(_) => {
                 self.filter_act(&act);
             }
@@ -2335,6 +2429,7 @@ impl Desk {
                 // and no hub page over it (B-485, B-486).
                 self.pending = None;
                 self.hub_chosen = None;
+                let _was = self.scrolls.remove(&Region::Page);
                 // **What this model would be held under.** `host_it` needs it
                 // and nothing fetched it: `read_settings` existed, was never
                 // called, and so `settings` was `None` for the life of the
@@ -2886,6 +2981,12 @@ impl Desk {
             // card says so and offers the command.
             Card::Comparison => {}
         }
+    }
+
+    /// How far a region has been scrolled.
+    #[must_use]
+    pub fn scrolled(&self, region: Region) -> f32 {
+        self.scrolls.get(&region).copied().unwrap_or(0.0)
     }
 
     /// The library's entries, one a repository, each with the held models
@@ -4022,10 +4123,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                 },
                 _ => {}
             }
-        }
-
-        if mouse.wheel.abs() > 0.0 {
-            desk.scroll = (desk.scroll - mouse.wheel * 48.0).max(0.0);
         }
 
         // Anything a running job has said since the last frame.

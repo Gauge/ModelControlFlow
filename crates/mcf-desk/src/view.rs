@@ -32,12 +32,11 @@ use crate::font::Weight;
 use crate::paint::{Box, Painter, Rgb};
 use crate::ui::{self, Kind, Mouse};
 use crate::words;
-use crate::{Act, Card, Caret, Desk, Doing, Model, Page, Picker, windows};
+use crate::{Act, Card, Caret, Desk, Doing, Model, Page, Picker, Region, Splitter, windows};
 use mcf_record::json::Value;
 use mcf_serve::anatomy::SaidVocabulary;
 
 /// The column down the left, in points.
-const SIDE: f32 = 168.0;
 /// The breathing room around a screen's content.
 const PAD: f32 = 26.0;
 
@@ -61,12 +60,13 @@ pub const UNKNOWN: &str = "Unknown";
 pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     let (width, height) = paint.size();
     paint.begin();
-    let mut act = side_bar(paint, desk, mouse, height);
+    let side = desk.splits.side;
+    let mut act = side_bar(paint, desk, mouse, height, side);
 
     let main = Box::new(
-        SIDE + PAD,
+        side + PAD,
         PAD,
-        (width - SIDE - PAD * 2.0).max(10.0),
+        (width - side - PAD * 2.0).max(10.0),
         (height - PAD * 2.0).max(10.0),
     );
     let went = match desk.page {
@@ -83,16 +83,64 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         Page::Exit => leaving(paint, mouse, main),
     };
     act = went.or(act);
+    // The boundary between the column and the page is dragged (B-490).
+    if let Some(to) = ui::splitter(paint, mouse, Box::new(side - 4.0, 0.0, 8.0, height), true) {
+        act = Some(Act::Split(Splitter::Side, whole(to)));
+    }
     paint.end();
     act
 }
 
+/// A position in whole points, for an act to carry.
+fn whole(at: f32) -> i32 {
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a point on the screen, far inside i32"
+    )]
+    let rounded = at.round() as i32;
+    rounded
+}
+
+/// A region drawn scrolled: its content from `offset` points up, clipped
+/// to the region, with a bar at its right edge where the content is taller
+/// than the region, moved by the wheel over it or the thumb (B-490).
+fn scrolled(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    desk: &Desk,
+    region: Region,
+    area: Box,
+    draw: impl FnOnce(&mut Painter, &Mouse, Box) -> Option<Act>,
+) -> Option<Act> {
+    let offset = desk.scrolled(region);
+    let inner = Box::new(
+        area.x,
+        area.y - offset,
+        (area.w - ui::BAR).max(10.0),
+        area.h + offset,
+    );
+    let seen = mouse.within(area);
+    paint.clip(area);
+    paint.mark();
+    let act = draw(paint, &seen, inner);
+    let content = (paint.lowest() - inner.y).max(0.0);
+    paint.unclip();
+    let moved = ui::scroll_region(paint, mouse, area, offset, content);
+    act.or(moved.map(|to| Act::Scroll(region, whole(to))))
+}
+
 /// The column down the left: the four places and Exit, and under them
 /// what MCF is doing right now, on every page (D49).
-fn side_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, height: f32) -> Option<Act> {
+fn side_bar(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    height: f32,
+    side: f32,
+) -> Option<Act> {
     let ink = paint.ink;
-    paint.rect(Box::new(0.0, 0.0, SIDE, height), ink.sunk);
-    paint.rule((SIDE, 0.0), (SIDE, height), ink.line, 255);
+    paint.rect(Box::new(0.0, 0.0, side, height), ink.sunk);
+    paint.rule((side, 0.0), (side, height), ink.line, 255);
     paint.say_at(18.0, 16.0, "MCF", Weight::Bold, size::HEAD, ink.ink);
 
     let mut act = None;
@@ -101,7 +149,7 @@ fn side_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, height: f32) -> Opt
         if *page == Page::Exit {
             continue;
         }
-        let area = Box::new(10.0, y, SIDE - 20.0, 32.0);
+        let area = Box::new(10.0, y, side - 20.0, 32.0);
         if ui::nav(paint, mouse, area, label, desk.page.section() == *page) {
             act = Some(Act::Go(*page));
         }
@@ -110,7 +158,7 @@ fn side_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, height: f32) -> Opt
     // What MCF is doing, where a person's eye rests between pages: the job
     // and its clock, or nothing.
     let said = desk.state_word();
-    let lines = paint.wrap(&said, Weight::Regular, size::SMALL, SIDE - 28.0);
+    let lines = paint.wrap(&said, Weight::Regular, size::SMALL, side - 28.0);
     #[allow(clippy::cast_precision_loss, reason = "at most three lines")]
     let mut at = height - 92.0 - 16.0 * lines.len().min(3) as f32;
     for line in lines.iter().take(3) {
@@ -128,7 +176,7 @@ fn side_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, height: f32) -> Opt
         );
         at += 16.0;
     }
-    let exit = Box::new(10.0, height - 46.0, SIDE - 20.0, 32.0);
+    let exit = Box::new(10.0, height - 46.0, side - 20.0, 32.0);
     if ui::nav(paint, mouse, exit, "Exit", desk.page == Page::Exit) {
         act = Some(Act::Go(Page::Exit));
     }
@@ -299,6 +347,18 @@ fn takes_line(hosting: &crate::Hosted) -> String {
 }
 
 fn monitor(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Monitor,
+        area,
+        |paint, mouse, inner| monitor_body(paint, desk, mouse, inner),
+    )
+}
+
+/// The System page's content, from the top of its region.
+fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let wide = area.w.min(940.0);
 
@@ -580,10 +640,19 @@ fn storage_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
 /// through, the detail is what you read.
 fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let list = 250.0_f32;
+    let list = desk.splits.list;
     let right = area.x + list + 40.0;
     let mut act = None;
     let actions_at = area.bottom() - 200.0;
+    // The boundary between the library and the page is dragged (B-490).
+    if let Some(to) = ui::splitter(
+        paint,
+        mouse,
+        Box::new(area.x + list + 12.0, area.y, 16.0, area.h),
+        true,
+    ) {
+        act = Some(Act::Split(Splitter::List, whole(to)));
+    }
 
     let chose = model_list(
         paint,
@@ -611,9 +680,23 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
         _ => None,
     };
     let over = if desk.hub_chosen.is_some() {
-        hub_page(paint, desk, mouse, pane)
+        scrolled(
+            paint,
+            mouse,
+            desk,
+            Region::Hub,
+            pane,
+            |paint, mouse, inner| hub_page(paint, desk, mouse, inner),
+        )
     } else if desk.pending.is_some() {
-        pending_page(paint, desk, mouse, pane)
+        scrolled(
+            paint,
+            mouse,
+            desk,
+            Region::Hub,
+            pane,
+            |paint, mouse, inner| pending_page(paint, desk, mouse, inner),
+        )
     } else {
         None
     };
@@ -913,14 +996,21 @@ fn model_page(
         area.w,
         (area.bottom() - y - 52.0).max(10.0),
     );
-    let drawn = match desk.tab {
-        crate::Tab::Configure => configure_tab(paint, desk, mouse, below, held),
-        crate::Tab::Statistics => {
-            statistics_tab(paint, below, held);
-            None
-        }
-        crate::Tab::Contents => contents_tab(paint, desk, mouse, below),
-    };
+    let drawn = scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Page,
+        below,
+        |paint, mouse, inner| match desk.tab {
+            crate::Tab::Configure => configure_tab(paint, desk, mouse, inner, held),
+            crate::Tab::Statistics => {
+                statistics_tab(paint, inner, held);
+                None
+            }
+            crate::Tab::Contents => contents_tab(paint, desk, mouse, inner),
+        },
+    );
     drawn.or(act)
 }
 
@@ -931,21 +1021,30 @@ fn model_page(
 fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
     let ink = paint.ink;
     // The detail block draws the throughput table and the chart itself.
-    let left = Box::new(area.x, area.y, area.w.min(400.0), area.h);
-    let _after = detail(paint, left, held);
-    // The right column: what was read off the ladder, then the rest, each
-    // a short heading and the daemon's own sentences under it.
-    let right = Box::new(
-        area.x + left.w + 40.0,
+    // A narrow pane stacks the column under the figures; the page scrolls
+    // (B-490).
+    let stacked = area.w < 700.0;
+    let left = Box::new(
+        area.x,
         area.y,
-        (area.w - left.w - 40.0).max(240.0),
+        if stacked { area.w } else { area.w.min(400.0) },
         area.h,
     );
+    let after = detail(paint, left, held);
+    // The right column: what was read off the ladder, then the rest, each
+    // a short heading and the daemon's own sentences under it.
+    let right = if stacked {
+        Box::new(area.x, after + 24.0, area.w, 4000.0)
+    } else {
+        Box::new(
+            area.x + left.w + 40.0,
+            area.y,
+            (area.w - left.w - 40.0).max(240.0),
+            4000.0,
+        )
+    };
     let mut y = right.y;
     let section = |paint: &mut Painter, y: &mut f32, head: &str, lines: &[String], colour: Rgb| {
-        if *y > right.bottom() - 40.0 {
-            return;
-        }
         spaced(paint, right.x, *y, head, ink.faint);
         *y += 18.0;
         for line in lines.iter().take(3) {
@@ -2029,31 +2128,49 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         paint.say_at(area.x, y, note, Weight::Regular, size::BODY, ink.faint);
         y += 24.0;
     }
-    for (count, group) in shown.iter().enumerate() {
-        if y > actions_at - 62.0 {
-            paint.say_at(
-                area.x,
-                y,
-                &format!("… and {} more", shown.len().saturating_sub(count)),
-                Weight::Regular,
-                size::SMALL,
-                ink.faint,
-            );
-            y = actions_at;
-            break;
-        }
-        if let Some(pressed) = group_row(paint, desk, mouse, group, Box::new(area.x, y, list, 40.0))
-        {
+    // The rows scroll under the field, with the hub's under them (B-490).
+    let rows = Box::new(
+        area.x - 6.0,
+        y - 4.0,
+        list + 6.0,
+        (actions_at - y - 10.0).max(10.0),
+    );
+    let rolled = scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Library,
+        rows,
+        |paint, mouse, inner| library_rows(paint, desk, mouse, inner, &shown),
+    );
+    rolled.or(act)
+}
+
+/// The library's rows from the top of a region: one a repository, then the
+/// hub's rows. Returns what was pressed.
+fn library_rows(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    inner: Box,
+    shown: &[crate::Group],
+) -> Option<Act> {
+    let mut act = None;
+    let mut y = inner.y + 4.0;
+    let list = inner.w - 6.0;
+    for group in shown {
+        if let Some(pressed) = group_row(
+            paint,
+            desk,
+            mouse,
+            group,
+            Box::new(inner.x + 6.0, y, list, 40.0),
+        ) {
             act = Some(pressed);
         }
         y += 40.0;
     }
-    if let Some(pressed) = hub_rows(
-        paint,
-        desk,
-        mouse,
-        Box::new(area.x, y, list, actions_at - y),
-    ) {
+    if let Some(pressed) = hub_rows(paint, desk, mouse, Box::new(inner.x + 6.0, y, list, 4000.0)) {
         act = Some(pressed);
     }
     act
@@ -2249,17 +2366,6 @@ fn hub_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
         return None;
     }
     for (at, found) in hub.repositories.iter().enumerate() {
-        if y > area.bottom() - 40.0 {
-            paint.say_at(
-                area.x,
-                y,
-                &format!("… and {} more", hub.repositories.len().saturating_sub(at)),
-                Weight::Regular,
-                size::SMALL,
-                ink.faint,
-            );
-            break;
-        }
         let where_ = Box::new(area.x - 6.0, y - 4.0, area.w, 40.0);
         let chosen = desk.hub_chosen == Some(at);
         if chosen {
@@ -2549,6 +2655,18 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
 /// separately do: the checkbox rows that were one run's results drawn as
 /// five choices are gone.
 fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Diagnostics,
+        area,
+        |paint, mouse, inner| diagnostics_body(paint, desk, mouse, inner),
+    )
+}
+
+/// The Diagnostics page's content, from the top of its region.
+fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
     let mut menu: Option<(Picker, Box)> = None;
@@ -2587,8 +2705,17 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
 
     // Two columns: the throughput run, which has the most to set and to
     // show, on the left; the four others stacked on the right.
-    let left_w = (area.w * 0.56).min(600.0);
+    let left_w = desk.splits.diagnostics.min(area.w - 300.0).max(300.0);
     let left = Box::new(area.x, top, left_w, area.bottom() - top);
+    // The boundary between the two columns is dragged (B-490).
+    if let Some(to) = ui::splitter(
+        paint,
+        mouse,
+        Box::new(left.right() + 4.0, top, 16.0, area.bottom() - top),
+        true,
+    ) {
+        act = Some(Act::Split(Splitter::Diagnostics, whole(to)));
+    }
     let right = Box::new(
         left.right() + 24.0,
         top,
@@ -4258,6 +4385,18 @@ fn where_it_answers(
 }
 
 fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Server,
+        area,
+        |paint, mouse, inner| hosting_body(paint, desk, mouse, inner),
+    )
+}
+
+/// The Server page's content, from the top of its region.
+fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     // The held model first, whatever is chosen on Models; the chosen one
     // where nothing is held, because a question can still be asked of it
@@ -4603,11 +4742,17 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     // region under the controls, and the mouse sees only that region.
     let top = bottom + 12.0;
     let body = Box::new(0.0, top, area.right() + PAD, (area.bottom() - top).max(0.0));
-    let mouse = &mouse.within(body);
+    let offset = desk.scrolled(Region::Prompt);
+    let seen = &mouse.within(body);
     paint.clip(body);
-    let scrolled = prompt_report(paint, desk, mouse, area, top - desk.scroll);
+    paint.mark();
+    let pressed = prompt_report(paint, desk, seen, area, top - offset);
+    let content = (paint.lowest() - (top - offset)).max(0.0);
     paint.unclip();
-    scrolled.or(act)
+    let moved = ui::scroll_region(paint, mouse, body, offset, content);
+    pressed
+        .or(moved.map(|to| Act::Scroll(Region::Prompt, whole(to))))
+        .or(act)
 }
 
 /// A report as figures and short labels (§3.4, §3.15): the conditions of

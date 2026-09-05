@@ -519,3 +519,71 @@ pub fn card(paint: &mut Painter, area: Box, lifted: bool) {
         ink.card,
     );
 }
+
+/// How far one turn of the wheel moves a region, in points.
+pub const WHEEL_STEP: f32 = 48.0;
+
+/// The width a scroll bar takes at a region's right edge.
+pub const BAR: f32 = 10.0;
+
+/// A region that scrolls: the bar at its right edge where its content is
+/// taller than it, the wheel over it, and the thumb dragged. Returns the
+/// offset the region should be at where that differs from `offset` —
+/// clamped to what the content allows, so a region whose content shrank
+/// comes back up (B-490).
+pub fn scroll_region(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    area: Box,
+    offset: f32,
+    content: f32,
+) -> Option<f32> {
+    let most = (content - area.h).max(0.0);
+    let clamp = |wanted: f32| wanted.clamp(0.0, most);
+    if most <= 0.0 {
+        return (offset > 0.0).then_some(0.0);
+    }
+    let ink = paint.ink;
+    let track = Box::new(area.right() - BAR + 2.0, area.y, BAR - 4.0, area.h);
+    paint.panel(track, 3.0, ink.line, 70);
+    let thumb_h = (area.h * area.h / content).max(24.0).min(area.h);
+    let thumb_y = area.y + (offset / most) * (area.h - thumb_h);
+    let thumb = Box::new(track.x, thumb_y, track.w, thumb_h);
+    let held = mouse.down && mouse.began.is_some_and(|down| track.holds(down));
+    paint.panel(
+        thumb,
+        3.0,
+        if held || mouse.over(track) {
+            ink.accent
+        } else {
+            ink.quiet
+        },
+        if held { 255 } else { 160 },
+    );
+    let mut wanted = offset;
+    if held {
+        let ratio = (mouse.at.1 - area.y - thumb_h / 2.0) / (area.h - thumb_h).max(1.0);
+        wanted = ratio.clamp(0.0, 1.0) * most;
+    } else if mouse.wheel.abs() > 0.0 && mouse.over(area) {
+        wanted = offset - mouse.wheel * WHEEL_STEP;
+    }
+    let wanted = clamp(wanted);
+    ((wanted - offset).abs() > 0.5 || offset > most).then_some(wanted)
+}
+
+/// A splitter between two areas: a band a person drags to move the
+/// boundary. Returns where the pointer is along the band's axis while it is
+/// dragged, for the caller to set the split by (B-490).
+pub fn splitter(paint: &mut Painter, mouse: &Mouse, band: Box, upright: bool) -> Option<f32> {
+    let ink = paint.ink;
+    let held = mouse.down && mouse.began.is_some_and(|down| band.holds(down));
+    if held || mouse.over(band) {
+        let line = if upright {
+            Box::new(band.x + band.w / 2.0 - 1.0, band.y, 2.0, band.h)
+        } else {
+            Box::new(band.x, band.y + band.h / 2.0 - 1.0, band.w, 2.0)
+        };
+        paint.rect(line, if held { ink.accent } else { ink.quiet });
+    }
+    held.then_some(if upright { mouse.at.0 } else { mouse.at.1 })
+}

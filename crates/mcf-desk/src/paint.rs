@@ -232,6 +232,10 @@ pub struct Painter {
     pub scale: f32,
     /// The palette in force.
     pub ink: Ink,
+    /// The lowest edge anything has reached since [`Self::mark`], in
+    /// points: how tall a region's content is, read after it is drawn, so a
+    /// region that overflows can be scrolled by exactly its overflow.
+    lowest: std::cell::Cell<f32>,
 }
 
 /// A size in points, before the display's scale is applied.
@@ -302,6 +306,7 @@ impl Painter {
             corner: None,
             scale,
             ink,
+            lowest: std::cell::Cell::new(0.0),
         };
         painter.make_the_corner_mask();
         Ok(painter)
@@ -324,6 +329,7 @@ impl Painter {
             corner: None,
             scale,
             ink,
+            lowest: std::cell::Cell::new(0.0),
         };
         painter.make_the_corner_mask();
         Ok(painter)
@@ -383,7 +389,26 @@ impl Painter {
     }
 
     /// Points to pixels.
+    /// Forgets the lowest edge reached, before a region is drawn.
+    pub fn mark(&self) {
+        self.lowest.set(0.0);
+    }
+
+    /// The lowest edge anything has reached since the mark, in points.
+    #[must_use]
+    pub fn lowest(&self) -> f32 {
+        self.lowest.get()
+    }
+
+    /// Notes an edge something was drawn to.
+    fn reach(&self, bottom: f32) {
+        if bottom.is_finite() && bottom > self.lowest.get() {
+            self.lowest.set(bottom);
+        }
+    }
+
     fn physical(&self, area: Box) -> Rect {
+        self.reach(area.bottom());
         Rect {
             x: area.x * self.scale,
             y: area.y * self.scale,
@@ -395,7 +420,13 @@ impl Painter {
     /// Confines every drawing until [`Self::unclip`] to `area`: what a
     /// scrolled page draws above or below its window is not drawn.
     pub fn clip(&mut self, area: Box) {
-        let where_ = self.physical(area);
+        // A clip is a bound, not a thing drawn: it reaches nowhere.
+        let where_ = Rect {
+            x: area.x * self.scale,
+            y: area.y * self.scale,
+            w: area.w * self.scale,
+            h: area.h * self.scale,
+        };
         self.surface.clip(Some(where_));
     }
 
@@ -418,6 +449,7 @@ impl Painter {
 
     /// A straight line one pixel wide.
     pub fn rule(&mut self, from: (f32, f32), to: (f32, f32), colour: Rgb, alpha: u8) {
+        self.reach(from.1.max(to.1));
         self.surface.line(
             (from.0 * self.scale, from.1 * self.scale),
             (to.0 * self.scale, to.1 * self.scale),
@@ -613,6 +645,8 @@ impl Painter {
         colour: Rgb,
     ) -> f32 {
         let pixels = size * self.scale;
+        // A line of text reaches a little under its baseline.
+        self.reach(y + size * 0.35);
         let Some((held, _)) = self.ensure(weight, pixels) else {
             return x;
         };
