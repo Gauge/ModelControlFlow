@@ -256,13 +256,13 @@ impl LastHold {
             format!(", {} ago", ago_said(seconds))
         });
         format!(
-            "last held: {} on {}, {}{ago}",
+            "Last served: {} on {}, {}{ago}",
             self.name(),
             self.device,
             if self.stopped {
                 "stopped"
             } else {
-                "held until MCF stopped"
+                "ran until MCF stopped"
             }
         )
     }
@@ -340,14 +340,14 @@ pub fn will_take(
     Some((
         if fits {
             format!(
-                "will take {} of the {} free on {}",
+                "Memory required: {} of {} free on {}",
                 view::gigabytes(total),
                 view::gigabytes(free),
                 settings.device
             )
         } else {
             format!(
-                "will not fit: {} against the {} free on {}",
+                "Won't fit: {} needed, {} free on {}",
                 view::gigabytes(total),
                 view::gigabytes(free),
                 settings.device
@@ -364,11 +364,10 @@ pub fn will_take(
 /// what has happened and not a promise (A6, A7).
 #[must_use]
 pub fn loading_said(read: u64, on_card: bool, of: Option<u64>, seconds: u64) -> String {
-    let where_ = if on_card { " onto the card" } else { "" };
+    let where_ = if on_card { " to GPU" } else { "" };
     match of {
         Some(of) if read >= of => format!(
-            "loading{where_} — {} so far — the {} of weights are on, and the cache and the \
-             engine's buffers follow; {seconds} s so far",
+            "Loading{where_}: {} so far — {} of weights on, KV cache and buffers next · {seconds} s",
             view::gigabytes(read),
             view::gigabytes(of)
         ),
@@ -380,23 +379,20 @@ pub fn loading_said(read: u64, on_card: bool, of: Option<u64>, seconds: u64) -> 
                 )]
                 let eta = (of - read).saturating_mul(seconds) / read;
                 if eta == 0 {
-                    ", nearly there".to_owned()
+                    " · nearly done".to_owned()
                 } else {
-                    format!(", about {eta} s to go")
+                    format!(" · ~{eta} s left")
                 }
             } else {
                 String::new()
             };
             format!(
-                "loading{where_} — {} of {} of weights, {seconds} s so far{left}",
+                "Loading{where_}: {} of {} weights · {seconds} s{left}",
                 view::gigabytes(read),
                 view::gigabytes(of)
             )
         }
-        None => format!(
-            "loading{where_} — {}, {seconds} s so far",
-            view::gigabytes(read)
-        ),
+        None => format!("Loading{where_}: {} · {seconds} s", view::gigabytes(read)),
     }
 }
 
@@ -515,9 +511,9 @@ impl Page {
     /// *where things are* a fact about which surface you happened to open
     /// (B-072).
     pub const MENU: &'static [(Self, &'static str)] = &[
-        (Self::Monitor, "Machine"),
+        (Self::Monitor, "System"),
         (Self::Models, "Models"),
-        (Self::Hosting, "Running"),
+        (Self::Hosting, "Server"),
         (Self::Diagnostics, "Diagnostics"),
         (Self::Exit, "Exit"),
     ];
@@ -572,6 +568,13 @@ pub struct Model {
     pub device: Option<String>,
     /// What that device had free when MCF resolved it.
     pub device_free: Option<u64>,
+    /// The last measurement taken of it, whole, as the daemon keeps it: the
+    /// readings and what was read off them, for the Statistics tab.
+    pub measured_body: Option<Value>,
+    /// What the last cross-check said, sentence by sentence.
+    pub cross_checked: Vec<String>,
+    /// Whether a prompt report has been taken of it.
+    pub prompt_reported: bool,
     /// The addressing a probe applied, by provenance, where one was.
     pub applied_addressing: Option<String>,
     /// The budget a probe applied, by provenance, where one was.
@@ -801,6 +804,7 @@ fn model_from(held: &Value) -> Model {
         .as_ref()
         .and_then(|runs| runs.get("measured"))
         .map(measured_ends);
+    let results = results_of(runs);
     let resolved = runs.as_ref().and_then(|runs| runs.get("resolved"));
     let known = matches!(
         resolved.as_ref().and_then(|resolved| resolved.get("known")),
@@ -832,6 +836,9 @@ fn model_from(held: &Value) -> Model {
             .and_then(|resolved| resolved.get("device_free_bytes"))
             .and_then(Value::as_integer)
             .and_then(|number| u64::try_from(number).ok()),
+        measured_body: results.0,
+        cross_checked: results.1,
+        prompt_reported: results.2,
         applied_addressing: held
             .get("configured")
             .and_then(|applied| applied.get("addressing"))
@@ -858,6 +865,31 @@ fn model_from(held: &Value) -> Model {
         slowest: measured.as_ref().and_then(|held| held.slowest),
         ladder: measured.map(|held| held.ladder).unwrap_or_default(),
     }
+}
+
+/// What the daemon keeps of a model's runs, for the Statistics tab: the last
+/// measurement whole, what the cross-check said, and whether a prompt
+/// report was taken.
+fn results_of(runs: Option<&Value>) -> (Option<Value>, Vec<String>, bool) {
+    let measured = runs
+        .and_then(|runs| runs.get("measured"))
+        .filter(|held| !matches!(held, Value::Null))
+        .cloned();
+    let cross_checked = runs
+        .and_then(|runs| runs.get("cross_checked"))
+        .and_then(|held| held.get("said"))
+        .and_then(Value::as_list)
+        .map(|said| {
+            said.iter()
+                .filter_map(Value::as_text)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let prompt_reported = runs
+        .and_then(|runs| runs.get("prompt_reported"))
+        .is_some_and(|held| !matches!(held, Value::Null));
+    (measured, cross_checked, prompt_reported)
 }
 
 /// Milliseconds a token, as tokens a second.
@@ -1201,6 +1233,8 @@ pub enum Act {
     HostAgain,
     /// Open a tab of the model page.
     Tab(Tab),
+    /// Show this half of Contents: the tensors or the vocabulary.
+    Contents(Page),
     /// Start typing into a setting.
     Edit(Field),
     /// Flip a switch.
@@ -1433,6 +1467,8 @@ pub struct Desk {
     pub on: Option<mcf_serve::control::On>,
     /// Which tab of the model page is open.
     pub tab: Tab,
+    /// Which half of Contents is shown: the tensors or the vocabulary.
+    pub contents: Page,
     /// The setting being typed into, and what has been typed so far. Applied
     /// on Enter or when another control is pressed; a value that is not a
     /// number is said to be one and not sent (§3.15).
@@ -1509,6 +1545,7 @@ impl Desk {
             placements: Vec::new(),
             on: None,
             tab: Tab::default(),
+            contents: Page::Anatomy,
             editing: None,
             edit_refused: None,
             declared: None,
@@ -1880,6 +1917,7 @@ impl Desk {
             Act::Tab(_) | Act::Edit(_) | Act::Switch(_) | Act::Place(_) | Act::Rope(_) => {
                 self.configure(&act);
             }
+            Act::Contents(page) => self.contents = page,
             Act::SetOn(on) => {
                 self.on = on;
                 self.open = None;
@@ -2214,14 +2252,14 @@ impl Desk {
             };
             let name = was.map_or_else(|| "it".to_owned(), |held| held.name());
             match (figure("freed_bytes"), figure("freed_card_bytes")) {
-                (Some(memory), Some(card)) => format!(
-                    "{name} is no longer held — {memory} of memory and {card} on the card freed"
-                ),
-                (Some(memory), None) => format!("{name} is no longer held — {memory} freed"),
-                (None, Some(card)) => {
-                    format!("{name} is no longer held — {card} on the card freed")
+                (Some(memory), Some(card)) => {
+                    format!("Server stopped: {name} — freed {memory} RAM, {card} VRAM")
                 }
-                (None, None) => format!("{name} is no longer held"),
+                (Some(memory), None) => format!("Server stopped: {name} — freed {memory} RAM"),
+                (None, Some(card)) => {
+                    format!("Server stopped: {name} — freed {card} VRAM")
+                }
+                (None, None) => format!("Server stopped: {name}"),
             }
         });
     }
@@ -2256,10 +2294,7 @@ impl Desk {
         };
         Some(match read {
             Some((read, on_card)) => loading_said(read, on_card, figure("of_bytes"), job.ran()),
-            None => format!(
-                "loading — {} s so far; the engine has not said how far it has got",
-                job.ran()
-            ),
+            None => format!("Loading · {} s — no progress reported yet", job.ran()),
         })
     }
 
@@ -2456,6 +2491,11 @@ impl Desk {
                 self.apply_edit();
                 self.tab = tab;
                 self.open = None;
+                // The file's contents are counted when first looked at,
+                // and kept for the model chosen.
+                if tab == Tab::Contents && self.anatomy.is_none() {
+                    self.read_anatomy();
+                }
             }
             Act::Edit(field) => self.edit(field),
             Act::Switch(switch) => {

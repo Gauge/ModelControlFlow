@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 126 |
+| **Version** | 128 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -9636,11 +9636,32 @@ draw. The cache tile stays unmeasured on this build of the engine, which
 publishes no cache ratio at this commit; the tile says so rather than
 showing a figure from nowhere.
 
-**What is left of B-474.** The model page's Statistics tab still shows the
-detail block and the measured figures the old pane showed, and Contents
-still sends to the tensor and vocabulary pages; folding the ladder, the
-cross-check, the prompt reports, the probes and the last hold into
-Statistics, and the two pages into Contents, is the rest of the row.
+**The two other tabs.** Statistics is two columns: the file's figures and
+the measured speeds with the fall-off chart on the left, and on the right
+a short heading over the daemon's own sentences for each of *timing* —
+where it was measured — *fall-off, prompt reading, first token, memory,
+cross-check, prompt, probes applied* and *last hold*; where a figure has
+not been taken the section says so and where it would come from, in the
+faint colour, rather than showing nothing (A7). The daemon's listing now
+carries the last measurement whole and what the cross-check said, so the
+tab needs no run of its own. Contents is the tensor directory or the
+vocabulary, one at a time, with a switch between them and the file
+counted when the tab is first opened; the two pages that held them are
+reached from nowhere now. B-474 is done on those terms.
+
+**The words, on the operator's instruction.** Labels are the terms the
+field uses, one or two words: the places are *System, Models, Server,
+Diagnostics*; the settings are *Device, Context length, Threads, Batch
+size, Flash attention, Memory lock, Port, API key, Draft head, RoPE
+scaling, Vision projector*; the placements are *Auto, CPU, GPU*; the
+server's tiles are *Gen tok/s, Prompt tok/s, Tokens out, Tokens in, KV
+cache, Active, Queued, RAM, VRAM, Uptime*; the statistics are *Measured
+on, Context scaling, Prefill, Time to first token, KV cache memory,
+Cross-check, Prompt analysis, Probed settings, Last served*; the buttons
+are *Start server, Stop server — frees N, Reset to recommended, Send*. A
+label that needed a sentence to be understood was a label using MCF's own
+words for a thing the field already has a word for. The console and the
+command line keep their sentences; the window's labels are terms.
 
 ## 178 · F178 — The model page, first tab: every setting a hold takes with the control its value wants, a typed window whose reserve follows the typing, a word typed where a number goes refused with the word, and Host as the last button; the probes' applied addressing and budget travel with the model so a hold is configured whole (B-473, D49, §3.15, A7)
 
@@ -12369,6 +12390,16 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 128 — the words the field uses
+
+F179 extended: the window's labels are the field's terms, one or two
+words each, on the operator's instruction (B-474).
+
+### Version 127 — every figure about a model, on its page
+
+F179 extended: the Statistics tab holds every figure measured or read
+about a model, and Contents the file's tensors and vocabulary (B-474).
 
 ### Version 126 — the four places, and what a hold is doing
 

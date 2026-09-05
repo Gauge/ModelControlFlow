@@ -38,6 +38,9 @@ fn four_models() -> Desk {
             engine: Some("llama.cpp-cuda".to_owned()),
             device: Some("NVIDIA GeForce RTX 5080".to_owned()),
             device_free: None,
+            measured_body: None,
+            cross_checked: Vec::new(),
+            prompt_reported: false,
             applied_addressing: None,
             applied_budget: None,
             on_a_card: true,
@@ -59,6 +62,9 @@ fn four_models() -> Desk {
             engine: Some("llama.cpp-cuda".to_owned()),
             device: Some("NVIDIA".to_owned()),
             device_free: None,
+            measured_body: None,
+            cross_checked: Vec::new(),
+            prompt_reported: false,
             applied_addressing: None,
             applied_budget: None,
             on_a_card: true,
@@ -1923,7 +1929,7 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
     desk.page = Page::Models;
     desk.chosen = Some(0);
     assert!(
-        act_somewhere(&desk, &mcf_desk::Act::Go(Page::Anatomy)),
+        act_somewhere(&desk, &mcf_desk::Act::Tab(mcf_desk::Tab::Contents)),
         "nothing on Models leads to what the model is made of"
     );
 

@@ -271,11 +271,11 @@ pub fn reserve_line(held: &Model, context: u64) -> Option<String> {
     let (cache, total) = reserve_of(held, context)?;
     Some(match total {
         Some(total) => format!(
-            "{} of cache reserved — {} with the weights",
+            "KV cache {} · total {} with weights",
             gigabytes(cache),
             gigabytes(total)
         ),
-        None => format!("{} of cache reserved", gigabytes(cache)),
+        None => format!("KV cache {}", gigabytes(cache)),
     })
 }
 
@@ -286,10 +286,10 @@ fn takes_line(hosting: &crate::Hosted) -> String {
         |name| format!("projector {name}"),
     );
     hosting.takes.as_ref().map_or_else(
-        || format!("takes: the engine did not say   ·   {projector}"),
+        || format!("Input: not reported   ·   {projector}"),
         |takes| {
             format!(
-                "takes {}   ·   template: {}   ·   thinking: {}",
+                "Input: {}   ·   Template: {}   ·   Thinking: {}",
                 takes.media(),
                 takes.template(),
                 takes.thinking_said()
@@ -304,7 +304,7 @@ fn monitor(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 
     // The machine's own figures, then its engines; what is held is on
     // Running (D49).
-    spaced(paint, area.x, area.y, "this machine", ink.faint);
+    spaced(paint, area.x, area.y, "system", ink.faint);
     let mut y = area.y + 20.0;
     y = processors_table(paint, Box::new(area.x, y, wide, 0.0), desk);
     y = memory_table(paint, Box::new(area.x, y + 14.0, wide, 0.0), desk);
@@ -697,48 +697,214 @@ fn model_page(
     );
     let drawn = match desk.tab {
         crate::Tab::Configure => configure_tab(paint, desk, mouse, below, held),
-        crate::Tab::Statistics => {
-            let after = detail(paint, below, held);
-            let _bottom = what_was_measured(
-                paint,
-                Box::new(
-                    below.x,
-                    after + 10.0,
-                    below.w,
-                    (below.bottom() - after).max(10.0),
-                ),
-                held,
-            );
-            None
-        }
+        crate::Tab::Statistics => statistics_tab(paint, desk, mouse, below, held),
         crate::Tab::Contents => contents_tab(paint, desk, mouse, below),
     };
     drawn.or(act)
 }
 
-/// Until the tensors and the vocabulary are drawn here (B-474): the two
-/// pages that hold them, a press away.
+/// Everything measured or read about the model, in one place: the file's
+/// figures, the ladder and what was read off it, the cross-check, the
+/// prompt report, what the probes applied, and the last hold (D49).
+fn statistics_tab(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    held: &Model,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let left = Box::new(area.x, area.y, area.w.min(440.0), area.h);
+    let after = detail(paint, left, held);
+    let _after = what_was_measured(
+        paint,
+        Box::new(
+            left.x,
+            after + 10.0,
+            left.w,
+            (left.bottom() - after).max(10.0),
+        ),
+        held,
+    );
+    // The right column: what was read off the ladder, then the rest, each
+    // a short heading and the daemon's own sentences under it.
+    let right = Box::new(
+        area.x + left.w + 40.0,
+        area.y,
+        (area.w - left.w - 40.0).max(240.0),
+        area.h,
+    );
+    let mut y = right.y;
+    let section = |paint: &mut Painter, y: &mut f32, head: &str, lines: &[String], colour: Rgb| {
+        if *y > right.bottom() - 40.0 {
+            return;
+        }
+        spaced(paint, right.x, *y, head, ink.faint);
+        *y += 18.0;
+        for line in lines.iter().take(4) {
+            let shown = paint.elide(line, Weight::Regular, size::SMALL, right.w);
+            paint.say_at(right.x, *y, &shown, Weight::Regular, size::SMALL, colour);
+            *y += 16.0;
+        }
+        *y += 10.0;
+    };
+    for (head, lines, known) in statistic_sections(desk, held) {
+        section(
+            paint,
+            &mut y,
+            head,
+            &lines,
+            if known { ink.quiet } else { ink.faint },
+        );
+    }
+    let (pressed, _) = ui::fitted(
+        paint,
+        mouse,
+        (right.x, y + 4.0),
+        "Diagnostics",
+        Kind::Ordinary,
+    );
+    if pressed {
+        act = Some(Act::Go(Page::Diagnostics));
+    }
+    act
+}
+
+/// Every section of the Statistics tab's right column, in order: its
+/// heading, its lines, and whether there is a figure there or only where
+/// one would come from (A7).
+fn statistic_sections(desk: &Desk, held: &Model) -> Vec<(&'static str, Vec<String>, bool)> {
+    let not_yet = |_what: &str| vec!["Not run — see Diagnostics".to_owned()];
+    let mut sections = Vec::new();
+    match held.measured_body.as_ref() {
+        Some(body) => {
+            for (head, said) in timing_said(body) {
+                sections.push((head, said, true));
+            }
+        }
+        None => sections.push(("Measured on", not_yet("timed"), false)),
+    }
+    if held.cross_checked.is_empty() {
+        sections.push(("Cross-check", not_yet("cross-checked"), false));
+    } else {
+        sections.push(("Cross-check", held.cross_checked.clone(), true));
+    }
+    sections.push((
+        "Prompt analysis",
+        vec![if held.prompt_reported {
+            "Report taken — Diagnostics, Prompt analysis".to_owned()
+        } else {
+            "Not run — see Diagnostics, Prompt analysis".to_owned()
+        }],
+        held.prompt_reported,
+    ));
+    sections.push((
+        "Probed settings",
+        vec![
+            held.applied_addressing.clone().map_or_else(
+                || "Chat template: not set".to_owned(),
+                |said| format!("Chat template: {said}"),
+            ),
+            held.applied_budget.clone().map_or_else(
+                || "Token budget: not set".to_owned(),
+                |said| format!("Token budget: {said}"),
+            ),
+        ],
+        held.applied_addressing.is_some() || held.applied_budget.is_some(),
+    ));
+    if let Some(last) = desk
+        .last_hold
+        .as_ref()
+        .filter(|last| last.model == held.path)
+    {
+        sections.push(("Last served", vec![last.said()], true));
+    }
+    sections
+}
+
+/// What the last measurement said, section by section: where it was taken,
+/// then what was read off the ladder, in the daemon's own sentences.
+fn timing_said(body: &Value) -> Vec<(&'static str, Vec<String>)> {
+    let conditions = body.get("conditions");
+    let on = conditions
+        .and_then(|held| held.get("engine_ran"))
+        .and_then(Value::as_text)
+        .map_or_else(String::new, |engine| {
+            format!(
+                "measured on {engine}{}",
+                conditions.map_or_else(String::new, mcf_tui::screens::diagnostics::on_device)
+            )
+        });
+    vec![
+        ("Measured on", vec![on]),
+        (
+            "Context scaling",
+            mcf_serve::ladder::fall_off_said(body.get("fall_off")),
+        ),
+        (
+            "Prefill",
+            mcf_serve::ladder::prompt_reading_said(body.get("prompt_reading")),
+        ),
+        (
+            "Time to first token",
+            mcf_serve::ladder::first_token_said(body.get("first_token")),
+        ),
+        (
+            "KV cache memory",
+            mcf_serve::ladder::memory_said(body.get("memory")),
+        ),
+    ]
+}
+
+/// What the file holds, read and not measured: the tensor directory or the
+/// vocabulary, one at a time, with a switch between them (D49).
 fn contents_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    paint.say_at(
-        area.x,
-        area.y,
-        "read from the file, not measured: its tensor directory and its vocabulary",
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
     let mut act = None;
     let mut x = area.x;
-    for (label, page) in [
-        ("What is in it", Page::Anatomy),
-        ("Its vocabulary", Page::Vocabulary),
-    ] {
-        let (pressed, drawn) = ui::fitted(paint, mouse, (x, area.y + 30.0), label, Kind::Ordinary);
-        if pressed && desk.chosen.is_some() {
-            act = Some(Act::Go(page));
+    for (label, page) in [("Tensors", Page::Anatomy), ("Vocabulary", Page::Vocabulary)] {
+        let wide = paint.measure(label, Weight::Bold, size::BODY) + 26.0;
+        if ui::nav(
+            paint,
+            mouse,
+            Box::new(x, area.y, wide, 28.0),
+            label,
+            desk.contents == page,
+        ) {
+            act = Some(Act::Contents(page));
         }
-        x += drawn.w + 12.0;
+        x += wide + 6.0;
+    }
+    let subtitle = if desk.contents == Page::Anatomy {
+        "counted from the file's tensor directory and set against its header — read, not measured"
+    } else {
+        "counted from the header's token list — nothing tokenised, nothing rated"
+    };
+    let shown = paint.elide(
+        subtitle,
+        Weight::Regular,
+        size::SMALL,
+        area.w - x + area.x - 12.0,
+    );
+    paint.say_at(
+        x + 8.0,
+        area.y + 7.0,
+        &shown,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let top = area.y + 44.0;
+    let Some(said) = &desk.anatomy else {
+        not_counted(paint, desk, area, top);
+        return act;
+    };
+    let body = Box::new(area.x, top, area.w, (area.bottom() - top).max(10.0));
+    if desk.contents == Page::Anatomy {
+        anatomy_body(paint, body, said);
+    } else {
+        vocabulary_body(paint, body, said);
     }
     act
 }
@@ -801,13 +967,7 @@ fn configure_tab(
             );
             y += 30.0;
         }
-        let (host, _) = ui::fitted(
-            paint,
-            mouse,
-            (area.x, y + 6.0),
-            "Host this model",
-            Kind::Quiet,
-        );
+        let (host, _) = ui::fitted(paint, mouse, (area.x, y + 6.0), "Start server", Kind::Quiet);
         return (host && !desk.doing.busy()).then_some(Act::HostIt);
     };
     let listed = settings.listed(recommended);
@@ -842,7 +1002,7 @@ fn configure_tab(
             paint.say_at(
                 column,
                 *y,
-                &format!("MCF recommends {was}"),
+                &format!("Recommended: {was}"),
                 Weight::Regular,
                 size::SMALL,
                 ink.faint,
@@ -894,7 +1054,7 @@ fn configure_tab(
         paint.say_at(
             column + 30.0,
             y,
-            if on { "on" } else { "off" },
+            if on { "On" } else { "Off" },
             Weight::Bold,
             size::BODY,
             ink.ink,
@@ -907,7 +1067,7 @@ fn configure_tab(
         paint,
         y,
         Row {
-            name: "put it on",
+            name: "Device",
             because: because_of("put it on"),
         },
         &mut hovered,
@@ -935,7 +1095,7 @@ fn configure_tab(
         paint,
         y,
         Row {
-            name: "context window",
+            name: "Context length",
             because: because_of("context window"),
         },
         &mut hovered,
@@ -962,16 +1122,16 @@ fn configure_tab(
     // Numbers.
     for (name, field, now) in [
         (
-            "threads",
+            "Threads",
             crate::Field::Threads,
             settings.threads.to_string(),
         ),
         (
-            "batch size",
+            "Batch size",
             crate::Field::Batch,
             settings.batch.to_string(),
         ),
-        ("port", crate::Field::Port, settings.port.to_string()),
+        ("Port", crate::Field::Port, settings.port.to_string()),
     ] {
         label(
             paint,
@@ -993,12 +1153,12 @@ fn configure_tab(
     // Switches.
     for (name, which, on) in [
         (
-            "flash attention",
+            "Flash attention",
             crate::Switch::FlashAttention,
             settings.flash_attention,
         ),
         (
-            "keep resident",
+            "Memory lock",
             crate::Switch::KeepResident,
             settings.keep_resident,
         ),
@@ -1035,7 +1195,7 @@ fn configure_tab(
         y,
         crate::Field::ApiKey,
         settings.api_key.clone().unwrap_or_default(),
-        "none — anything on this computer can use it",
+        "none (open on localhost)",
     );
     if pressed {
         act = Some(Act::Edit(crate::Field::ApiKey));
@@ -1047,8 +1207,8 @@ fn configure_tab(
         paint,
         y,
         Row {
-            name: "draft head",
-            because: "the draft head the file carries, started or left in it",
+            name: "Draft head",
+            because: "the speculative draft head the file carries, started or left in it",
         },
         &mut hovered,
     );
@@ -1064,7 +1224,7 @@ fn configure_tab(
             paint.say_at(
                 column + 90.0,
                 y,
-                &format!("the file carries one of {layers} layer(s)"),
+                &format!("{layers}-layer draft head in file"),
                 Weight::Regular,
                 size::SMALL,
                 ink.faint,
@@ -1073,7 +1233,7 @@ fn configure_tab(
         None => paint.say_at(
             column,
             y,
-            "the file carries none",
+            "None in file",
             Weight::Regular,
             size::BODY,
             ink.faint,
@@ -1084,8 +1244,8 @@ fn configure_tab(
         paint,
         y,
         Row {
-            name: "rope scaling",
-            because: "how the window is stretched past what the model was trained for: as the file has it, off, linear or yarn, by a factor",
+            name: "RoPE scaling",
+            because: "how the context is stretched past what the model was trained for: default, off, linear or YaRN, by a factor",
         },
         &mut hovered,
     );
@@ -1136,7 +1296,7 @@ fn configure_tab(
         paint,
         y,
         Row {
-            name: "projector",
+            name: "Vision projector",
             because: because_of("projector"),
         },
         &mut hovered,
@@ -1148,7 +1308,7 @@ fn configure_tab(
             }
             let named = path.rsplit('/').next().unwrap_or(path);
             let shown = paint.elide(
-                &format!("{named}, beside the file; off is text only"),
+                &format!("{named} (off = text only)"),
                 Weight::Regular,
                 size::SMALL,
                 area.right() - column - 96.0,
@@ -1165,7 +1325,7 @@ fn configure_tab(
         None => paint.say_at(
             column,
             y,
-            "none beside the file — text only",
+            "None — text only",
             Weight::Regular,
             size::BODY,
             ink.faint,
@@ -1241,15 +1401,11 @@ fn configure_foot(
     }
     // What the probes applied: a hold runs under these too (§3.15).
     for (what, applied) in [
-        ("addressing", held.applied_addressing.as_deref()),
-        ("budget", held.applied_budget.as_deref()),
+        ("Chat template (probed)", held.applied_addressing.as_deref()),
+        ("Token budget (probed)", held.applied_budget.as_deref()),
     ] {
         let said = applied.map_or_else(
-            || {
-                format!(
-                    "{what}: nothing applied by a probe — `mcf probe --apply` writes what it finds"
-                )
-            },
+            || format!("{what}: not set — run `mcf probe --apply`"),
             |applied| format!("{what}: {applied}"),
         );
         let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w);
@@ -1263,7 +1419,7 @@ fn configure_foot(
         .as_ref()
         .is_some_and(|recommended| !settings.differs_from(recommended).is_empty())
     {
-        let (reset, drawn) = ui::fitted(paint, mouse, (x, y), "Back to recommended", Kind::Quiet);
+        let (reset, drawn) = ui::fitted(paint, mouse, (x, y), "Reset to recommended", Kind::Quiet);
         if reset {
             act = Some(Act::Recommended);
         }
@@ -1275,9 +1431,9 @@ fn configure_foot(
         mouse,
         (x, y),
         if waits {
-            "Host (needs the build first)"
+            "Start server (build the engine first)"
         } else {
-            "Host this model"
+            "Start server"
         },
         if waits { Kind::Quiet } else { Kind::Primary },
     );
@@ -1290,9 +1446,9 @@ fn configure_foot(
 /// The words for one placement in the list.
 fn placement_label(placement: &crate::Placement) -> String {
     let where_ = match placement.on.as_str() {
-        "resolved" => "as MCF resolves it",
-        "processor" => "the processor",
-        "card" => "the card",
+        "resolved" => "Auto",
+        "processor" => "CPU",
+        "card" => "GPU",
         other => other,
     };
     format!("{where_} — {} on {}", placement.engine, placement.device)
@@ -1301,10 +1457,10 @@ fn placement_label(placement: &crate::Placement) -> String {
 /// The words for one rope choice in the list.
 fn rope_label(at: usize) -> &'static str {
     match at {
-        1 => "off",
-        2 => "linear",
-        3 => "yarn",
-        _ => "as the file has it",
+        1 => "Off",
+        2 => "Linear",
+        3 => "YaRN",
+        _ => "Default",
     }
 }
 
@@ -1387,11 +1543,7 @@ fn building(paint: &mut Painter, job: &crate::job::Job, x: f32, mut y: f32, wide
 fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(String, Kind, Act)> {
     if this_one {
         return vec![
-            (
-                "Ask it something".to_owned(),
-                Kind::Primary,
-                Act::Go(Page::Hosting),
-            ),
+            ("Chat".to_owned(), Kind::Primary, Act::Go(Page::Hosting)),
             (stop_label, Kind::Ordinary, Act::StopHosting),
         ];
     }
@@ -1412,7 +1564,7 @@ fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(Strin
         ));
     }
     listed.push((
-        "Run diagnostics".to_owned(),
+        "Diagnostics".to_owned(),
         Kind::Ordinary,
         Act::Go(Page::Diagnostics),
     ));
@@ -1474,17 +1626,17 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         .and_then(|(held, context)| reserve_of(held, context))
         .and_then(|(_, total)| total)
         .map_or_else(
-            || "Stop hosting".to_owned(),
-            |total| format!("Stop hosting — frees {}", gigabytes(total)),
+            || "Stop server".to_owned(),
+            |total| format!("Stop server — frees {}", gigabytes(total)),
         );
     let mut actions = action_buttons(desk, this_one, stop_label);
     actions.push((
-        "What is in it".to_owned(),
+        "Contents".to_owned(),
         Kind::Ordinary,
-        Act::Go(Page::Anatomy),
+        Act::Tab(crate::Tab::Contents),
     ));
     actions.push((
-        "Add a model".to_owned(),
+        "Add model".to_owned(),
         Kind::Ordinary,
         Act::Go(Page::Adding),
     ));
@@ -1515,7 +1667,7 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         paint.say_at(
             area.x,
             y + 4.0,
-            "reachable at",
+            "Endpoint",
             Weight::Regular,
             size::SMALL,
             ink.quiet,
@@ -1647,21 +1799,21 @@ fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
 
     for (name, value) in [
         (
-            "size",
+            "Size",
             held.bytes
                 .map_or_else(unknown, |bytes| format!("{:.2} GB", bytes as f64 / 1e9)),
         ),
         (
-            "architecture",
+            "Architecture",
             held.architecture.clone().unwrap_or_else(unknown),
         ),
         (
-            "trained context",
+            "Trained context",
             held.trained
                 .map_or_else(unknown, |held| format!("{} tokens", words::grouped(held))),
         ),
         (
-            "cache per token",
+            "KV cache/token",
             held.cache_per_token.map_or_else(unknown, |bytes| {
                 #[expect(clippy::integer_division, reason = "bytes into whole kibibytes")]
                 let kibibytes = bytes / 1024;
@@ -1685,10 +1837,10 @@ fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
         }
         None => {
             for (name, value) in [
-                ("engine", held.engine.clone().unwrap_or_else(unknown)),
-                ("runs on", held.device.clone().unwrap_or_else(unknown)),
+                ("Engine", held.engine.clone().unwrap_or_else(unknown)),
+                ("Device", held.device.clone().unwrap_or_else(unknown)),
                 (
-                    "largest window",
+                    "Max context",
                     held.context
                         .map_or_else(unknown, |held| format!("{} tokens", words::grouped(held))),
                 ),
@@ -1717,7 +1869,7 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
         right: true,
     };
     let table = Box::new(area.x, y, wide, 0.0);
-    y = heads(paint, table, "measured", &[speed]);
+    y = heads(paint, table, "throughput", &[speed]);
     let speed = Column {
         head: "speed",
         at: wide,
@@ -1790,12 +1942,12 @@ fn run_buttons(
     } else {
         (Kind::Primary, Kind::Ordinary)
     };
-    if ui::button(paint, mouse, quick, "Quick Run", quick_kind) && !running {
+    if ui::button(paint, mouse, quick, "Quick run", quick_kind) && !running {
         act = Some(Act::Measure {
             deepest: desk.quick_depth(),
         });
     }
-    if ui::button(paint, mouse, selected, "Run Selected", selected_kind)
+    if ui::button(paint, mouse, selected, "Run selected", selected_kind)
         && !running
         && desk.runs_something()
     {
@@ -1856,7 +2008,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     }
     let mut y = area.y + 78.0;
 
-    spaced(paint, area.x, y, "what to measure", ink.faint);
+    spaced(paint, area.x, y, "setup", ink.faint);
     y += 28.0;
 
     // **The two pickers are dropdowns now, and were not before.** The model
@@ -1871,13 +2023,13 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         .and_then(|at| desk.models.get(at))
         .map_or_else(|| "none chosen".to_owned(), |held| held.name.clone());
     for (picker, label, value) in [
-        (Picker::Model, "model", chosen_model),
+        (Picker::Model, "Model", chosen_model),
         (
             Picker::Window,
-            "context window",
+            "Context length",
             format!("{} tokens", words::grouped(desk.window)),
         ),
-        (Picker::On, "put it on", on_label(desk.on)),
+        (Picker::On, "Device", on_label(desk.on)),
     ] {
         paint.say_at(area.x, y, label, Weight::Regular, size::BODY, ink.quiet);
         let box_of = Box::new(area.x + 190.0, y - 6.0, 340.0, 28.0);
@@ -1909,7 +2061,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     // Choosing a window implies every power of two below it, so the depths are
     // stated under it rather than offered as a second set of choices somebody
     // could contradict the first with.
-    paint.say_at(area.x, y, "samples", Weight::Regular, size::BODY, ink.quiet);
+    paint.say_at(area.x, y, "Depths", Weight::Regular, size::BODY, ink.quiet);
     paint.say_at(
         area.x + 190.0,
         y,
@@ -1953,13 +2105,13 @@ fn placement_rows(paint: &mut Painter, desk: &Desk, x: f32, mut y: f32, wide: f3
     let ink = paint.ink;
     let placed = desk.chosen.and_then(|at| desk.models.get(at));
     for (label, value) in [
-        ("engine", placed.and_then(|held| held.engine.clone())),
+        ("Engine", placed.and_then(|held| held.engine.clone())),
         (
-            "runs on",
+            "Device",
             placed.and_then(|held| {
                 held.device.as_ref().map(|device| {
                     if held.on_a_card {
-                        format!("{device} — the whole model on the card")
+                        format!("{device} (all layers)")
                     } else {
                         device.clone()
                     }
@@ -2044,9 +2196,9 @@ const ON_CHOICES: [Option<mcf_serve::control::On>; 3] = [
 /// The words for where the model goes.
 fn on_label(on: Option<mcf_serve::control::On>) -> String {
     match on {
-        None => "where MCF resolves it".to_owned(),
-        Some(mcf_serve::control::On::Processor) => "the processor, nothing on a card".to_owned(),
-        Some(mcf_serve::control::On::Card) => "the card, the whole model on it".to_owned(),
+        None => "Auto".to_owned(),
+        Some(mcf_serve::control::On::Processor) => "CPU".to_owned(),
+        Some(mcf_serve::control::On::Card) => "GPU (all layers)".to_owned(),
     }
 }
 
@@ -2826,7 +2978,7 @@ fn ask_box(
         mouse,
         field,
         &desk.typed,
-        "Ask it something",
+        "Message the model",
         desk.caret == Caret::Document,
     ) {
         act = Some(Act::Focus(Caret::Document));
@@ -2835,7 +2987,7 @@ fn ask_box(
         paint,
         mouse,
         (field.right() + 10.0, at.y),
-        "Ask",
+        "Send",
         Kind::Primary,
     );
     if asked
@@ -2885,21 +3037,21 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
     let count = |held: Option<u64>| held.map(words::grouped);
     let bytes = |held: Option<u64>| held.map(gigabytes);
     let tiles: [(&str, Option<String>); 10] = [
-        ("Tokens/s", rate(in_use.generated_per_second)),
-        ("Prompt/s", rate(in_use.prompted_per_second)),
-        ("Generated", count(in_use.generated)),
-        ("Prompted", count(in_use.prompted)),
+        ("Gen tok/s", rate(in_use.generated_per_second)),
+        ("Prompt tok/s", rate(in_use.prompted_per_second)),
+        ("Tokens out", count(in_use.generated)),
+        ("Tokens in", count(in_use.prompted)),
         (
-            "Cache",
+            "KV cache",
             in_use
                 .cache_used
                 .map(|ratio| format!("{:.0}%", (ratio * 100.0).clamp(0.0, 100.0))),
         ),
-        ("Requests", count(in_use.processing)),
+        ("Active", count(in_use.processing)),
         ("Queued", count(in_use.queued)),
-        ("Memory", bytes(in_use.resident)),
-        ("Card", bytes(in_use.card)),
-        ("Up", in_use.uptime_seconds.map(crate::ago_said)),
+        ("RAM", bytes(in_use.resident)),
+        ("VRAM", bytes(in_use.card)),
+        ("Uptime", in_use.uptime_seconds.map(crate::ago_said)),
     ];
     let across = (at.w - 4.0 * 10.0) / 5.0;
     let mut y = at.y;
@@ -2937,14 +3089,14 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
 fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: Box) -> f32 {
     let ink = paint.ink;
     let peak = rates.iter().copied().fold(0.0_f32, f32::max);
-    spaced(paint, at.x, at.y, "tokens/s, last two minutes", ink.faint);
+    spaced(paint, at.x, at.y, "gen tok/s · last 2 min", ink.faint);
     let plot = Box::new(at.x, at.y + 16.0, at.w, at.h - 16.0);
     paint.edge(plot, 6.0, ink.line, ink.card);
     if peak <= 0.0 {
         paint.say_at(
             plot.x + 12.0,
             plot.y + 8.0,
-            "nothing predicted yet",
+            "no generation yet",
             Weight::Regular,
             size::SMALL,
             ink.faint,
@@ -3012,8 +3164,8 @@ fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Opti
         (freed.clone(), ink.quiet)
     } else {
         (
-            "not held on a port: a question here goes through MCF's own engine, loaded for it; \
-             Host it on the Models page to keep it resident and reachable by other programs"
+            "No server for this model: messages here run through MCF's own engine, loaded per \
+             message. Start a server from Configure to serve it over HTTP."
                 .to_owned(),
             ink.faint,
         )
@@ -3042,15 +3194,8 @@ fn where_it_answers(
     let ink = paint.ink;
     let mut y = at.y;
     let mut act = None;
-    paint.say_at(
-        at.x,
-        y,
-        "reachable at",
-        Weight::Regular,
-        size::SMALL,
-        ink.quiet,
-    );
-    let after = paint.measure("reachable at", Weight::Regular, size::SMALL);
+    paint.say_at(at.x, y, "Endpoint", Weight::Regular, size::SMALL, ink.quiet);
+    let after = paint.measure("Endpoint", Weight::Regular, size::SMALL);
     paint.say_at(
         at.x + after + 8.0,
         y - 1.0,
@@ -3072,14 +3217,14 @@ fn where_it_answers(
     }
     y += 24.0;
     for line in [
-        "an OpenAI-compatible endpoint: give this to a tool as its base URL".to_owned(),
+        "OpenAI-compatible API · use as base URL".to_owned(),
         if hosting.api_key {
-            "an API key is set — callers present it".to_owned()
+            "API key: set".to_owned()
         } else {
-            "no API key — anything on this computer can use it".to_owned()
+            "API key: none (localhost only)".to_owned()
         },
         format!(
-            "context {}   ·   since {}",
+            "Context {}   ·   Started {}",
             hosting
                 .context
                 .map_or_else(|| UNKNOWN.to_owned(), |context| format!("{context} tokens")),
@@ -3119,7 +3264,7 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
         (Some(held), _) => held.name.clone(),
         (None, Some(hosting)) => hosting.name(),
         (None, None) => {
-            spaced(paint, area.x, area.y, "running", ink.faint);
+            spaced(paint, area.x, area.y, "server", ink.faint);
             paint.say_at(
                 area.x,
                 area.y + 28.0,
@@ -3131,7 +3276,7 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
             return None;
         }
     };
-    spaced(paint, area.x, area.y, "running", ink.faint);
+    spaced(paint, area.x, area.y, "server", ink.faint);
     let name = paint.elide(&name, Weight::Bold, size::HEAD, area.w);
     paint.say_at(
         area.x,
@@ -5683,6 +5828,17 @@ fn anatomy(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
         not_counted(paint, desk, area, top);
         return switched;
     };
+    anatomy_body(
+        paint,
+        Box::new(area.x, top, area.w, area.bottom() - top),
+        said,
+    );
+    switched
+}
+
+/// The tensor directory's figures, agreements, arithmetic and shares.
+fn anatomy_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) {
+    let top = area.y;
     // Two columns: the figures and the header check on the left, the tables
     // on the right. The window does not scroll, so a table that does not fit
     // is cut at a row that says so rather than drawn over the edge.
@@ -5731,7 +5887,6 @@ fn anatomy(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
         ),
         said,
     );
-    switched
 }
 
 /// The heading the two counted screens share: what is in it, and what it
@@ -5827,6 +5982,17 @@ fn vocabulary(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         not_counted(paint, desk, area, top);
         return switched;
     };
+    vocabulary_body(
+        paint,
+        Box::new(area.x, top, area.w, area.bottom() - top),
+        said,
+    );
+    switched
+}
+
+/// The vocabulary's figures, its template, and its named tokens.
+fn vocabulary_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) {
+    let top = area.y;
     let spoken = &said.vocabulary;
     let figures = 560.0_f32.min(area.w / 2.0);
     let left = Box::new(area.x, top, figures, area.bottom() - top);
@@ -5843,7 +6009,6 @@ fn vocabulary(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         area.bottom() - top,
     );
     named_tokens(paint, right, spoken);
-    switched
 }
 
 /// The list, counted: one figure a line, the long ones wrapped.

@@ -83,6 +83,9 @@ fn an_unmeasured_model_never_reports_a_speed() {
         engine: Some("llama.cpp".to_owned()),
         device: Some("NVIDIA".to_owned()),
         device_free: None,
+        measured_body: None,
+        cross_checked: Vec::new(),
+        prompt_reported: false,
         applied_addressing: None,
         applied_budget: None,
         on_a_card: true,
@@ -121,6 +124,9 @@ fn nothing_is_thrown_away_on_the_way_to_a_plain_sentence() {
         engine: Some("llama.cpp-cuda".to_owned()),
         device: Some("NVIDIA GeForce RTX 5080".to_owned()),
         device_free: None,
+        measured_body: None,
+        cross_checked: Vec::new(),
+        prompt_reported: false,
         applied_addressing: None,
         applied_budget: None,
         on_a_card: true,
@@ -261,7 +267,7 @@ fn every_menu_entry_reaches_something_built() {
     let named: Vec<&str> = Page::MENU.iter().map(|(_, label)| *label).collect();
     assert_eq!(
         named,
-        ["Machine", "Models", "Running", "Diagnostics", "Exit"],
+        ["System", "Models", "Server", "Diagnostics", "Exit"],
         "the window's places are the four D49 names, and Exit"
     );
     for (page, label) in Page::MENU {
@@ -1424,22 +1430,22 @@ fn a_run_under_way_is_said_on_every_page() {
 fn a_load_says_how_far_and_about_how_long() {
     let said = crate::loading_said(6_100_000_000, false, Some(17_600_000_000), 12);
     assert!(
-        said.starts_with("loading — 6.1 GB of 17.6 GB of weights, 12 s so far"),
+        said.starts_with("Loading: 6.1 GB of 17.6 GB weights · 12 s"),
         "{said}"
     );
-    assert!(said.ends_with("about 22 s to go"), "{said}");
+    assert!(said.ends_with("~22 s left"), "{said}");
     let nothing_yet = crate::loading_said(100_000_000, false, Some(17_600_000_000), 3);
     assert!(
-        !nothing_yet.contains("to go"),
+        !nothing_yet.contains("left"),
         "no estimate off the first crumbs: {nothing_yet}"
     );
     let past = crate::loading_said(21_200_000_000, true, Some(16_300_000_000), 2);
     assert!(
-        past.contains("weights are on") && !past.contains("to go"),
+        past.contains("weights on") && !past.contains("left"),
         "past the weights, what follows is not the file's to size: {past}"
     );
     let without_size = crate::loading_said(6_100_000_000, true, None, 12);
-    assert_eq!(without_size, "loading onto the card — 6.1 GB, 12 s so far");
+    assert_eq!(without_size, "Loading to GPU: 6.1 GB · 12 s");
 
     // And the desk says nothing about loading where nothing loads.
     let desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));

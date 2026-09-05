@@ -55,7 +55,7 @@ impl Where {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Monitor => "Machine",
+            Self::Monitor => "System",
             Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
             Self::Components => "Engines",
@@ -70,7 +70,7 @@ impl Where {
     #[must_use]
     pub const fn title(self) -> &'static str {
         match self {
-            Self::Monitor => "This machine",
+            Self::Monitor => "This system",
             Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
             Self::Components => "Engines: what MCF has built and can build",
