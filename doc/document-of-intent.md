@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 50 |
+| **Version** | 51 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4804,6 +4804,64 @@ three items: the model page with its Configure tab, the four places with
 Statistics and Contents folded in, and the hold's settings remembered per
 model so that *as you set it last time* is a thing the page can offer.
 
+### D50 — Diagnostics is a page of runs, each with its own controls, and the probes are one of them *(on the operator's instruction)*
+
+**A diagnostic is a run a person configures and starts, watches as it
+goes, and reads on the model's page afterwards. The Diagnostics page lists
+the runs MCF can make — throughput, cross-check, capabilities, prompt
+analysis, comparison — each as a card with the controls that run takes
+and what it answers, and no checkbox stands for a thing a run does not
+separately do.**
+
+**What the page was, and why it confused.** Six rows with checkboxes,
+under a *Quick run* and a *Run selected*. Five of the rows — generation
+speed against depth, start-up to first token, memory ceiling, fall-off
+with depth, prompt reading speed — are answered by one climb of the depth
+ladder, so ticking any one ticked all five and unticking one unticked
+them: the checkboxes were the *results* of one run drawn as if they were
+five runs a person could choose between. The sixth, the cross-check, is a
+different run. The operator did not understand what the checkboxes were
+for, and they were right not to: a checkbox that cannot be ticked alone
+is not a choice.
+
+**What MCF measures, and what each says about a model.** *Throughput*,
+the ladder: at doubling depths — 512, 1,024, … up to half the window —
+two generations of one and seventeen tokens, three times, and the
+difference over sixteen is the cost of a token at that depth; between two
+rungs the slope is how the cost grows with the conversation (the context
+scaling), the first-token time less the shallower's over the tokens
+between is what reading a token of prompt costs (the prefill rate), and
+the engine's resident memory at each rung against the header's cache size
+is what the window costs. These are the figures a person hosts against.
+*Cross-check*: MCF's own engine reads what the provisioned one produced
+over a hundred and twenty positions and says whether the two agree — a
+figure about the engines, not the model, and a condition every other
+figure rests on. *Capabilities*, the probes: whether the file's chat
+template addresses the model as its own tokens say, how many tokens its
+turns run to before it stops, whether and where it thinks and for how
+long, whether it emits well-formed tool calls and the shape it is asked
+for, how much of its declared context it accepts, what a language costs
+its vocabulary, whether a picture reaches it — the figures a person
+crafting a persona or a hold needs first, and the ones the probes apply
+to the model as its addressing and budget. They are at the command line,
+`mcf probe`, and nowhere in the window. *Prompt analysis*: what each part
+of a prompt does to the answer, by leaving parts out, swapping them and
+moving them. *Comparison*, `mcf bench`: two models on one question under
+one engine, with what was measured of each, at the command line only.
+
+**The page.** One card per run. Each card names the run, says in one
+line what it answers, shows the controls the run takes — the device, the
+depths or the ceiling, the repeats, which probes, what to apply — with
+MCF's recommendation as the default, states what the run will cost in
+time before the button, and has its own Run. While a run goes, its card
+shows the step it is on and a Stop; when it is done, the card says so and
+the figures are on the model's Statistics tab, where a person looks for
+them, with the run's conditions. The capabilities card is the probes as
+a run the daemon carries, streamed line by line as the ladder is now, so
+that the window and the console have what the command line has (A22);
+the comparison card is the bench, the same way. Nothing on the page
+stands for a thing a run does not separately do.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -4833,6 +4891,13 @@ model so that *as you set it last time* is a thing the page can offer.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 51 — diagnostics as runs
+
+D50 written on the operator's instruction, who did not understand the
+checkbox tests: five of six were the results of one run drawn as choices.
+Diagnostics is a page of runs, each with its own controls and cost, the
+probes and the comparison among them.
 
 ### Version 50 — the window around a model
 

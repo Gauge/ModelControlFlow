@@ -1231,6 +1231,8 @@ pub enum Act {
     Stop,
     /// Hold the model that was last held, again.
     HostAgain,
+    /// Look up this repository, picked from a search.
+    Pick(String),
     /// Open a tab of the model page.
     Tab(Tab),
     /// Show this half of Contents: the tensors or the vocabulary.
@@ -1914,6 +1916,10 @@ impl Desk {
             Act::Download { reference, file } => self.download(&reference, &file),
             Act::Stop => self.stop_run(),
             Act::HostAgain => self.host_again(),
+            Act::Pick(repository) => {
+                self.typed = repository;
+                self.look_up();
+            }
             Act::Tab(_) | Act::Edit(_) | Act::Switch(_) | Act::Place(_) | Act::Rope(_) => {
                 self.configure(&act);
             }
@@ -2385,13 +2391,28 @@ impl Desk {
         if asked.is_empty() {
             return;
         }
+        // A reference — owner/name, or a hub URL — lists a repository's
+        // files; anything else is a word, and a word searches the hub for
+        // repositories to pick from (A2).
+        let is_reference = mcf_serve::control::is_reference(&asked);
         self.doing = Doing::Listing(job::Job::start(
             &self.socket,
-            Request::Offered {
-                reference: asked.clone(),
-                from: None,
+            if is_reference {
+                Request::Offered {
+                    reference: asked.clone(),
+                    from: None,
+                }
+            } else {
+                Request::Search {
+                    query: asked.clone(),
+                    from: None,
+                }
             },
-            format!("looking up {asked}"),
+            if is_reference {
+                format!("looking up {asked}")
+            } else {
+                format!("searching the hub for {asked:?}")
+            },
         ));
     }
 

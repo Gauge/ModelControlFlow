@@ -125,6 +125,70 @@ impl Hub {
         }
     }
 
+    /// Repositories the hub lists for a word: the ones publishing GGUF
+    /// files, most downloaded first, at most twenty. A word is not a
+    /// reference, and a person who has only a word is owed the names the
+    /// hub has for it rather than a refusal (A2).
+    ///
+    /// # Errors
+    ///
+    /// The hub could not be reached, did not answer the search, or answered
+    /// with something that is not a list of repositories.
+    pub fn search(&self, query: &str) -> Result<Vec<Found>> {
+        use core::fmt::Write as _;
+        let mut encoded = String::new();
+        for byte in query.trim().bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    encoded.push(char::from(byte));
+                }
+                other => {
+                    let _written = write!(encoded, "%{other:02X}");
+                }
+            }
+        }
+        let url = self.url(&format!(
+            "/api/models?search={encoded}&filter=gguf&sort=downloads&direction=-1&limit=20"
+        ))?;
+        let mut body = Bounded::new(METADATA_CEILING);
+        let exchanged = wire::fetch(self.wire.as_ref(), &self.asking(url.clone()), &mut body)?;
+        if !(200..=299).contains(&exchanged.response.status()) {
+            return Err(Failure::new(
+                Category::HubMetadataMalformed,
+                Attribution::Machine,
+                Disposition::Refused,
+                WHERE,
+                "the hub did not answer the search",
+            )
+            .with_context("asked", url.to_string())
+            .with_context("status", exchanged.response.status().to_string()));
+        }
+        let listed = read_json(&body.held)?;
+        let Some(repositories) = listed.as_list() else {
+            return Err(malformed("a list of repositories", "not a list"));
+        };
+        Ok(repositories
+            .iter()
+            .filter_map(|repository| {
+                let count = |key: &str| {
+                    repository
+                        .get(key)
+                        .and_then(Value::as_integer)
+                        .and_then(|held| u64::try_from(held).ok())
+                };
+                Some(Found {
+                    id: repository.get("id").and_then(Value::as_text)?.to_owned(),
+                    downloads: count("downloads"),
+                    likes: count("likes"),
+                    updated: repository
+                        .get("lastModified")
+                        .and_then(Value::as_text)
+                        .map(str::to_owned),
+                })
+            })
+            .collect())
+    }
+
     /// Reads something small — a listing, a card — into memory.
     fn read_metadata(&self, reference: &Reference, target: &str) -> Result<(Response, Vec<u8>)> {
         let url = self.url(target)?;
@@ -558,6 +622,40 @@ fn lineage(card: &Value) -> Option<Lineage> {
         }
     }
     base.map(|base| Lineage { base, relation })
+}
+
+/// One repository the hub listed for a word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// `owner/name`, as the hub names it.
+    pub id: String,
+    /// Downloads the hub counts, where it says.
+    pub downloads: Option<u64>,
+    /// Likes the hub counts, where it says.
+    pub likes: Option<u64>,
+    /// When it last changed, as the hub wrote it.
+    pub updated: Option<String>,
+}
+
+impl Found {
+    /// The record's shape.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let count = |held: Option<u64>| {
+            held.map_or(Value::Null, |held| {
+                Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+            })
+        };
+        Value::map([
+            ("id", Value::text(self.id.clone())),
+            ("downloads", count(self.downloads)),
+            ("likes", count(self.likes)),
+            (
+                "updated",
+                self.updated.clone().map_or(Value::Null, Value::text),
+            ),
+        ])
+    }
 }
 
 fn read_json(bytes: &[u8]) -> Result<Value> {

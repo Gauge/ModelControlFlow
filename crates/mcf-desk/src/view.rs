@@ -2661,12 +2661,12 @@ fn span(low: u64, high: u64) -> String {
 /// Fetching a model that is not here yet.
 fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    spaced(paint, area.x, area.y, "add a model", ink.faint);
+    spaced(paint, area.x, area.y, "add model", ink.faint);
     let mut y = area.y + 28.0;
     paint.say_at(
         area.x,
         y,
-        "Name a model published on a hub, in the form owner/repository.",
+        "Search Hugging Face by name, or paste owner/repository or a repository URL.",
         Weight::Regular,
         size::BODY,
         ink.quiet,
@@ -2675,12 +2675,19 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
 
     let mut act = None;
     let field = Box::new(area.x, y, (area.w - 130.0).min(520.0), 32.0);
-    let _clicked = ui::field(paint, mouse, field, &desk.typed, "owner/repository", true);
+    let _clicked = ui::field(
+        paint,
+        mouse,
+        field,
+        &desk.typed,
+        "e.g. llama-3, owner/Model-GGUF, or a repository URL",
+        true,
+    );
     let (looked, _) = ui::fitted(
         paint,
         mouse,
         (field.right() + 10.0, y),
-        "Look up",
+        "Search",
         Kind::Primary,
     );
     if looked && !desk.doing.busy() {
@@ -2729,6 +2736,15 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         return act;
     }
     let found = job.conclusion().or_else(|| job.latest())?;
+    if found.get("repositories").is_some() {
+        return searched(
+            paint,
+            mouse,
+            Box::new(area.x, y, area.w, area.bottom() - y),
+            found,
+        )
+        .or(act);
+    }
     published(
         paint,
         mouse,
@@ -2736,6 +2752,78 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         found,
     )
     .or(act)
+}
+
+/// The repositories the hub listed for a word, one row each, most
+/// downloaded first; pressing one looks it up.
+fn searched(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Option<Act> {
+    let ink = paint.ink;
+    let query = found.get("query").and_then(Value::as_text).unwrap_or("");
+    let listed = found
+        .get("repositories")
+        .and_then(Value::as_list)
+        .map(<[Value]>::to_vec)
+        .unwrap_or_default();
+    let wide = area.w.min(640.0);
+    let mut y = area.y;
+    if listed.is_empty() {
+        paint.say_at(
+            area.x,
+            y,
+            &format!("No repositories with GGUF files for {query:?}."),
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        return None;
+    }
+    paint.say_at(
+        area.x,
+        y,
+        &format!(
+            "{} results for {query:?} · most downloaded first",
+            listed.len()
+        ),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    y += 22.0;
+    let mut act = None;
+    for repository in &listed {
+        if y > area.bottom() - 26.0 {
+            break;
+        }
+        let Some(id) = repository.get("id").and_then(Value::as_text) else {
+            continue;
+        };
+        let hit = Box::new(area.x - 6.0, y - 4.0, wide + 12.0, 24.0);
+        if mouse.over(hit) {
+            paint.panel(hit, 6.0, ink.line, 90);
+        }
+        let shown = paint.elide(id, Weight::Bold, size::BODY, wide - 150.0);
+        paint.say_at(area.x, y, &shown, Weight::Bold, size::BODY, ink.ink);
+        let downloads = repository
+            .get("downloads")
+            .and_then(Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok())
+            .map_or_else(String::new, |count| {
+                format!("{} downloads", words::grouped(count))
+            });
+        paint.say_right(
+            area.x + wide,
+            y,
+            &downloads,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        if mouse.clicked(hit) {
+            act = Some(Act::Pick(id.to_owned()));
+        }
+        y += 24.0;
+    }
+    act
 }
 
 /// The files a repository publishes, one row each.

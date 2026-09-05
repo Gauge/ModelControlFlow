@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 128 |
+| **Version** | 129 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 180 | [F180 — A word searches the hub: the add-model page took only owner/repository and refused everything else in the reference parser's words, and now a word lists the repositories with GGUF files the hub has for it, most downloaded first, twenty for gemma, each a press from its files; mcf pull answers a word the same way (B-476, A2, A22)](#180--f180--a-word-searches-the-hub-the-add-model-page-took-only-ownerrepository-and-refused-everything-else-in-the-reference-parsers-words-and-now-a-word-lists-the-repositories-with-gguf-files-the-hub-has-for-it-most-downloaded-first-twenty-for-gemma-each-a-press-from-its-files-mcf-pull-answers-a-word-the-same-way-b-476-a2-a22) |
 | 179 | [F179 — Four places down the left and a Running page that reads the held engine's own counters: Qwen3-VL-2B on the card answered one request and Running said 41 generated, 16 prompted, 151.8 tokens a second, nought in hand, and what the hold has in memory and on the card, once a second while somebody looks (B-474, D49, A7, B4)](#179--f179--four-places-down-the-left-and-a-running-page-that-reads-the-held-engines-own-counters-qwen3-vl-2b-on-the-card-answered-one-request-and-running-said-41-generated-16-prompted-1518-tokens-a-second-nought-in-hand-and-what-the-hold-has-in-memory-and-on-the-card-once-a-second-while-somebody-looks-b-474-d49-a7-b4) |
 | 178 | [F178 — The model page, first tab: every setting a hold takes with the control its value wants, a typed window whose reserve follows the typing, a word typed where a number goes refused with the word, and Host as the last button; the probes' applied addressing and budget travel with the model so a hold is configured whole (B-473, D49, §3.15, A7)](#178--f178--the-model-page-first-tab-every-setting-a-hold-takes-with-the-control-its-value-wants-a-typed-window-whose-reserve-follows-the-typing-a-word-typed-where-a-number-goes-refused-with-the-word-and-host-as-the-last-button-the-probes-applied-addressing-and-budget-travel-with-the-model-so-a-hold-is-configured-whole-b-473-d49-315-a7) |
 | 177 | [F177 — A hold goes where a person puts it with the build that fits: the daemon lists the placements, GLM-4.7-Flash on the processor by choice ran through the plain build and read 36.7 GiB into memory for a 131,072-token window, on the card through the Vulkan build and 23.2 GiB onto it, and the page says what a hold will take of what is free before the button (B-471, F176, §3.15, A21)](#177--f177--a-hold-goes-where-a-person-puts-it-with-the-build-that-fits-the-daemon-lists-the-placements-glm-47-flash-on-the-processor-by-choice-ran-through-the-plain-build-and-read-367-gib-into-memory-for-a-131072-token-window-on-the-card-through-the-vulkan-build-and-232-gib-onto-it-and-the-page-says-what-a-hold-will-take-of-what-is-free-before-the-button-b-471-f176-315-a21) |
@@ -9602,6 +9603,38 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 180 · F180 — A word searches the hub: the add-model page took only owner/repository and refused everything else in the reference parser's words, and now a word lists the repositories with GGUF files the hub has for it, most downloaded first, twenty for gemma, each a press from its files; mcf pull answers a word the same way (B-476, A2, A22)
+
+The operator typed into the add-model page and nothing came of it; they
+could not tell whether it wanted a URL, a partial name or an exact one.
+It wanted exactly `owner/repository` or a repository URL, said so in one
+line of grey, and answered anything else with the reference parser's own
+refusal — *a reference names an owner and a repository, separated by one
+slash* — which is a true sentence about the wrong thing (A2). A person who
+has a word and not a reference is owed the names the hub has for it.
+
+**What changed.** What is typed is either a reference — `owner/name`, with
+a file or a revision, or a hub URL — or a word. A reference lists a
+repository's files as before. A word asks the hub for the repositories
+whose names match it and that publish GGUF files, most downloaded first,
+at most twenty; the hub's own search endpoint answers, and the daemon
+passes on what it said — the name, the downloads, the likes, when it last
+changed — as it said it. The page lists them, one row each with the
+downloads at the right, and pressing one looks it up as a reference,
+which lists its files to fetch. The line above the field says which it
+takes: *Search Hugging Face by name, or paste owner/repository or a
+repository URL*, and the button says *Search*. `mcf pull <word>` answers
+the same list, with the command that pulls one under it; a phrase with
+spaces is still refused as not a reference, because the command line has
+no field to search from and a phrase is not a name.
+
+**What ran.** `mcf pull gemma` through the daemon: *20 repositories with
+GGUF files for "gemma", most downloaded first* — the first of them with
+2,543,857 downloads, `unsloth/gemma-4-12B-it-qat-GGUF` second with
+1,295,081 — and `mcf pull "not a reference"` refused as before. The window
+decides which to ask by asking the daemon's crate whether the text is a
+reference, so that it reaches nothing past the wire (A22).
+
 ## 179 · F179 — Four places down the left and a Running page that reads the held engine's own counters: Qwen3-VL-2B on the card answered one request and Running said 41 generated, 16 prompted, 151.8 tokens a second, nought in hand, and what the hold has in memory and on the card, once a second while somebody looks (B-474, D49, A7, B4)
 
 D49's four places are a column down the left now — *Machine, Models,
@@ -12390,6 +12423,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 129 — a word searches the hub
+
+F180: the add-model page and `mcf pull` take a word and answer with the
+repositories the hub lists for it (B-476).
 
 ### Version 128 — the words the field uses
 

@@ -250,6 +250,13 @@ pub enum Request {
         /// A hub other than the default, where the caller says.
         from: Option<String>,
     },
+    /// Which repositories a hub lists for a word, most downloaded first.
+    Search {
+        /// The word, as a person typed it.
+        query: String,
+        /// A hub other than the default, where the caller says.
+        from: Option<String>,
+    },
     /// Fetch one published file into this machine's store.
     ///
     /// The file is named rather than chosen by MCF: [`Self::Offered`] said
@@ -445,6 +452,27 @@ fn generate_line(
 /// whole of it has a line cap: a request added inside it is a request that
 /// makes every other one harder to read.
 /// The line a measurement goes as.
+/// Whether what a person typed names a repository — `owner/name`, with a
+/// file or a revision, or a hub URL — rather than being a word to search
+/// for. Answered here so that a surface can decide which to ask without
+/// reaching past the wire to the hub itself.
+#[must_use]
+pub fn is_reference(typed: &str) -> bool {
+    mcf_hub::reference::parse(typed).is_ok()
+}
+
+/// The search's line: the word, and the hub where one was named.
+fn search_line(query: &str, from: Option<&str>) -> Value {
+    Value::map([
+        ("ask", Value::text("search")),
+        ("query", Value::text(query.to_owned())),
+        (
+            "from",
+            from.map_or(Value::Null, |hub| Value::text(hub.to_owned())),
+        ),
+    ])
+}
+
 fn measure_line(request: &Request) -> Value {
     let Request::Measure {
         model,
@@ -566,6 +594,7 @@ impl Request {
                 ("reference", Value::text(reference.clone())),
                 ("from", maybe(from.as_deref())),
             ]),
+            Self::Search { query, from } => search_line(query, from.as_deref()),
             Self::Acquire {
                 reference,
                 file,
@@ -665,6 +694,14 @@ impl Request {
                     .get("reference")
                     .and_then(Value::as_text)
                     .ok_or_else(|| refused("a listing naming no reference", line))?
+                    .to_owned(),
+                from: optional("from"),
+            }),
+            Some("search") => Ok(Self::Search {
+                query: value
+                    .get("query")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a search naming no word", line))?
                     .to_owned(),
                 from: optional("from"),
             }),

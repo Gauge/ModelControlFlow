@@ -2600,6 +2600,7 @@ impl Daemon {
             | Request::Holding
             | Request::Components
             | Request::Offered { .. }
+            | Request::Search { .. }
             | Request::Settings { .. }
             | Request::Anatomy { .. }
             | Request::Tokenize { .. }
@@ -2745,6 +2746,7 @@ impl Daemon {
             | Request::Holding
             | Request::Components
             | Request::Offered { .. }
+            | Request::Search { .. }
             | Request::Settings { .. }
             | Request::Anatomy { .. }
             | Request::Tokenize { .. }
@@ -3450,6 +3452,7 @@ impl Daemon {
             Request::Offered { reference, from } => {
                 (Self::offered(reference, from.as_deref()), None)
             }
+            Request::Search { query, from } => (Self::searched(query, from.as_deref()), None),
             Request::Settings { model } => (self.settings_for(model), None),
             Request::Anatomy { model } => (self.anatomy_of(model), None),
             Request::Tokenize {
@@ -5125,6 +5128,33 @@ impl Daemon {
     /// person who is told nothing is published concludes something false about
     /// the repository; a person told it needs a token knows what to do (A2,
     /// A7).
+    /// Which repositories a hub lists for a word, for a person who has a
+    /// word and not a reference (A2).
+    fn searched(query: &str, from: Option<&str>) -> Answer {
+        if query.trim().is_empty() {
+            return Answer::refused(&crate::control::refused("a word to search for", query));
+        }
+        let base = match mcf_hub::http::Url::parse(from.unwrap_or(DEFAULT_HUB)) {
+            Ok(base) => base,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let wire = match mcf_hub::wire::for_url(&base) {
+            Ok(wire) => wire,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let hub = mcf_hub::client::Hub::at(base, wire);
+        match hub.search(query) {
+            Ok(found) => Answer::served(Value::map([
+                ("query", Value::text(query.to_owned())),
+                (
+                    "repositories",
+                    Value::List(found.iter().map(mcf_hub::client::Found::to_value).collect()),
+                ),
+            ])),
+            Err(failure) => Answer::refused(&failure),
+        }
+    }
+
     fn offered(reference: &str, from: Option<&str>) -> Answer {
         let parsed = match mcf_hub::reference::parse(reference) {
             Ok(parsed) => parsed,

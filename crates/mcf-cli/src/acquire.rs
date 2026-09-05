@@ -33,6 +33,50 @@ pub(crate) fn offered(reference: &str, from: Option<&str>) -> Response {
 }
 
 /// Fetches one published file into this machine's store.
+/// Which repositories the hub lists for a word, so that `mcf pull qwen`
+/// answers with names to pull rather than a refusal (A2).
+pub(crate) fn searched(query: &str, from: Option<&str>) -> Response {
+    ask(
+        &Request::Search {
+            query: query.to_owned(),
+            from: from.map(str::to_owned),
+        },
+        &found,
+    )
+}
+
+fn found(body: &Value) -> Vec<String> {
+    let query = body.get("query").and_then(Value::as_text).unwrap_or("?");
+    let listed = body
+        .get("repositories")
+        .and_then(Value::as_list)
+        .map(<[Value]>::to_vec)
+        .unwrap_or_default();
+    if listed.is_empty() {
+        return vec![format!(
+            "the hub lists no repository with GGUF files for {query:?}"
+        )];
+    }
+    let mut lines = vec![format!(
+        "{} repositories with GGUF files for {query:?}, most downloaded first",
+        listed.len()
+    )];
+    for repository in &listed {
+        let id = repository.get("id").and_then(Value::as_text).unwrap_or("?");
+        let downloads = repository
+            .get("downloads")
+            .and_then(Value::as_integer)
+            .map_or_else(String::new, |count| format!("  {count} downloads"));
+        lines.push(format!("  {id}{downloads}"));
+    }
+    lines.push(String::new());
+    lines.push(
+        "`mcf pull <owner/name>` lists one's files; `mcf pull <owner/name:file>` fetches one"
+            .to_owned(),
+    );
+    lines
+}
+
 pub(crate) fn acquire(reference: &str, file: &str, from: Option<&str>) -> Response {
     ask(
         &Request::Acquire {

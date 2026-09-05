@@ -70,6 +70,11 @@ pub(crate) fn run(
 ) -> Response {
     let reference = match reference::parse(asked_for) {
         Ok(reference) => reference,
+        // A word rather than a reference searches the hub for the names it
+        // has, so that `mcf pull qwen` answers with something to pull (A2).
+        Err(_) if !asked_for.contains(['/', ':', '@', ' ']) && !asked_for.trim().is_empty() => {
+            return crate::acquire::searched(asked_for, from);
+        }
         Err(failure) => return refused("that is not a reference MCF can resolve", &failure),
     };
     let base = match Url::parse(from.unwrap_or(DEFAULT_HUB)) {
