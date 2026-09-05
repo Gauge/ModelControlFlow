@@ -415,6 +415,78 @@ pub fn run(
     Ok(closing)
 }
 
+/// The record's method names, in the order the run makes them: what a
+/// model's page lists its findings by (B-483).
+pub const RECORDED: [&str; 9] = [
+    "chat-template",
+    "usable-context",
+    "stop-conditions",
+    "tool-calling",
+    "structured-output",
+    "thinking",
+    "language-cost",
+    "embedding",
+    "vision",
+];
+
+/// One probe's recorded finding as a sentence, from the fields the record
+/// keeps of it: the same figures the report printed, read back (A1).
+#[must_use]
+pub fn recorded_said(body: &mcf_record::json::Value) -> String {
+    use mcf_record::json::Value;
+    let text = |key: &str| body.get(key).and_then(Value::as_text);
+    let figure = |key: &str| body.get(key).and_then(Value::as_integer);
+    match text("method") {
+        Some("chat-template") => match (text("best_addressing"), figure("ended_their_turn")) {
+            (Some(best), Some(ended)) => {
+                format!("addressed as {best}; ended its turn in {ended} trial(s)")
+            }
+            _ => "could not tell".to_owned(),
+        },
+        Some("stop-conditions") => match (
+            figure("stopped_of"),
+            figure("trials"),
+            figure("longest_tokens"),
+        ) {
+            (Some(stopped), Some(trials), Some(longest)) => format!(
+                "ended its own turn in {stopped} of {trials} trial(s), the longest {longest} token(s)"
+            ),
+            _ => "could not tell".to_owned(),
+        },
+        Some("usable-context") => match (figure("accepted_tokens"), figure("declared_tokens")) {
+            (Some(accepted), Some(declared)) => {
+                format!("accepted {accepted} of {declared} declared token(s)")
+            }
+            _ => text("because").map_or_else(|| "could not tell".to_owned(), str::to_owned),
+        },
+        _ => {
+            // The rest as their figures, in the order they were written,
+            // leaving out what names the run rather than what it found.
+            let Some(Value::Map(fields)) = Some(body) else {
+                return "recorded".to_owned();
+            };
+            let said: Vec<String> = fields
+                .iter()
+                .filter(|(key, _)| !matches!(key.as_str(), "model" | "method" | "engine"))
+                .filter_map(|(key, value)| match value {
+                    Value::Integer(held) => Some(format!("{} {held}", key.replace('_', " "))),
+                    Value::Bool(held) => Some(format!("{} {held}", key.replace('_', " "))),
+                    Value::Text(held) if held.len() <= 40 => {
+                        Some(format!("{} {held}", key.replace('_', " ")))
+                    }
+                    _ => None,
+                })
+                .take(4)
+                .collect();
+            if said.is_empty() {
+                "recorded".to_owned()
+            } else {
+                said.join(", ")
+            }
+        }
+    }
+}
+
 /// Enough of a model file to parse its directory: sixteen megabytes, then
 /// more, then all of it, the same bounded read `mcf run` and `mcf bench`
 /// use (B-372).
@@ -2303,5 +2375,31 @@ mod tests {
             vec!["chat-template", "thinking"]
         );
         assert!(planned(&["no-such-probe".to_owned()]).is_empty());
+    }
+
+    /// A recorded finding reads back as the figures it kept, and one with
+    /// its figures missing says it could not tell rather than inventing.
+    #[test]
+    fn a_recorded_finding_reads_back_as_its_figures() {
+        use mcf_record::json::Value;
+        let stopping = Value::map([
+            ("method", Value::text("stop-conditions")),
+            ("stopped_of", Value::Integer(5)),
+            ("trials", Value::Integer(5)),
+            ("longest_tokens", Value::Integer(51)),
+        ]);
+        assert_eq!(
+            super::recorded_said(&stopping),
+            "ended its own turn in 5 of 5 trial(s), the longest 51 token(s)"
+        );
+        let bare = Value::map([("method", Value::text("chat-template"))]);
+        assert_eq!(super::recorded_said(&bare), "could not tell");
+        let other = Value::map([
+            ("method", Value::text("language-cost")),
+            ("model", Value::text("m")),
+            ("english_tokens", Value::Integer(16)),
+        ]);
+        assert_eq!(super::recorded_said(&other), "english tokens 16");
+        assert_eq!(super::RECORDED.len(), super::PROBES.len());
     }
 }

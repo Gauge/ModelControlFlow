@@ -852,9 +852,18 @@ fn model_from(held: &Value) -> Model {
             .and_then(|applied| applied.get("budget"))
             .and_then(Value::as_text)
             .map(str::to_owned),
-        // Read from the record on start is B-483; until then a run's
-        // findings are kept for the window's life.
-        probed: Vec::new(),
+        // What the record holds of the probes, one sentence a probe (B-483).
+        probed: held
+            .get("probed")
+            .and_then(Value::as_list)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|found| {
+                let method = found.get("method")?.as_text()?.to_owned();
+                let said = found.get("said")?.as_text()?.to_owned();
+                Some((method, vec![said]))
+            })
+            .collect(),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },

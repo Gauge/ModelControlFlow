@@ -1869,6 +1869,64 @@ fn newest_of(journal: &Path, kind: EntryKind) -> std::collections::BTreeMap<Path
     newest
 }
 
+/// The newest probe entry per method for each model — or for one model,
+/// where a path is given — as the page lists them: the method, the engine,
+/// when, and the finding as a sentence, in the order the run makes them.
+fn newest_probes(
+    journal: &Path,
+    only: Option<&Path>,
+) -> std::collections::BTreeMap<PathBuf, Vec<Value>> {
+    let mut newest: std::collections::BTreeMap<PathBuf, std::collections::BTreeMap<String, Value>> =
+        std::collections::BTreeMap::new();
+    if !journal.exists() {
+        return std::collections::BTreeMap::new();
+    }
+    let Ok(index) = mcf_record::journal::Index::over(
+        journal,
+        &mcf_record::journal::index::default_path(journal),
+    ) else {
+        return std::collections::BTreeMap::new();
+    };
+    for located in index.entries() {
+        if located.kind() != EntryKind::ModelProbed {
+            continue;
+        }
+        let Ok(entry) = index.read(located) else {
+            continue;
+        };
+        let body = entry.body();
+        let (Some(model), Some(method)) = (
+            body.get("model").and_then(Value::as_text),
+            body.get("method").and_then(Value::as_text),
+        ) else {
+            continue;
+        };
+        if only.is_some_and(|only| only != Path::new(model)) {
+            continue;
+        }
+        let said = Value::map([
+            ("method", Value::text(method.to_owned())),
+            ("engine", body.get("engine").cloned().unwrap_or(Value::Null)),
+            ("at", Value::text(entry.recorded_at().to_string())),
+            ("said", Value::text(crate::probes::run::recorded_said(body))),
+        ]);
+        let _replaced = newest
+            .entry(PathBuf::from(model))
+            .or_default()
+            .insert(method.to_owned(), said);
+    }
+    newest
+        .into_iter()
+        .map(|(model, by_method)| {
+            let listed = crate::probes::run::RECORDED
+                .iter()
+                .filter_map(|method| by_method.get(*method).cloned())
+                .collect();
+            (model, listed)
+        })
+        .collect()
+}
+
 /// The hub MCF reads when nobody has named another.
 const DEFAULT_HUB: &str = "https://huggingface.co/";
 
@@ -1910,6 +1968,10 @@ pub struct Daemon {
     /// The newest prompt report of each model, from the record, kept the
     /// same way (B-432).
     prompt_reports: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
+    /// What the probes last found on each model, by the record's method
+    /// name: read from the record at start and again after a run, so a
+    /// model probed yesterday shows its findings today (B-483, A1).
+    probed: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Vec<Value>>>,
     /// The model being held for callers, if any, with what it was started
     /// under.
     ///
@@ -2076,6 +2138,7 @@ impl Daemon {
                 &places.journal,
                 EntryKind::PromptReported,
             )),
+            probed: std::sync::Mutex::new(newest_probes(&places.journal, None)),
             holding: std::sync::Mutex::new(None),
             places,
             listener,
@@ -2350,6 +2413,18 @@ impl Daemon {
                     .ok()
                     .and_then(|held| held.get(path).cloned())
                     .unwrap_or(Value::Null),
+            ),
+            // What the probes found, one entry a probe, newest first by
+            // probe, as sentences the page can list (B-483).
+            (
+                "probed",
+                Value::List(
+                    self.probed
+                        .lock()
+                        .ok()
+                        .and_then(|held| held.get(path).cloned())
+                        .unwrap_or_default(),
+                ),
             ),
             ("trained_context", shape(trained)),
             ("cache_bytes_per_token", shape(cache)),
@@ -3535,7 +3610,21 @@ impl Daemon {
                 .and_then(|()| writer.flush())
                 .is_ok()
         };
-        let answer = match crate::probes::run::run(&at, &path, &asked, &mut say) {
+        let ran = crate::probes::run::run(&at, &path, &asked, &mut say);
+        // What the run wrote to the record, read back the way a start reads
+        // it, so the model's page has the findings without a restart.
+        let fresh = newest_probes(&self.places.journal, Some(&path));
+        if let Ok(mut probed) = self.probed.lock() {
+            match fresh.get(&path) {
+                Some(found) => {
+                    let _replaced = probed.insert(path.clone(), found.clone());
+                }
+                None => {
+                    let _gone = probed.remove(&path);
+                }
+            }
+        }
+        let answer = match ran {
             Ok(closing) => Answer::served(Value::map([
                 ("probing", Value::text(model)),
                 (

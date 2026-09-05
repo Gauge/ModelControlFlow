@@ -9652,10 +9652,14 @@ run with four probes killed at four seconds: the engine's slots were
 processing in 2 of 50 samples over the next ten seconds, against 42 of 50
 before the check went in.
 
-**Left open.** The findings are kept for the window's life and not read
-back from the record on start (B-483). The comparison card still names
-the command (`mcf bench` is not carried yet). The console's Diagnostics
-screen follows (B-482).
+**Read back.** The findings are read from the record as a start reads a
+measurement: the newest entry a probe for each model, as one sentence
+from the figures it kept — *ended its own turn in 5 of 5 trial(s), the
+longest 51 token(s)* — listed on the Statistics tab, and read again after
+a run so the page has them without a restart (B-483, A1).
+
+**Left open.** The comparison card still names the command (`mcf bench`
+is not carried yet). The console's Diagnostics screen follows (B-482).
 
 ## 184 · F184 — The Diagnostics page is one card per run: the six checkbox rows, five of which were one ladder's results drawn as choices, are gone, and throughput, cross-check, capabilities, prompt analysis and comparison each have a card with their own controls, cost and Run, the two the daemon does not carry yet saying so and offering the command (B-477, D50, §3.15, A22)
 
@@ -12665,7 +12669,8 @@ that takes it to zero.
 
 F185: the probes run in the daemon and stream to the command line and the
 window's capabilities card; three builds no longer send them to MCF's own
-engine; a cut run stops at its next trial (B-478).
+engine; a cut run stops at its next trial (B-478); their findings are read
+back from the record (B-483).
 
 ### Version 133 — one card per run
 
