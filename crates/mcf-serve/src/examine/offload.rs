@@ -11,7 +11,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, as_ms, filler, per_second, timed, whole};
+use super::{Found, Reading, Site, as_integer, as_ms, filler, per_second, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -50,13 +50,22 @@ pub fn measure(site: &Site<'_>) -> Found {
          pinned, at each count"
     )];
     let mut rows = Vec::new();
+    let mut readings = Vec::new();
     let mut measured = 0_usize;
     for count in counts {
         if site.asker_gone() {
             break;
         }
         match at_layers(site, count) {
-            Ok((per_token, first)) => {
+            Ok((first, long)) => {
+                #[expect(
+                    clippy::integer_division,
+                    reason = "a difference in nanoseconds over the tokens between the pair"
+                )]
+                let per_token = (long - first) / (PRODUCE as u64 - 1);
+                let at = [("layers", Value::Integer(i64::from(count)))];
+                readings.push(Reading::new(&at, "first_token_ns", whole_i64(first), "ns"));
+                readings.push(Reading::new(&at, "long_run_ns", whole_i64(long), "ns"));
                 measured = measured.saturating_add(1);
                 lines.push(format!(
                     "  {count:>4} on the card   {:>8} ms a token   {:>8} prompt tokens a second",
@@ -92,10 +101,17 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("measured", Value::Integer(as_integer(measured))),
             ("curve", Value::List(rows)),
         ],
+        rows: readings,
     }
 }
 
-/// One layer count: the cost a token and the time to a first token.
+/// A figure as the record's integer.
+fn whole_i64(held: u64) -> i64 {
+    i64::try_from(held).unwrap_or(i64::MAX)
+}
+
+/// One layer count: the time to a first token, and the time of the longer
+/// run of the pair, both raw (D16).
 fn at_layers(site: &Site<'_>, count: u32) -> Result<(u64, u64), String> {
     let engine = site.server(&Startup {
         gpu_layers: count,
@@ -145,12 +161,7 @@ fn at_layers(site: &Site<'_>, count: u32) -> Result<(u64, u64), String> {
     if long <= first {
         return Err("the longer run finished no later than the shorter".to_owned());
     }
-    #[expect(
-        clippy::integer_division,
-        reason = "a difference in nanoseconds over the tokens between the pair"
-    )]
-    let per_token = (long - first) / (PRODUCE as u64 - 1);
-    Ok((per_token, first))
+    Ok((first, long))
 }
 
 /// How many blocks the file declares.

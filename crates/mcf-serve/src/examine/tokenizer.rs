@@ -12,7 +12,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer};
+use super::{Found, Reading, Site, as_integer};
 use crate::served::Startup;
 
 /// The measurement's name.
@@ -37,6 +37,10 @@ pub const CORPUS: [(&str, &str); 13] = [
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {
         projector: None,
@@ -58,6 +62,7 @@ pub fn measure(site: &Site<'_>) -> Found {
         }
     )];
     let mut rows = Vec::new();
+    let mut readings = Vec::new();
     let mut round_tripped = 0_usize;
     let mut counts_agree = 0_usize;
     for (name, text) in CORPUS {
@@ -85,6 +90,27 @@ pub fn measure(site: &Site<'_>) -> Found {
         if agree {
             counts_agree = counts_agree.saturating_add(1);
         }
+        let dims = [("text", Value::text(name))];
+        readings.push(Reading::new(
+            &dims,
+            "engine_tokens",
+            as_integer(ids.len()),
+            "tokens",
+        ));
+        if let Some(count) = own_count {
+            readings.push(Reading::new(
+                &dims,
+                "own_tokens",
+                as_integer(count),
+                "tokens",
+            ));
+        }
+        readings.push(Reading::new(
+            &dims,
+            "round_tripped",
+            i64::from(same),
+            "bool",
+        ));
         lines.push(format!(
             "  {name:<16} {:>3} token(s){}   {}",
             ids.len(),
@@ -129,6 +155,7 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("own_tokenizer_read", Value::Bool(own.is_some())),
             ("texts_read", Value::List(rows)),
         ],
+        rows: readings,
     }
 }
 

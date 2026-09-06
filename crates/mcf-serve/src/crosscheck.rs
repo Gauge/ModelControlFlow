@@ -84,6 +84,10 @@ pub struct Agreement {
     /// artifact, which cost an apparent defect an order of magnitude past any
     /// real one).
     pub set_aside: usize,
+    /// Every position in order: the rank MCF gave the other engine's token,
+    /// one being agreement, or `None` where the position was set aside. The
+    /// raw reading the figures above are arithmetic over (D54, D16).
+    pub ranks: Vec<Option<usize>>,
 }
 
 impl Agreement {
@@ -284,6 +288,7 @@ pub fn against(
     let mut furthest_at = 0_usize;
     let mut set_aside = 0_usize;
     let mut positions = 0_usize;
+    let mut ranks: Vec<Option<usize>> = Vec::with_capacity(produced.len());
 
     for next in produced {
         let mut ranked: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
@@ -303,15 +308,18 @@ pub fn against(
         // are answering different questions, not one where they disagree.
         if vocabulary.ending == Some(best.0) && best.0 != *next {
             set_aside = set_aside.saturating_add(1);
+            ranks.push(None);
         } else {
             positions = positions.saturating_add(1);
             if best.0 == *next {
                 agreed = agreed.saturating_add(1);
+                ranks.push(Some(1));
             } else {
                 let rank = ranked
                     .iter()
                     .position(|(id, _)| id == next)
                     .unwrap_or(usize::MAX);
+                ranks.push(Some(rank.saturating_add(1)));
                 if rank > furthest {
                     furthest = rank;
                     furthest_at = position;
@@ -328,6 +336,7 @@ pub fn against(
         furthest,
         furthest_at,
         set_aside,
+        ranks,
     })
 }
 

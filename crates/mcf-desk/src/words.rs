@@ -45,6 +45,17 @@ pub fn basis() -> String {
     )
 }
 
+/// A whole number with its sign, its digits grouped in threes.
+#[must_use]
+pub fn grouped_signed(number: i64) -> String {
+    let digits = grouped(number.unsigned_abs());
+    if number < 0 {
+        format!("-{digits}")
+    } else {
+        digits
+    }
+}
+
 /// A count with its thousands separated — the console's (B-072).
 #[must_use]
 pub fn grouped(number: u64) -> String {

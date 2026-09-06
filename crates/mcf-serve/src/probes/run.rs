@@ -673,6 +673,89 @@ pub(crate) fn record_probed(
     Ok(path)
 }
 
+/// Writes a run's readings: one row a figure, in the one schema every
+/// diagnostic shares (D54, B-511).
+///
+/// # Errors
+///
+/// Nowhere to record, or the record could not be written.
+pub(crate) fn record_readings(
+    model: &Path,
+    method: &str,
+    engine: &str,
+    conditions: Vec<(&str, mcf_record::json::Value)>,
+    rows: &[mcf_record::readings::Reading],
+) -> Result<std::path::PathBuf, mcf_core::Failure> {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return Err(mcf_core::Failure::new(
+            mcf_core::failure::Category::RecordUnwritable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-serve::probes::run"),
+            "there is nowhere to record the readings",
+        ));
+    };
+    let body = mcf_record::readings::run_body(
+        &model.display().to_string(),
+        method,
+        engine,
+        conditions,
+        rows,
+    );
+    let mut journal = mcf_record::journal::Journal::open(&path)?;
+    journal.append(&mcf_record::journal::Entry::new(
+        mcf_record::journal::EntryKind::Readings,
+        mcf_core::time::Timestamp::now(),
+        body,
+    ))?;
+    Ok(path)
+}
+
+/// Writes a probe's rows beside its finding, and says so in a line
+/// (D54, B-513).
+fn rows_recorded(
+    model: &Path,
+    method: &str,
+    engine: &str,
+    rows: &[mcf_record::readings::Reading],
+) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    match record_readings(model, method, engine, Vec::new(), rows) {
+        Ok(_) => format!("  {} reading(s) recorded", rows.len()),
+        Err(why) => format!("  READINGS NOT RECORDED: {why}"),
+    }
+}
+
+/// One reading, for the probes' rows.
+fn reading(
+    dims: &[(&str, mcf_record::json::Value)],
+    metric: &str,
+    value: usize,
+    unit: &str,
+) -> mcf_record::readings::Reading {
+    mcf_record::readings::Reading::new(dims, metric, as_integer(value), unit)
+}
+
+/// A per-name count as rows under one dimension.
+fn counted_rows(
+    dimension: &str,
+    metric: &str,
+    per: &[(String, usize)],
+) -> Vec<mcf_record::readings::Reading> {
+    per.iter()
+        .map(|(name, count)| {
+            reading(
+                &[(dimension, mcf_record::json::Value::text(name.clone()))],
+                metric,
+                *count,
+                "count",
+            )
+        })
+        .collect()
+}
+
 /// A count as the record's integer, saturating rather than wrapping.
 fn as_integer(held: usize) -> i64 {
     i64::try_from(held).unwrap_or(i64::MAX)
@@ -707,6 +790,22 @@ fn addressing_lines(
                 engine,
                 addressing_fields(addressed),
             )));
+            let mut rows = counted_rows("addressing", "stopped", &addressed.stopped);
+            rows.extend(counted_rows("addressing", "silent", &addressed.silent));
+            for (name, lengths) in &addressed.lengths {
+                for (trial, length) in lengths.iter().enumerate() {
+                    rows.push(reading(
+                        &[
+                            ("addressing", mcf_record::json::Value::text(name.clone())),
+                            ("trial", mcf_record::json::Value::Integer(as_integer(trial))),
+                        ],
+                        "turn_tokens",
+                        *length,
+                        "tokens",
+                    ));
+                }
+            }
+            lines.push(rows_recorded(path, probed.method.name, engine, &rows));
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
@@ -941,6 +1040,13 @@ fn language_lines(
                 engine,
                 language_fields(spend),
             )));
+            let mut rows = Vec::new();
+            for cost in &spend.costs {
+                let dims = [("language", mcf_record::json::Value::text(cost.language))];
+                rows.push(reading(&dims, "tokens", cost.tokens, "tokens"));
+                rows.push(reading(&dims, "characters", cost.characters, "count"));
+            }
+            lines.push(rows_recorded(path, probed.method.name, engine, &rows));
             lines.push(format!(
                 " observed   this vocabulary spends most on {} and least on {}",
                 spend.dearest, spend.cheapest
@@ -1082,6 +1188,19 @@ fn thinking_lines(
                 engine,
                 fields,
             )));
+            let rows = vec![
+                reading(&[], "trials", spends.trials, "count"),
+                reading(&[], "opened", spends.opened, "count"),
+                reading(&[], "closed", spends.closed, "count"),
+                reading(
+                    &[],
+                    "longest_inside_tokens",
+                    spends.longest_inside,
+                    "tokens",
+                ),
+                reading(&[], "longest_turn_tokens", spends.longest_turn, "tokens"),
+            ];
+            lines.push(rows_recorded(path, probed.method.name, engine, &rows));
             lines.push(String::new());
             lines.push(thinking_verdict(spends));
             if apply {
@@ -1398,6 +1517,18 @@ fn vision_result_lines(
                 &probed.conditions.to_string(),
                 vision_fields(sees),
             )));
+            let rows = vec![reading(
+                &[],
+                "answers_differ",
+                usize::from(sees.answers_differ),
+                "bool",
+            )];
+            lines.push(rows_recorded(
+                path,
+                probed.method.name,
+                &probed.conditions.to_string(),
+                &rows,
+            ));
             lines.push(String::new());
             if sees.answers_differ {
                 lines.push(
@@ -1484,6 +1615,17 @@ fn embedding_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
                     ),
                 ],
             )));
+            let rows = vec![
+                reading(&[], "width", embeds.width, "count"),
+                reading(
+                    &[],
+                    "identical_twice",
+                    usize::from(embeds.identical_twice),
+                    "bool",
+                ),
+                reading(&[], "tokens", embeds.tokens, "tokens"),
+            ];
+            lines.push(rows_recorded(path, probed.method.name, &engine, &rows));
             if embeds
                 .declared
                 .width
@@ -1688,6 +1830,11 @@ fn tool_lines(
                 engine,
                 tool_fields(calling),
             )));
+            let mut rows = counted_rows("offering", "well_formed", &calling.well_formed);
+            rows.extend(counted_rows("offering", "malformed", &calling.malformed));
+            rows.extend(counted_rows("offering", "no_call", &calling.no_call));
+            rows.push(reading(&[], "trials_per_offering", calling.of, "count"));
+            lines.push(rows_recorded(path, probed.method.name, engine, &rows));
             lines.push(tool_verdict(calling));
         }
         Outcome::Inconclusive { because } => {
@@ -1780,6 +1927,17 @@ fn structured_lines(
                 engine,
                 structured_fields(structured),
             )));
+            let mut rows = counted_rows("framing", "conformed", &structured.conformed);
+            rows.extend(counted_rows("framing", "departed", &structured.departed));
+            rows.extend(counted_rows("framing", "no_object", &structured.no_object));
+            rows.extend(counted_rows(
+                "framing",
+                "unfinished",
+                &structured.unfinished,
+            ));
+            rows.push(reading(&[], "with_extra", structured.with_extra, "count"));
+            rows.push(reading(&[], "trials_per_framing", structured.of, "count"));
+            lines.push(rows_recorded(path, probed.method.name, engine, &rows));
             match &structured.best {
                 Some(best) => lines.push(format!(
                     " VERIFIED   this model produces the shape it is asked for, best under \
@@ -2045,6 +2203,16 @@ fn stopping_lines(
                 engine,
                 stopping_fields(stopping),
             )));
+            let mut rows = vec![
+                reading(&[], "longest_tokens", stopping.longest, "tokens"),
+                reading(&[], "stopped", stopping.stopped, "count"),
+                reading(&[], "trials", stopping.of, "count"),
+                reading(&[], "ceiling_tokens", stopping.ceiling, "tokens"),
+            ];
+            if let Some(before) = stopping.before {
+                rows.push(reading(&[], "before_answer_tokens", before, "tokens"));
+            }
+            lines.push(rows_recorded(path, probed.method.name, engine, &rows));
             lines.push(String::new());
             if stopping.longest > stopping.default_budget {
                 lines.push(format!(
@@ -2253,6 +2421,17 @@ fn context_lines(
             // what it means — a record produced out of the verdict is a record
             // of the verdict (F106).
             lines.push(recorded(record_probed_context(path, context, engine)));
+            let rows = vec![
+                reading(&[], "declared_tokens", context.declared, "tokens"),
+                reading(&[], "asked_up_to_tokens", context.ceiling, "tokens"),
+                reading(&[], "accepted_tokens", context.accepted, "tokens"),
+            ];
+            lines.push(rows_recorded(
+                path,
+                probes::USABLE_CONTEXT.name,
+                engine,
+                &rows,
+            ));
             // The declared context is the whole budget, not the prompt's share
             // of it, so a prompt one shorter is agreement rather than a
             // divergence — reporting that off-by-one would be reporting

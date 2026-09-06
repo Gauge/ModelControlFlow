@@ -1588,7 +1588,7 @@ const PROBE_ANSWERS: [&str; 9] = [
 ];
 
 /// What each measurement answers, in one line, in the daemon's order.
-const MEASURE_ANSWERS: [&str; 14] = [
+const MEASURE_ANSWERS: [&str; 15] = [
     "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
     "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
     "What a conversation pays for its history every turn: a kept prefix against the prompt read again",
@@ -1603,6 +1603,7 @@ const MEASURE_ANSWERS: [&str; 14] = [
     "Where a long generation begins to repeat itself",
     "Valid JSON, tokens and time with and without a grammar constraint",
     "Tokens and prefill time a picture adds, at three sides",
+    "Tool use over fixed tasks: the right tool, the arguments matched, the result carried, held back when nothing fits",
 ];
 
 impl Diagnostic {
@@ -1710,6 +1711,23 @@ impl Diagnostic {
         match self {
             Self::Probe(_) | Self::Measure(_) => Some(self.name()),
             _ => None,
+        }
+    }
+
+    /// The method the record keeps its readings under: the probes' and
+    /// measurements' own names, and the ladder's and cross-check's (D54).
+    #[must_use]
+    pub fn readings_method(self) -> Option<&'static str> {
+        match self {
+            Self::Throughput => Some("throughput"),
+            Self::CrossCheck => Some("cross-check"),
+            Self::Prompt | Self::Comparison => None,
+            // A probe's record name is not always its run name: the
+            // usable-context probe runs as `context` and records as
+            // `usable-context`, the tool probe as `tool-calls` and
+            // `tool-calling`.
+            Self::Probe(at) => mcf_serve::probes::run::RECORDED.get(at).copied(),
+            Self::Measure(_) => Some(self.name()),
         }
     }
 }
@@ -2124,6 +2142,9 @@ pub struct Desk {
     pub probes_apply: bool,
     /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
     pub diagnostic: Diagnostic,
+    /// The chosen model's readings runs, newest first, as the daemon
+    /// answered them, with the path they are of (D54, B-516).
+    pub readings: Option<(String, Vec<Value>)>,
     /// The runs still to start after the one going, where a Run all is
     /// under way; and how many the whole sequence had (B-508).
     pub queued: std::collections::VecDeque<Card>,
@@ -2260,6 +2281,7 @@ impl Desk {
             said: String::new(),
             tests: tests(),
             diagnostic: Diagnostic::Throughput,
+            readings: None,
             queued: std::collections::VecDeque::new(),
             queued_of: 0,
             probes_apply: false,
@@ -2675,10 +2697,7 @@ impl Desk {
             Act::DownloadThen(then) => self.download_then(*then),
             Act::PickHub(at) => self.pick_hub(at),
             Act::ApplyProbes => self.probes_apply = !self.probes_apply,
-            Act::Show(diagnostic) => {
-                self.diagnostic = diagnostic;
-                let _was = self.scrolls.insert(Region::Diagnostics, 0.0);
-            }
+            Act::Show(diagnostic) => self.show_diagnostic(diagnostic),
             Act::RunOne(diagnostic) => self.run_one(diagnostic),
             Act::RunAll => self.run_all(),
             Act::SeeStatistics => {
@@ -3895,8 +3914,13 @@ impl Desk {
     #[must_use]
     pub fn finding_of(&self, diagnostic: Diagnostic) -> Option<&Finding> {
         let method = diagnostic.method()?;
+        let recorded = diagnostic.readings_method();
         let held = self.chosen.and_then(|at| self.models.get(at))?;
-        held.probed.iter().find(|finding| finding.name == method)
+        // A finding from a run this window made carries the run's name;
+        // one from the record carries the record's, and both are it.
+        held.probed.iter().find(|finding| {
+            finding.name == method || recorded.is_some_and(|name| finding.name == name)
+        })
     }
 
     /// When a diagnostic last ran on the chosen model, as the record wrote
@@ -3936,6 +3960,69 @@ impl Desk {
         if let Some(held) = self.chosen.and_then(|at| self.models.get_mut(at)) {
             keep_findings(&mut held.probed, found);
         }
+        self.fetch_readings();
+    }
+
+    /// Shows one diagnostic whole: its pane from the top, with the chosen
+    /// model's readings fetched where they are not held yet (D53, D54).
+    fn show_diagnostic(&mut self, diagnostic: Diagnostic) {
+        self.diagnostic = diagnostic;
+        let _was = self.scrolls.insert(Region::Diagnostics, 0.0);
+        self.read_readings();
+    }
+
+    /// Asks the daemon for the chosen model's readings, where they are not
+    /// held already for this model (D54, B-516).
+    pub fn read_readings(&mut self) {
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            self.readings = None;
+            return;
+        };
+        if self
+            .readings
+            .as_ref()
+            .is_some_and(|(path, _)| *path == held.path)
+        {
+            return;
+        }
+        self.fetch_readings();
+    }
+
+    /// Asks the daemon for the chosen model's readings again, after a run
+    /// wrote some.
+    fn fetch_readings(&mut self) {
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            self.readings = None;
+            return;
+        };
+        let asked = Request::Readings {
+            model: held.path.clone(),
+            method: None,
+        };
+        let runs = match ask(&self.socket, &asked) {
+            Ok(answer) if answer.served => answer
+                .body
+                .get("runs")
+                .and_then(Value::as_list)
+                .map(<[Value]>::to_vec)
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        self.readings = Some((held.path.clone(), runs));
+    }
+
+    /// The newest readings run of a diagnostic on the chosen model, where
+    /// the daemon has answered with one.
+    #[must_use]
+    pub fn readings_of(&self, diagnostic: Diagnostic) -> Option<&Value> {
+        let method = diagnostic.readings_method()?;
+        let held = self.chosen.and_then(|at| self.models.get(at))?;
+        let (path, runs) = self.readings.as_ref()?;
+        if *path != held.path {
+            return None;
+        }
+        runs.iter()
+            .find(|run| run.get("method").and_then(Value::as_text) == Some(method))
     }
 
     /// Keeps what a finished probe run found on the model it ran on, and
@@ -3949,6 +4036,7 @@ impl Desk {
             keep_findings(&mut held.probed, found);
         }
         self.read_settings();
+        self.fetch_readings();
     }
 
     /// One act on the Configure tab. Whatever was being typed is applied

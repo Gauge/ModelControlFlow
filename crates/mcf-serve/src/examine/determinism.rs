@@ -11,7 +11,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer};
+use super::{Found, Reading, Site, as_integer};
 use crate::generation::Draw;
 use crate::served::{Prompt, Served, Startup};
 
@@ -29,6 +29,10 @@ const OTHER_BATCH: u32 = 256;
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     let (prompt, runs) = match repeated(site) {
         Ok(runs) => runs,
@@ -74,6 +78,49 @@ pub fn measure(site: &Site<'_>) -> Found {
     );
     let (threads_same, threads_at) = as_fields(&under_threads);
     let (batch_same, batch_at) = as_fields(&under_batch);
+    let mut rows = Vec::new();
+    for (run, words) in runs.iter().enumerate() {
+        let dims = [("run", Value::Integer(as_integer(run)))];
+        rows.push(Reading::new(
+            &dims,
+            "produced",
+            as_integer(words.len()),
+            "tokens",
+        ));
+        rows.push(Reading::new(
+            &dims,
+            "identical_to_first",
+            i64::from(*words == first),
+            "bool",
+        ));
+        if let Some(at) = divergence_at(&first, words) {
+            rows.push(Reading::new(
+                &dims,
+                "divergence_at",
+                as_integer(at),
+                "tokens",
+            ));
+        }
+    }
+    for (setting, held) in [("threads", &under_threads), ("batch", &under_batch)] {
+        let dims = [("setting", Value::text(setting))];
+        if let Ok(parted) = held {
+            rows.push(Reading::new(
+                &dims,
+                "identical_to_first",
+                i64::from(parted.is_none()),
+                "bool",
+            ));
+            if let Some(at) = parted {
+                rows.push(Reading::new(
+                    &dims,
+                    "divergence_at",
+                    as_integer(*at),
+                    "tokens",
+                ));
+            }
+        }
+    }
     Found {
         lines: vec![
             format!(
@@ -123,6 +170,7 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("other_batch_identical", batch_same),
             ("other_batch_divergence", batch_at),
         ],
+        rows,
     }
 }
 

@@ -15,7 +15,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, whole};
+use super::{Found, Reading, Site, as_integer, whole};
 use crate::served::Startup;
 
 /// The measurement's name.
@@ -64,6 +64,7 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut spent: i64 = 0;
     let mut bounded = 0_usize;
     let mut read = 0_usize;
+    let mut rows = Vec::new();
     for at in 1..ids.len() {
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
@@ -76,12 +77,16 @@ pub fn measure(site: &Site<'_>) -> Found {
             Err(failure) => return Found::could_not_tell(&said(failure)),
         };
         read = read.saturating_add(1);
-        if let Some((_, mb)) = ranked.iter().find(|(id, _)| id == wanted) {
-            spent = spent.saturating_add(-mb);
+        let (millibits, past) = if let Some((_, mb)) = ranked.iter().find(|(id, _)| id == wanted) {
+            (-mb, false)
         } else {
             bounded = bounded.saturating_add(1);
-            spent = spent.saturating_add(ranked.last().map_or(0, |(_, mb)| -mb));
-        }
+            (ranked.last().map_or(0, |(_, mb)| -mb), true)
+        };
+        spent = spent.saturating_add(millibits);
+        let dims = [("position", Value::Integer(as_integer(at)))];
+        rows.push(Reading::new(&dims, "millibits", millibits, "millibits"));
+        rows.push(Reading::new(&dims, "past_ranked", i64::from(past), "bool"));
     }
     let bytes = TEXT.len();
     let per_byte = per(spent, bytes);
@@ -116,5 +121,6 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("bounded", Value::Integer(as_integer(bounded))),
             ("ranked_to", whole(RANKED as u64)),
         ],
+        rows,
     }
 }

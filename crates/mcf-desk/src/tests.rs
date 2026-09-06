@@ -1527,7 +1527,7 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;
     let all = Diagnostic::all();
-    assert_eq!(all.len(), 4 + 9 + 14, "{all:?}");
+    assert_eq!(all.len(), 4 + 9 + 15, "{all:?}");
     let names: std::collections::BTreeSet<&str> = all.iter().map(|held| held.name()).collect();
     assert_eq!(names.len(), all.len(), "two rows share a name");
     assert_eq!(Diagnostic::Probe(2).name(), "stop-conditions");
@@ -1537,6 +1537,13 @@ fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     assert_eq!(Diagnostic::Measure(6).card(), crate::Card::Fidelity);
     assert!(!Diagnostic::Measure(6).answers().is_empty());
     assert_eq!(Diagnostic::Throughput.method(), None);
+    assert_eq!(Diagnostic::Throughput.readings_method(), Some("throughput"));
+    assert_eq!(Diagnostic::Probe(3).name(), "tool-calls");
+    assert_eq!(
+        Diagnostic::Probe(3).readings_method(),
+        Some("tool-calling"),
+        "a probe's readings are under its record name"
+    );
     let families = Diagnostic::families();
     assert_eq!(families.len(), 5);
     assert_eq!(families[1].1, Some(crate::Card::Capabilities));

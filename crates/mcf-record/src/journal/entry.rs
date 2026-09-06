@@ -243,11 +243,15 @@ pub enum EntryKind {
     /// filed beside it: the generations behind a report are its trials, and
     /// they are counted here rather than filed one by one.
     PromptReported,
+    /// A diagnostic's findings as readings: one row a figure, in one
+    /// schema for every diagnostic, with the conditions the run shared
+    /// (D54, B-511). The raw rows, never a summary of them (D16).
+    Readings,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -272,6 +276,7 @@ impl EntryKind {
         Self::ModelUnhosted,
         Self::CrossChecked,
         Self::PromptReported,
+        Self::Readings,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -303,6 +308,7 @@ impl EntryKind {
             Self::ModelUnhosted => "model_unhosted",
             Self::CrossChecked => "cross_checked",
             Self::PromptReported => "prompt_reported",
+            Self::Readings => "readings",
         }
     }
 

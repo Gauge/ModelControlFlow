@@ -176,6 +176,39 @@ fn a_recorded_finding_reads_back() {
     assert_eq!(super::recorded_said(&not_ours), None);
 }
 
+/// A call is read in either form a template writes, its arguments with
+/// it, and judged against what the task expects by exact match (B-517).
+#[test]
+fn a_call_is_read_in_either_form_and_judged_exactly() {
+    use super::tooluse::call_in;
+    let object = call_in(
+        "Sure. <tool_call>{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}</tool_call>",
+    )
+    .expect("an object call reads");
+    assert_eq!(object.name, "get_weather");
+    assert_eq!(object.arguments.get("city"), Some(&Value::text("Paris")));
+    let block = call_in(
+        "<function=set_alarm>\n<parameter=hour>\n6\n</parameter>\n<parameter=minute>\n45\n</parameter>\n</function>",
+    )
+    .expect("a function block reads");
+    assert_eq!(block.name, "set_alarm");
+    assert_eq!(block.arguments.get("hour"), Some(&Value::Integer(6)));
+    assert_eq!(block.arguments.get("minute"), Some(&Value::Integer(45)));
+    let strung = call_in(
+        "{\"name\": \"calculate\", \"arguments\": \"{\\\"expression\\\": \\\"1234 * 5678\\\"}\"}",
+    )
+    .expect("arguments as a string read");
+    assert_eq!(
+        strung.arguments.get("expression"),
+        Some(&Value::text("1234 * 5678"))
+    );
+    assert_eq!(call_in("The weather is fine today."), None);
+    let thought =
+        call_in("<think>I could call it.</think>{\"name\": \"get_time\", \"arguments\": {}}")
+            .expect("the answer after the thought reads");
+    assert_eq!(thought.name, "get_time");
+}
+
 /// The siblings of a model are the model files beside it: not a
 /// projector, and of a sharded file only its first part.
 #[test]

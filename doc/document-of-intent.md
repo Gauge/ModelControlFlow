@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 55 |
+| **Version** | 56 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -5019,6 +5019,56 @@ field, a tile or a table takes the width of its pane rather than a
 width chosen for one window, and what does not fit scrolls. A window
 of any size shows the same pages, laid out for that size.
 
+### D54 — A diagnostic produces readings: one row a figure, in one schema, and every sentence is derived *(on the operator's instruction)*
+
+**Every diagnostic writes its findings as readings — one row a figure,
+each row a whole number with its unit and the dimensions it was taken
+under — into the record, in one schema for all of them; the sentences
+a person reads are derived from the rows when they are asked for, and
+never stored in their place. The rows are what a person compares
+models by, and they leave the machine as a table.**
+
+**What the findings were.** Each diagnostic wrote what it chose: the
+probes a map of counts under keys of their own, the measurements a map
+with lists inside it, the ladder the median of each rung with the
+samples counted and thrown away, the cross-check its four figures with
+the positions behind them gone. Beside these travelled lines of prose
+the window showed. A person who wanted to set two models side by side
+had five shapes to read and a sentence where a number should have been.
+The operator asked for clean raw numbers in their most usable form.
+
+**The schema.** A reading is `dims`, `metric`, `value`, `unit`: the
+dimensions it was taken under — depth, batch, layers, placement, the
+repeat, the position, the trial — each a whole number or a name; what
+was measured; the whole number measured; and its unit — nanoseconds,
+bytes, tokens, millibits, parts per million, a count, or a yes-or-no
+written as one or nought. A run is one record entry: the model, the
+method, the engine, the conditions the run shared, and its rows. What
+D16 requires of a trial this requires of every figure: the raw sample
+is the row, a median is arithmetic over rows at the moment of asking,
+and nothing here writes a mean.
+
+**What is kept raw.** The ladder's every pair — the one-token and the
+seventeen-token run at each depth and repeat — rather than the median
+of their differences. The cross-check's rank at every position. A
+measurement's every repeat, every position read, every trial, every
+placement, every side, every text. A probe's count under every
+offering, every framing, every language.
+
+**How it is asked for.** The daemon answers a model's readings by
+method, newest run first; `mcf data <model>` writes them as a table —
+comma-separated by default, one row a line, the dimensions as columns
+— or as JSON lines; the window's Diagnostics pane shows the newest
+run's rows as a table under the diagnostic chosen. Export and
+contribution carry the same entries as every other, so a reading
+leaves the machine the one way anything does (D20).
+
+**What the diagnostics are for, from here.** Rows a person can set side
+by side to choose the model that serves their work. The work comes
+first: writing code that runs, and calling tools rightly — each a
+suite of tasks checked by execution or exact match, each attempt a
+row. Then everything else MCF can count or time.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -5048,6 +5098,12 @@ of any size shows the same pages, laid out for that size.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 56 — readings
+
+D54 written on the operator's instruction: every diagnostic writes
+readings in one schema, every sentence is derived, and the rows are
+what a person compares models by.
 
 ### Version 55 — run all, a strip, and room
 

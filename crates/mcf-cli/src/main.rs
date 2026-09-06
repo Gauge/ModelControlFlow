@@ -15,6 +15,7 @@ mod bench;
 mod bundle;
 mod check;
 mod crosscheck;
+mod data;
 mod desk;
 mod doctor;
 mod embed;
@@ -345,6 +346,15 @@ enum Request<'a> {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
     },
+    /// A model's readings as a table (D54).
+    Data {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+        /// One method's runs only, where the caller named one.
+        method: Option<&'a str>,
+        /// JSON lines rather than a comma-separated table.
+        as_json: bool,
+    },
     /// Measure a model's parts by count and clock (D52).
     Examine {
         /// The model: a path, or something `mcf list` names.
@@ -616,6 +626,17 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["eval"] => Request::MissingArgument {
             command: "eval",
             needs: "<model>",
+        },
+        ["data"] => Request::MissingArgument {
+            command: "data",
+            needs: "<model>",
+        },
+        ["data", model, rest @ ..] => match data_options(model, rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "data",
+                argument,
+            },
         },
         ["examine"] => Request::MissingArgument {
             command: "examine",
@@ -903,6 +924,34 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
         engine,
         on,
         started,
+    })
+}
+
+/// The flags `mcf data <model>` takes, in any order: `--method` names one
+/// method's runs, `--json` asks for JSON lines (D54).
+fn data_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut method = None;
+    let mut as_json = false;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--json" => as_json = true,
+            "--method" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "data --method",
+                        needs: "a method's name",
+                    });
+                };
+                method = Some(*value);
+            }
+            other => return Err(other),
+        }
+    }
+    Ok(Request::Data {
+        model,
+        method,
+        as_json,
     })
 }
 
@@ -1971,6 +2020,11 @@ const COMMANDS: &str = "\
     \x20                                     trial is projected before it is\n\
     \x20                                     spent, --up-to asks for less, and\n\
     \x20                                     --only names the probes to run\n\
+    \x20 mcf data <model> [--method <name>]  a model's readings as a table:\n\
+    \x20           [--json]                  every figure a diagnostic read,\n\
+    \x20                                     one row each with its dimensions\n\
+    \x20                                     and unit, comma-separated by\n\
+    \x20                                     default, JSON lines with --json\n\
     \x20 mcf examine <model> [--engine <name>]\n\
     \x20           [--only <names>]          measure a model's parts by count\n\
     \x20                                     and clock — the offload curve,\n\
@@ -2235,6 +2289,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             engine,
             only,
         } => examine::run(model, *engine, *only),
+        Request::Data {
+            model,
+            method,
+            as_json,
+        } => data::run(model, *method, *as_json),
         Request::Provision { name, into } => provision::run(*name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {
@@ -2348,6 +2407,7 @@ mod tests {
         // controlled environment (B-367).
         assert!(text.contains("mcf probe"), "{text}");
         assert!(text.contains("mcf examine"), "{text}");
+        assert!(text.contains("mcf data"), "{text}");
         assert!(text.contains("mcf provision"), "{text}");
         // And `mcf bench`, which compares two models on an engine that can be
         // timed and has no pass condition (B-080, A18).

@@ -1282,3 +1282,78 @@ fn a_kept_run_body_is_dated() {
         "only a map is dated"
     );
 }
+
+/// A model's readings are answered from the record, newest run first, each
+/// dated, and by one method where asked (D54, B-511).
+#[test]
+fn readings_are_answered_from_the_record_newest_first() {
+    let machine = Machine::new("readings");
+    let places = machine.places();
+    let model = places.models.join("a-model.gguf");
+    {
+        let mut journal =
+            mcf_record::journal::Journal::open(&places.journal).expect("a journal opens");
+        for (method, value) in [
+            ("prefill-saturation", 405),
+            ("prefill-saturation", 254),
+            ("cold-start", 7),
+        ] {
+            let body = mcf_record::readings::run_body(
+                &model.display().to_string(),
+                method,
+                "provisioned",
+                vec![("depth", Value::Integer(1024))],
+                &[mcf_record::readings::Reading::new(
+                    &[("batch", Value::Integer(64))],
+                    "read_ns",
+                    value,
+                    "ns",
+                )],
+            );
+            journal
+                .append(&mcf_record::journal::Entry::new(
+                    mcf_record::journal::EntryKind::Readings,
+                    mcf_core::time::Timestamp::now(),
+                    body,
+                ))
+                .expect("it appends");
+        }
+    }
+    let (handle, socket) = running(places);
+    let all = ask(
+        &socket,
+        &Request::Readings {
+            model: model.display().to_string(),
+            method: None,
+        },
+    );
+    assert!(all.served, "{:?}", all.body);
+    let runs = all.body.get("runs").and_then(Value::as_list).expect("runs");
+    assert_eq!(runs.len(), 3);
+    assert_eq!(
+        runs[0].get("method").and_then(Value::as_text),
+        Some("cold-start"),
+        "the newest run is not first: {runs:?}"
+    );
+    assert!(runs[0].get("at").is_some(), "a run is not dated");
+    let rows = mcf_record::readings::rows_of(&runs[1]);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].value, 254);
+    assert_eq!(rows[0].dim("batch"), "64");
+    let one = ask(
+        &socket,
+        &Request::Readings {
+            model: model.display().to_string(),
+            method: Some("prefill-saturation".to_owned()),
+        },
+    );
+    let runs = one.body.get("runs").and_then(Value::as_list).expect("runs");
+    assert_eq!(runs.len(), 2, "one method's runs only");
+    let _stopped = ask(
+        &socket,
+        &Request::Stop {
+            reason: String::new(),
+        },
+    );
+    let _ended = handle.join();
+}

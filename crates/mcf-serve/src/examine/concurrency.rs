@@ -9,7 +9,9 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, as_ms, filler, median, per_second, ppm, timed, whole};
+use super::{
+    Found, Reading, Site, as_integer, as_ms, filler, median, per_second, ppm, timed, whole,
+};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -30,6 +32,10 @@ const PRODUCE: usize = 32;
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {
         parallel: Some(SLOTS),
@@ -57,6 +63,7 @@ pub fn measure(site: &Site<'_>) -> Found {
         "  {SLOTS} slots; each request a prompt of {DEPTH} identifiers and {PRODUCE} tokens pinned"
     )];
     let mut rows = Vec::new();
+    let mut readings = Vec::new();
     let mut at_one: Option<u64> = None;
     let mut at_eight: Option<u64> = None;
     for count in COUNTS {
@@ -64,6 +71,23 @@ pub fn measure(site: &Site<'_>) -> Found {
             break;
         }
         let (mut own, refused, wall) = at_once(count, &ask);
+        for (request, ns) in own.iter().enumerate() {
+            readings.push(Reading::new(
+                &[
+                    ("count", Value::Integer(as_integer(count))),
+                    ("request", Value::Integer(as_integer(request))),
+                ],
+                "request_ns",
+                i64::try_from(*ns).unwrap_or(i64::MAX),
+                "ns",
+            ));
+        }
+        readings.push(Reading::new(
+            &[("count", Value::Integer(as_integer(count)))],
+            "wall_ns",
+            i64::try_from(wall).unwrap_or(i64::MAX),
+            "ns",
+        ));
         let Some(middle) = median(&mut own) else {
             lines.push(format!(
                 "  {count} at once   not measured: {}",
@@ -115,6 +139,7 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("counts", Value::List(rows)),
             ("scaling_ppm", Value::Integer(scaling)),
         ],
+        rows: readings,
     }
 }
 

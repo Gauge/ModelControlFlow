@@ -12,7 +12,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, framed_ids, whole};
+use super::{Found, Reading, Site, as_integer, framed_ids, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -44,6 +44,10 @@ const ROOM: usize = 320;
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     // The window the deepest depth needs, where the model holds it: the
     // depth, the room around it and the answer.
@@ -70,6 +74,7 @@ pub fn measure(site: &Site<'_>) -> Found {
          model's own template; the window is {window} tokens"
     )];
     let mut grid = Vec::new();
+    let mut rows = Vec::new();
     let mut found = 0_usize;
     let mut placements = 0_usize;
     let mut first_miss: Option<(usize, usize)> = None;
@@ -99,6 +104,23 @@ pub fn measure(site: &Site<'_>) -> Found {
             } else if first_miss.is_none() {
                 first_miss = Some((depth, placement));
             }
+            let dims = [
+                ("depth", Value::Integer(as_integer(depth))),
+                ("placement", Value::Integer(as_integer(placement))),
+            ];
+            rows.push(Reading::new(&dims, "found", i64::from(got), "bool"));
+            rows.push(Reading::new(
+                &dims,
+                "prompt_tokens",
+                as_integer(prompt_tokens),
+                "tokens",
+            ));
+            rows.push(Reading::new(
+                &dims,
+                "produced",
+                as_integer(produced),
+                "tokens",
+            ));
             row.push(format!(
                 "at {placement}% {}",
                 if got { "found" } else { "MISSED" }
@@ -145,6 +167,7 @@ pub fn measure(site: &Site<'_>) -> Found {
             ),
             ("grid", Value::List(grid)),
         ],
+        rows,
     }
 }
 

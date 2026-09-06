@@ -9,6 +9,7 @@ fn an_agreement(furthest: usize) -> Agreement {
         furthest,
         furthest_at: 61,
         set_aside: 1,
+        ranks: Vec::new(),
     }
 }
 

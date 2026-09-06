@@ -10,7 +10,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, as_ms, framed_ids, timed, whole};
+use super::{Found, Reading, Site, as_integer, as_ms, framed_ids, timed, whole};
 use crate::generation::{Draw, Truncation};
 use crate::served::{Extras, Prompt, Startup};
 use mcf_core::configuration::Thousandths;
@@ -81,10 +81,12 @@ pub fn measure(site: &Site<'_>) -> Found {
     };
     let mut free = Tally::default();
     let mut constrained = Tally::default();
+    let mut rows = Vec::new();
     for seed in 0..TRIALS as u64 {
-        for (tally, extras) in [
-            (&mut free, Extras::default()),
+        for (condition, tally, extras) in [
+            ("free", &mut free, Extras::default()),
             (
+                "constrained",
                 &mut constrained,
                 Extras {
                     json_schema: Some(schema()),
@@ -114,16 +116,39 @@ pub fn measure(site: &Site<'_>) -> Found {
                 Ok(completed) => completed,
                 Err(failure) => return Found::could_not_tell(failure.detail()),
             };
-            if conforms(&completed.text) {
+            let valid = conforms(&completed.text);
+            if valid {
                 tally.valid = tally.valid.saturating_add(1);
             }
             tally.tokens = tally
                 .tokens
                 .saturating_add(u64::try_from(completed.predicted).unwrap_or(u64::MAX));
             tally.ns = tally.ns.saturating_add(ns);
+            let dims = [
+                ("condition", Value::text(condition)),
+                (
+                    "trial",
+                    Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
+                ),
+            ];
+            rows.push(Reading::new(&dims, "valid", i64::from(valid), "bool"));
+            rows.push(Reading::new(
+                &dims,
+                "tokens",
+                as_integer(completed.predicted),
+                "tokens",
+            ));
+            rows.push(Reading::new(
+                &dims,
+                "ns",
+                i64::try_from(ns).unwrap_or(i64::MAX),
+                "ns",
+            ));
         }
     }
-    found(&free, &constrained)
+    let mut finding = found(&free, &constrained);
+    finding.rows = rows;
+    finding
 }
 
 /// A tally's tokens and time over the trials it was summed across.
@@ -176,6 +201,7 @@ fn found(free: &Tally, constrained: &Tally) -> Found {
             ("constrained_tokens_per_trial", whole(held_tokens)),
             ("constrained_ns_per_trial", whole(held_ns)),
         ],
+        rows: Vec::new(),
     }
 }
 

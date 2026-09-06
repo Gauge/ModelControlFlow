@@ -10,7 +10,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, as_ms, filler, median, ppm, timed, whole};
+use super::{Found, Reading, Site, as_integer, as_ms, filler, median, ppm, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Extras, Prompt};
 
@@ -73,6 +73,22 @@ pub fn measure(site: &Site<'_>) -> Found {
         }
         kept.push(ns);
     }
+    let mut rows = Vec::new();
+    for (repeat, (off_ns, kept_ns)) in off.iter().zip(&kept).enumerate() {
+        let at = [("repeat", Value::Integer(as_integer(repeat)))];
+        rows.push(Reading::new(
+            &at,
+            "cache_off_ns",
+            i64::try_from(*off_ns).unwrap_or(i64::MAX),
+            "ns",
+        ));
+        rows.push(Reading::new(
+            &at,
+            "prefix_kept_ns",
+            i64::try_from(*kept_ns).unwrap_or(i64::MAX),
+            "ns",
+        ));
+    }
     let (Some(off), Some(kept)) = (median(&mut off), median(&mut kept)) else {
         return Found::could_not_tell("no timing was taken");
     };
@@ -97,5 +113,6 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("prefix_kept_ns", whole(kept)),
             ("saving_ppm", Value::Integer(saving)),
         ],
+        rows,
     }
 }

@@ -3205,6 +3205,99 @@ fn finding_rows(
             y += 20.0;
         }
     }
+    // The rows under the sentences: every figure the run read, raw, in
+    // one table — what a person compares models by (D54, B-516).
+    if let Some(run) = desk.readings_of(diagnostic) {
+        readings_table(paint, Box::new(area.x, y + 14.0, area.w, 0.0), run);
+    }
+}
+
+/// How many rows of a run's readings the pane shows before it says how
+/// many more there are: enough to read a run whole, few enough that a
+/// fidelity run of three hundred rows does not push the page a metre down.
+const ROWS_SHOWN: usize = 60;
+
+/// A run's readings as a table: the dimensions as columns, then the
+/// metric, the value and its unit, one row a reading (D54, B-516).
+fn readings_table(paint: &mut Painter, area: Box, run: &Value) {
+    let ink = paint.ink;
+    let rows = mcf_record::readings::rows_of(run);
+    if rows.is_empty() {
+        return;
+    }
+    let dims = mcf_record::readings::dims_of(&rows);
+    let mut heads: Vec<String> = dims.clone();
+    heads.extend(["metric", "value", "unit"].map(str::to_owned));
+    // Each column as wide as its widest cell, the value column set flush
+    // right; what does not fit the pane is elided rather than run off it.
+    let cells: Vec<Vec<String>> = rows
+        .iter()
+        .take(ROWS_SHOWN)
+        .map(|row| {
+            let mut cell: Vec<String> = dims.iter().map(|dim| row.dim(dim)).collect();
+            cell.push(row.metric.clone());
+            cell.push(words::grouped_signed(row.value));
+            cell.push(row.unit.clone());
+            cell
+        })
+        .collect();
+    let widths: Vec<f32> = heads
+        .iter()
+        .enumerate()
+        .map(|(at, head)| {
+            let widest = cells
+                .iter()
+                .filter_map(|cell| cell.get(at))
+                .map(|text| paint.measure(text, Weight::Regular, size::SMALL))
+                .fold(0.0_f32, f32::max);
+            (spaced_width(paint, head).max(widest) + 18.0).min(area.w / 2.0)
+        })
+        .collect();
+    let mut y = area.y;
+    spaced(paint, area.x, y, "readings", ink.faint);
+    y += 22.0;
+    let mut x = area.x;
+    for (head, wide) in heads.iter().zip(&widths) {
+        spaced(paint, x, y, head, ink.faint);
+        x += wide;
+    }
+    y += 17.0;
+    paint.rule((area.x, y), (area.right(), y), ink.line, 255);
+    y += 8.0;
+    let value_at = dims.len() + 1;
+    for cell in &cells {
+        let mut x = area.x;
+        for (at, (text, wide)) in cell.iter().zip(&widths).enumerate() {
+            let shown = paint.elide(text, Weight::Regular, size::SMALL, wide - 12.0);
+            if at == value_at {
+                paint.say_right(
+                    x + wide - 18.0,
+                    y,
+                    &shown,
+                    Weight::Bold,
+                    size::SMALL,
+                    ink.ink,
+                );
+            } else {
+                paint.say_at(x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
+            }
+            x += wide;
+        }
+        y += 18.0;
+    }
+    if rows.len() > ROWS_SHOWN {
+        paint.say_at(
+            area.x,
+            y + 4.0,
+            &format!(
+                "… and {} more; `mcf data` writes them all",
+                rows.len() - ROWS_SHOWN
+            ),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
 }
 
 /// A line the daemon aligned into columns with runs of spaces, as a

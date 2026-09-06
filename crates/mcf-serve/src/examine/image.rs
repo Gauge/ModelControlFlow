@@ -10,7 +10,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, as_ms, timed, whole};
+use super::{Found, Reading, Site, as_integer, as_ms, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -25,6 +25,10 @@ const ASK: &str = "Describe the picture.";
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     let Some(projector) = site.projector.clone() else {
         return Found::could_not_tell(
@@ -60,6 +64,7 @@ pub fn measure(site: &Site<'_>) -> Found {
          each side"
     )];
     let mut rows = Vec::new();
+    let mut readings = Vec::new();
     let mut measured = 0_usize;
     let mut largest = 0_usize;
     for side in SIDES {
@@ -84,6 +89,31 @@ pub fn measure(site: &Site<'_>) -> Found {
                 let cost = completed.evaluated.saturating_sub(text_tokens);
                 measured = measured.saturating_add(1);
                 largest = cost;
+                let dims = [("side", Value::Integer(i64::from(side)))];
+                readings.push(Reading::new(
+                    &dims,
+                    "picture_bytes",
+                    as_integer(picture.len()),
+                    "bytes",
+                ));
+                readings.push(Reading::new(
+                    &dims,
+                    "prompt_tokens",
+                    as_integer(completed.evaluated),
+                    "tokens",
+                ));
+                readings.push(Reading::new(
+                    &dims,
+                    "picture_tokens",
+                    as_integer(cost),
+                    "tokens",
+                ));
+                readings.push(Reading::new(
+                    &dims,
+                    "prefill_ns",
+                    i64::try_from(ns).unwrap_or(i64::MAX),
+                    "ns",
+                ));
                 lines.push(format!(
                     "  {side:>4} × {side:<4}   {cost:>5} token(s) for the picture   {:>8} ms to \
                      read the turn",
@@ -124,5 +154,6 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("measured", Value::Integer(as_integer(measured))),
             ("largest_tokens", Value::Integer(as_integer(largest))),
         ],
+        rows: readings,
     }
 }

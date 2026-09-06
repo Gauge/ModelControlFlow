@@ -1439,6 +1439,24 @@ impl Served {
         )
     }
 
+    /// A conversation with tools declared, as the model's own template
+    /// renders them: the tools go in the template's own place and form,
+    /// which is how a caller of the hosted server declares them (D52,
+    /// B-517).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::render`].
+    pub fn render_with_tools(&self, messages: Value, tools: Value) -> Result<String, Failure> {
+        let body = Value::map([("messages", messages), ("tools", tools)]).to_line();
+        let answered = self.request("POST", "/apply-template", Some(&body))?;
+        text_in(
+            &answered,
+            "prompt",
+            "the provisioned server's answer rendered no prompt",
+        )
+    }
+
     /// The smallest HTTP a request needs.
     ///
     /// `Connection: close` so the body ends at end of stream and there is no

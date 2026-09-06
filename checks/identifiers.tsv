@@ -692,6 +692,7 @@ entry-kind	18	model_hosted
 entry-kind	19	model_unhosted
 entry-kind	20	cross_checked
 entry-kind	21	prompt_reported
+entry-kind	22	readings
 register	B-418
 finding	F134
 register	B-419
@@ -818,6 +819,7 @@ finding	F188
 register	DEC-058
 register	DEC-059
 register	DEC-060
+register	DEC-061
 register	B-485
 register	B-486
 register	B-487
@@ -848,9 +850,21 @@ register	B-507
 register	B-508
 register	B-509
 register	B-510
+register	B-511
+register	B-512
+register	B-513
+register	B-514
+register	B-515
+register	B-516
+register	B-517
+register	B-518
+register	B-519
 finding	F193
 finding	F194
 finding	F195
 finding	F196
 finding	F197
 finding	F198
+finding	F199
+finding	F200
+finding	F201

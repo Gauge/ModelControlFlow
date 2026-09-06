@@ -11,7 +11,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, filler, gigabytes, whole};
+use super::{Found, Reading, Site, as_integer, filler, gigabytes, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -23,6 +23,10 @@ const WINDOWS: [u64; 3] = [2048, 8192, 32768];
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     let Some(bytes) = crate::probes::run::read_prefix(site.model) else {
         return Found::could_not_tell("the file could not be read as a model");
@@ -49,6 +53,7 @@ pub fn measure(site: &Site<'_>) -> Found {
         )
     )];
     let mut rows = Vec::new();
+    let mut readings = Vec::new();
     let mut measured = 0_usize;
     let mut worst: i64 = 0;
     for window in WINDOWS {
@@ -61,6 +66,23 @@ pub fn measure(site: &Site<'_>) -> Found {
         match at_window(site, window) {
             Ok((resident, card)) => {
                 measured = measured.saturating_add(1);
+                let at = [("window", whole(window))];
+                let bytes = |held: u64| i64::try_from(held).unwrap_or(i64::MAX);
+                readings.push(Reading::new(
+                    &at,
+                    "predicted_bytes",
+                    bytes(predicted),
+                    "bytes",
+                ));
+                readings.push(Reading::new(
+                    &at,
+                    "resident_bytes",
+                    bytes(resident),
+                    "bytes",
+                ));
+                if let Some(card) = card {
+                    readings.push(Reading::new(&at, "card_bytes", bytes(card), "bytes"));
+                }
                 let observed = resident.saturating_add(card.unwrap_or(0));
                 let signed = i64::try_from(observed).unwrap_or(i64::MAX)
                     - i64::try_from(predicted).unwrap_or(i64::MAX);
@@ -121,6 +143,7 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("measured", Value::Integer(as_integer(measured))),
             ("worst_ppm", Value::Integer(worst)),
         ],
+        rows: readings,
     }
 }
 

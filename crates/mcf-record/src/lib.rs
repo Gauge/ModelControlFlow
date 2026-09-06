@@ -22,4 +22,5 @@ pub mod export;
 pub mod journal;
 pub mod json;
 pub mod overhead;
+pub mod readings;
 pub mod restore;

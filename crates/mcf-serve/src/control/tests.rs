@@ -423,6 +423,24 @@ fn an_examine_request_round_trips() {
     assert!(Request::read(r#"{"protocol":1,"ask":"examine"}"#).is_err());
 }
 
+/// A readings request names a model and, where asked, one method, and
+/// reads back as itself (D54).
+#[test]
+fn a_readings_request_round_trips() {
+    let asked = Request::Readings {
+        model: "m".to_owned(),
+        method: Some("prefill-saturation".to_owned()),
+    };
+    let read = Request::read(&asked.to_line()).unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(read, asked);
+    let Ok(Request::Readings { method, .. }) =
+        Request::read(r#"{"protocol":1,"ask":"readings","model":"m"}"#)
+    else {
+        panic!("a bare readings request did not read");
+    };
+    assert_eq!(method, None);
+}
+
 /// A search and a listing carry whether the hub is to be asked again, and
 /// a line without the flag reads as not (B-488).
 #[test]

@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 
 use mcf_bench::eval::{Case, Ran, Task, Trials, measure};
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
+use mcf_record::json::Value;
 
 use crate::Response;
 
@@ -434,6 +435,115 @@ pub(crate) const TASKS: &[Task] = &[
             },
         ],
     },
+    // **Four tasks that read input, handle errors and edit code** (B-518):
+    // parse text into a number and refuse what does not parse, fix a
+    // function that is handed over broken, count words under a stated tie
+    // order, and read a numeral system with a subtraction rule.
+    Task {
+        name: "parse-duration",
+        function: "seconds",
+        asks: "Write a Python function `seconds(text)` that parses a duration written as hours \
+               and minutes, like \"1h30m\", \"2h\" or \"45m\", and returns the total number of \
+               seconds as an int. Return None for anything that is not in that form, such as \
+               an empty string, \"90\" or \"1h30\". Reply with only the function.",
+        cases: &[
+            Case {
+                call: "seconds('1h30m')",
+                expects: "5400",
+            },
+            Case {
+                call: "seconds('45m')",
+                expects: "2700",
+            },
+            Case {
+                call: "seconds('2h')",
+                expects: "7200",
+            },
+            Case {
+                call: "seconds('1h30')",
+                expects: "None",
+            },
+            Case {
+                call: "seconds('')",
+                expects: "None",
+            },
+        ],
+    },
+    Task {
+        name: "fix-the-median",
+        function: "median",
+        asks: "This Python function is meant to return the median of a non-empty list of \
+               integers as an int when the count is odd and as the mean of the two middle \
+               values, as a float, when it is even; it is wrong. Fix it and reply with only the \
+               corrected function.\n\ndef median(xs):\n    xs = sorted(xs)\n    n = len(xs)\n    \
+               return xs[n // 2]",
+        cases: &[
+            Case {
+                call: "median([3,1,2])",
+                expects: "2",
+            },
+            Case {
+                call: "median([4,1,3,2])",
+                expects: "2.5",
+            },
+            Case {
+                call: "median([7])",
+                expects: "7",
+            },
+            Case {
+                call: "median([1,2,3,4,5,6])",
+                expects: "3.5",
+            },
+        ],
+    },
+    Task {
+        name: "word-frequency",
+        function: "top_words",
+        asks: "Write a Python function `top_words(text, k)` that splits the text on whitespace, \
+               lowercases the words, strips the characters .,;:!? from each end of each word, \
+               and returns a list of the k most frequent words as [word, count] pairs, most \
+               frequent first; words with the same count are ordered alphabetically. Reply \
+               with only the function.",
+        cases: &[
+            Case {
+                call: "top_words('the cat and the hat. The end!', 2)",
+                expects: "[['the', 3], ['and', 1]]",
+            },
+            Case {
+                call: "top_words('b a b a c', 3)",
+                expects: "[['a', 2], ['b', 2], ['c', 1]]",
+            },
+            Case {
+                call: "top_words('', 2)",
+                expects: "[]",
+            },
+        ],
+    },
+    Task {
+        name: "roman-to-integer",
+        function: "roman",
+        asks: "Write a Python function `roman(s)` that converts a Roman numeral written with \
+               the letters I, V, X, L, C, D and M, including the subtractive forms IV, IX, \
+               XL, XC, CD and CM, to an int. Reply with only the function.",
+        cases: &[
+            Case {
+                call: "roman('XIV')",
+                expects: "14",
+            },
+            Case {
+                call: "roman('MCMXCIV')",
+                expects: "1994",
+            },
+            Case {
+                call: "roman('III')",
+                expects: "3",
+            },
+            Case {
+                call: "roman('XLII')",
+                expects: "42",
+            },
+        ],
+    },
 ];
 
 /// The code a model wrote, taken out of what it said.
@@ -575,6 +685,10 @@ fn which_podman() -> Result<PathBuf, Failure> {
 }
 
 /// Evaluates one model against every task.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the laboratory's one drive: the container found, each task asked and run, every attempt a row, the report said"
+)]
 pub(crate) fn eval(named: &str) -> Response {
     let podman = match which_podman() {
         Ok(podman) => podman,
@@ -631,17 +745,50 @@ pub(crate) fn eval(named: &str) -> Response {
         String::new(),
     ];
     let mut held: Vec<Trials> = Vec::new();
+    // Every attempt a row: what it wrote, whether it ran, the cases held,
+    // and what the asking and the running took (D54, B-518).
+    let mut rows: Vec<mcf_serve::examine::Reading> = Vec::new();
     for task in TASKS {
+        let mut timings: Vec<(u64, usize)> = Vec::new();
         let mut ask = |task: &Task| {
+            let began = std::time::Instant::now();
             let spoken =
                 mcf_serve::probes::spoken(&socket, Path::new(named), task.asks, None, 400, None);
-            (!spoken.text.trim().is_empty()).then(|| code_in(&spoken.text))
+            let took = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            let written = (!spoken.text.trim().is_empty()).then(|| code_in(&spoken.text));
+            timings.push((took, written.as_ref().map_or(0, String::len)));
+            written
         };
         let mut run =
             |task: &Task, written: &str| run_in_container(&podman, &scratch, task, written);
-        held.push(measure(task, ATTEMPTS, &mut ask, &mut run));
+        let trials = measure(task, ATTEMPTS, &mut ask, &mut run);
+        for (attempt, ran) in trials.attempts.iter().enumerate() {
+            let (ask_ns, code_bytes) = timings.get(attempt).copied().unwrap_or((0, 0));
+            rows.extend(attempt_rows(task.name, attempt, ran, ask_ns, code_bytes));
+        }
+        held.push(trials);
     }
     let _gone = std::fs::remove_dir_all(&scratch);
+    let recorded = mcf_serve::examine::record_rows(
+        Path::new(named),
+        "coding",
+        "through the daemon, run in a container",
+        vec![
+            (
+                "tasks",
+                Value::Integer(i64::try_from(TASKS.len()).unwrap_or(i64::MAX)),
+            ),
+            (
+                "attempts",
+                Value::Integer(i64::try_from(ATTEMPTS).unwrap_or(i64::MAX)),
+            ),
+            (
+                "addressed",
+                addressed.clone().map_or(Value::Null, Value::text),
+            ),
+        ],
+        &rows,
+    );
 
     for trials in &held {
         lines.push(format!("  {}", trials.task));
@@ -677,8 +824,69 @@ pub(crate) fn eval(named: &str) -> Response {
                 .to_owned(),
         );
     }
+    lines.push(String::new());
+    lines.push(match recorded {
+        Ok(_) => format!(
+            "  {} reading(s) recorded; `mcf data {named} --method coding` writes them",
+            rows.len()
+        ),
+        Err(why) => format!("  READINGS NOT RECORDED: {why}"),
+    });
     Response {
         text: lines.join("\n"),
         served: true,
     }
+}
+
+/// One attempt at one task as rows: whether anything was written, whether
+/// it ran, the cases held of the cases, the code's size, and what the
+/// asking took (D54, B-518).
+fn attempt_rows(
+    task: &str,
+    attempt: usize,
+    ran: &Ran,
+    ask_ns: u64,
+    code_bytes: usize,
+) -> Vec<mcf_serve::examine::Reading> {
+    use mcf_serve::examine::Reading;
+    let whole = |held: usize| i64::try_from(held).unwrap_or(i64::MAX);
+    let dims = [
+        ("task", Value::text(task.to_owned())),
+        ("attempt", Value::Integer(whole(attempt))),
+    ];
+    let mut rows = vec![
+        Reading::new(
+            &dims,
+            "ask_ns",
+            i64::try_from(ask_ns).unwrap_or(i64::MAX),
+            "ns",
+        ),
+        Reading::new(&dims, "code_bytes", whole(code_bytes), "bytes"),
+    ];
+    match ran {
+        Ran::Checked { passed, of } => {
+            rows.push(Reading::new(&dims, "wrote", 1, "bool"));
+            rows.push(Reading::new(&dims, "ran", 1, "bool"));
+            rows.push(Reading::new(&dims, "cases_held", whole(*passed), "count"));
+            rows.push(Reading::new(&dims, "cases", whole(*of), "count"));
+            rows.push(Reading::new(
+                &dims,
+                "whole",
+                i64::from(passed == of),
+                "bool",
+            ));
+        }
+        Ran::Refused {
+            wrote_something, ..
+        } => {
+            rows.push(Reading::new(
+                &dims,
+                "wrote",
+                i64::from(*wrote_something),
+                "bool",
+            ));
+            rows.push(Reading::new(&dims, "ran", 0, "bool"));
+        }
+    }
+    rows
 }

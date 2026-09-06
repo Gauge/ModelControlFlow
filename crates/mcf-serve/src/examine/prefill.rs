@@ -9,7 +9,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, as_ms, filler, median, per_second, timed, whole};
+use super::{Found, Reading, Site, as_integer, as_ms, filler, median, per_second, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -32,13 +32,28 @@ pub fn measure(site: &Site<'_>) -> Found {
         "  a prompt of {DEPTH} identifiers read {REPEATS} times at each batch, the median kept"
     )];
     let mut rows = Vec::new();
+    let mut readings = Vec::new();
     let mut rates: Vec<(u32, u64)> = Vec::new();
     for batch in BATCHES {
         if site.asker_gone() {
             break;
         }
         match at_batch(site, batch) {
-            Ok(ns) => {
+            Ok(mut samples) => {
+                for (repeat, sample) in samples.iter().enumerate() {
+                    readings.push(Reading::new(
+                        &[
+                            ("batch", Value::Integer(i64::from(batch))),
+                            ("repeat", Value::Integer(as_integer(repeat))),
+                        ],
+                        "read_ns",
+                        i64::try_from(*sample).unwrap_or(i64::MAX),
+                        "ns",
+                    ));
+                }
+                let Some(ns) = median(&mut samples) else {
+                    continue;
+                };
                 let rate = per_second(DEPTH as u64, ns);
                 lines.push(format!(
                     "  batch {batch:>5}   {:>8} ms   {rate:>8} tokens a second",
@@ -83,11 +98,12 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("fastest_batch", Value::Integer(i64::from(fastest))),
             ("enough_batch", Value::Integer(i64::from(enough))),
         ],
+        rows: readings,
     }
 }
 
-/// The median time to read the prompt at one batch size.
-fn at_batch(site: &Site<'_>, batch: u32) -> Result<u64, String> {
+/// Every timing of reading the prompt at one batch size, raw (D16).
+fn at_batch(site: &Site<'_>, batch: u32) -> Result<Vec<u64>, String> {
     let engine = site.server(&Startup {
         batch: Some(batch),
         ubatch: Some(batch),
@@ -113,5 +129,8 @@ fn at_batch(site: &Site<'_>, batch: u32) -> Result<u64, String> {
         let _read = done.map_err(said)?;
         samples.push(ns);
     }
-    median(&mut samples).ok_or_else(|| "no timing was taken".to_owned())
+    if samples.is_empty() {
+        return Err("no timing was taken".to_owned());
+    }
+    Ok(samples)
 }

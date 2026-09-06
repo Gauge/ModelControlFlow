@@ -22,6 +22,8 @@ use std::path::{Path, PathBuf};
 
 use mcf_record::json::Value;
 
+pub use mcf_record::readings::Reading;
+
 use crate::adapters::ProvisionedLlama;
 use crate::probes::run::Step;
 use crate::served::{Served, Startup, Waiting};
@@ -40,9 +42,10 @@ pub mod prefill;
 pub mod prefix;
 pub mod retrieval;
 pub mod tokenizer;
+pub mod tooluse;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 14] = [
+pub const MEASURES: [&str; 15] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -57,6 +60,7 @@ pub const MEASURES: [&str; 14] = [
     degeneration::NAME,
     grammar::NAME,
     image::NAME,
+    tooluse::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -89,6 +93,7 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             degeneration::NAME,
             grammar::NAME,
             image::NAME,
+            tooluse::NAME,
         ],
     ),
 ];
@@ -223,6 +228,9 @@ pub struct Found {
     pub lines: Vec<String>,
     /// What the record keeps, beside the model, method and engine.
     pub fields: Vec<(&'static str, Value)>,
+    /// Every figure read, raw, one row each: the repeat, the position, the
+    /// trial, the placement it was read under (D54, B-512).
+    pub rows: Vec<Reading>,
 }
 
 impl Found {
@@ -232,6 +240,7 @@ impl Found {
         Self {
             lines: vec![format!("  COULD NOT TELL   {why}")],
             fields: vec![("could_not_tell", Value::text(why.to_owned()))],
+            rows: Vec::new(),
         }
     }
 
@@ -292,6 +301,7 @@ pub fn run(
             degeneration::NAME => degeneration::measure(site),
             grammar::NAME => grammar::measure(site),
             image::NAME => image::measure(site),
+            tooluse::NAME => tooluse::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -302,6 +312,28 @@ pub fn run(
             Ok(path) => format!("  recorded in {}", path.display()),
             Err(why) => format!("  NOT RECORDED: {why}"),
         });
+        // The rows beside the finding: every figure raw, under the
+        // conditions the run shared (D54). The counts above are what the
+        // sentences read; the rows are what a person compares by.
+        if !found.rows.is_empty() {
+            let conditions: Vec<(&str, Value)> = found
+                .fields
+                .iter()
+                .filter(|(_, held)| !matches!(held, Value::List(_) | Value::Map(_)))
+                .map(|(key, held)| (*key, held.clone()))
+                .collect();
+            let written = crate::probes::run::record_readings(
+                site.model,
+                name,
+                &site.engine,
+                conditions,
+                &found.rows,
+            );
+            lines.push(match written {
+                Ok(_) => format!("  {} reading(s) recorded", found.rows.len()),
+                Err(why) => format!("  READINGS NOT RECORDED: {why}"),
+            });
+        }
         if !say(&step, &lines) {
             break;
         }
@@ -311,6 +343,23 @@ pub fn run(
          none grades what the model said (D52)."
             .to_owned(),
     ])
+}
+
+/// Writes a run's readings from outside the daemon — the coding
+/// laboratory runs at the command line, with its container — under the
+/// one schema every diagnostic shares (D54, B-518).
+///
+/// # Errors
+///
+/// Nowhere to record, or the record could not be written.
+pub fn record_rows(
+    model: &Path,
+    method: &str,
+    engine: &str,
+    conditions: Vec<(&str, Value)>,
+    rows: &[Reading],
+) -> Result<PathBuf, mcf_core::Failure> {
+    crate::probes::run::record_readings(model, method, engine, conditions, rows)
 }
 
 /// One measurement's recorded finding as a sentence, from the fields the
@@ -400,6 +449,16 @@ pub fn recorded_said(body: &Value) -> Option<String> {
             "{} side(s) measured; {} token(s) an image at the largest",
             figure("measured").unwrap_or(0),
             figure("largest_tokens").unwrap_or(0)
+        ),
+        tooluse::NAME => format!(
+            "right tool in {} of {} call(s), arguments matched in {}, result carried in {}, held back in {}",
+            figure("right_tool").unwrap_or(0),
+            figure("asked")
+                .unwrap_or(0)
+                .saturating_sub(figure("trials").unwrap_or(0)),
+            figure("args_matched").unwrap_or(0),
+            figure("result_carried").unwrap_or(0),
+            figure("held_back").unwrap_or(0)
         ),
         _ => return None,
     })

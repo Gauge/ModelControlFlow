@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 147 |
+| **Version** | 150 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,9 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
+| 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
+| 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
 | 198 | [F198 — Run all, the strip, and room: one press above the Diagnostics list takes the six runs in turn, the next starting as the last finishes well and none after one refused or stopped; a strip under the list names the run, bars its own progress or the sequence's, counts the seconds and offers Stop; and every page fills the window it is given — controls, bars, fields and tiles take their pane's width, tables spread their columns, lists give way before panes in a narrow window, and a card's label column shares a narrow card (D53, B-508 to B-510, A7)](#198--f198--run-all-the-strip-and-room-one-press-above-the-diagnostics-list-takes-the-six-runs-in-turn-the-next-starting-as-the-last-finishes-well-and-none-after-one-refused-or-stopped-a-strip-under-the-list-names-the-run-bars-its-own-progress-or-the-sequences-counts-the-seconds-and-offers-stop-and-every-page-fills-the-window-it-is-given--controls-bars-fields-and-tiles-take-their-panes-width-tables-spread-their-columns-lists-give-way-before-panes-in-a-narrow-window-and-a-cards-label-column-shares-a-narrow-card-d53-b-508-to-b-510-a7) |
 | 197 | [F197 — Diagnostics is one list: twenty-seven rows under five headings, each saying when it last ran on this model and through what, never run, or that it is running and which step it is on, with a Run all on each family; the one chosen shows its whole — what it answers, its controls, its Run and Stop with the step, and its last finding with when it was taken — and the daemon dates a ladder, a cross-check and a prompt report so the list can say when (D53, B-505 to B-507, A7)](#197--f197--diagnostics-is-one-list-twenty-seven-rows-under-five-headings-each-saying-when-it-last-ran-on-this-model-and-through-what-never-run-or-that-it-is-running-and-which-step-it-is-on-with-a-run-all-on-each-family-the-one-chosen-shows-its-whole--what-it-answers-its-controls-its-run-and-stop-with-the-step-and-its-last-finding-with-when-it-was-taken--and-the-daemon-dates-a-ladder-a-cross-check-and-a-prompt-report-so-the-list-can-say-when-d53-b-505-to-b-507-a7) |
 | 196 | [F196 — Fourteen measurements, one run: `mcf examine` and three Diagnostics cards take the offload curve, prefill saturation, prefix reuse, memory as predicted, concurrency, cold start, quantization fidelity, bits per byte, determinism, the tokenizer round trip, retrieval by depth, degeneration, grammar cost and image cost on one model, each a count or a clock, each recorded under its method; on the 2B reference model the first run found a timing read through the watcher's glance, a window opened for the whole trained context, and a first request after a start that stands alone (D52, B-491 to B-504, A7)](#196--f196--fourteen-measurements-one-run-mcf-examine-and-three-diagnostics-cards-take-the-offload-curve-prefill-saturation-prefix-reuse-memory-as-predicted-concurrency-cold-start-quantization-fidelity-bits-per-byte-determinism-the-tokenizer-round-trip-retrieval-by-depth-degeneration-grammar-cost-and-image-cost-on-one-model-each-a-count-or-a-clock-each-recorded-under-its-method-on-the-2b-reference-model-the-first-run-found-a-timing-read-through-the-watchers-glance-a-window-opened-for-the-whole-trained-context-and-a-first-request-after-a-start-that-stands-alone-d52-b-491-to-b-504-a7) |
@@ -9621,6 +9624,132 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 201 · F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)
+
+**The laboratory reported and did not record.** `mcf eval` ran each
+task's answer in a container and printed what held, and nothing of it
+reached the record: a person who wanted to set two models' coding side
+by side had two printouts. Every attempt is now a row — the task, the
+attempt, `wrote`, `ran`, `cases_held` of `cases`, `whole`, the code's
+bytes and the nanoseconds the asking took — written from the command
+line under the readings schema, with the task count, the attempts and
+how the model was addressed as the run's conditions. The daemon reads
+the record again on each readings request, so rows written outside it
+are answered the same as its own.
+
+**Four more tasks.** The set had sixteen; it has twenty. Parse a
+duration like `1h30m` into seconds and return `None` for what is not
+in that form; fix a median function handed over wrong, which is
+editing code rather than writing it; count words under a stated tie
+order, alphabetical within a count; read a Roman numeral with its
+subtractive forms. Each is checked by execution against hidden cases,
+as the rest are.
+
+**The 2B.** Sixty attempts, 387 rows. Nine tasks held every case in
+every attempt — the first five, the shortest path, the median fix and
+the Roman numerals among them — and eleven held none; of the four new
+ones the median fix and the numerals passed three of three and the
+parser and the word count nought of three. Two tasks produced nothing
+that ran in any attempt. That distribution, task by task, is the row a
+person compares by; there is no total.
+
+**What is left.** Coding runs from the command line, with its
+container; the Diagnostics list does not yet carry a Coding row
+(B-519).
+
+## 200 · F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)
+
+The operator asked for diagnostics that produce data a person can
+choose a model by, tool use and coding first.
+
+**What the tool probe left unasked.** The probe asks whether a
+well-formed call comes out under several ways of telling a model about
+one tool, which is the machinery question. Choosing a model for tool
+use asks more: the right tool among several, the arguments the request
+stated in the types the tool declared, holding back when nothing fits,
+and — the half nobody measured — whether the answer after the tool
+replies carries what the tool said.
+
+**The suite.** Eight tasks: one tool; a choice of two; an expression
+for a calculator; a request nothing offered fits; two whole-number
+arguments; three arguments with a unit; two arguments read out of the
+request, a name and a date; and one tool of three. The tools are
+declared as a caller of the hosted server declares them, through the
+model's own template, which puts them in its own place and form. Each
+task runs three trials — one greedy, two drawn at 0.7 — and a call is
+read in either form a template writes, a JSON object naming the tool
+or a function block with its parameters, after any thinking. The
+arguments are compared trimmed and case aside for text, with the
+spaces removed for an expression, and as a number for a number: a
+number written as text is a mismatch of type and counted as one. A key
+beyond the ones asked is counted, not condemned. Where the tool was the
+right one, the model's own call goes back as an assistant turn with
+the tool's result after it, and the answer is read for a value only the
+result held.
+
+**The 2B.** Right tool in 21 of 21, arguments matched in 21, held back
+in 3 of 3, result carried in 18. The three that did not carry are one
+task: given an event identifier back from the calendar tool, the model
+confirms the event without quoting the identifier, all three times.
+That is a fact a person choosing a model for an agent wants, and it is
+a row: `result_carried` nought under `two-from-the-request`. The run
+wrote 222 rows.
+
+## 199 · F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)
+
+The operator asked that what the diagnostics collect be clean raw
+numbers, stored in their most usable form, data rather than a report.
+
+**The schema.** A reading is `dims`, `metric`, `value`, `unit`: the
+dimensions it was taken under, what was measured, a whole number, and
+its unit. A run is one record entry — a new kind, `readings`, the
+twenty-third — of the model, the method, the engine, the conditions the
+run shared, and its rows. Nothing in the schema can hold a mean: the
+row is the sample, and the crate that writes it has no mean to write
+(D16). The record's reader carries the type; the daemon indexes every
+run by model at start and after each run; a request answers a model's
+runs newest first, one method's where asked.
+
+**What the fourteen measurements now keep.** Every repeat of a prefill
+or prefix timing, every layer count's pair, every window's predicted
+and observed bytes, every request of every concurrency count with the
+wall time beside them, the cold and warm loads, every position's rank
+and millibits in a fidelity run and every position's in a bits-per-byte
+run, every run's divergence in a determinism run and the two other
+settings', every text's counts, every depth and placement's found or
+missed with the tokens, every hundred's repeated share, every trial's
+validity and cost under each grammar condition, every side's picture
+tokens and prefill. The counts the sentences read stay beside the rows
+as the run's conditions.
+
+**Two doors out.** `mcf data <model>` writes a table: method, when,
+engine, then the union of the runs' dimensions as columns, then metric,
+value and unit — comma-separated, one row a line, quoted only where a
+cell needs it — or, with `--json`, one object a line with the run's
+method, time and engine on each so a line stands alone. The window's
+Diagnostics pane shows the newest run's rows as a table under the
+finding, the value column set flush right, sixty rows before it says
+how many more `mcf data` writes.
+
+**Measured.** On the 2B reference model a run of prefix reuse,
+determinism and the tokenizer round trip wrote 6, 16 and 39 rows; the
+table for prefix reuse reads back six rows with the repeat as a column
+and the nanoseconds as written; the JSON lines for determinism carry
+the run index, the tokens produced and the position of divergence.
+
+**The probes, the ladder and the cross-check too.** Each probe writes
+its rows beside its finding — every addressing's stopped and silent
+counts and every finished turn's length, every language's tokens and
+characters, every offering's and framing's counts, the thinking,
+stopping, context, embedding and vision figures — under its record
+name, which for two probes differs from the name it runs as. The
+ladder writes every run of every pair: the depth, the repeat, which of
+the pair, its nanoseconds, the tokens it produced and the engine's peak
+resident bytes — 132 rows for a two-rung ladder on the 2B — so the
+median a rung reports is arithmetic anyone can redo. The cross-check
+writes the rank at every position read, a position set aside marked as
+such. On the 2B a run of four probes wrote 11, 4, 7 and 12 rows.
+
 ## 198 · F198 — Run all, the strip, and room: one press above the Diagnostics list takes the six runs in turn, the next starting as the last finishes well and none after one refused or stopped; a strip under the list names the run, bars its own progress or the sequence's, counts the seconds and offers Stop; and every page fills the window it is given — controls, bars, fields and tiles take their pane's width, tables spread their columns, lists give way before panes in a narrow window, and a card's label column shares a narrow card (D53, B-508 to B-510, A7)
 
 The operator asked for a Run all over every diagnostic, a progress
@@ -13135,6 +13264,22 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 150 — coding as rows
+
+F201: every coding attempt a row, four more tasks, run on the 2B
+(B-518).
+
+### Version 149 — tool use as a suite
+
+F200: eight tool-use tasks judged by a parser, every trial a row, the
+result fed back and read for (B-517).
+
+### Version 148 — readings
+
+F199: every measurement writes one row a figure into the record, the
+daemon answers them by method, `mcf data` exports them, the pane shows
+them (D54, B-511, B-512, B-515, B-516).
 
 ### Version 147 — run all, a strip, and room
 

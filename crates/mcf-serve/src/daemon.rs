@@ -1242,6 +1242,69 @@ fn planned_memory(path: &Path, held: Option<u64>, ladder: &[u64]) -> crate::ladd
     }
 }
 
+/// One run of a pair as rows, raw, whichever way the pair comes out: the
+/// difference is arithmetic at the moment of asking (D54, D16).
+fn pair_rows(
+    depth: u64,
+    repeat: u32,
+    which: &str,
+    timed: &Timed,
+) -> Vec<mcf_record::readings::Reading> {
+    let dims = [
+        (
+            "depth",
+            Value::Integer(i64::try_from(depth).unwrap_or(i64::MAX)),
+        ),
+        ("repeat", Value::Integer(i64::from(repeat))),
+        ("run", Value::text(which)),
+    ];
+    let whole = |held: u64| i64::try_from(held).unwrap_or(i64::MAX);
+    let mut rows = vec![
+        mcf_record::readings::Reading::new(&dims, "ns", whole(timed.ns), "ns"),
+        mcf_record::readings::Reading::new(
+            &dims,
+            "produced",
+            whole(timed.produced.unwrap_or(0)),
+            "tokens",
+        ),
+    ];
+    if let Some(peak) = timed.peak_resident {
+        rows.push(mcf_record::readings::Reading::new(
+            &dims,
+            "peak_resident_bytes",
+            whole(peak),
+            "bytes",
+        ));
+    }
+    rows
+}
+
+/// The rank at every position a cross-check read, raw (D54, B-514): one
+/// being agreement, and a position set aside marked as such.
+fn position_rows(agreement: &crate::crosscheck::Agreement) -> Vec<mcf_record::readings::Reading> {
+    agreement
+        .ranks
+        .iter()
+        .enumerate()
+        .flat_map(|(position, held)| {
+            let dims = [(
+                "position",
+                Value::Integer(i64::try_from(position).unwrap_or(i64::MAX)),
+            )];
+            let rank = held.map_or(0, |rank| i64::try_from(rank).unwrap_or(i64::MAX));
+            [
+                mcf_record::readings::Reading::new(&dims, "rank", rank, "count"),
+                mcf_record::readings::Reading::new(
+                    &dims,
+                    "set_aside",
+                    i64::from(held.is_none()),
+                    "bool",
+                ),
+            ]
+        })
+        .collect()
+}
+
 /// One timed generation: how long it took, and what actually ran it.
 ///
 /// **Nanoseconds, as a whole number.** Floating point does not appear in a
@@ -1919,6 +1982,47 @@ fn newest_hosted(journal: &Path) -> std::collections::BTreeMap<PathBuf, Value> {
     newest
 }
 
+/// Every readings run for each model — or for one model, where a path is
+/// given — newest first, each body dated with when it was recorded (D54).
+fn all_readings(
+    journal: &Path,
+    only: Option<&Path>,
+) -> std::collections::BTreeMap<PathBuf, Vec<Value>> {
+    let mut found: std::collections::BTreeMap<PathBuf, Vec<Value>> =
+        std::collections::BTreeMap::new();
+    if !journal.exists() {
+        return found;
+    }
+    let Ok(index) = mcf_record::journal::Index::over(
+        journal,
+        &mcf_record::journal::index::default_path(journal),
+    ) else {
+        return found;
+    };
+    for located in index.entries() {
+        if located.kind() != EntryKind::Readings {
+            continue;
+        }
+        let Ok(entry) = index.read(located) else {
+            continue;
+        };
+        let Some(model) = entry.body().get("model").and_then(Value::as_text) else {
+            continue;
+        };
+        if only.is_some_and(|only| only != Path::new(model)) {
+            continue;
+        }
+        found
+            .entry(PathBuf::from(model))
+            .or_default()
+            .push(dated(entry.body().clone(), entry.recorded_at()));
+    }
+    for runs in found.values_mut() {
+        runs.reverse();
+    }
+    found
+}
+
 /// The newest probe entry per method for each model — or for one model,
 /// where a path is given — as the page lists them: the method, the engine,
 /// when, and the finding as a sentence, in the order the run makes them.
@@ -2105,6 +2209,9 @@ pub struct Daemon {
     /// name: read from the record at start and again after a run, so a
     /// model probed yesterday shows its findings today (B-483, A1).
     probed: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Vec<Value>>>,
+    /// Every readings run per model, newest first, each body dated: what
+    /// `mcf data` and the window's tables read (D54, B-511).
+    readings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Vec<Value>>>,
     /// The model being held for callers, if any, with what it was started
     /// under.
     ///
@@ -2272,6 +2379,7 @@ impl Daemon {
                 EntryKind::PromptReported,
             )),
             probed: std::sync::Mutex::new(newest_probes(&places.journal, None)),
+            readings: std::sync::Mutex::new(all_readings(&places.journal, None)),
             last_settings: std::sync::Mutex::new(newest_hosted(&places.journal)),
             holding: std::sync::Mutex::new(None),
             places,
@@ -2853,6 +2961,7 @@ impl Daemon {
             | Request::Offered { .. }
             | Request::Search { .. }
             | Request::Settings { .. }
+            | Request::Readings { .. }
             | Request::Anatomy { .. }
             | Request::Tokenize { .. }
             | Request::Hosted
@@ -3015,6 +3124,7 @@ impl Daemon {
             | Request::Offered { .. }
             | Request::Search { .. }
             | Request::Settings { .. }
+            | Request::Readings { .. }
             | Request::Anatomy { .. }
             | Request::Tokenize { .. }
             | Request::Hosted
@@ -3734,6 +3844,7 @@ impl Daemon {
                 .is_ok()
         };
         let ran = crate::probes::run::run(&at, &path, &asked, &mut say);
+        self.refresh_readings(&path);
         // What the run wrote to the record, read back the way a start reads
         // it, so the model's page has the findings without a restart.
         let fresh = newest_probes(&self.places.journal, Some(&path));
@@ -3759,6 +3870,77 @@ impl Daemon {
             Err(why) => Answer::refused(&crate::control::refused(&why, named)),
         };
         Self::write_refusal(writer, &answer);
+    }
+
+    /// A model's readings runs, newest first, one method's where one is
+    /// named (D54, B-511).
+    fn readings_of(&self, named: &str, method: Option<&str>) -> Answer {
+        let path = crate::generation::resolved(&self.places.models, named);
+        // Read again from the record before answering: the coding
+        // laboratory writes rows from the command line, and an index kept
+        // from the daemon's own runs alone would not know them (D54).
+        self.refresh_readings(&path);
+        let runs: Vec<Value> = self
+            .readings
+            .lock()
+            .ok()
+            .and_then(|held| held.get(&path).cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|run| {
+                method
+                    .is_none_or(|wanted| run.get("method").and_then(Value::as_text) == Some(wanted))
+            })
+            .collect();
+        Answer::served(Value::map([
+            ("model", Value::text(path.display().to_string())),
+            ("runs", Value::List(runs)),
+            ("done", Value::Bool(true)),
+        ]))
+    }
+
+    /// Writes a run's rows to the record, where it has any, and reads the
+    /// model's readings again so the next question has them (D54).
+    fn record_rows(
+        &self,
+        path: &Path,
+        method: &str,
+        engine: &str,
+        conditions: Vec<(&str, Value)>,
+        rows: &[mcf_record::readings::Reading],
+        at: Timestamp,
+    ) {
+        if rows.is_empty() {
+            return;
+        }
+        let _rows = self.note(
+            EntryKind::Readings,
+            at,
+            mcf_record::readings::run_body(
+                &path.display().to_string(),
+                method,
+                engine,
+                conditions,
+                rows,
+            ),
+        );
+        self.refresh_readings(path);
+    }
+
+    /// Reads a model's readings again from the record, after a run wrote
+    /// some, so the next question has them without a restart.
+    fn refresh_readings(&self, path: &Path) {
+        let fresh = all_readings(&self.places.journal, Some(path));
+        if let Ok(mut readings) = self.readings.lock() {
+            match fresh.get(path) {
+                Some(found) => {
+                    let _replaced = readings.insert(path.to_path_buf(), found.clone());
+                }
+                None => {
+                    let _gone = readings.remove(path);
+                }
+            }
+        }
     }
 
     /// Carries the measurements on one model, saying which is about to
@@ -3847,6 +4029,7 @@ impl Daemon {
                 .is_ok()
         };
         let ran = crate::examine::run(&site, only, &mut say);
+        self.refresh_readings(&path);
         let fresh = newest_probes(&self.places.journal, Some(&path));
         if let Ok(mut probed) = self.probed.lock() {
             match fresh.get(&path) {
@@ -4029,6 +4212,9 @@ impl Daemon {
                 None,
             ),
             Request::Settings { model } => (self.settings_for(model), None),
+            Request::Readings { model, method } => {
+                (self.readings_of(model, method.as_deref()), None)
+            }
             Request::Anatomy { model } => (self.anatomy_of(model), None),
             Request::Tokenize {
                 model,
@@ -4102,6 +4288,10 @@ impl Daemon {
         clippy::too_many_arguments,
         reason = "one run's conditions — what, through which engine, on which device, how deep, started with what — and who is waiting"
     )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run carried straight through: refused early, announced, read, recorded, said"
+    )]
     fn measuring(
         &self,
         named: &str,
@@ -4168,6 +4358,7 @@ impl Daemon {
         );
         let planned = planned_memory(&path, held, &ladder);
         let mut readings: Vec<Value> = Vec::new();
+        let mut rows: Vec<mcf_record::readings::Reading> = Vec::new();
         let mut ran_on: Option<String> = None;
         for (step, depth) in ladder.iter().enumerate() {
             // Where the run is, before it is there: the depth about to be
@@ -4178,7 +4369,7 @@ impl Daemon {
             let starting = a_rung_starting(*depth, step, ladder.len());
             say(writer, &announced(named, "starting", starting));
             let mut report = |running: Value| say(writer, &announced(named, "running", running));
-            let (reading, engine) = self.one_depth(
+            let (reading, engine, pairs) = self.one_depth(
                 named,
                 engine,
                 *depth,
@@ -4187,6 +4378,7 @@ impl Daemon {
                 waiting,
                 &mut report,
             );
+            rows.extend(pairs);
             ran_on = ran_on.take().or(engine);
             // The asker has gone: what was measured so far is theirs and
             // they are not there to read it, and every rung after this one
@@ -4231,6 +4423,17 @@ impl Daemon {
         // speed the moment a run finished.
         let at = Timestamp::now();
         let _recorded = self.note(EntryKind::ModelTimed, at, last.body.clone());
+        self.record_rows(
+            &path,
+            "throughput",
+            ran_on.as_deref().unwrap_or("MCF did not say"),
+            vec![(
+                "deepest",
+                Value::Integer(i64::try_from(deepest).unwrap_or(i64::MAX)),
+            )],
+            &rows,
+            at,
+        );
         // And into what the daemon holds, so the next listing has it without
         // re-reading the record, with when (D53).
         if let Ok(mut timings) = self.timings.lock() {
@@ -4262,6 +4465,10 @@ impl Daemon {
     /// the sentences every surface prints. The last line is written down as
     /// it is sent (A1): until this existed the one check that answers §II
     /// was printed to a terminal and kept nowhere.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run carried straight through: refused early, announced, read, recorded, said"
+    )]
     fn cross_checking(
         &self,
         named: &str,
@@ -4363,6 +4570,14 @@ impl Daemon {
         ]));
         let at = Timestamp::now();
         let _recorded = self.note(EntryKind::CrossChecked, at, last.body.clone());
+        self.record_rows(
+            &path,
+            "cross-check",
+            "mcf-standin against the provisioned engine",
+            vec![("positions_asked", count(crate::crosscheck::POSITIONS))],
+            &position_rows(&agreement),
+            at,
+        );
         if let Ok(mut checks) = self.cross_checks.lock() {
             let _replaced = checks.insert(path, dated(last.body.clone(), at));
         }
@@ -4537,7 +4752,7 @@ impl Daemon {
         started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
         report: &mut dyn FnMut(Value),
-    ) -> (Value, Option<String>) {
+    ) -> (Value, Option<String>, Vec<mcf_record::readings::Reading>) {
         // Repeats, because one pair is one sample and a fall-off read off
         // single samples is a reading of the noise. The median is taken
         // rather than the mean: a run that hit a scheduler hiccup should not
@@ -4556,6 +4771,7 @@ impl Daemon {
         // pair where that is not so is not divided (B-396).
         let mut fell_short: Option<String> = None;
         let mut pairs = Pairs::of(REPEATS);
+        let mut rows: Vec<mcf_record::readings::Reading> = Vec::new();
         for repeat in 0..REPEATS {
             report(a_run_starting(depth, 1, repeat));
             let one =
@@ -4570,7 +4786,7 @@ impl Daemon {
                 started,
                 waiting,
             );
-            for (run, pinned) in [(&one, 1), (&many, 1 + SETTLED)] {
+            for (run, pinned, which) in [(&one, 1, "one"), (&many, 1 + SETTLED, "many")] {
                 match run {
                     Ok(timed) => {
                         ran_on = ran_on.take().or_else(|| timed.engine.clone());
@@ -4579,6 +4795,7 @@ impl Daemon {
                         if !timed.held_the_pin(pinned) {
                             fell_short = fell_short.take().or_else(|| Some(timed.short_of(pinned)));
                         }
+                        rows.extend(pair_rows(depth, repeat, which, timed));
                     }
                     Err(why) => refused = refused.take().or_else(|| Some(why.clone())),
                 }
@@ -4623,7 +4840,7 @@ impl Daemon {
             &pairs,
             (refused, fell_short),
         );
-        (reading, ran_on)
+        (reading, ran_on, rows)
     }
 
     /// One generation, timed — or, where it produced nothing, why, in the

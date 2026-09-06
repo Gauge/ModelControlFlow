@@ -278,6 +278,14 @@ pub enum Request {
         /// Which measurements, by name; empty is all of them.
         only: Vec<String>,
     },
+    /// A model's readings, by method where one is named, newest run first
+    /// (D54, B-511).
+    Readings {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// One method's runs only, where the caller named one.
+        method: Option<String>,
+    },
     /// Which repositories a hub lists for a word, most downloaded first.
     Search {
         /// The word, as a person typed it.
@@ -710,6 +718,16 @@ impl Request {
                 ("ask", Value::text("settings")),
                 ("model", Value::text(model.clone())),
             ]),
+            Self::Readings { model, method } => {
+                let mut fields = vec![
+                    ("ask", Value::text("readings")),
+                    ("model", Value::text(model.clone())),
+                ];
+                if let Some(method) = method {
+                    fields.push(("method", Value::text(method.clone())));
+                }
+                Value::map(fields)
+            }
             Self::Anatomy { model } => Value::map([
                 ("ask", Value::text("anatomy")),
                 ("model", Value::text(model.clone())),
@@ -866,6 +884,14 @@ impl Request {
                     .and_then(Value::as_text)
                     .ok_or_else(|| refused("a settings request naming no model", line))?
                     .to_owned(),
+            }),
+            Some("readings") => Ok(Self::Readings {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a readings request naming no model", line))?
+                    .to_owned(),
+                method: optional("method"),
             }),
             Some("anatomy") => Ok(Self::Anatomy {
                 model: value

@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, gigabytes, whole};
+use super::{Found, Reading, Site, as_integer, gigabytes, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -39,6 +39,10 @@ pub const RANKED: usize = 64;
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     let siblings = siblings_of(site.model);
     let Some(reference) = reference_among(site.model, &siblings) else {
@@ -87,7 +91,20 @@ pub fn measure(site: &Site<'_>) -> Found {
         worst,
         bounded,
         spent,
+        positions: read_positions,
     } = read;
+    let mut rows = Vec::new();
+    for (at, (rank, millibits, past)) in read_positions.iter().enumerate() {
+        let dims = [("position", Value::Integer(as_integer(at)))];
+        rows.push(Reading::new(
+            &dims,
+            "rank",
+            Value::Integer(as_integer(*rank)).as_integer().unwrap_or(0),
+            "count",
+        ));
+        rows.push(Reading::new(&dims, "millibits", *millibits, "millibits"));
+        rows.push(Reading::new(&dims, "past_ranked", i64::from(*past), "bool"));
+    }
     let positions = reference_tokens.len();
     let per_token = super::bits::per(spent, positions);
     let (worst_rank, worst_at) = worst.unwrap_or((1, 0));
@@ -137,6 +154,7 @@ pub fn measure(site: &Site<'_>) -> Found {
             ("ranked_to", Value::Integer(as_integer(RANKED))),
             ("millibits_per_token", Value::Integer(per_token)),
         ],
+        rows,
     }
 }
 
@@ -180,6 +198,9 @@ struct Read {
     bounded: usize,
     /// Millibits spent on the reference's tokens, in all.
     spent: i64,
+    /// Every position: the rank given the reference's token, the millibits
+    /// spent on it, and whether it was past what was ranked (D16).
+    positions: Vec<(usize, i64, bool)>,
 }
 
 /// Reads the reference's tokens with the file under measurement, position
@@ -209,17 +230,18 @@ fn read_against(
             if read.worst.is_none_or(|(held, _)| rank > held) {
                 read.worst = Some((rank, at));
             }
-            read.spent = read
-                .spent
-                .saturating_add(ranked.get(place).map_or(0, |(_, mb)| -mb));
+            let millibits = ranked.get(place).map_or(0, |(_, mb)| -mb);
+            read.spent = read.spent.saturating_add(millibits);
+            read.positions.push((rank, millibits, false));
         } else {
             read.bounded = read.bounded.saturating_add(1);
             if read.worst.is_none_or(|(held, _)| RANKED < held) {
                 read.worst = Some((RANKED.saturating_add(1), at));
             }
-            read.spent = read
-                .spent
-                .saturating_add(ranked.last().map_or(0, |(_, mb)| -mb));
+            let millibits = ranked.last().map_or(0, |(_, mb)| -mb);
+            read.spent = read.spent.saturating_add(millibits);
+            read.positions
+                .push((RANKED.saturating_add(1), millibits, true));
         }
         prefix.push(*wanted);
     }

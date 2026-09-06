@@ -2726,9 +2726,51 @@ fn review_the_diagnostics(desk: &mut Desk) {
             ],
         });
     }
+    // And the run's readings as a table under the finding (D54).
+    let rows: Vec<mcf_record::readings::Reading> = [64_i64, 256, 1024, 2048]
+        .iter()
+        .flat_map(|batch| {
+            (0..3_i64).map(move |repeat| {
+                mcf_record::readings::Reading::new(
+                    &[
+                        ("batch", mcf_record::json::Value::Integer(*batch)),
+                        ("repeat", mcf_record::json::Value::Integer(repeat)),
+                    ],
+                    "read_ns",
+                    405_300_000 - batch * 60_000 + repeat * 1_200_000,
+                    "ns",
+                )
+            })
+        })
+        .collect();
+    let mut run = mcf_record::readings::run_body(
+        &desk
+            .models
+            .first()
+            .map(|held| held.path.clone())
+            .unwrap_or_default(),
+        "prefill-saturation",
+        "provisioned llama.cpp-vulkan @a1b2c3d4e5f6",
+        vec![("depth", mcf_record::json::Value::Integer(1024))],
+        &rows,
+    );
+    if let mcf_record::json::Value::Map(fields) = &mut run {
+        let _at = fields.insert(
+            "at".to_owned(),
+            mcf_record::json::Value::text("2026-09-05T15:31:04.000000000Z (local offset +00:00)"),
+        );
+    }
+    desk.readings = Some((
+        desk.models
+            .first()
+            .map(|held| held.path.clone())
+            .unwrap_or_default(),
+        vec![run],
+    ));
     let _ = drawn(desk, NIGHT, "review-diagnostics-examining");
     desk.doing = mcf_desk::Doing::Nothing;
     desk.diagnostic = mcf_desk::Diagnostic::Throughput;
+    desk.readings = None;
 }
 
 /// The measurements two in: the daemon has announced the second.

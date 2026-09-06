@@ -20,7 +20,7 @@ use std::path::Path;
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_ms, filler, gigabytes, per_second, timed, whole};
+use super::{Found, Reading, Site, as_ms, filler, gigabytes, per_second, timed, whole};
 use crate::generation::Draw;
 use crate::served::Prompt;
 
@@ -107,6 +107,10 @@ fn evict(path: &Path) -> bool {
 
 /// Runs it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one measurement read straight through: what it started, what it read, the rows it kept"
+)]
 pub fn measure(site: &Site<'_>) -> Found {
     let Some(bytes) = std::fs::metadata(site.model).ok().map(|about| about.len()) else {
         return Found::could_not_tell("the file's size could not be read");
@@ -141,6 +145,16 @@ pub fn measure(site: &Site<'_>) -> Found {
         Ok(warm) => warm,
         Err(why) => return Found::could_not_tell(&why),
     };
+    let bytes_of = |held: u64| i64::try_from(held).unwrap_or(i64::MAX);
+    let mut rows = vec![
+        Reading::new(&[], "resident_before_ppm", super::ppm(before, pages), "ppm"),
+        Reading::new(&[], "resident_after_ppm", still, "ppm"),
+    ];
+    for (start, (load, first)) in [("cold", cold), ("warm", warm)] {
+        let at = [("start", Value::text(start))];
+        rows.push(Reading::new(&at, "load_ns", bytes_of(load), "ns"));
+        rows.push(Reading::new(&at, "first_token_ns", bytes_of(first), "ns"));
+    }
     let bandwidth = cold
         .0
         .checked_sub(warm.0)
@@ -201,6 +215,7 @@ pub fn measure(site: &Site<'_>) -> Found {
             ),
             ("bytes_per_second", bandwidth.map_or(Value::Null, whole)),
         ],
+        rows,
     }
 }
 

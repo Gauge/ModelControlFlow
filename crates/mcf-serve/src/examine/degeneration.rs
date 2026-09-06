@@ -9,7 +9,7 @@
 
 use mcf_record::json::Value;
 
-use super::{Found, Site, as_integer, framed_ids};
+use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
@@ -59,6 +59,23 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
     let hundreds = repeated_by_hundred(words);
     let loop_at = loop_onset(words);
+    let mut rows = vec![Reading::new(
+        &[],
+        "produced",
+        as_integer(words.len()),
+        "tokens",
+    )];
+    for (hundred, ppm) in hundreds.iter().enumerate() {
+        rows.push(Reading::new(
+            &[("hundred", Value::Integer(as_integer(hundred)))],
+            "repeated_runs_ppm",
+            *ppm,
+            "ppm",
+        ));
+    }
+    if let Some(at) = loop_at {
+        rows.push(Reading::new(&[], "loop_at", as_integer(at), "tokens"));
+    }
     let mut lines = vec![format!(
         "  {} token(s) produced of {PRODUCE} allowed, greedy; {}",
         words.len(),
@@ -96,6 +113,7 @@ pub fn measure(site: &Site<'_>) -> Found {
                 loop_at.map_or(Value::Null, |at| Value::Integer(as_integer(at))),
             ),
         ],
+        rows,
     }
 }
 
