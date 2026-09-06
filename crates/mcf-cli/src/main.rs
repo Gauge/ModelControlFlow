@@ -18,6 +18,7 @@ mod crosscheck;
 mod data;
 mod desk;
 mod doctor;
+mod edits;
 mod embed;
 mod eval;
 mod examine;

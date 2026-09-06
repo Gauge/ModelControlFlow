@@ -595,7 +595,7 @@ fn python_string(held: &str) -> String {
 }
 
 /// Runs one written answer in a container and counts what held.
-fn run_in_container(podman: &Path, scratch: &Path, task: &Task, written: &str) -> Ran {
+pub(crate) fn run_in_container(podman: &Path, scratch: &Path, task: &Task, written: &str) -> Ran {
     if written.trim().is_empty() {
         return Ran::Refused {
             because: "the answer held no code".to_owned(),
@@ -903,6 +903,24 @@ pub(crate) fn eval(named: &str) -> Response {
         }
         held.push(trials);
     }
+    // The edit tasks after the writing ones, in the same container (B-522).
+    let (edit_lines, edit_rows) = crate::edits::run(&socket, named, &podman, &scratch);
+    let edits_recorded = mcf_serve::examine::record_rows(
+        Path::new(named),
+        "editing",
+        "through the daemon, run in a container",
+        vec![
+            (
+                "tasks",
+                Value::Integer(i64::try_from(crate::edits::EDITS.len()).unwrap_or(i64::MAX)),
+            ),
+            (
+                "attempts",
+                Value::Integer(i64::try_from(crate::edits::ATTEMPTS).unwrap_or(i64::MAX)),
+            ),
+        ],
+        &edit_rows,
+    );
     let _gone = std::fs::remove_dir_all(&scratch);
     let repairs_recorded = if repairs.is_empty() {
         None
@@ -999,6 +1017,15 @@ pub(crate) fn eval(named: &str) -> Response {
             None => String::new(),
         }
     ));
+    lines.push(String::new());
+    lines.extend(edit_lines);
+    lines.push(match edits_recorded {
+        Ok(_) => format!(
+            "  {} reading(s) recorded under editing; `mcf data {named} --method editing` writes them",
+            edit_rows.len()
+        ),
+        Err(why) => format!("  EDIT READINGS NOT RECORDED: {why}"),
+    });
     Response {
         text: lines.join("\n"),
         served: true,
