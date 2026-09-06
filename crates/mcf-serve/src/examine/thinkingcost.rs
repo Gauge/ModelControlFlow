@@ -116,7 +116,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         QUESTIONS.len()
     )];
     let (mut right_on, mut right_off, mut thought_all) = (0_usize, 0_usize, 0_usize);
-    for (name, asks, answer) in QUESTIONS {
+    for (at, (name, asks, answer)) in QUESTIONS.iter().enumerate() {
+        site.progress(at, QUESTIONS.len(), name);
         let mut said_here = Vec::new();
         for (mode, held) in [("on", &on), ("off", &off)] {
             if site.asker_gone() {

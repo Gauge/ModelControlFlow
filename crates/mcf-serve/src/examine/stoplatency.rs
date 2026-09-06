@@ -85,7 +85,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         super::as_ms(idle_probe_ns)
     )];
     let mut depths_asked = 0_usize;
-    for depth in DEPTHS {
+    for (at, depth) in DEPTHS.into_iter().enumerate() {
+        site.progress(at, DEPTHS.len(), &format!("depth {depth}"));
         if depth.saturating_add(ROOM) > window {
             lines.push(format!("  depth {depth:>6}   not asked: past the window"));
             continue;

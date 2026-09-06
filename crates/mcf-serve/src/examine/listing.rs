@@ -89,7 +89,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         ASKS.len()
     )];
     let (mut exact, mut clean) = (0_usize, 0_usize);
-    for (name, what, count) in ASKS {
+    for (at, (name, what, count)) in ASKS.iter().enumerate() {
+        site.progress(at, ASKS.len(), name);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

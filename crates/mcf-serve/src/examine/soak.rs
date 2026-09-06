@@ -58,6 +58,9 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut by_hundred: Vec<Vec<u64>> = Vec::new();
     let mut slowest: Option<(u64, usize)> = None;
     for request in 0..REQUESTS {
+        if request % 10 == 0 {
+            site.progress(request, REQUESTS, "request");
+        }
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

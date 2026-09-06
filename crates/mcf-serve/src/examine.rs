@@ -235,6 +235,10 @@ pub struct Site<'a> {
     /// Whether the asker has gone, asked between requests: a run cut
     /// short spends nothing further on nobody (B-468).
     pub gone: &'a (dyn Fn() -> bool + Sync),
+    /// Where a measurement says how far along it is within its step —
+    /// which picture, which sum, which request of two hundred — so that
+    /// the person waiting sees the work and not only its name (D56).
+    pub tell: &'a (dyn Fn(&Progress) + Sync),
     /// Who is waiting, so that a long request in flight is closed when
     /// they leave (D48). **A timed request does not wait this way**: a
     /// watched request is noticed done only when the watcher's glance
@@ -256,7 +260,41 @@ impl std::fmt::Debug for Site<'_> {
     }
 }
 
+/// How far along a measurement is within its step: `done` of `of`, and
+/// what is being done now, in a few words (D56).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Progress {
+    /// How many of the step's parts are done.
+    pub done: usize,
+    /// How many parts the step has.
+    pub of: usize,
+    /// What is being done now: the picture's name, the sum, the request.
+    pub what: String,
+}
+
+impl Progress {
+    /// The record's shape, and the wire's.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        Value::map([
+            ("done", Value::Integer(as_integer(self.done))),
+            ("of", Value::Integer(as_integer(self.of))),
+            ("doing", Value::text(self.what.clone())),
+        ])
+    }
+}
+
 impl Site<'_> {
+    /// Says how far along the measurement is: `done` of `of` parts, and
+    /// what is being done now (D56).
+    pub fn progress(&self, done: usize, of: usize, what: &str) {
+        (self.tell)(&Progress {
+            done,
+            of,
+            what: what.to_owned(),
+        });
+    }
+
     /// The plain load, as MCF resolved it for this model — under a window
     /// a measurement needs rather than the window the model could hold.
     ///
@@ -455,6 +493,23 @@ pub fn run(
                 .filter(|(_, held)| !matches!(held, Value::List(_) | Value::Map(_)))
                 .map(|(key, held)| (*key, held.clone()))
                 .collect();
+            // Every run's conditions carry what it ran under, whatever its
+            // own fields say: the engine, the window a plain load opens, the
+            // layers on the card (D56).
+            let load = site.startup();
+            let mut conditions = conditions;
+            for (key, stated) in [
+                ("engine", Value::text(site.engine.clone())),
+                (
+                    "window",
+                    Value::Integer(i64::try_from(load.context).unwrap_or(i64::MAX)),
+                ),
+                ("gpu_layers", Value::Integer(i64::from(load.gpu_layers))),
+            ] {
+                if !conditions.iter().any(|(named, _)| *named == key) {
+                    conditions.push((key, stated));
+                }
+            }
             let written = crate::probes::run::record_readings(
                 site.model,
                 name,

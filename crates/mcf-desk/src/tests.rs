@@ -1527,7 +1527,7 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;
     let all = Diagnostic::all();
-    assert_eq!(all.len(), 4 + 9 + 47 + 5, "{all:?}");
+    assert_eq!(all.len(), 4 + 9 + 47 + 6, "{all:?}");
     let names: std::collections::BTreeSet<&str> = all.iter().map(|held| held.name()).collect();
     assert_eq!(names.len(), all.len(), "two rows share a name");
     assert_eq!(Diagnostic::Probe(2).name(), "stop-conditions");
@@ -2120,4 +2120,51 @@ fn a_live_daemon_says_when_each_methods_readings_were_taken() {
         .filter(|held| !held.probed.is_empty())
         .count();
     assert!(with_findings > 0, "no model carried its probed findings");
+}
+
+/// A step's line carries how far the measurement is within it, and a
+/// suite's `progress:` line gives the bar its fraction (D56).
+#[test]
+fn a_step_says_how_far_it_is_and_a_suite_line_gives_a_fraction() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let mut going = crate::job::Job::already(
+        "examining".to_owned(),
+        vec![mcf_record::json::Value::map([
+            (
+                "step",
+                mcf_record::json::Value::map([
+                    ("name", mcf_record::json::Value::text("seeing")),
+                    ("count", mcf_record::json::Value::Integer(2)),
+                    ("of", mcf_record::json::Value::Integer(4)),
+                ]),
+            ),
+            (
+                "progress",
+                mcf_record::json::Value::map([
+                    ("done", mcf_record::json::Value::Integer(6)),
+                    ("of", mcf_record::json::Value::Integer(12)),
+                    ("doing", mcf_record::json::Value::text("number-472")),
+                ]),
+            ),
+        ])],
+    );
+    going.finished = false;
+    desk.doing = crate::Doing::Examining(going);
+    // One step of four done, and half of the second: three eighths.
+    let fraction = desk.run_fraction().unwrap_or(0.0);
+    assert!((fraction - 0.375).abs() < 0.01, "{fraction}");
+    let mut suite = crate::job::Job::already(
+        "evaluating".to_owned(),
+        vec![mcf_record::json::Value::map([
+            (
+                "line",
+                mcf_record::json::Value::text("progress: 3/12 coding · rust · glob-match"),
+            ),
+            ("done", mcf_record::json::Value::Bool(false)),
+        ])],
+    );
+    suite.finished = false;
+    desk.doing = crate::Doing::Evaluating(suite);
+    let fraction = desk.run_fraction().unwrap_or(0.0);
+    assert!((fraction - 0.25).abs() < 0.01, "{fraction}");
 }

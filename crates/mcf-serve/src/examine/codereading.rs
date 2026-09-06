@@ -125,7 +125,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         Ok((completed.text, completed.predicted))
     };
     let (mut outputs_right, mut bugs_right) = (0_usize, 0_usize);
-    for (name, code, output) in OUTPUTS {
+    for (at, (name, code, output)) in OUTPUTS.iter().enumerate() {
+        site.progress(at, OUTPUTS.len().saturating_add(BUGS.len()), name);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

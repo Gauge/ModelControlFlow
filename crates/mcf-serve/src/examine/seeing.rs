@@ -295,7 +295,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let mut by_kind: std::collections::BTreeMap<&str, (usize, usize)> =
         std::collections::BTreeMap::new();
-    for picture in &shown {
+    for (at, picture) in shown.iter().enumerate() {
+        site.progress(at, shown.len(), &picture.name);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

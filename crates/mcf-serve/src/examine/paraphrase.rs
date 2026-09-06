@@ -179,7 +179,8 @@ pub fn measure(site: &Site<'_>) -> Found {
             .map_or(0, |question| question.phrasings.len())
     )];
     let (mut right_all, mut agree_all, mut asked) = (0_usize, 0_usize, 0_usize);
-    for question in QUESTIONS {
+    for (at, question) in QUESTIONS.iter().enumerate() {
+        site.progress(at, QUESTIONS.len(), question.name);
         let mut answers = Vec::with_capacity(question.phrasings.len());
         for (phrasing, asks) in question.phrasings.iter().enumerate() {
             if site.asker_gone() {

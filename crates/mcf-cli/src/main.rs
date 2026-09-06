@@ -13,6 +13,8 @@
 mod acquire;
 mod bench;
 mod bundle;
+mod catalogue;
+mod challenges;
 mod check;
 mod crosscheck;
 mod data;
@@ -351,6 +353,14 @@ enum Request<'a> {
         model: &'a str,
         /// One suite to run rather than all of them.
         only: Option<&'a str>,
+        /// How many attempts a challenge gets in a language, where the
+        /// person said; ten otherwise (D56).
+        retries: Option<usize>,
+        /// The languages the catalogue runs in, where the person named
+        /// them; every one MCF has an image for otherwise.
+        languages: Option<&'a str>,
+        /// One tier of the catalogue, where the person named it.
+        tier: Option<&'a str>,
     },
     /// A model's readings as a table (D54).
     Data {
@@ -628,14 +638,12 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 argument,
             },
         },
-        ["eval", model] => Request::Eval { model, only: None },
-        ["eval", model, "--only", suite] => Request::Eval {
-            model,
-            only: Some(suite),
-        },
-        ["eval", _, "--only"] => Request::MissingArgument {
-            command: "eval --only",
-            needs: "a suite's name: coding, languages, editing, tests or queries",
+        ["eval", model, rest @ ..] => match eval_options(model, rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "eval",
+                argument,
+            },
         },
         ["eval"] => Request::MissingArgument {
             command: "eval",
@@ -943,6 +951,61 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
 
 /// The flags `mcf data <model>` takes, in any order: `--method` names one
 /// method's runs, `--json` asks for JSON lines (D54).
+/// The flags `mcf eval <model>` takes, in any order: `--only` a suite,
+/// `--retries` a count, `--languages` a list, `--tier` a tier (D56).
+fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let (mut only, mut retries, mut languages, mut tier) = (None, None, None, None);
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--only" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "eval --only",
+                        needs: "a suite's name: coding, languages, editing, tests, queries or challenges",
+                    });
+                };
+                only = Some(*value);
+            }
+            "--retries" => {
+                let Some(value) = rest.next().and_then(|held| held.parse::<usize>().ok()) else {
+                    return Ok(Request::MissingArgument {
+                        command: "eval --retries",
+                        needs: "a whole number of attempts",
+                    });
+                };
+                retries = Some(value);
+            }
+            "--languages" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "eval --languages",
+                        needs: "language names separated by commas: python, javascript, rust, go",
+                    });
+                };
+                languages = Some(*value);
+            }
+            "--tier" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "eval --tier",
+                        needs: "easy, medium, hard or expert",
+                    });
+                };
+                tier = Some(*value);
+            }
+            other => return Err(other),
+        }
+    }
+    Ok(Request::Eval {
+        model,
+        only,
+        retries,
+        languages,
+        tier,
+    })
+}
+
 fn data_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut method = None;
     let mut as_json = false;
@@ -2002,10 +2065,11 @@ const COMMANDS: &str = "\
     \x20       [--rope-scale <n>]             and named in the report\n\
     \x20 mcf eval <model>                    ask a model to do the work and\n\
     \x20       [--only <suite>]              check what it did: each answer run\n\
-    \x20                                     in a container, four outcomes and\n\
-    \x20                                     no total; a suite is coding,\n\
-    \x20                                     languages, editing, tests or\n\
-    \x20                                     queries\n\
+    \x20       [--retries <n>]               in a container, no total; a suite\n\
+    \x20       [--languages <a,b>]           is coding, languages, editing,\n\
+    \x20       [--tier <tier>]               tests, queries or challenges; a\n\
+    \x20                                     challenge gets ten attempts\n\
+    \x20                                     unless --retries says\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
     \x20             or --file <path>         receives each word, and how much\n\
     \x20       [--by word|phrase|sentence|   the answer moves without each\n\
@@ -2292,7 +2356,21 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             },
             *as_json,
         ),
-        Request::Eval { model, only } => eval::eval(model, *only),
+        Request::Eval {
+            model,
+            only,
+            retries,
+            languages,
+            tier,
+        } => eval::eval(
+            model,
+            &eval::Asked {
+                only: *only,
+                retries: *retries,
+                languages: *languages,
+                tier: *tier,
+            },
+        ),
         Request::Probe {
             model,
             engine,

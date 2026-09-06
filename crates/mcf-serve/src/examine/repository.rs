@@ -73,7 +73,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         reference_tokens.len()
     )];
     let mut measured = 0_usize;
-    for file in &siblings {
+    for (at, file) in siblings.iter().enumerate() {
+        site.progress(at, siblings.len(), &file.display().to_string());
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

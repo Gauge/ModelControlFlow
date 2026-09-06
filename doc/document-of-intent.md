@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 57 |
+| **Version** | 58 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -5101,6 +5101,44 @@ Temperature sensitivity. Vocabulary coverage.
 what should have been answered, and prose quality needs a rater; both
 stay with the laboratories that grade (§XIII).
 
+### D56 — Every diagnostic runs the same way, says what it is doing, and names what it ran under *(on the operator's instruction)*
+
+**One shape for every run.** A run is a sequence of steps; a step is
+one diagnostic, announced as *step k of n: name* before it starts and
+reported with its lines and its rows when it ends; and within a step
+the diagnostic says how far it is — *done of of, doing* — at every
+part it takes: the picture, the sum, the request, the depth. The
+daemon writes those as lines on the same connection the run was asked
+on; the command line shows them as one overwriting line on the error
+stream and the report on the output stream; the window shows them
+beside the step and moves its bar by them. A suite run by the command
+line writes the same shape as lines of its own — `progress: done/of
+doing` — as it goes, and its report at the end, so that a window
+reading it line by line sees the work and not only the finish.
+
+**Every run names its conditions.** The record's run body carries,
+beside whatever the diagnostic's own fields say, the engine it ran
+through, the window a plain load opened, and the layers on the card;
+the window shows them under the readings as one line, and the command
+line's data writer keeps them with the rows. A figure is never read
+without what it was taken under (§3.4).
+
+**Coding is a catalogue, not a list.** The coding suites become one
+catalogue of challenges with a tier — easy, medium, hard, expert — a
+category, a statement in words, and cases in a language-neutral form,
+run in every language MCF has an image for. Every attempt is a row
+with its time and its tokens; a failed attempt is handed back with what
+did not hold, up to a number of retries the person sets, ten by
+default; and the rows say at which attempt the challenge was solved,
+how many corrections it took, and in which languages. The window shows
+the challenge and the language beside every figure. The window the
+model was given is a condition of every attempt, since a challenge and
+its corrections are a conversation that grows.
+
+**What this is not.** No score. A catalogue that says *solved on the
+third try in Rust and never in Go* is the row a person compares
+models by; a number that averages those is the summary D54 refuses.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -5130,6 +5168,12 @@ stay with the laboratories that grade (§XIII).
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 58 — one shape for every run
+
+D56 written on the operator's instruction: every run announces its
+steps and its progress within them, names its conditions, and coding
+becomes a catalogue with retries.
 
 ### Version 57 — the diagnostics to come
 

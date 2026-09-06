@@ -98,7 +98,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         TURNS.len()
     )];
     let (mut held_all, mut turns_all, mut whole_rules) = (0_usize, 0_usize, 0_usize);
-    for (name, system, constraint) in RULES {
+    for (at, (name, system, constraint)) in RULES.iter().enumerate() {
+        site.progress(at, RULES.len(), name);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

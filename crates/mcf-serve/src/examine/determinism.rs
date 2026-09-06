@@ -206,7 +206,8 @@ fn repeated(site: &Site<'_>) -> Result<(Vec<usize>, Vec<Vec<usize>>), String> {
         .map(|token| token.id)
         .collect();
     let mut runs: Vec<Vec<usize>> = Vec::with_capacity(REPEATS);
-    for _ in 0..REPEATS {
+    for run in 0..REPEATS {
+        site.progress(run, REPEATS, "run");
         if site.asker_gone() {
             return Err(crate::served::CLIENT_LEFT.to_owned());
         }

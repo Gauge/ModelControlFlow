@@ -236,6 +236,9 @@ pub(crate) fn read_with(
     let mut read = Read::default();
     let mut prefix = prompt;
     for (at, wanted) in reference_tokens.iter().enumerate() {
+        if at % 8 == 0 {
+            site.progress(at, reference_tokens.len(), "position");
+        }
         if site.asker_gone() {
             return Err(crate::served::CLIENT_LEFT.to_owned());
         }

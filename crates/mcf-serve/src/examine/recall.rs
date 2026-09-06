@@ -125,7 +125,8 @@ pub fn measure(site: &Site<'_>) -> Found {
             .join(", ")
     )];
     let mut recalled_by_distance: Vec<usize> = vec![0; DISTANCES.len()];
-    for (name, tell, ask, answer) in FACTS {
+    for (at, (name, tell, ask, answer)) in FACTS.iter().enumerate() {
+        site.progress(at, FACTS.len(), name);
         let mut said_at = Vec::with_capacity(DISTANCES.len());
         for (which, distance) in DISTANCES.iter().enumerate() {
             if site.asker_gone() {

@@ -65,7 +65,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut readings = Vec::new();
     let mut round_tripped = 0_usize;
     let mut counts_agree = 0_usize;
-    for (name, text) in CORPUS {
+    for (at, (name, text)) in CORPUS.into_iter().enumerate() {
+        site.progress(at, CORPUS.len(), name);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

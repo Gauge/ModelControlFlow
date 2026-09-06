@@ -156,7 +156,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let mut by_kind: std::collections::BTreeMap<&str, (usize, usize)> =
         std::collections::BTreeMap::new();
-    for (kind, name, asks, wants) in QUESTIONS {
+    for (at, (kind, name, asks, wants)) in QUESTIONS.iter().enumerate() {
+        site.progress(at, QUESTIONS.len(), name);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

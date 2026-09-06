@@ -48,7 +48,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let mut outputs: [Vec<Vec<usize>>; 2] = [Vec::new(), Vec::new()];
     let mut rates: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
-    for (way, with) in [("without", false), ("with", true)] {
+    for (at, (way, with)) in [("without", false), ("with", true)].into_iter().enumerate() {
+        site.progress(at, 2, way);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

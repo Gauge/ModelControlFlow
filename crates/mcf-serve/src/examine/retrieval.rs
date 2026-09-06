@@ -78,7 +78,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut found = 0_usize;
     let mut placements = 0_usize;
     let mut first_miss: Option<(usize, usize)> = None;
-    for depth in DEPTHS {
+    for (at, depth) in DEPTHS.into_iter().enumerate() {
+        site.progress(at, DEPTHS.len(), &format!("depth {depth}"));
         if depth.saturating_add(ROOM) > window {
             lines.push(format!("  depth {depth:>6}   not asked: past the window"));
             continue;

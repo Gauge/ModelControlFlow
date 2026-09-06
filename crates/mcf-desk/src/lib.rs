@@ -1609,21 +1609,23 @@ pub enum Diagnostic {
 
 /// The coding suites `mcf eval --only` runs, each with the row's name and
 /// the method the record keeps its readings under (B-519, D54).
-pub const SUITES: [(&str, &str, &str); 5] = [
+pub const SUITES: [(&str, &str, &str); 6] = [
     ("coding", "Coding", "coding"),
     ("languages", "Coding in JavaScript and Rust", "coding"),
     ("editing", "Editing", "editing"),
     ("tests", "Test writing", "test-writing"),
     ("queries", "SQL and patterns", "queries"),
+    ("challenges", "Challenges", "challenges"),
 ];
 
 /// What each suite answers, in one line, in `SUITES` order.
-const SUITE_ANSWERS: [&str; 5] = [
+const SUITE_ANSWERS: [&str; 6] = [
     "Twenty Python tasks, three attempts each, run against hidden cases; every failed attempt handed back for a second try",
     "The same twenty tasks in JavaScript and Rust, each in its own pinned image; a Rust answer says whether it compiled",
     "A whole file given and one change asked: the cases held, and every untouched function compared byte for byte",
     "Tests written for a stated function, run against a correct implementation and three broken ones",
     "SQL queries run against a fixed table beside the reference, and patterns run against match and no-match cases",
+    "Forty-four challenges from easy to expert in Python, JavaScript, Rust and Go, up to ten attempts each: the attempt that solved it, the corrections, the tokens and the time",
 ];
 
 /// What each probe answers, in one line, in the daemon's order.
@@ -3486,10 +3488,27 @@ impl Desk {
                 .and_then(Value::as_list)
                 .is_some_and(|lines| !lines.is_empty());
             let done = if lines { count } else { count - 1 };
-            fraction_of(done.max(0), of)
+            let whole = fraction_of(done.max(0), of)?;
+            // Within the step, where the step says how far it is (D56).
+            let within = latest?.get("progress").and_then(|progress| {
+                let done = progress.get("done").and_then(Value::as_integer)?;
+                let parts = progress.get("of").and_then(Value::as_integer)?;
+                fraction_of(done, parts)
+            });
+            #[allow(clippy::cast_precision_loss, reason = "a step count")]
+            let steps = of.max(1) as f32;
+            Some(within.map_or(whole, |within| (whole + within / steps).min(1.0)))
         };
         match &self.doing {
             Doing::Probing(_) | Doing::Examining(_) => of_step(),
+            // A suite says how far it is in its own lines: `progress: a/b`
+            // (D56).
+            Doing::Evaluating(_) => {
+                let line = latest?.get("line").and_then(Value::as_text)?;
+                let (done, of) = line.strip_prefix("progress: ")?.split_once('/')?;
+                let of_word = of.split_whitespace().next()?;
+                fraction_of(done.trim().parse().ok()?, of_word.parse().ok()?)
+            }
             Doing::Measuring(_) => {
                 let so_far = latest?.get("so_far").and_then(Value::as_integer);
                 let of = latest?.get("of").and_then(Value::as_integer);

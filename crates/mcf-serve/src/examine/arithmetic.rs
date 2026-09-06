@@ -110,6 +110,7 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut by_digits: std::collections::BTreeMap<(u32, &str), (usize, usize)> =
         std::collections::BTreeMap::new();
     for (which, (operation, digits, a, b, answer)) in put.iter().enumerate() {
+        site.progress(which, put.len(), &format!("{operation} at {digits} digits"));
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

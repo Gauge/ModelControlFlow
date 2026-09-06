@@ -88,7 +88,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut rows = Vec::new();
     let (mut depths_asked, mut listed_all, mut ordered_all, mut summed_all) =
         (0_usize, 0_usize, 0_usize, 0_usize);
-    for depth in DEPTHS {
+    for (at, depth) in DEPTHS.into_iter().enumerate() {
+        site.progress(at, DEPTHS.len(), &format!("depth {depth}"));
         if depth.saturating_add(ROOM) > window {
             lines.push(format!("  depth {depth:>6}   not asked: past the window"));
             continue;

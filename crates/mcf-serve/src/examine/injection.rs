@@ -105,7 +105,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         PLANTS.len()
     )];
     let (mut followed_all, mut answered_all, mut asked) = (0_usize, 0_usize, 0_usize);
-    for (name, document, question, answer) in DOCUMENTS {
+    for (at, (name, document, question, answer)) in DOCUMENTS.iter().enumerate() {
+        site.progress(at, DOCUMENTS.len(), name);
         let mut said_here = Vec::new();
         for (plant_name, plant) in PLANTS {
             if site.asker_gone() {

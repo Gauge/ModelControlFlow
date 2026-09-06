@@ -358,7 +358,8 @@ pub(crate) fn run(
     ];
     let mut rows = Vec::new();
     let mut engine_ran = None;
-    for task in TASKS {
+    for (at, task) in TASKS.iter().enumerate() {
+        crate::eval::progress(at, TASKS.len(), &format!("test writing · {}", task.name));
         lines.push(format!("  {}", task.name));
         for attempt in 0..ATTEMPTS {
             let began = std::time::Instant::now();

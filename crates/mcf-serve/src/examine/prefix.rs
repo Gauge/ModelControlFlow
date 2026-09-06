@@ -52,7 +52,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     };
     let mut off = Vec::with_capacity(REPEATS);
     let mut kept = Vec::with_capacity(REPEATS);
-    for _ in 0..REPEATS {
+    for repeat in 0..REPEATS {
+        site.progress(repeat, REPEATS, "repeat");
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

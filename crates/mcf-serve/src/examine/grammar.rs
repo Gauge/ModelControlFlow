@@ -83,6 +83,7 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut constrained = Tally::default();
     let mut rows = Vec::new();
     for seed in 0..TRIALS as u64 {
+        site.progress(usize::try_from(seed).unwrap_or(0), TRIALS, "trial");
         for (condition, tally, extras) in [
             ("free", &mut free, Extras::default()),
             (

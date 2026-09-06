@@ -34,7 +34,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut rows = Vec::new();
     let mut readings = Vec::new();
     let mut rates: Vec<(u32, u64)> = Vec::new();
-    for batch in BATCHES {
+    for (at, batch) in BATCHES.into_iter().enumerate() {
+        site.progress(at, BATCHES.len(), &format!("batch {batch}"));
         if site.asker_gone() {
             break;
         }

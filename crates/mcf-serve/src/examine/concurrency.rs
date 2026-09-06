@@ -66,7 +66,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut readings = Vec::new();
     let mut at_one: Option<u64> = None;
     let mut at_eight: Option<u64> = None;
-    for count in COUNTS {
+    for (at, count) in COUNTS.into_iter().enumerate() {
+        site.progress(at, COUNTS.len(), &format!("{count} at once"));
         if site.asker_gone() {
             break;
         }

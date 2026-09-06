@@ -385,7 +385,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         TASKS.len()
     )];
     let (mut completed, mut carried, mut asked) = (0_usize, 0_usize, 0_usize);
-    for task in &TASKS {
+    for (at, task) in TASKS.iter().enumerate() {
+        site.progress(at, TASKS.len(), task.name);
         let mut said = Vec::new();
         for trial in 0..TRIALS {
             if site.asker_gone() {

@@ -208,7 +208,12 @@ pub(crate) fn run(
             u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX),
         )
     };
-    for (name, wants, reference) in QUERIES {
+    for (at, (name, wants, reference)) in QUERIES.iter().enumerate() {
+        crate::eval::progress(
+            at,
+            QUERIES.len().saturating_add(PATTERNS.len()),
+            &format!("queries · sql · {name}"),
+        );
         lines.push(format!("  {name}"));
         for attempt in 0..ATTEMPTS {
             let (written, ask_ns) = ask(&ask_query(wants), &mut engine_ran);
@@ -254,7 +259,12 @@ pub(crate) fn run(
             ));
         }
     }
-    for (name, wants, yes, no) in PATTERNS {
+    for (at, (name, wants, yes, no)) in PATTERNS.iter().enumerate() {
+        crate::eval::progress(
+            QUERIES.len().saturating_add(at),
+            QUERIES.len().saturating_add(PATTERNS.len()),
+            &format!("queries · pattern · {name}"),
+        );
         lines.push(format!("  {name}"));
         for attempt in 0..ATTEMPTS {
             let (written, ask_ns) = ask(&ask_pattern(wants), &mut engine_ran);

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 166 |
+| **Version** | 167 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -212,6 +212,8 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 245 | [F245 — Coding is a catalogue: forty-four challenges from easy to expert, each a statement in words with language-neutral cases, run in Python, JavaScript, Rust and Go through one harness each, up to ten attempts with every failed one handed back with the cases that did not hold and what came back, and rows for the attempt it was solved at, the corrections, the tokens and the time; the Go toolchain builds its standard library afresh in the sealed image and ran out of processes at sixty-four until held to one package at a time, and a reference solution in the container caught one wrong expected value in the catalogue (B-563, D56, DEC-063)](#245-f245-coding-is-a-catalogue-forty-four-challenges-from-easy-to-expert-each-a-statement-in-words-with-language-neutral-cases-run-in-python-javascript-rust-and-go-through-one-harness-each-up-to-ten-attempts-with-every-failed-one-handed-back-with-the-cases-that-did-not-hold-and-what-came-back-and-rows-for-the-attempt-it-was-solved-at-the-corrections-the-tokens-and-the-time-the-go-toolchain-builds-its-standard-library-afresh-in-the-sealed-image-and-ran-out-of-processes-at-sixty-four-until-held-to-one-package-at-a-time-and-a-reference-solution-in-the-container-caught-one-wrong-expected-value-in-the-catalogue-b-563-d56-dec-063) |
+| 244 | [F244 — Every run now says how far it is within each step and names what it ran under: forty-four measurements report from their main loops, the daemon carries the progress on the run's connection, the command line shows it on one overwriting line and the window moves its bar by it, the five coding suites print progress lines as they go, and every run's record carries the engine, the window and the layers, shown under the readings (B-562, D56, DEC-063)](#244-f244-every-run-now-says-how-far-it-is-within-each-step-and-names-what-it-ran-under-forty-four-measurements-report-from-their-main-loops-the-daemon-carries-the-progress-on-the-runs-connection-the-command-line-shows-it-on-one-overwriting-line-and-the-window-moves-its-bar-by-it-the-five-coding-suites-print-progress-lines-as-they-go-and-every-runs-record-carries-the-engine-the-window-and-the-layers-shown-under-the-readings-b-562-d56-dec-063) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9666,6 +9668,107 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 245 · F245 — Coding is a catalogue: forty-four challenges from easy to expert, each a statement in words with language-neutral cases, run in Python, JavaScript, Rust and Go through one harness each, up to ten attempts with every failed one handed back with the cases that did not hold and what came back, and rows for the attempt it was solved at, the corrections, the tokens and the time; the Go toolchain builds its standard library afresh in the sealed image and ran out of processes at sixty-four until held to one package at a time, and a reference solution in the container caught one wrong expected value in the catalogue (B-563, D56, DEC-063)
+
+**What was missing.** The coding suites were a list: twenty Python
+tasks, three attempts each, the same twenty in JavaScript and Rust,
+every one asked once more when it failed. A person could not say what
+a task asked without reading the source, could not set how many tries
+a model got, and had nothing harder than the list's hardest.
+
+**What the catalogue is.** Forty-four challenges, each with a tier —
+fourteen easy, seventeen medium, ten hard, three expert — a category,
+a statement in words, a function name, typed parameters and a return
+kind, and cases held as literals no language owns. Each language
+renders the signature, the calls and the expected results in its own
+form: Rust prints `{:?}`, Go and the others canonical JSON, an
+optional integer `Some(5)`, `5 true` or `null` as the language has it.
+One harness a language prints `ok`, `no <what came back>`, `compiled`
+or `notcompiled`, and nothing else leaves the container (B-025).
+`mcf eval <model> --only challenges` runs it; `--retries <n>` sets
+the attempts, ten unless said; `--languages python,go` names the
+languages; `--tier hard` one tier. A failed attempt is handed back
+with the answer, the calls that did not hold, what each should have
+returned and what it did; a compile failure and a run that did not
+reach the end are said as such. The Go image is the fourth, pinned by
+digest like the others.
+
+**The rows.** Every attempt is a row under `challenges` with the
+challenge, its tier and category, the language and the attempt:
+`wrote`, `compiled` where the language compiles, `ran`, `cases_held`
+of `cases`, `whole`, `tokens`, `code_bytes` and `ask_ns`. Every
+challenge in every language has rows without an attempt: `solved`,
+`solved_at_attempt` where it was, `attempts`, `corrections`,
+`tokens_total`, `ask_ns_total` and `first_attempt_cases_held`. The
+run's conditions carry the languages, the retries, the tier, the
+answer budget and the count of challenges beside the engine. The
+command line's report is one line a challenge in a language: *solved
+at attempt 2 · 1 correction(s) · 340 token(s) · 9.1s*, or *never in
+3 attempt(s) · the last did not compile*. The window has a Challenges
+row in the Diagnostics list and shows the rows with the conditions
+under the heading.
+
+**What the container taught.** The first run had every Go attempt
+*not compiled*, the easy ones included. It was not the model: the
+Go toolchain in the alpine image ships no built standard library and
+builds it on first use with a process a package and as many at once
+as there are cores, and the process limit of sixty-four every
+language runs under refused the forks — *resource temporarily
+unavailable*, then the compiler's own runtime failing to make a
+thread. Held to one package at a time and two threads, the build fits
+the limit and takes seconds. And a reference solution for every
+challenge, run through the Python harness in the container, found one
+expected value written wrong — the bit count of the integers to a
+thousand — before any model was graded against it. Both tests stay,
+ignored until asked, since they need podman.
+
+**Seen.** The easy tier on the 2B, four languages, three attempts: fifty-six challenge-language pairs, twenty-five solved and thirty-one never; merge-sorted solved at the first attempt in all four — 97 tokens and 3.7 s in Python, 170 and 5.0 s in Rust, 159 and 5.1 s in Go; Python solved eight of fourteen, JavaScript eight, Go five, Rust four; of the Go failures five never compiled and four ran short of the cases, of the Rust failures five and five. Not one correction turned a failure into a pass in three attempts — the older suite's second tries repaired six of two hundred and sixteen on this model, so the rows agree that this model does not take a correction. A run wrote 1,402 rows under `challenges`; `mcf data --method challenges` writes them with the challenge, tier, category, language and attempt as columns. The first run, before the Go build was held to the process limit, had every Go attempt *not compiled*.
+
+**What is not done.** The window the model was given is the daemon's
+plain load, not a setting of the run, and nothing shows the
+configuration before Run is pressed; both are B-564. The older coding
+and languages suites still run beside the catalogue; retiring them
+once the catalogue's rows have been read for a while is a row to open.
+A compile failure is handed back as *that answer did not compile* and
+no more, since the harness's alphabet is `ok`, `no`, `compiled` and
+`notcompiled`; the compiler's first lines would give a model something
+to correct, and B-565 is that.
+
+## 244 · F244 — Every run now says how far it is within each step and names what it ran under: forty-four measurements report from their main loops, the daemon carries the progress on the run's connection, the command line shows it on one overwriting line and the window moves its bar by it, the five coding suites print progress lines as they go, and every run's record carries the engine, the window and the layers, shown under the readings (B-562, D56, DEC-063)
+
+**What was missing.** A run announced its step and then went quiet
+until the step's lines landed: a soak of two hundred requests or a
+deep retrieval of forty minutes was *measurement 14 of 14* and
+nothing more, and a coding suite printed nothing until its report. And
+a run's conditions were whatever fields the diagnostic happened to
+keep, so a reader could not always say under what window or engine a
+figure was taken.
+
+**What every run does now.** Each measurement's `Site` carries a
+`tell` and the measurement calls `progress(done, of, doing)` from its
+main loop — the picture, the sum, the request, the depth; the soak
+says every tenth request, the bit-by-bit reads every eighth and
+sixteenth position. The daemon writes each as a line carrying the step
+it belongs to; `mcf examine` shows it as one overwriting line on the
+error stream; the window shows *measurement 2 of 6: seeing — 6 of 12,
+number-472* beside the step and moves its bar within the step. The
+command-line suites print `progress: done/of doing` on the output
+stream as they go — task by task and language by language — and the
+window's bar reads it. Every run's record carries `engine`, `window`
+and `gpu_layers` beside the diagnostic's own fields, and the readings
+pane shows them on one line under the heading.
+
+**Seen.** The soak on the 2B: `130 of 200 request` moving on the
+error stream while the report waited; the editing suite: `progress:
+2/5 editing · withdraw-no-overdraft` as its third task began; the
+seeing run's record: `engine`, `gpu_layers 999`, `window 4096` beside
+its counts.
+
+**What this is the first part of.** D56 also makes coding a catalogue
+with retries and rows for time, tokens and corrections, and asks that
+a run's configuration be shown before it runs; those are B-563 and
+B-564.
+
 ## 243 · F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)
 
 **What happened.** The operator hosted Qwen3-Coder-Next, a 49.6 GB
@@ -14252,6 +14355,15 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 168 — coding is a catalogue
+
+F245: forty-four challenges in four languages with retries, and what the
+Go image and a reference solution taught (B-563).
+
+### Version 167 — one shape for every run
+
+F244: progress within every step, and conditions on every run (B-562).
 
 ### Version 166 — the desktop killed under three copies
 

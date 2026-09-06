@@ -56,7 +56,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut readings = Vec::new();
     let mut measured = 0_usize;
     let mut worst: i64 = 0;
-    for window in WINDOWS {
+    for (at, window) in WINDOWS.into_iter().enumerate() {
+        site.progress(at, WINDOWS.len(), &format!("window {window}"));
         if trained.is_some_and(|trained| window > trained) || site.asker_gone() {
             continue;
         }

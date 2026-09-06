@@ -43,7 +43,8 @@ pub fn measure(site: &Site<'_>) -> Found {
          token; the page cache as it is"
     )];
     let prompt = filler(16);
-    for share in SHARES {
+    for (at, share) in SHARES.into_iter().enumerate() {
+        site.progress(at, SHARES.len(), &format!("{share}% of the layers"));
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

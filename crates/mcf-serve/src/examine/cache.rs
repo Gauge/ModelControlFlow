@@ -50,7 +50,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         ("produce", Value::Integer(as_integer(PRODUCE))),
         ("prompt", Value::Integer(as_integer(PROMPT))),
     ];
-    for (cache, bits) in PRECISIONS {
+    for (at, (cache, bits)) in PRECISIONS.into_iter().enumerate() {
+        site.progress(at, PRECISIONS.len(), cache);
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

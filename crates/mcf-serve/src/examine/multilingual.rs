@@ -133,7 +133,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let mut right_by_language = [0_usize; 6];
     let mut asked = 0_usize;
-    for task in TASKS {
+    for (at, task) in TASKS.iter().enumerate() {
+        site.progress(at, TASKS.len(), task.name);
         let mut said = Vec::with_capacity(LANGUAGES.len());
         for (at, (language, asks)) in LANGUAGES.iter().zip(task.asks.iter()).enumerate() {
             if site.asker_gone() {

@@ -65,7 +65,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         PLACEMENTS[0], PLACEMENTS[1]
     )];
     let (mut found, mut asked, mut past) = (0_usize, 0_usize, 0_usize);
-    for depth in DEPTHS {
+    for (at, depth) in DEPTHS.into_iter().enumerate() {
+        site.progress(at, DEPTHS.len(), &format!("depth {depth}"));
         if depth.saturating_add(ROOM) > window {
             past = past.saturating_add(1);
             rows.push(Reading::new(

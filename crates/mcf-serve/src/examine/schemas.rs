@@ -233,7 +233,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         SHAPES.len()
     )];
     let (mut free_shaped, mut constrained_shaped, mut trials) = (0_usize, 0_usize, 0_usize);
-    for shape in SHAPES {
+    for (at, shape) in SHAPES.iter().enumerate() {
+        site.progress(at, SHAPES.len(), shape.name);
         let ids = match framed_ids(&engine, shape.asks) {
             Ok(ids) => ids,
             Err(why) => return Found::could_not_tell(&why),

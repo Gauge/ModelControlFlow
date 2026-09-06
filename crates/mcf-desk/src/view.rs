@@ -3362,6 +3362,29 @@ fn readings_table(paint: &mut Painter, area: Box, run: &Value) {
     let mut y = area.y;
     spaced(paint, area.x, y, "readings", ink.faint);
     y += 22.0;
+    // What the run ran under, from its conditions: the engine, the window,
+    // the layers, and whatever else the run named, so that the figures
+    // below are never read without them (D56).
+    let under: Vec<String> = match run.get("conditions") {
+        Some(Value::Map(conditions)) => conditions
+            .iter()
+            .filter_map(|(key, held)| match held {
+                Value::List(_) | Value::Map(_) | Value::Null => None,
+                held => Some(format!("{key} {}", held.to_line().trim_matches('"'))),
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    if !under.is_empty() {
+        let said = paint.elide(
+            &format!("under: {}", under.join(" · ")),
+            Weight::Regular,
+            size::SMALL,
+            area.w,
+        );
+        paint.say_at(area.x, y, &said, Weight::Regular, size::SMALL, ink.faint);
+        y += 20.0;
+    }
     let mut x = area.x;
     for (head, wide) in heads.iter().zip(&widths) {
         spaced(paint, x, y, head, ink.faint);
@@ -3879,8 +3902,17 @@ fn small_card(
 fn measure_step_said(body: &Value) -> Option<String> {
     let step = body.get("step")?;
     let figure = |key: &str| step.get(key).and_then(Value::as_integer);
+    let within = body.get("progress").map_or_else(String::new, |progress| {
+        let held = |key: &str| progress.get(key).and_then(Value::as_integer).unwrap_or(0);
+        format!(
+            " — {} of {}, {}",
+            held("done"),
+            held("of"),
+            progress.get("doing").and_then(Value::as_text).unwrap_or("")
+        )
+    });
     Some(format!(
-        "measurement {} of {}: {}",
+        "measurement {} of {}: {}{within}",
         figure("count")?,
         figure("of")?,
         step.get("name").and_then(Value::as_text)?

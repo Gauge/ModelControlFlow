@@ -131,7 +131,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let (mut present_right, mut present_all, mut invented_all, mut stated_all, mut absent_all) =
         (0_usize, 0_usize, 0_usize, 0_usize, 0_usize);
-    for (name, passage, present, absent) in PASSAGES {
+    for (at, (name, passage, present, absent)) in PASSAGES.iter().enumerate() {
+        site.progress(at, PASSAGES.len(), name);
         let mut said_here = Vec::new();
         for (kind, question, answer) in present
             .iter()

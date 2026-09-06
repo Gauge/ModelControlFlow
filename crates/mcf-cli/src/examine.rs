@@ -126,6 +126,21 @@ fn the_findings_as_they_come(connection: &UnixStream) -> Option<Answer> {
         if !answer.served || matches!(answer.body.get("done"), Some(Value::Bool(true))) {
             return Some(answer);
         }
+        // How far along the step is, on the error stream over one line, so
+        // that the report on the output stream stays whole (D56).
+        if let Some(progress) = answer.body.get("progress") {
+            let figure = |key: &str| progress.get(key).and_then(Value::as_integer).unwrap_or(0);
+            let doing = progress.get("doing").and_then(Value::as_text).unwrap_or("");
+            eprint!(
+                "\r    {:>4} of {:<4} {:<64}",
+                figure("done"),
+                figure("of"),
+                doing.chars().take(64).collect::<String>()
+            );
+            let _flushed = std::io::stderr().flush();
+            continue;
+        }
+        eprint!("\r{:80}\r", "");
         let lines = lines_of(&answer.body);
         if lines.is_empty() {
             if let Some(step) = step_said(&answer.body) {

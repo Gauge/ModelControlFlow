@@ -74,7 +74,8 @@ pub fn measure(site: &Site<'_>) -> Found {
             .join(", ")
     )];
     let mut by_temperature: Vec<(usize, usize)> = vec![(0, 0); TEMPERATURES.len()];
-    for (name, asks, answer) in QUESTIONS {
+    for (at, (name, asks, answer)) in QUESTIONS.iter().enumerate() {
+        site.progress(at, QUESTIONS.len(), name);
         let ids = match framed_ids(&engine, asks) {
             Ok(ids) => ids,
             Err(why) => return Found::could_not_tell(&why),

@@ -66,6 +66,9 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut read = 0_usize;
     let mut rows = Vec::new();
     for at in 1..ids.len() {
+        if at % 16 == 0 {
+            site.progress(at, ids.len(), "position");
+        }
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

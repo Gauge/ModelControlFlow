@@ -46,7 +46,8 @@ pub fn measure(site: &Site<'_>) -> Found {
         counts.len()
     )];
     let mut fastest: Option<(u32, u64)> = None;
-    for threads in &counts {
+    for (at, threads) in counts.iter().enumerate() {
+        site.progress(at, counts.len(), &format!("{threads} thread(s)"));
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

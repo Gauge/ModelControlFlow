@@ -51,9 +51,9 @@ const MEMORY: &str = "512m";
 /// The tag is for a reader; the digest is what runs. The same discipline the
 /// provisioned components hold to, for the same reason: an image that drifted
 /// would make two runs of one task two different conditions (§3.4).
-const IMAGE: &str = "docker.io/library/python";
+pub(crate) const IMAGE: &str = "docker.io/library/python";
 /// `python:3.12-slim`, read from the registry rather than written from memory.
-const IMAGE_DIGEST: &str =
+pub(crate) const IMAGE_DIGEST: &str =
     "sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217";
 
 /// The tasks this laboratory holds.
@@ -738,15 +738,56 @@ fn which_podman() -> Result<PathBuf, Failure> {
     ))
 }
 
+/// Says how far a suite is, on the output stream at once, in the one
+/// shape every suite uses — `progress: done/of what` — so that the
+/// window's bar and a person at a terminal see the work as it goes and
+/// not only the report at the end (D56).
+pub(crate) fn progress(done: usize, of: usize, what: &str) {
+    use std::io::Write as _;
+    println!("progress: {done}/{of} {what}");
+    let _flushed = std::io::stdout().flush();
+}
+
 /// The suites `mcf eval` runs, by the name `--only` takes.
-pub(crate) const SUITES: [&str; 5] = ["coding", "languages", "editing", "tests", "queries"];
+pub(crate) const SUITES: [&str; 6] = [
+    "coding",
+    "languages",
+    "editing",
+    "tests",
+    "queries",
+    "challenges",
+];
+
+/// What `mcf eval` was asked: one suite or all, and the catalogue's
+/// retries, languages and tier where the person set them (D56).
+#[derive(Debug, Default)]
+pub(crate) struct Asked<'a> {
+    /// One suite to run rather than all of them.
+    pub only: Option<&'a str>,
+    /// How many attempts a challenge gets in a language.
+    pub retries: Option<usize>,
+    /// The languages the catalogue runs in, separated by commas.
+    pub languages: Option<&'a str>,
+    /// One tier of the catalogue.
+    pub tier: Option<&'a str>,
+}
 
 /// Evaluates one model against every task, or one suite's.
 #[allow(
     clippy::too_many_lines,
     reason = "the laboratory's one drive: the container found, each task asked and run, every attempt a row, the report said"
 )]
-pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
+pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
+    let only = asked.only;
+    let plan = match crate::challenges::Plan::asked(asked.languages, asked.retries, asked.tier) {
+        Ok(plan) => plan,
+        Err(why) => {
+            return Response {
+                text: format!("mcf: {why}"),
+                served: false,
+            };
+        }
+    };
     if let Some(suite) = only
         && !SUITES.contains(&suite)
     {
@@ -831,7 +872,8 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
     // it: the rows' conditions say what answered, not only that the
     // daemon did (B-542).
     let mut engine_ran: Option<String> = None;
-    for task in if wants("coding") { TASKS } else { &[] } {
+    for (at, task) in if wants("coding") { TASKS } else { &[] }.iter().enumerate() {
+        progress(at, TASKS.len(), &format!("coding · python · {}", task.name));
         let mut timings: Vec<(u64, usize, String)> = Vec::new();
         let mut cases: Vec<Vec<bool>> = Vec::new();
         let mut ask = |task: &Task| {
@@ -1000,7 +1042,34 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
     if engine_ran.is_none() {
         engine_ran = query_engine;
     }
+    // The catalogue: every challenge in every language named, with its
+    // retries, the rows under their own method (B-563, D56).
+    let (challenge_lines, challenge_rows, challenge_engine) = if wants("challenges") {
+        crate::challenges::run(
+            &socket,
+            named,
+            &podman,
+            &scratch,
+            &plan.languages,
+            plan.retries,
+            plan.tier,
+        )
+    } else {
+        (Vec::new(), Vec::new(), None)
+    };
+    if engine_ran.is_none() {
+        engine_ran = challenge_engine;
+    }
     let engine_said = said_of(&engine_ran);
+    let challenges_recorded = wants("challenges").then(|| {
+        mcf_serve::examine::record_rows(
+            Path::new(named),
+            "challenges",
+            &engine_said,
+            plan.conditions(),
+            &challenge_rows,
+        )
+    });
     let queries_recorded = wants("queries").then(|| {
         mcf_serve::examine::record_rows(
             Path::new(named),
@@ -1154,38 +1223,55 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
     }
     lines.extend(language_lines);
     lines.extend(edit_lines);
-    lines.push(match edits_recorded {
-        Some(Ok(_)) => format!(
-            "  {} reading(s) recorded under editing; `mcf data {named} --method editing` writes them",
-            edit_rows.len()
-        ),
-        Some(Err(why)) => format!("  EDIT READINGS NOT RECORDED: {why}"),
-        None => String::new(),
-    });
+    if let Some(recorded) = edits_recorded {
+        lines.push(match recorded {
+            Ok(_) => format!(
+                "  {} reading(s) recorded under editing; `mcf data {named} --method editing` writes them",
+                edit_rows.len()
+            ),
+            Err(why) => format!("  EDIT READINGS NOT RECORDED: {why}"),
+        });
+    }
     if wants("editing") {
         lines.push(String::new());
     }
     lines.extend(test_lines);
-    lines.push(match tests_recorded {
-        Some(Ok(_)) => format!(
-            "  {} reading(s) recorded under test-writing; `mcf data {named} --method test-writing` writes them",
-            test_rows.len()
-        ),
-        Some(Err(why)) => format!("  TEST-WRITING READINGS NOT RECORDED: {why}"),
-        None => String::new(),
-    });
+    if let Some(recorded) = tests_recorded {
+        lines.push(match recorded {
+            Ok(_) => format!(
+                "  {} reading(s) recorded under test-writing; `mcf data {named} --method test-writing` writes them",
+                test_rows.len()
+            ),
+            Err(why) => format!("  TEST-WRITING READINGS NOT RECORDED: {why}"),
+        });
+    }
     if wants("tests") {
         lines.push(String::new());
     }
     lines.extend(query_lines);
-    lines.push(match queries_recorded {
-        Some(Ok(_)) => format!(
-            "  {} reading(s) recorded under queries; `mcf data {named} --method queries` writes them",
-            query_rows.len()
-        ),
-        Some(Err(why)) => format!("  QUERIES READINGS NOT RECORDED: {why}"),
-        None => String::new(),
-    });
+    if let Some(recorded) = queries_recorded {
+        lines.push(match recorded {
+            Ok(_) => format!(
+                "  {} reading(s) recorded under queries; `mcf data {named} --method queries` writes them",
+                query_rows.len()
+            ),
+            Err(why) => format!("  QUERIES READINGS NOT RECORDED: {why}"),
+        });
+    }
+    if wants("queries") {
+        lines.push(String::new());
+    }
+    lines.extend(challenge_lines);
+    if let Some(recorded) = challenges_recorded {
+        lines.push(match recorded {
+            Ok(_) => format!(
+                "  {} reading(s) recorded under challenges; `mcf data {named} --method challenges` \
+                 writes them",
+                challenge_rows.len()
+            ),
+            Err(why) => format!("  CHALLENGE READINGS NOT RECORDED: {why}"),
+        });
+    }
     Response {
         text: lines.join("\n"),
         served: true,

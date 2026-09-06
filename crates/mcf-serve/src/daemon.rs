@@ -4120,10 +4120,34 @@ impl Daemon {
                 llama.commit.get(..12).unwrap_or(&llama.commit)
             ),
             gone: &gone,
+            tell: &|_progress| {},
             waiting,
         };
         let model = path.display().to_string();
+        // The step under way, kept for the progress lines, which carry it
+        // so that a reader of the latest line always knows which step it
+        // is in (D56).
+        let current: std::sync::Mutex<Value> = std::sync::Mutex::new(Value::Null);
+        let stream: &UnixStream = writer;
+        let tell = |progress: &crate::examine::Progress| {
+            let step = current.lock().map_or(Value::Null, |held| held.clone());
+            let line = Answer::served(Value::map([
+                ("examining", Value::text(model.clone())),
+                ("step", step),
+                ("progress", progress.to_value()),
+                ("done", Value::Bool(false)),
+            ]));
+            let mut out = stream;
+            let _sent = writeln!(out, "{}", line.to_line()).and_then(|()| out.flush());
+        };
+        let site = crate::examine::Site {
+            tell: &tell,
+            ..site
+        };
         let mut say = |step: &crate::probes::run::Step, lines: &[String]| -> bool {
+            if let Ok(mut held) = current.lock() {
+                *held = step.to_value();
+            }
             let line = Answer::served(Value::map([
                 ("examining", Value::text(model.clone())),
                 ("step", step.to_value()),
@@ -4133,8 +4157,9 @@ impl Daemon {
                 ),
                 ("done", Value::Bool(false)),
             ]));
-            writeln!(writer, "{}", line.to_line())
-                .and_then(|()| writer.flush())
+            let mut out = stream;
+            writeln!(out, "{}", line.to_line())
+                .and_then(|()| out.flush())
                 .is_ok()
         };
         let ran = crate::examine::run(&site, only, &mut say);

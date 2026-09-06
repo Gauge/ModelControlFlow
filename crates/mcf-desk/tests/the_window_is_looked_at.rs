@@ -2844,8 +2844,117 @@ fn review_the_coding_row(desk: &mut Desk) {
         vec![coding],
     ));
     let _ = drawn(desk, DAY, "review-diagnostics-coding");
+    review_the_challenges_row(desk);
     desk.diagnostic = mcf_desk::Diagnostic::Throughput;
     desk.readings = None;
+}
+
+/// The catalogue's row: two challenges in two languages, one solved at
+/// the second attempt and one never, the rows under `challenges` with
+/// the retries and the languages as the run's conditions (B-563, D56).
+#[allow(clippy::too_many_lines, reason = "one fixture, each row named")]
+fn review_the_challenges_row(desk: &mut Desk) {
+    use mcf_record::json::Value;
+    use mcf_record::readings::Reading;
+    desk.diagnostic = mcf_desk::Diagnostic::Eval(5);
+    let mut rows: Vec<Reading> = Vec::new();
+    for (challenge, tier, category, language, solved_at, attempts) in [
+        (
+            "merge-sorted",
+            "easy",
+            "arrays",
+            "python",
+            Some(1_i64),
+            1_i64,
+        ),
+        ("merge-sorted", "easy", "arrays", "go", Some(2), 2),
+        ("lru-cache", "hard", "design", "python", None, 3),
+        ("lru-cache", "hard", "design", "go", None, 3),
+    ] {
+        let named = |attempt: Option<i64>| {
+            let mut dims = vec![
+                ("category", Value::text(category)),
+                ("challenge", Value::text(challenge)),
+                ("language", Value::text(language)),
+                ("tier", Value::text(tier)),
+            ];
+            if let Some(attempt) = attempt {
+                dims.push(("attempt", Value::Integer(attempt)));
+            }
+            dims
+        };
+        for attempt in 1..=attempts {
+            let dims = named(Some(attempt));
+            let whole = i64::from(solved_at == Some(attempt));
+            rows.push(Reading::new(&dims, "wrote", 1, "bool"));
+            rows.push(Reading::new(&dims, "ran", 1, "bool"));
+            rows.push(Reading::new(&dims, "cases_held", 2 + whole, "count"));
+            rows.push(Reading::new(&dims, "cases", 3, "count"));
+            rows.push(Reading::new(&dims, "whole", whole, "bool"));
+            rows.push(Reading::new(&dims, "tokens", 90 + attempt * 60, "tokens"));
+            rows.push(Reading::new(
+                &dims,
+                "ask_ns",
+                2_500_000_000 + attempt * 900_000_000,
+                "ns",
+            ));
+        }
+        let dims = named(None);
+        rows.push(Reading::new(
+            &dims,
+            "solved",
+            i64::from(solved_at.is_some()),
+            "bool",
+        ));
+        if let Some(at) = solved_at {
+            rows.push(Reading::new(&dims, "solved_at_attempt", at, "count"));
+        }
+        rows.push(Reading::new(&dims, "attempts", attempts, "count"));
+        rows.push(Reading::new(
+            &dims,
+            "corrections",
+            solved_at.map_or(attempts, |at| at - 1),
+            "count",
+        ));
+        rows.push(Reading::new(
+            &dims,
+            "tokens_total",
+            90 * attempts + 30 * attempts * (attempts + 1),
+            "tokens",
+        ));
+    }
+    let path = desk
+        .models
+        .first()
+        .map(|held| held.path.clone())
+        .unwrap_or_default();
+    let mut run = mcf_record::readings::run_body(
+        &path,
+        "challenges",
+        "through provisioned llama.cpp-vulkan server @925e1179947e, run in a container",
+        vec![
+            ("languages", Value::text("python,go")),
+            ("retries", Value::Integer(3)),
+            ("tier", Value::Null),
+            ("budget", Value::Integer(1400)),
+            ("challenges", Value::Integer(44)),
+        ],
+        &rows,
+    );
+    if let Value::Map(fields) = &mut run {
+        let _at = fields.insert(
+            "at".to_owned(),
+            Value::text("2026-09-06T22:54:59.000000000Z (local offset +00:00)"),
+        );
+    }
+    if let Some(held) = desk.models.get_mut(0) {
+        let _was = held.readings_at.insert(
+            "challenges".to_owned(),
+            "2026-09-06T22:54:59.000000000Z (local offset +00:00)".to_owned(),
+        );
+    }
+    desk.readings = Some((path, vec![run]));
+    let _ = drawn(desk, DAY, "review-diagnostics-challenges");
 }
 
 /// The measurements two in: the daemon has announced the second.

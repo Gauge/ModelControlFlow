@@ -150,6 +150,11 @@ pub fn measure(site: &Site<'_>) -> Found {
                 )),
             ));
             sample = sample.saturating_add(1);
+            site.progress(
+                usize::try_from(elapsed_s).unwrap_or(0),
+                usize::try_from(DURATION_S).unwrap_or(0),
+                "second",
+            );
             since = 0;
             last_sample = now;
         }

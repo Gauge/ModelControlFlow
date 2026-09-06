@@ -205,7 +205,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let (mut fields_right, mut fields_asked, mut parsed, mut trials) =
         (0_usize, 0_usize, 0_usize, 0_usize);
-    for text in TEXTS {
+    for (at, text) in TEXTS.iter().enumerate() {
+        site.progress(at, TEXTS.len(), text.name);
         let ids = match framed_ids(&engine, &ask_for(text)) {
             Ok(ids) => ids,
             Err(why) => return Found::could_not_tell(&why),

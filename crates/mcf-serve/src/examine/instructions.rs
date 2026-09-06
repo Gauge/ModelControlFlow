@@ -186,7 +186,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let (mut held_all, mut trials, mut constraints_held, mut constraints_asked) =
         (0_usize, 0_usize, 0_usize, 0_usize);
-    for ask in ASKS {
+    for (at, ask) in ASKS.iter().enumerate() {
+        site.progress(at, ASKS.len(), ask.name);
         let ids = match framed_ids(&engine, ask.asks) {
             Ok(ids) => ids,
             Err(why) => return Found::could_not_tell(&why),

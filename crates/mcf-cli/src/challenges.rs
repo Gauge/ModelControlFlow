@@ -1,0 +1,1034 @@
+//! The coding catalogue run: every challenge in every language MCF has an
+//! image for, each attempt a row with its time and its tokens, a failed
+//! attempt handed back with what did not hold up to the retries the
+//! person set, and the rows saying at which attempt a challenge was
+//! solved and how many corrections it took (B-563, D56).
+//!
+//! A challenge states what a function must do and gives its cases in a
+//! form no language owns; each language renders the signature, the calls
+//! and the expected results in its own literals, and a harness prints
+//! `ok` or `no <what came back>` a case. What leaves the container is
+//! that alphabet and nothing else (B-025).
+
+use std::path::Path;
+
+use mcf_record::json::Value;
+use mcf_serve::examine::Reading;
+
+use crate::catalogue::{Challenge, Kind, Lit, Tier};
+use crate::languages::Language;
+
+/// How many attempts a challenge gets in a language unless the person
+/// says otherwise: the first, and up to nine corrections.
+pub(crate) const RETRIES_DEFAULT: usize = 10;
+
+/// How many tokens one answer may take: room for a hard one.
+const BUDGET: usize = 1400;
+
+/// The languages the catalogue runs in, by the name `--languages` takes.
+pub(crate) const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
+
+/// The Go image, pinned; the catalogue is the first to ask for it.
+pub(crate) const GO: Language = Language {
+    name: "go",
+    image: "docker.io/library/golang",
+    // `golang:1-alpine`, read from the registry rather than written from memory.
+    digest: "sha256:f86f1a6701e3dcc445fec097a42f78b758f15950ccf032c2d3e54e2754d32fdb",
+    file: "answer.go",
+    memory: "1g",
+    // The toolchain builds the standard library afresh in an image with no
+    // cache, and does it with as many processes as it has cores; held to
+    // one package at a time it fits the same process limit every other
+    // language runs under (B-025).
+    command: &[
+        "timeout",
+        "120",
+        "sh",
+        "-c",
+        "export GOCACHE=/tmp/gocache GOPATH=/tmp/gopath HOME=/tmp GOMAXPROCS=2 GOFLAGS=-p=1; cd \
+         /tmp && if go build -o /tmp/answer /work/answer.go 2>/dev/null; then echo compiled; \
+         /tmp/answer; else echo notcompiled; fi",
+    ],
+    present: &["go", "version"],
+    tasks: &[],
+};
+
+/// Python as a language of the catalogue: the same pinned image the
+/// Python suites run in, run the same way as the others.
+pub(crate) const PYTHON: Language = Language {
+    name: "python",
+    image: crate::eval::IMAGE,
+    digest: crate::eval::IMAGE_DIGEST,
+    file: "answer.py",
+    memory: "512m",
+    command: &["timeout", "20", "python3", "/work/answer.py"],
+    present: &["python3", "--version"],
+    tasks: &[],
+};
+
+/// What one run of the catalogue was asked to be: which languages, how
+/// many attempts, which tier (D56).
+#[derive(Debug)]
+pub(crate) struct Plan {
+    /// The languages, in the order named.
+    pub languages: Vec<&'static Language>,
+    /// How many attempts a challenge gets in a language.
+    pub retries: usize,
+    /// One tier, or every tier.
+    pub tier: Option<Tier>,
+}
+
+impl Plan {
+    /// The plan `mcf eval` was given, or what is wrong with it.
+    pub(crate) fn asked(
+        languages: Option<&str>,
+        retries: Option<usize>,
+        tier: Option<&str>,
+    ) -> Result<Self, String> {
+        let mut held = Vec::new();
+        for name in languages.map_or_else(
+            || LANGUAGE_NAMES.to_vec(),
+            |named| named.split(',').map(str::trim).collect(),
+        ) {
+            match language_named(name) {
+                Some(language) if !held.iter().any(|kept: &&Language| kept.name == name) => {
+                    held.push(language);
+                }
+                Some(_) => {}
+                None => {
+                    return Err(format!(
+                        "no language is called {name}; --languages takes any of {}",
+                        LANGUAGE_NAMES.join(", ")
+                    ));
+                }
+            }
+        }
+        let tier = match tier {
+            None => None,
+            Some(name) => Some(Tier::named(name).ok_or_else(|| {
+                format!("no tier is called {name}; --tier takes easy, medium, hard or expert")
+            })?),
+        };
+        let retries = retries.unwrap_or(RETRIES_DEFAULT);
+        if retries == 0 {
+            return Err("--retries takes at least one attempt".to_owned());
+        }
+        Ok(Self {
+            languages: held,
+            retries,
+            tier,
+        })
+    }
+
+    /// The plan as the run's conditions, beside the engine's.
+    pub(crate) fn conditions(&self) -> Vec<(&'static str, Value)> {
+        vec![
+            (
+                "languages",
+                Value::text(
+                    self.languages
+                        .iter()
+                        .map(|language| language.name)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ),
+            (
+                "retries",
+                Value::Integer(i64::try_from(self.retries).unwrap_or(i64::MAX)),
+            ),
+            (
+                "tier",
+                self.tier
+                    .map_or(Value::Null, |tier| Value::text(tier.name())),
+            ),
+            (
+                "budget",
+                Value::Integer(i64::try_from(BUDGET).unwrap_or(i64::MAX)),
+            ),
+            (
+                "challenges",
+                Value::Integer(
+                    i64::try_from(
+                        crate::catalogue::CHALLENGES
+                            .iter()
+                            .filter(|challenge| self.tier.is_none_or(|tier| challenge.tier == tier))
+                            .count(),
+                    )
+                    .unwrap_or(i64::MAX),
+                ),
+            ),
+        ]
+    }
+}
+
+/// The language of a name, where MCF has one.
+pub(crate) fn language_named(name: &str) -> Option<&'static Language> {
+    match name {
+        "python" => Some(&PYTHON),
+        "go" => Some(&GO),
+        other => crate::languages::LANGUAGES
+            .iter()
+            .find(|language| language.name == other),
+    }
+}
+
+/// A language's own words for a kind, as a parameter and as a return.
+fn kind_said(language: &str, kind: Kind, returned: bool) -> &'static str {
+    match (language, kind, returned) {
+        ("rust", Kind::Int, _) => "i64",
+        ("rust" | "go", Kind::Bool, _) => "bool",
+        ("rust", Kind::Text, false) => "&str",
+        ("rust", Kind::Text, true) => "String",
+        ("rust", Kind::Ints, false) => "&[i64]",
+        ("rust", Kind::Ints, true) => "Vec<i64>",
+        ("rust", Kind::Texts, false) => "&[&str]",
+        ("rust", Kind::Texts, true) => "Vec<String>",
+        ("rust", Kind::OptInt, _) => "Option<i64>",
+        ("go", Kind::Int, _) => "int",
+        ("go", Kind::Ints, _) => "[]int",
+        ("go", Kind::Texts, _) => "[]string",
+        ("go", Kind::OptInt, _) => "(int, bool)",
+        (_, Kind::Int, _) => "integer",
+        (_, Kind::Bool, _) => "boolean",
+        (_, Kind::Text, _) => "string",
+        (_, Kind::Ints, _) => "list of integers",
+        (_, Kind::Texts, _) => "list of strings",
+        (_, Kind::OptInt, _) => "integer or null",
+    }
+}
+
+/// The signature a language is asked to write, in words it knows.
+#[must_use]
+pub(crate) fn signature(language: &str, challenge: &Challenge) -> String {
+    let params: Vec<String> = challenge
+        .params
+        .iter()
+        .map(|(name, kind)| match language {
+            "rust" => format!("{name}: {}", kind_said("rust", *kind, false)),
+            "go" => format!("{name} {}", kind_said("go", *kind, false)),
+            _ => (*name).to_owned(),
+        })
+        .collect();
+    match language {
+        "rust" => format!(
+            "fn {}({}) -> {}",
+            challenge.function,
+            params.join(", "),
+            kind_said("rust", challenge.returns, true)
+        ),
+        "go" => format!(
+            "func {}({}) {}",
+            challenge.function,
+            params.join(", "),
+            kind_said("go", challenge.returns, true)
+        ),
+        "javascript" => format!("function {}({})", challenge.function, params.join(", ")),
+        _ => format!("def {}({})", challenge.function, params.join(", ")),
+    }
+}
+
+/// What a language is asked, the first time.
+#[must_use]
+pub(crate) fn ask_for(language: &Language, challenge: &Challenge) -> String {
+    let typed: Vec<String> = challenge
+        .params
+        .iter()
+        .map(|(name, kind)| format!("{name} is a {}", kind_said("words", *kind, false)))
+        .collect();
+    let word = match language.name {
+        "javascript" => "JavaScript",
+        "rust" => "Rust",
+        "go" => "Go",
+        _ => "Python",
+    };
+    let extra = match language.name {
+        "go" => {
+            " Do not write a package line or any import; the standard packages fmt, strings, \
+                 sort, strconv, math and unicode are already imported."
+        }
+        "rust" => " Use only the standard library.",
+        _ => "",
+    };
+    format!(
+        "{} Write it in {word} as `{}`, where {} and it returns {}.{extra} Reply with only the \
+         code.",
+        challenge.statement,
+        signature(language.name, challenge),
+        typed.join(", "),
+        kind_said("words", challenge.returns, true)
+    )
+}
+
+/// A literal in a language.
+fn literal(language: &str, lit: &Lit) -> String {
+    let text = |t: &str| {
+        let escaped = t.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{escaped}\"")
+    };
+    match (language, lit) {
+        (_, Lit::Int(n)) => n.to_string(),
+        ("python", Lit::Bool(b)) => if *b { "True" } else { "False" }.to_owned(),
+        (_, Lit::Bool(b)) => b.to_string(),
+        (_, Lit::Text(t)) => text(t),
+        ("rust", Lit::Ints(items)) => format!(
+            "&[{}]",
+            items
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        ("go", Lit::Ints(items)) => format!(
+            "[]int{{{}}}",
+            items
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        (_, Lit::Ints(items)) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        ("rust", Lit::Texts(items)) => format!(
+            "&[{}]",
+            items.iter().map(|t| text(t)).collect::<Vec<_>>().join(", ")
+        ),
+        ("go", Lit::Texts(items)) => format!(
+            "[]string{{{}}}",
+            items.iter().map(|t| text(t)).collect::<Vec<_>>().join(", ")
+        ),
+        (_, Lit::Texts(items)) => format!(
+            "[{}]",
+            items.iter().map(|t| text(t)).collect::<Vec<_>>().join(", ")
+        ),
+        ("python" | "rust", Lit::None) => "None".to_owned(),
+        (_, Lit::None) => "null".to_owned(),
+    }
+}
+
+/// What the harness expects to see printed for a result, in the form the
+/// harness canonicalises results to.
+fn expected_said(language: &str, kind: Kind, lit: &Lit) -> String {
+    match (language, kind, lit) {
+        // Rust prints `{:?}`: Some(5), None, "text", ["a", "b"], [1, 2].
+        ("rust", Kind::OptInt, Lit::Int(n)) => format!("Some({n})"),
+        ("rust", Kind::OptInt, Lit::None) => "None".to_owned(),
+        ("rust", _, Lit::Text(t)) => format!("{t:?}"),
+        ("rust", _, Lit::Texts(items)) => format!("{items:?}"),
+        ("rust", _, Lit::Ints(items)) => format!("{items:?}"),
+        ("rust", _, other) => literal("rust", other),
+        // Go prints the JSON of the result, or `v ok` for the optional.
+        ("go", Kind::OptInt, Lit::Int(n)) => format!("{n} true"),
+        ("go", Kind::OptInt, Lit::None) => "0 false".to_owned(),
+        // Python prints json.dumps of the result; JavaScript JSON.stringify;
+        // Go the JSON of the result.
+        (_, _, other) => json_of(other),
+    }
+}
+
+/// A literal as canonical JSON: no spaces.
+fn json_of(lit: &Lit) -> String {
+    match lit {
+        Lit::Int(n) => n.to_string(),
+        Lit::Bool(b) => b.to_string(),
+        Lit::Text(t) => Value::text((*t).to_owned()).to_line(),
+        Lit::Ints(items) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Lit::Texts(items) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(|t| Value::text((*t).to_owned()).to_line())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Lit::None => "null".to_owned(),
+    }
+}
+
+/// The program the container runs: the model's code, then every case,
+/// each printing `ok` or `no <what came back>`.
+#[must_use]
+pub(crate) fn checker(language: &Language, challenge: &Challenge, written: &str) -> String {
+    use std::fmt::Write as _;
+    let call = |case: &crate::catalogue::Case| {
+        format!(
+            "{}({})",
+            challenge.function,
+            case.args
+                .iter()
+                .zip(challenge.params)
+                .map(|(arg, _)| literal(language.name, arg))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let mut out = String::new();
+    match language.name {
+        "python" => {
+            out.push_str(written);
+            out.push_str("\n\nimport json, sys\n");
+            for case in challenge.cases {
+                let _wrote = writeln!(
+                    out,
+                    "try:\n    got = {}\n    print('ok' if json.dumps(got, separators=(',', \
+                     ':')) == {} else 'no ' + json.dumps(got, separators=(',', ':'), \
+                     default=str)[:200])\nexcept Exception as failed:\n    print('no ' + \
+                     type(failed).__name__)",
+                    call(case),
+                    python_string(&expected_said("python", challenge.returns, &case.expects))
+                );
+            }
+        }
+        "javascript" => {
+            out.push_str(&crate::languages::plain(language, written));
+            out.push_str("\n\nconst __cases = [\n");
+            for case in challenge.cases {
+                let _wrote = writeln!(
+                    out,
+                    "  [() => {}, {}],",
+                    call(case),
+                    Value::text(expected_said(
+                        "javascript",
+                        challenge.returns,
+                        &case.expects
+                    ))
+                    .to_line()
+                );
+            }
+            out.push_str(
+                "];\nfor (const [call, want] of __cases) {\n  try { const got = \
+                 JSON.stringify(call()); console.log(got === want ? 'ok' : 'no ' + \
+                 String(got).slice(0, 200)); } catch (e) { console.log('no ' + e.name); }\n}\n",
+            );
+        }
+        "rust" => {
+            out.push_str(&crate::languages::plain(language, written));
+            out.push_str("\n\nfn main() {\n    std::panic::set_hook(Box::new(|_| {}));\n");
+            for case in challenge.cases {
+                let _wrote = writeln!(
+                    out,
+                    "    {{\n        let said = std::panic::catch_unwind(|| format!(\"{{:?}}\", \
+                     {}));\n        match said {{\n            Ok(got) if got == r#\"{}\"# => \
+                     println!(\"ok\"),\n            Ok(got) => println!(\"no {{}}\", \
+                     got.chars().take(200).collect::<String>()),\n            Err(_) => \
+                     println!(\"no panic\"),\n        }}\n    }}",
+                    call(case),
+                    expected_said("rust", challenge.returns, &case.expects)
+                );
+            }
+            out.push_str("}\n");
+        }
+        _ => {
+            out.push_str(
+                "package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"math\"\n\t\"sort\"\n\t\"strconv\"\n\t\"strings\"\n\t\"unicode\"\n)\n\nvar _ = math.Abs\nvar _ = sort.Ints\nvar _ = strconv.Itoa\nvar _ = strings.ToLower\nvar _ = unicode.IsLetter\nvar _ = json.Marshal\n\n",
+            );
+            out.push_str(&go_plain(written));
+            out.push_str("\n\nfunc __say(got string, want string) {\n\tif got == want {\n\t\tfmt.Println(\"ok\")\n\t} else {\n\t\tif len(got) > 200 {\n\t\t\tgot = got[:200]\n\t\t}\n\t\tfmt.Println(\"no \" + got)\n\t}\n}\n\nfunc main() {\n");
+            for case in challenge.cases {
+                let want = expected_said("go", challenge.returns, &case.expects);
+                if challenge.returns == Kind::OptInt {
+                    let _wrote = writeln!(
+                        out,
+                        "\t{{\n\t\tv, ok := {}\n\t\t__say(fmt.Sprintf(\"%d %t\", v, ok), {})\n\t}}",
+                        call(case),
+                        go_string(&want)
+                    );
+                } else {
+                    let _wrote = writeln!(
+                        out,
+                        "\t{{\n\t\tb, _ := json.Marshal({})\n\t\t__say(string(b), {})\n\t}}",
+                        call(case),
+                        go_string(&want)
+                    );
+                }
+            }
+            out.push_str("}\n");
+        }
+    }
+    out
+}
+
+/// A Go answer without its package line and its imports, since the
+/// harness supplies both.
+#[must_use]
+pub(crate) fn go_plain(written: &str) -> String {
+    let mut out = Vec::new();
+    let mut in_import = false;
+    for line in written.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("package ") {
+            continue;
+        }
+        if trimmed.starts_with("import (") {
+            in_import = true;
+            continue;
+        }
+        if in_import {
+            if trimmed.starts_with(')') {
+                in_import = false;
+            }
+            continue;
+        }
+        if trimmed.starts_with("import ") {
+            continue;
+        }
+        out.push(line);
+    }
+    // A written `func main` would collide with the harness's.
+    let joined = out.join("\n");
+    crate::languages::without_main_named(&joined, "func main(")
+}
+
+/// A Python string literal holding the text.
+fn python_string(text: &str) -> String {
+    format!(
+        "'''{}'''",
+        text.replace('\\', "\\\\").replace("'''", "\\'\\'\\'")
+    )
+}
+
+/// A Go raw string literal holding the text.
+fn go_string(text: &str) -> String {
+    format!("`{}`", text.replace('`', "` + \"`\" + `"))
+}
+
+/// What one attempt came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Attempt {
+    /// Whether anything was written.
+    pub wrote: bool,
+    /// Whether it compiled, where the language compiles; `None` otherwise.
+    pub compiled: Option<bool>,
+    /// Whether the harness reached every case.
+    pub ran: bool,
+    /// Which cases held, in order, with what came back where one did not.
+    pub cases: Vec<(bool, String)>,
+    /// The tokens the answer took.
+    pub tokens: usize,
+    /// What the asking took.
+    pub ask_ns: u64,
+    /// The code, kept for the next attempt's feedback.
+    pub code: String,
+}
+
+impl Attempt {
+    /// Whether every case held.
+    #[must_use]
+    pub(crate) fn whole(&self) -> bool {
+        self.ran && self.cases.iter().all(|(held, _)| *held)
+    }
+
+    /// How many cases held.
+    #[must_use]
+    pub(crate) fn held(&self) -> usize {
+        self.cases.iter().filter(|(held, _)| *held).count()
+    }
+}
+
+/// Reads the harness's lines: `ok`, `no <got>`, `compiled`, `notcompiled`.
+#[must_use]
+pub(crate) fn read_harness(
+    said: &str,
+    cases: usize,
+    compiles: bool,
+) -> (Option<bool>, bool, Vec<(bool, String)>) {
+    let built = compiles.then(|| !said.lines().any(|line| line == "notcompiled"));
+    let mut read = Vec::new();
+    for line in said.lines() {
+        if line == "ok" {
+            read.push((true, String::new()));
+        } else if let Some(got) = line.strip_prefix("no ") {
+            read.push((false, got.to_owned()));
+        } else if line == "no" {
+            read.push((false, String::new()));
+        }
+    }
+    let ran = read.len() == cases && built.is_none_or(|held| held);
+    (built, ran, read)
+}
+
+/// The feedback a failed attempt is handed back with.
+#[must_use]
+pub(crate) fn feedback(language: &Language, challenge: &Challenge, last: &Attempt) -> String {
+    use std::fmt::Write as _;
+    let mut out = format!(
+        "{}\n\nYou answered:\n```\n{}\n```\n",
+        ask_for(language, challenge),
+        last.code
+    );
+    if last.compiled == Some(false) {
+        out.push_str("That answer did not compile.\n");
+    } else if !last.ran {
+        out.push_str("That answer did not run to the end of the checks.\n");
+    } else {
+        out.push_str("That answer is wrong:\n");
+        for ((held, got), case) in last.cases.iter().zip(challenge.cases) {
+            if *held {
+                continue;
+            }
+            let call = format!(
+                "{}({})",
+                challenge.function,
+                case.args
+                    .iter()
+                    .zip(challenge.params)
+                    .map(|(arg, _)| literal(language.name, arg))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let _wrote = writeln!(
+                out,
+                "- {call} should return {}{}",
+                expected_said(language.name, challenge.returns, &case.expects),
+                if got.is_empty() {
+                    String::new()
+                } else {
+                    format!(" but returned {got}")
+                }
+            );
+        }
+    }
+    out.push_str("Reply with only the corrected code.");
+    out
+}
+
+/// One challenge in one language, up to `retries` attempts.
+#[must_use]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one run's conditions, each named in the rows"
+)]
+pub(crate) fn attempt_all(
+    socket: &Path,
+    named: &str,
+    podman: &Path,
+    scratch: &Path,
+    language: &Language,
+    challenge: &Challenge,
+    retries: usize,
+    engine_ran: &mut Option<String>,
+) -> Vec<Attempt> {
+    let mut attempts: Vec<Attempt> = Vec::new();
+    for _ in 0..retries.max(1) {
+        let asked = match attempts.last() {
+            Some(last) => feedback(language, challenge, last),
+            None => ask_for(language, challenge),
+        };
+        let began = std::time::Instant::now();
+        let spoken =
+            mcf_serve::probes::spoken(socket, Path::new(named), &asked, None, BUDGET, None);
+        let ask_ns = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        if engine_ran.is_none() {
+            engine_ran.clone_from(&spoken.engine_ran);
+        }
+        let tokens = match spoken.trial {
+            mcf_serve::probes::Trial::Stopped { after, .. } => after,
+            mcf_serve::probes::Trial::RanOut => BUDGET,
+            mcf_serve::probes::Trial::CouldNotTell(_) => 0,
+        };
+        let code = crate::eval::code_in(&spoken.text);
+        let builds = matches!(language.name, "rust" | "go");
+        let (compiled, ran, cases) = if code.trim().is_empty() {
+            (None, false, Vec::new())
+        } else {
+            let program = checker(language, challenge, &code);
+            let said = crate::languages::run_program(podman, scratch, language, &program)
+                .unwrap_or_default();
+            read_harness(&said, challenge.cases.len(), builds)
+        };
+        let attempt = Attempt {
+            wrote: !code.trim().is_empty(),
+            compiled,
+            ran,
+            cases,
+            tokens,
+            ask_ns,
+            code,
+        };
+        let solved = attempt.whole();
+        attempts.push(attempt);
+        if solved {
+            break;
+        }
+    }
+    attempts
+}
+
+/// The rows of one challenge in one language: each attempt, and the
+/// whole.
+#[must_use]
+#[allow(clippy::too_many_lines, reason = "one row a line, each named")]
+pub(crate) fn rows_of(challenge: &Challenge, language: &str, attempts: &[Attempt]) -> Vec<Reading> {
+    let whole = |count: usize| i64::try_from(count).unwrap_or(i64::MAX);
+    let base = [
+        ("challenge", Value::text(challenge.name)),
+        ("tier", Value::text(challenge.tier.name())),
+        ("category", Value::text(challenge.category)),
+        ("language", Value::text(language)),
+    ];
+    let mut rows = Vec::new();
+    for (at, attempt) in attempts.iter().enumerate() {
+        let mut dims = base.to_vec();
+        dims.push(("attempt", Value::Integer(whole(at.saturating_add(1)))));
+        rows.push(Reading::new(
+            &dims,
+            "wrote",
+            i64::from(attempt.wrote),
+            "bool",
+        ));
+        if let Some(compiled) = attempt.compiled {
+            rows.push(Reading::new(&dims, "compiled", i64::from(compiled), "bool"));
+        }
+        rows.push(Reading::new(&dims, "ran", i64::from(attempt.ran), "bool"));
+        rows.push(Reading::new(
+            &dims,
+            "cases_held",
+            whole(attempt.held()),
+            "count",
+        ));
+        rows.push(Reading::new(
+            &dims,
+            "cases",
+            whole(challenge.cases.len()),
+            "count",
+        ));
+        rows.push(Reading::new(
+            &dims,
+            "whole",
+            i64::from(attempt.whole()),
+            "bool",
+        ));
+        rows.push(Reading::new(
+            &dims,
+            "tokens",
+            whole(attempt.tokens),
+            "tokens",
+        ));
+        rows.push(Reading::new(
+            &dims,
+            "code_bytes",
+            whole(attempt.code.len()),
+            "bytes",
+        ));
+        rows.push(Reading::new(
+            &dims,
+            "ask_ns",
+            i64::try_from(attempt.ask_ns).unwrap_or(i64::MAX),
+            "ns",
+        ));
+    }
+    let solved_at = attempts
+        .iter()
+        .position(Attempt::whole)
+        .map(|at| at.saturating_add(1));
+    rows.push(Reading::new(
+        &base,
+        "solved",
+        i64::from(solved_at.is_some()),
+        "bool",
+    ));
+    rows.push(Reading::new(
+        &base,
+        "solved_at_attempt",
+        whole(solved_at.unwrap_or(0)),
+        "count",
+    ));
+    rows.push(Reading::new(
+        &base,
+        "attempts",
+        whole(attempts.len()),
+        "count",
+    ));
+    rows.push(Reading::new(
+        &base,
+        "corrections",
+        whole(solved_at.map_or(attempts.len().saturating_sub(1), |at| at.saturating_sub(1))),
+        "count",
+    ));
+    rows.push(Reading::new(
+        &base,
+        "tokens_total",
+        whole(
+            attempts
+                .iter()
+                .fold(0_usize, |so_far, a| so_far.saturating_add(a.tokens)),
+        ),
+        "tokens",
+    ));
+    rows.push(Reading::new(
+        &base,
+        "ask_ns_total",
+        i64::try_from(
+            attempts
+                .iter()
+                .fold(0_u64, |so_far, a| so_far.saturating_add(a.ask_ns)),
+        )
+        .unwrap_or(i64::MAX),
+        "ns",
+    ));
+    rows.push(Reading::new(
+        &base,
+        "first_attempt_cases_held",
+        whole(attempts.first().map_or(0, Attempt::held)),
+        "count",
+    ));
+    rows
+}
+
+/// A span of nanoseconds in seconds, to a tenth, in words.
+#[expect(
+    clippy::integer_division,
+    reason = "a tenth of a second is the unit said"
+)]
+fn took_said(ns: u64) -> String {
+    let tenths = ns / 100_000_000;
+    format!("{}.{}s", tenths / 10, tenths % 10)
+}
+
+/// One challenge in one language, in words.
+#[must_use]
+pub(crate) fn said_of(language: &str, attempts: &[Attempt]) -> String {
+    let tokens = attempts
+        .iter()
+        .fold(0_usize, |so_far, a| so_far.saturating_add(a.tokens));
+    let ns = attempts
+        .iter()
+        .fold(0_u64, |so_far, a| so_far.saturating_add(a.ask_ns));
+    let seconds = took_said(ns);
+    if let Some(at) = attempts.iter().position(Attempt::whole) {
+        format!(
+            "{language:<10} solved at attempt {} · {} correction(s) · {tokens} token(s) · {seconds}",
+            at.saturating_add(1),
+            at
+        )
+    } else {
+        {
+            let best = attempts.iter().map(Attempt::held).max().unwrap_or(0);
+            let cases = attempts.first().map_or(0, |a| a.cases.len());
+            let why = match attempts.last() {
+                Some(last) if last.compiled == Some(false) => "the last did not compile",
+                Some(last) if !last.wrote => "the last wrote nothing",
+                Some(last) if !last.ran => "the last did not run",
+                _ => "the best held",
+            };
+            format!(
+                "{language:<10} never in {} attempt(s) · {why}{} · {tokens} token(s) · {seconds}",
+                attempts.len(),
+                if why == "the best held" {
+                    format!(" {best} of {cases}")
+                } else {
+                    String::new()
+                }
+            )
+        }
+    }
+}
+
+/// Runs the catalogue: every challenge asked for in every language, each
+/// with its retries; the lines said, the rows, the engine that answered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one run's conditions, each named in the rows"
+)]
+pub(crate) fn run(
+    socket: &Path,
+    named: &str,
+    podman: &Path,
+    scratch: &Path,
+    languages: &[&Language],
+    retries: usize,
+    only_tier: Option<Tier>,
+) -> (Vec<String>, Vec<Reading>, Option<String>) {
+    let challenges: Vec<&Challenge> = crate::catalogue::CHALLENGES
+        .iter()
+        .filter(|challenge| only_tier.is_none_or(|tier| challenge.tier == tier))
+        .collect();
+    let mut lines = vec![
+        format!(
+            "  {} challenge(s) in {} language(s), up to {retries} attempt(s) each; a failed \
+             attempt is handed back with the cases that did not hold and what came back",
+            challenges.len(),
+            languages.len()
+        ),
+        String::new(),
+    ];
+    let mut rows = Vec::new();
+    let mut engine_ran = None;
+    let mut present: Vec<&Language> = Vec::new();
+    for language in languages {
+        match crate::languages::present(podman, language) {
+            Ok(_) => present.push(language),
+            Err(why) => lines.push(format!("  {}: could not be run — {why}", language.name)),
+        }
+    }
+    let of = challenges.len().saturating_mul(present.len().max(1));
+    let mut done = 0_usize;
+    for challenge in &challenges {
+        lines.push(format!(
+            "  {} · {} · {}",
+            challenge.tier.name(),
+            challenge.category,
+            challenge.name
+        ));
+        lines.push(format!(
+            "      {}",
+            challenge.statement.chars().take(160).collect::<String>()
+        ));
+        for language in &present {
+            crate::eval::progress(
+                done,
+                of,
+                &format!(
+                    "challenges · {} · {} · {}",
+                    challenge.tier.name(),
+                    language.name,
+                    challenge.name
+                ),
+            );
+            let attempts = attempt_all(
+                socket,
+                named,
+                podman,
+                scratch,
+                language,
+                challenge,
+                retries,
+                &mut engine_ran,
+            );
+            rows.extend(rows_of(challenge, language.name, &attempts));
+            lines.push(format!("      {}", said_of(language.name, &attempts)));
+            done = done.saturating_add(1);
+        }
+        lines.push(String::new());
+    }
+    (lines, rows, engine_ran)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Attempt, expected_said, feedback, read_harness, signature};
+    use crate::catalogue::{CHALLENGES, Kind, Lit};
+
+    /// One correct answer to the first challenge in every language, run
+    /// through its harness in its container: each harness compiles,
+    /// runs and reads `ok` for every case. Needs podman and the images.
+    #[test]
+    #[ignore = "needs podman and the pinned images; run with --ignored"]
+    fn every_harness_holds_a_reference_answer() {
+        let merge = CHALLENGES
+            .iter()
+            .find(|c| c.name == "merge-sorted")
+            .unwrap();
+        let answers = [
+            (
+                "python",
+                "def merge(a, b):\n    out = []\n    i = j = 0\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            out.append(a[i]); i += 1\n        else:\n            out.append(b[j]); j += 1\n    return out + a[i:] + b[j:]\n",
+            ),
+            (
+                "javascript",
+                "function merge(a, b) {\n  const out = [];\n  let i = 0, j = 0;\n  while (i < a.length && j < b.length) {\n    if (a[i] <= b[j]) out.push(a[i++]); else out.push(b[j++]);\n  }\n  return out.concat(a.slice(i), b.slice(j));\n}\n",
+            ),
+            (
+                "rust",
+                "fn merge(a: &[i64], b: &[i64]) -> Vec<i64> {\n    let mut out = Vec::new();\n    let (mut i, mut j) = (0, 0);\n    while i < a.len() && j < b.len() {\n        if a[i] <= b[j] { out.push(a[i]); i += 1; } else { out.push(b[j]); j += 1; }\n    }\n    out.extend_from_slice(&a[i..]);\n    out.extend_from_slice(&b[j..]);\n    out\n}\n\nfn main() {}\n",
+            ),
+            (
+                "go",
+                "package main\n\nimport \"fmt\"\n\nfunc merge(a []int, b []int) []int {\n\tout := []int{}\n\ti, j := 0, 0\n\tfor i < len(a) && j < len(b) {\n\t\tif a[i] <= b[j] {\n\t\t\tout = append(out, a[i])\n\t\t\ti++\n\t\t} else {\n\t\t\tout = append(out, b[j])\n\t\t\tj++\n\t\t}\n\t}\n\tout = append(out, a[i:]...)\n\treturn append(out, b[j:]...)\n}\n\nfunc main() {\n\tfmt.Println(merge([]int{1}, []int{2}))\n}\n",
+            ),
+        ];
+        let podman = std::path::Path::new("/usr/bin/podman");
+        let scratch = std::env::temp_dir().join(format!("mcf-harness-{}", std::process::id()));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let mut wrong = Vec::new();
+        for (name, answer) in answers {
+            let language = super::language_named(name).unwrap();
+            let program = super::checker(language, merge, answer);
+            let said = crate::languages::run_program(podman, &scratch, language, &program).unwrap();
+            let (_, ran, cases) =
+                read_harness(&said, merge.cases.len(), matches!(name, "rust" | "go"));
+            if !ran || cases.iter().any(|(held, _)| !held) {
+                wrong.push(format!("{name}: {said}\n{program}"));
+            }
+        }
+        let _gone = std::fs::remove_dir_all(&scratch);
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    #[test]
+    fn signatures_and_expectations_are_rendered_in_each_language() {
+        let merge = CHALLENGES
+            .iter()
+            .find(|c| c.name == "merge-sorted")
+            .unwrap();
+        assert_eq!(
+            signature("rust", merge),
+            "fn merge(a: &[i64], b: &[i64]) -> Vec<i64>"
+        );
+        assert_eq!(signature("go", merge), "func merge(a []int, b []int) []int");
+        assert_eq!(signature("python", merge), "def merge(a, b)");
+        assert_eq!(
+            expected_said("rust", Kind::Ints, &Lit::Ints(&[1, 2])),
+            "[1, 2]"
+        );
+        assert_eq!(
+            expected_said("go", Kind::Ints, &Lit::Ints(&[1, 2])),
+            "[1,2]"
+        );
+        assert_eq!(
+            expected_said("javascript", Kind::OptInt, &Lit::None),
+            "null"
+        );
+        assert_eq!(expected_said("rust", Kind::OptInt, &Lit::Int(5)), "Some(5)");
+        assert_eq!(expected_said("go", Kind::OptInt, &Lit::None), "0 false");
+        assert_eq!(
+            expected_said("python", Kind::Text, &Lit::Text("ab")),
+            "\"ab\""
+        );
+    }
+
+    #[test]
+    fn the_harness_lines_are_read_and_a_failure_is_handed_back() {
+        let (compiled, ran, cases) = read_harness("compiled\nok\nno [1,3]\n", 2, true);
+        assert_eq!(compiled, Some(true));
+        assert!(ran);
+        assert_eq!(
+            cases,
+            vec![(true, String::new()), (false, "[1,3]".to_owned())]
+        );
+        let (compiled, ran, _) = read_harness("notcompiled\n", 2, true);
+        assert_eq!((compiled, ran), (Some(false), false));
+        let merge = CHALLENGES
+            .iter()
+            .find(|c| c.name == "merge-sorted")
+            .unwrap();
+        let last = Attempt {
+            wrote: true,
+            compiled: None,
+            ran: true,
+            cases,
+            tokens: 10,
+            ask_ns: 1,
+            code: "def merge(a, b): return a".to_owned(),
+        };
+        let said = feedback(&crate::languages::LANGUAGES[0], merge, &last);
+        assert!(
+            said.contains("should return [1,2,3,4,5,6] but returned [1,3]")
+                || said.contains("but returned [1,3]"),
+            "{said}"
+        );
+    }
+}

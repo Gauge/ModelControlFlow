@@ -67,7 +67,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut readings = Vec::new();
     let mut measured = 0_usize;
     let mut largest = 0_usize;
-    for side in SIDES {
+    for (at, side) in SIDES.into_iter().enumerate() {
+        site.progress(at, SIDES.len(), &format!("{side} × {side}"));
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }

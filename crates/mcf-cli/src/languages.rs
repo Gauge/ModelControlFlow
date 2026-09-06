@@ -18,6 +18,7 @@ use mcf_record::json::Value;
 use mcf_serve::examine::Reading;
 
 /// One language the suite is asked in.
+#[derive(Debug)]
 pub(crate) struct Language {
     /// Its name as a dimension: `javascript`, `rust`.
     pub name: &'static str,
@@ -95,7 +96,13 @@ pub(crate) fn plain(language: &Language, written: &str) -> String {
 
 /// The Rust answer without a top-level `fn main` block, braces matched.
 fn without_main(written: &str) -> String {
-    let Some(at) = written.find("fn main(") else {
+    without_main_named(written, "fn main(")
+}
+
+/// An answer without the block that begins with `head`, braces matched:
+/// a Rust `fn main(` or a Go `func main(` the harness supplies itself.
+pub(crate) fn without_main_named(written: &str, head: &str) -> String {
+    let Some(at) = written.find(head) else {
         return written.to_owned();
     };
     let line_start = written
@@ -228,40 +235,15 @@ pub(crate) fn run_in_container(
             wrote_something: false,
         };
     }
-    let program = scratch.join(language.file);
-    if let Err(error) = std::fs::write(&program, checker(language, task, written)) {
-        return Ran::Refused {
-            because: format!("the answer could not be written down: {error}"),
-            wrote_something: true,
-        };
-    }
-    let spoke = std::process::Command::new(podman)
-        .env_remove("XDG_DATA_HOME")
-        .arg("run")
-        .arg("--rm")
-        .arg("--network=none")
-        .arg("--cap-drop=ALL")
-        .arg("--security-opt=no-new-privileges")
-        .arg("--read-only")
-        .arg("--tmpfs")
-        .arg("/tmp:rw,exec,size=256m")
-        .arg(format!("--memory={}", language.memory))
-        .arg("--pids-limit=64")
-        .arg("-v")
-        .arg(format!("{}:/work:ro,z", scratch.display()))
-        .arg(format!("{}@{}", language.image, language.digest))
-        .args(language.command)
-        .output();
-    let spoke = match spoke {
-        Ok(spoke) => spoke,
-        Err(error) => {
+    let said = match run_program(podman, scratch, language, &checker(language, task, written)) {
+        Ok(said) => said,
+        Err(because) => {
             return Ran::Refused {
-                because: format!("the checker could not be started: {error}"),
+                because,
                 wrote_something: true,
             };
         }
     };
-    let said = String::from_utf8_lossy(&spoke.stdout);
     if said.lines().any(|line| line == "notcompiled") {
         return Ran::Refused {
             because: NOT_COMPILED.to_owned(),
@@ -286,6 +268,40 @@ pub(crate) fn run_in_container(
         passed: held.iter().filter(|line| **line == "ok").count(),
         of: task.cases.len(),
     }
+}
+
+/// Runs one program in the language's container and returns what it
+/// printed, under the same confinement as the Python runner: no network,
+/// no capabilities, a read-only root with a private /tmp for a compiler's
+/// output, a memory ceiling, a process limit and a deadline (B-025).
+pub(crate) fn run_program(
+    podman: &Path,
+    scratch: &Path,
+    language: &Language,
+    program: &str,
+) -> Result<String, String> {
+    if let Err(error) = std::fs::write(scratch.join(language.file), program) {
+        return Err(format!("the answer could not be written down: {error}"));
+    }
+    let spoke = std::process::Command::new(podman)
+        .env_remove("XDG_DATA_HOME")
+        .arg("run")
+        .arg("--rm")
+        .arg("--network=none")
+        .arg("--cap-drop=ALL")
+        .arg("--security-opt=no-new-privileges")
+        .arg("--read-only")
+        .arg("--tmpfs")
+        .arg("/tmp:rw,exec,size=256m")
+        .arg(format!("--memory={}", language.memory))
+        .arg("--pids-limit=64")
+        .arg("-v")
+        .arg(format!("{}:/work:ro,z", scratch.display()))
+        .arg(format!("{}@{}", language.image, language.digest))
+        .args(language.command)
+        .output();
+    let spoke = spoke.map_err(|error| format!("the checker could not be started: {error}"))?;
+    Ok(String::from_utf8_lossy(&spoke.stdout).into_owned())
 }
 
 /// What a run of the languages came to: the lines said, the rows, a
@@ -329,7 +345,12 @@ pub(crate) fn run(
             language.image,
             language.digest.get(..19).unwrap_or(language.digest)
         ));
-        for task in language.tasks {
+        for (at, task) in language.tasks.iter().enumerate() {
+            crate::eval::progress(
+                at,
+                language.tasks.len(),
+                &format!("coding · {} · {}", language.name, task.name),
+            );
             let mut said = Vec::with_capacity(attempts);
             for attempt in 0..attempts {
                 let began = std::time::Instant::now();

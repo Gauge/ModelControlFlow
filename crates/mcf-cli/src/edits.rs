@@ -374,7 +374,8 @@ pub(crate) fn run(
     ];
     let mut rows = Vec::new();
     let mut engine_ran = None;
-    for edit in EDITS {
+    for (at, edit) in EDITS.iter().enumerate() {
+        crate::eval::progress(at, EDITS.len(), &format!("editing · {}", edit.task.name));
         lines.push(format!("  {}", edit.task.name));
         for attempt in 0..ATTEMPTS {
             let began = std::time::Instant::now();

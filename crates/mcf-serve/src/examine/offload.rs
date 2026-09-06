@@ -52,7 +52,9 @@ pub fn measure(site: &Site<'_>) -> Found {
     let mut rows = Vec::new();
     let mut readings = Vec::new();
     let mut measured = 0_usize;
-    for count in counts {
+    let of_counts = counts.len();
+    for (at, count) in counts.into_iter().enumerate() {
+        site.progress(at, of_counts, &format!("{count} layer(s)"));
         if site.asker_gone() {
             break;
         }

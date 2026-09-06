@@ -102,7 +102,8 @@ pub fn measure(site: &Site<'_>) -> Found {
     )];
     let (mut all_tokens, mut all_bytes, mut all_fallbacks, mut all_unknown) =
         (0_usize, 0_usize, 0_usize, 0_usize);
-    for (name, text) in CORPUS {
+    for (at, (name, text)) in CORPUS.into_iter().enumerate() {
+        site.progress(at, CORPUS.len(), name);
         let tokens = match engine.tokenize(text, false, false) {
             Ok(tokens) => tokens,
             Err(failure) => return Found::could_not_tell(failure.detail()),
