@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 290 |
+| **Version** | 291 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 377 build items (266 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 56 open).** Every item cites
+decided, 23 resolved) and 377 build items (267 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 55 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -358,7 +358,7 @@ first and importance second.
 | B-520 | Multi-step tool use: chains of two to four calls where each argument comes from the last result, parallel calls in one turn, and an error result the model must react to — steps completed, right order, recovery after an error, every step a row | D55, DEC-062, B-517, A19 | A run gives one row a step; a model that stops after the first call reads as such | done. F202: five tasks over several turns, every step a row; the 2B completed eight of ten chains and never recovered from the error |
 | B-521 | Repair after feedback: every failed coding attempt handed back with its case output for a second attempt — fixed on the second try, tokens spent, a row each | D55, DEC-062, B-518, A19 | The rows separate a model that fixes from one that repeats | done. F203: handed back with the cases that did not hold, the second try a row under `coding-repair`; on the 2B one of 36 repaired |
 | B-522 | Edit tasks: a whole file given, a change asked, hidden tests run on the result, and the parts not asked about compared byte for byte | D55, DEC-062, B-518 | Rows for tests held and for bytes changed outside the ask | done. F204: five files, one change each, `untouched_kept` and `outside_changed_bytes` beside the cases; the 2B kept every untouched function |
-| B-523 | The coding suite in a second and a third language, in the same container images, per-language rows | D55, DEC-062, B-518, B-025 | Every task has rows in each language, and a language the container cannot run says so | open |
+| B-523 | The coding suite in a second and a third language, in the same container images, per-language rows | D55, DEC-062, B-518, B-025 | Every task has rows in each language, and a language the container cannot run says so | done. F205: JavaScript and Rust in their own pinned images, a `language` dimension on every coding row, `compiled` for Rust; on the 2B 24, 16 and 9 whole of 60 |
 | B-524 | Test writing: the model writes tests for a stated function, run against a correct and a deliberately broken implementation — passes on the good, catches on the broken | D55, DEC-062, B-518 | Rows for both counts, task by task | open |
 | B-525 | Structured extraction: fixed texts with dates, amounts, names and lists pulled into JSON, checked field by field by exact match | D55, DEC-062, A19 | One row a field a trial | open |
 | B-526 | Countable instructions: exactly N words, no digits, uppercase only, a list of a stated length, a stated closing phrase — each a parser's check | D55, DEC-062, A19 | One row a constraint a trial | open |
@@ -556,6 +556,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 291 — three languages
+
+B-523 done (F205).
 
 ### Version 290 — edit tasks
 

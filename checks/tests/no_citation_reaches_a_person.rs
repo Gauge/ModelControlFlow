@@ -97,6 +97,7 @@ fn citation_in(text: &str) -> Option<String> {
     for word in words {
         // `B-320`: a letter, a hyphen, digits.
         if let Some((head, tail)) = word.split_once('-')
+            && !head.is_empty()
             && head.len() <= 2
             && head.chars().all(|c| c.is_ascii_uppercase())
             && !tail.is_empty()

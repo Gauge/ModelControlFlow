@@ -832,7 +832,9 @@ pub(crate) fn eval(named: &str) -> Response {
                     .get(attempt)
                     .cloned()
                     .unwrap_or((0, 0, String::new()));
-            rows.extend(attempt_rows(task.name, attempt, ran, ask_ns, code_bytes));
+            rows.extend(attempt_rows(
+                "python", task.name, attempt, ran, ask_ns, code_bytes,
+            ));
             let whole = matches!(ran, Ran::Checked { passed, of } if passed == of);
             if whole || written.is_empty() {
                 continue;
@@ -903,6 +905,11 @@ pub(crate) fn eval(named: &str) -> Response {
         }
         held.push(trials);
     }
+    // The same tasks in the other languages, each in its own image, their
+    // rows beside the Python ones under the same method (B-523).
+    let (language_lines, language_rows, language_conditions) =
+        crate::languages::run(&socket, named, &podman, &scratch, ATTEMPTS);
+    rows.extend(language_rows);
     // The edit tasks after the writing ones, in the same container (B-522).
     let (edit_lines, edit_rows) = crate::edits::run(&socket, named, &podman, &scratch);
     let edits_recorded = mcf_serve::examine::record_rows(
@@ -959,7 +966,10 @@ pub(crate) fn eval(named: &str) -> Response {
                 "addressed",
                 addressed.clone().map_or(Value::Null, Value::text),
             ),
-        ],
+        ]
+        .into_iter()
+        .chain(language_conditions)
+        .collect(),
         &rows,
     );
 
@@ -1018,6 +1028,7 @@ pub(crate) fn eval(named: &str) -> Response {
         }
     ));
     lines.push(String::new());
+    lines.extend(language_lines);
     lines.extend(edit_lines);
     lines.push(match edits_recorded {
         Ok(_) => format!(
@@ -1035,7 +1046,8 @@ pub(crate) fn eval(named: &str) -> Response {
 /// One attempt at one task as rows: whether anything was written, whether
 /// it ran, the cases held of the cases, the code's size, and what the
 /// asking took (D54, B-518).
-fn attempt_rows(
+pub(crate) fn attempt_rows(
+    language: &str,
     task: &str,
     attempt: usize,
     ran: &Ran,
@@ -1045,6 +1057,7 @@ fn attempt_rows(
     use mcf_serve::examine::Reading;
     let whole = |held: usize| i64::try_from(held).unwrap_or(i64::MAX);
     let dims = [
+        ("language", Value::text(language.to_owned())),
         ("task", Value::text(task.to_owned())),
         ("attempt", Value::Integer(whole(attempt))),
     ];

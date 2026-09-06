@@ -25,6 +25,7 @@ mod examine;
 mod explain;
 mod history;
 mod hosting;
+mod languages;
 mod licence;
 mod log;
 mod measure;

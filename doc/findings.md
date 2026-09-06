@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 153 |
+| **Version** | 154 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -173,6 +173,7 @@ forward as one.
 | 202 | [F202 — Multi-step tool use is five tasks over several turns: three chains where each call's argument comes from the last result, two calls wanted at once, and an error result to recover from, every step judged by exact match and every step a row; the 2B completed eight chains of ten and carried every result in five, made both calls at once, and never recovered from the error (B-520, D55, A19)](#202--f202--multi-step-tool-use-is-five-tasks-over-several-turns-three-chains-where-each-calls-argument-comes-from-the-last-result-two-calls-wanted-at-once-and-an-error-result-to-recover-from-every-step-judged-by-exact-match-and-every-step-a-row-the-2b-completed-eight-chains-of-ten-and-carried-every-result-in-five-made-both-calls-at-once-and-never-recovered-from-the-error-b-520-d55-a19) |
 | 203 | [F203 — Repair after feedback: every failed coding attempt is handed back with the cases that did not hold and what each should have returned, or the fact that it did not run, for one more try; the second try, whether it ran, the cases it held and what the asking took are rows under `coding-repair`; on the 2B, of 36 failed attempts 24 second tries ran and one held every case (B-521, D55, B-518)](#203-f203-repair-after-feedback-every-failed-coding-attempt-is-handed-back-with-the-cases-that-did-not-hold-and-what-each-should-have-returned-or-the-fact-that-it-did-not-run-for-one-more-try-the-second-try-whether-it-ran-the-cases-it-held-and-what-the-asking-took-are-rows-under-coding-repair-on-the-2b-of-36-failed-attempts-24-second-tries-ran-and-one-held-every-case-b-521-d55-b-518) |
 | 204 | [F204 — Edit tasks are five small Python files with one change asked and the whole file wanted back: hidden cases run on the result and every function nobody asked about is looked for in the answer byte for byte, so what held and what was disturbed are separate rows under `editing`; the 2B held every case in four of the five and brought every untouched function back unchanged in all ten attempts (B-522, D55, B-518)](#204-f204-edit-tasks-are-five-small-python-files-with-one-change-asked-and-the-whole-file-wanted-back-hidden-cases-run-on-the-result-and-every-function-nobody-asked-about-is-looked-for-in-the-answer-byte-for-byte-so-what-held-and-what-was-disturbed-are-separate-rows-under-editing-the-2b-held-every-case-in-four-of-the-five-and-brought-every-untouched-function-back-unchanged-in-all-ten-attempts-b-522-d55-b-518) |
+| 205 | [F205 — The coding suite runs in JavaScript and in Rust as well as Python: the same twenty tasks, each language's cases in its own literals compared in its own canonical text, each answer run in the language's own pinned image under the Python one's confinement, and a `language` dimension on every coding row; a Rust answer records whether it compiled, an `export` or a written `main` is stripped the way a fence is, and on the 2B Python held every case in 24 attempts of 60, JavaScript in 16 and Rust in 9 with 33 that did not compile (B-523, D55, B-025)](#205-f205-the-coding-suite-runs-in-javascript-and-in-rust-as-well-as-python-the-same-twenty-tasks-each-languages-cases-in-its-own-literals-compared-in-its-own-canonical-text-each-answer-run-in-the-languages-own-pinned-image-under-the-python-ones-confinement-and-a-language-dimension-on-every-coding-row-a-rust-answer-records-whether-it-compiled-an-export-or-a-written-main-is-stripped-the-way-a-fence-is-and-on-the-2b-python-held-every-case-in-24-attempts-of-60-javascript-in-16-and-rust-in-9-with-33-that-did-not-compile-b-523-d55-b-025) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9627,6 +9628,46 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 205 · F205 — The coding suite runs in JavaScript and in Rust as well as Python: the same twenty tasks, each language's cases in its own literals compared in its own canonical text, each answer run in the language's own pinned image under the Python one's confinement, and a `language` dimension on every coding row; a Rust answer records whether it compiled, an `export` or a written `main` is stripped the way a fence is, and on the 2B Python held every case in 24 attempts of 60, JavaScript in 16 and Rust in 9 with 33 that did not compile (B-523, D55, B-025)
+
+**One suite, three languages.** A model chosen for coding is chosen
+for a language, and the suite spoke only Python. The twenty tasks are
+now asked for in JavaScript and in Rust as well, in the Python order
+with the same cases: each language's ask names the language — and for
+Rust the signature, since the checker calls it — and its cases are
+written in the language's own literals and compared in its own
+canonical text, `JSON.stringify` for JavaScript and `{:?}` for Rust,
+so that what leaves the container is `ok` or `no` a case as it is for
+Python. Each language runs in its own image pinned by digest, `node`
+and `rust` slim, under the same confinement as the Python one with a
+private `/tmp` for the compiler's output. A reference answer to every
+task in every language runs in the containers on request and holds
+every case, so a case that cannot be satisfied is not among them. A
+language whose image cannot be started says so once and has no rows;
+the run's conditions carry each language's version or its absence.
+
+**What is stripped and what is recorded.** A JavaScript answer that
+writes `export` or `module.exports`, and a Rust answer that brings its
+own `fn main`, would fail for the checker's shape rather than the
+model's: the words are removed, the way the fence around an answer is,
+and nothing else is touched. A Rust answer records `compiled` beside
+`ran`, so an answer the compiler refused is told apart from one that
+ran and did not reach every case. Every coding row, the Python ones
+included, now carries a `language` dimension.
+
+**Two checks corrected on the way.** The citation shape accepted an
+empty head, so `-1` in a sentence read as a citation; a head must be a
+letter. And the Rust median task returns twice the median as a whole
+number, so that no floating type is named in a shipped source.
+
+**The 2B.** Sixty attempts a language. Python held every case in 24,
+JavaScript in 16, Rust in 9; 33 Rust answers did not compile and 5
+JavaScript ones did not run to the end. The tasks that held in every
+language — merging, brackets, the median fix — and those that held in
+none are the rows a person compares by, language against language on
+one model and model against model in one language. 1173 rows under
+`coding`.
+
 ## 204 · F204 — Edit tasks are five small Python files with one change asked and the whole file wanted back: hidden cases run on the result and every function nobody asked about is looked for in the answer byte for byte, so what held and what was disturbed are separate rows under `editing`; the 2B held every case in four of the five and brought every untouched function back unchanged in all ten attempts (B-522, D55, B-518)
 
 **Editing is not writing.** The coding suite asks for a function from
@@ -13349,6 +13390,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 154 — three languages
+
+F205: the coding suite in JavaScript and Rust, a language dimension on
+every coding row (B-523).
 
 ### Version 153 — edit tasks
 

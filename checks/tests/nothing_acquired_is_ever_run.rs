@@ -79,6 +79,16 @@ const DECLARED: &[Spawns] = &[
                container is the whole of why it may",
     },
     Spawns {
+        file: "crates/mcf-cli/src/languages.rs",
+        sites: 2,
+        what: "podman again, for the same suite in JavaScript and in Rust: once to ask the \
+               language's pinned image whether it can be run at all, and once to run the \
+               function a model wrote against the task's cases under the same confinement as \
+               the Python one — no network, no capabilities, a read-only root with a private \
+               /tmp for a compiler's output, a memory ceiling, a process limit and a deadline. \
+               What leaves is `ok` or `no` per case, or that it did not compile (B-523, B-025)",
+    },
+    Spawns {
         file: "crates/mcf-serve/src/probes/run.rs",
         sites: 1,
         what: "the provisioned engine's own tool that takes an image, so that the vision probe \
