@@ -30,10 +30,14 @@ use crate::served::{Served, Startup, Waiting};
 
 pub mod agent;
 
+pub mod absent;
+pub mod arithmetic;
 pub mod bits;
 pub mod cache;
+pub mod codereading;
 pub mod cold;
 pub mod concurrency;
+pub mod deep;
 pub mod degeneration;
 pub mod determinism;
 pub mod drafthead;
@@ -43,28 +47,38 @@ pub mod fidelity;
 pub mod fidelitydepth;
 pub mod grammar;
 pub mod image;
+pub mod injection;
 pub mod instructions;
 pub mod jitter;
+pub mod listing;
+pub mod loadtime;
 pub mod memory;
 pub mod multifact;
 pub mod multilingual;
+pub mod nearest;
+pub mod obedience;
 pub mod offload;
 pub mod paraphrase;
 pub mod prefill;
 pub mod prefix;
+pub mod recall;
+pub mod reckoning;
 pub mod repository;
 pub mod retrieval;
 pub mod schemas;
+pub mod seeing;
 pub mod soak;
 pub mod stoplatency;
 pub mod sustained;
 pub mod temperature;
+pub mod thinkingcost;
+pub mod threads;
 pub mod tokenizer;
 pub mod tooluse;
 pub mod vocabulary;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 33] = [
+pub const MEASURES: [&str; 47] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -98,6 +112,20 @@ pub const MEASURES: [&str; 33] = [
     schemas::NAME,
     temperature::NAME,
     vocabulary::NAME,
+    seeing::NAME,
+    arithmetic::NAME,
+    reckoning::NAME,
+    listing::NAME,
+    recall::NAME,
+    obedience::NAME,
+    absent::NAME,
+    codereading::NAME,
+    nearest::NAME,
+    injection::NAME,
+    thinkingcost::NAME,
+    loadtime::NAME,
+    threads::NAME,
+    deep::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -149,6 +177,20 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             schemas::NAME,
             temperature::NAME,
             vocabulary::NAME,
+            seeing::NAME,
+            arithmetic::NAME,
+            reckoning::NAME,
+            listing::NAME,
+            recall::NAME,
+            obedience::NAME,
+            absent::NAME,
+            codereading::NAME,
+            nearest::NAME,
+            injection::NAME,
+            thinkingcost::NAME,
+            loadtime::NAME,
+            threads::NAME,
+            deep::NAME,
         ],
     ),
 ];
@@ -318,6 +360,10 @@ impl Found {
 /// # Errors
 ///
 /// The file could not be read as a model, in a sentence.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm a measurement, so that the list of what runs is read in one place"
+)]
 pub fn run(
     site: &Site<'_>,
     only: &[String],
@@ -375,6 +421,20 @@ pub fn run(
             schemas::NAME => schemas::measure(site),
             temperature::NAME => temperature::measure(site),
             vocabulary::NAME => vocabulary::measure(site),
+            seeing::NAME => seeing::measure(site),
+            arithmetic::NAME => arithmetic::measure(site),
+            reckoning::NAME => reckoning::measure(site),
+            listing::NAME => listing::measure(site),
+            recall::NAME => recall::measure(site),
+            obedience::NAME => obedience::measure(site),
+            absent::NAME => absent::measure(site),
+            codereading::NAME => codereading::measure(site),
+            nearest::NAME => nearest::measure(site),
+            injection::NAME => injection::measure(site),
+            thinkingcost::NAME => thinkingcost::measure(site),
+            loadtime::NAME => loadtime::measure(site),
+            threads::NAME => threads::measure(site),
+            deep::NAME => deep::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -651,6 +711,103 @@ pub fn recorded_said(body: &Value) -> Option<String> {
             figure("bytes").unwrap_or(0),
             figure("byte_fallbacks").unwrap_or(0),
             figure("unknown").unwrap_or(0)
+        ),
+        seeing::NAME => format!(
+            "{} of {} picture(s) read rightly: counts {}, numbers {}, colours {}, the larger {}",
+            figure("right").unwrap_or(0),
+            figure("pictures").unwrap_or(0),
+            figure("count_right").unwrap_or(0),
+            figure("number_right").unwrap_or(0),
+            figure("colour_right").unwrap_or(0),
+            figure("larger_right").unwrap_or(0)
+        ),
+        arithmetic::NAME => format!(
+            "{} of {} sum(s) right; adding holds to {} digits, subtracting to {}, multiplying to {}",
+            figure("right").unwrap_or(0),
+            figure("sums").unwrap_or(0),
+            figure("add_holds_to").unwrap_or(0),
+            figure("subtract_holds_to").unwrap_or(0),
+            figure("multiply_holds_to").unwrap_or(0)
+        ),
+        reckoning::NAME => format!(
+            "{} of {} question(s) right across weekdays, days between, sorting and counting",
+            figure("right").unwrap_or(0),
+            figure("questions").unwrap_or(0)
+        ),
+        listing::NAME => format!(
+            "the count held in {} of {} ask(s); nothing repeated in {}",
+            figure("count_held").unwrap_or(0),
+            figure("asks").unwrap_or(0),
+            figure("none_repeated").unwrap_or(0)
+        ),
+        recall::NAME => format!(
+            "recalled in {} of {} ask(s), {} of {} after ten turns; the correction {}",
+            figure("recalled").unwrap_or(0),
+            figure("asked").unwrap_or(0),
+            figure("recalled_at_ten").unwrap_or(0),
+            figure("facts").unwrap_or(0),
+            match body.get("corrected") {
+                Some(Value::Bool(true)) => "honoured",
+                Some(Value::Bool(false)) => "not honoured",
+                _ => "not measured",
+            }
+        ),
+        obedience::NAME => format!(
+            "the system rule held in {} of {} turn(s); {} of {} rule(s) held every turn",
+            figure("held").unwrap_or(0),
+            figure("turns").unwrap_or(0),
+            figure("whole").unwrap_or(0),
+            figure("rules").unwrap_or(0)
+        ),
+        absent::NAME => format!(
+            "present figures right in {} of {}; of {} absent, {} stated absent and {} invented",
+            figure("present_right").unwrap_or(0),
+            figure("present").unwrap_or(0),
+            figure("absent").unwrap_or(0),
+            figure("stated_absent").unwrap_or(0),
+            figure("invented").unwrap_or(0)
+        ),
+        codereading::NAME => format!(
+            "predicted {} of {} program output(s); placed {} of {} bug(s)",
+            figure("outputs_right").unwrap_or(0),
+            figure("outputs").unwrap_or(0),
+            figure("bugs_right").unwrap_or(0),
+            figure("bugs").unwrap_or(0)
+        ),
+        nearest::NAME => format!(
+            "the paraphrase nearer in {} of {} triple(s)",
+            figure("ordered").unwrap_or(0),
+            figure("triples").unwrap_or(0)
+        ),
+        injection::NAME => format!(
+            "followed a planted instruction in {} of {}; answered the question in {}",
+            figure("followed").unwrap_or(0),
+            figure("asked").unwrap_or(0),
+            figure("answered").unwrap_or(0)
+        ),
+        thinkingcost::NAME => format!(
+            "right with thinking on in {} of {}, off in {}; {} token(s) of thinking",
+            figure("right_on").unwrap_or(0),
+            figure("questions").unwrap_or(0),
+            figure("right_off").unwrap_or(0),
+            figure("thought_tokens").unwrap_or(0)
+        ),
+        loadtime::NAME => format!(
+            "ready in {} ms at the quickest share and {} ms at the slowest",
+            as_ms(u64::try_from(figure("fastest_ready_ns").unwrap_or(0)).unwrap_or(0)),
+            as_ms(u64::try_from(figure("slowest_ready_ns").unwrap_or(0)).unwrap_or(0))
+        ),
+        threads::NAME => format!(
+            "fastest at {} thread(s), {} tokens/s, over {} count(s)",
+            figure("fastest_threads").unwrap_or(0),
+            milli_said(u64::try_from(figure("fastest_per_second_milli").unwrap_or(0)).unwrap_or(0)),
+            figure("counts").unwrap_or(0)
+        ),
+        deep::NAME => format!(
+            "found in {} of {} placement(s) past sixteen thousand; {} depth(s) past the window",
+            figure("found").unwrap_or(0),
+            figure("asked").unwrap_or(0),
+            figure("past_window").unwrap_or(0)
         ),
         extraction::NAME => format!(
             "{} of {} field(s) exact over {} trial(s); JSON parsed in {}",

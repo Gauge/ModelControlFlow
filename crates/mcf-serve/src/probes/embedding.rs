@@ -203,3 +203,35 @@ pub fn measured(path: &std::path::Path, text: &str) -> Option<(usize, String, us
     }
     Some((embedding.vector.len(), digest.finish().hex(), tokens.len()))
 }
+
+/// For each triple of texts, the similarity of the first to the second
+/// and to the third, in millionths, by MCF's own engine in this process;
+/// `None` where the file is not an embedding model (B-552).
+#[must_use]
+pub fn similarities(path: &std::path::Path, triples: &[[&str; 3]]) -> Option<Vec<(i64, i64)>> {
+    use mcf_standin::bert;
+    use mcf_standin::tokenizer::Vocabulary;
+    let bytes = std::fs::read(path).ok()?;
+    let file = mcf_standin::gguf::parse(&bytes).ok()?;
+    let vocabulary = Vocabulary::read(&file).ok()?;
+    let model = bert::load(&file, &bytes)
+        .ok()?
+        .across(mcf_standin::threads::Threads::what_the_machine_reports());
+    let build = mcf_core::build_identity::BuildIdentity::current()
+        .version
+        .to_owned();
+    let embed = |text: &str| {
+        let tokens = vocabulary.encode(text, true).ok()?;
+        let marked = bert::embed(&model, &build, &tokens).ok()?;
+        Some(marked.value().observed().clone())
+    };
+    let mut out = Vec::with_capacity(triples.len());
+    for [first, second, third] in triples {
+        let (a, b, c) = (embed(first)?, embed(second)?, embed(third)?);
+        out.push((
+            bert::similarity_millionths(&a, &b),
+            bert::similarity_millionths(&a, &c),
+        ));
+    }
+    Some(out)
+}

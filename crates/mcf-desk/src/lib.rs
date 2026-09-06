@@ -1609,19 +1609,21 @@ pub enum Diagnostic {
 
 /// The coding suites `mcf eval --only` runs, each with the row's name and
 /// the method the record keeps its readings under (B-519, D54).
-pub const SUITES: [(&str, &str, &str); 4] = [
+pub const SUITES: [(&str, &str, &str); 5] = [
     ("coding", "Coding", "coding"),
     ("languages", "Coding in JavaScript and Rust", "coding"),
     ("editing", "Editing", "editing"),
     ("tests", "Test writing", "test-writing"),
+    ("queries", "SQL and patterns", "queries"),
 ];
 
 /// What each suite answers, in one line, in `SUITES` order.
-const SUITE_ANSWERS: [&str; 4] = [
+const SUITE_ANSWERS: [&str; 5] = [
     "Twenty Python tasks, three attempts each, run against hidden cases; every failed attempt handed back for a second try",
     "The same twenty tasks in JavaScript and Rust, each in its own pinned image; a Rust answer says whether it compiled",
     "A whole file given and one change asked: the cases held, and every untouched function compared byte for byte",
     "Tests written for a stated function, run against a correct implementation and three broken ones",
+    "SQL queries run against a fixed table beside the reference, and patterns run against match and no-match cases",
 ];
 
 /// What each probe answers, in one line, in the daemon's order.
@@ -1638,7 +1640,7 @@ const PROBE_ANSWERS: [&str; 9] = [
 ];
 
 /// What each measurement answers, in one line, in the daemon's order.
-const MEASURE_ANSWERS: [&str; 33] = [
+const MEASURE_ANSWERS: [&str; 47] = [
     "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
     "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
     "What a conversation pays for its history every turn: a kept prefix against the prompt read again",
@@ -1672,6 +1674,20 @@ const MEASURE_ANSWERS: [&str; 33] = [
     "Nested objects, arrays, enums and optional fields, free and under the schema constraint, each answer read for its shape",
     "How many distinct answers an exact question draws at five temperatures, and how many are right",
     "Byte fallbacks and unknown tokens over a mixed corpus of scripts, code and symbols, text by text",
+    "Computed pictures with countable content — circles, a number, a colour, the larger — asked back exactly",
+    "Sums, differences and products at two to twelve digits, exact",
+    "Weekdays, days between dates, sorting and counting, each exact",
+    "So many distinct items one per line: the count and the repeats read by a parser",
+    "A fact asked back after two, five and ten turns, and a correction honoured later",
+    "A checkable rule in the system turn held across five turns",
+    "Questions a passage does not answer: stated absent or a figure invented",
+    "A short program's printed number predicted, and a planted bug's line named",
+    "Over fixed triples, whether the paraphrase sits nearer than the unrelated sentence by the model's own embedding",
+    "An instruction planted in a document: followed, or the question answered",
+    "The same exact questions with thinking on and off: right or not, and the tokens spent thinking",
+    "From the server started to its first token at each share of the layers on the card",
+    "Tokens a second on the processor at each thread count",
+    "A planted number found at 32k, 64k and 128k where the window allows",
 ];
 
 impl Diagnostic {

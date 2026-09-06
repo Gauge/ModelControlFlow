@@ -739,7 +739,7 @@ fn which_podman() -> Result<PathBuf, Failure> {
 }
 
 /// The suites `mcf eval` runs, by the name `--only` takes.
-pub(crate) const SUITES: [&str; 4] = ["coding", "languages", "editing", "tests"];
+pub(crate) const SUITES: [&str; 5] = ["coding", "languages", "editing", "tests", "queries"];
 
 /// Evaluates one model against every task, or one suite's.
 #[allow(
@@ -991,7 +991,38 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
     if engine_ran.is_none() {
         engine_ran = test_engine;
     }
+    // SQL and patterns, run in the same container (B-551).
+    let (query_lines, query_rows, query_engine) = if wants("queries") {
+        crate::queries::run(&socket, named, &podman, &scratch)
+    } else {
+        (Vec::new(), Vec::new(), None)
+    };
+    if engine_ran.is_none() {
+        engine_ran = query_engine;
+    }
     let engine_said = said_of(&engine_ran);
+    let queries_recorded = wants("queries").then(|| {
+        mcf_serve::examine::record_rows(
+            Path::new(named),
+            "queries",
+            &engine_said,
+            vec![
+                (
+                    "sql_tasks",
+                    Value::Integer(
+                        i64::try_from(crate::queries::QUERIES.len()).unwrap_or(i64::MAX),
+                    ),
+                ),
+                (
+                    "pattern_tasks",
+                    Value::Integer(
+                        i64::try_from(crate::queries::PATTERNS.len()).unwrap_or(i64::MAX),
+                    ),
+                ),
+            ],
+            &query_rows,
+        )
+    });
     let tests_recorded = wants("tests").then(|| {
         mcf_serve::examine::record_rows(
             Path::new(named),
@@ -1141,6 +1172,18 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
             test_rows.len()
         ),
         Some(Err(why)) => format!("  TEST-WRITING READINGS NOT RECORDED: {why}"),
+        None => String::new(),
+    });
+    if wants("tests") {
+        lines.push(String::new());
+    }
+    lines.extend(query_lines);
+    lines.push(match queries_recorded {
+        Some(Ok(_)) => format!(
+            "  {} reading(s) recorded under queries; `mcf data {named} --method queries` writes them",
+            query_rows.len()
+        ),
+        Some(Err(why)) => format!("  QUERIES READINGS NOT RECORDED: {why}"),
         None => String::new(),
     });
     Response {

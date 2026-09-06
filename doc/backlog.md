@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 301 |
+| **Version** | 302 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **457 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 395 build items (288 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 52 open).** Every item cites
+decided, 23 resolved) and 395 build items (304 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 36 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -378,22 +378,22 @@ first and importance second.
 | B-540 | Temperature sensitivity: distinct answers to an exact question at five temperatures | D55, DEC-062, A19 | Rows per temperature | done. F222: five temperatures, distinct and right, thirty-second measurement |
 | B-541 | Vocabulary coverage: byte-fallback and unknown-token rate over a mixed corpus | D55, DEC-062, B-502 | Rows per text | done. F223: twelve texts, byte fallbacks and unknowns, thirty-third measurement |
 | B-542 | Recording audit: every diagnostic writes its rows once, the suites' rows name the engine that answered, the daemon's summary reads the readings again before it says when a method last ran, and every measurement reads back as a sentence | D54, D55, B-519 | No method in the code is without rows in a record it has run into; a suite's rows name the engine | done. F225: eleven measurements and five probes had never recorded rows since rows were added; run and recorded; the engine on suite rows and the summary's freshness fixed |
-| B-543 | What the model sees: computed pictures with countable content — so many shapes, a rendered number — asked back exactly, beside the image-cost figures | D55, B-503, B-452 | Rows per picture per trial: right, tokens, time | open |
-| B-544 | Arithmetic by size: sums, differences and products at two to twelve digits, exact — where the digits run out | D55, A19 | Rows per operation per digit count | open |
-| B-545 | Dates, ordering and counting: the weekday of a date, days between two, ten numbers sorted, letters counted in a word — each exact | D55, A19 | Rows per task per trial | open |
-| B-546 | Long output under a constraint: so many distinct items, exactly so many lines, no repeats — duplicates and the count read by a parser | D55, B-526 | Rows per ask: items, distinct, lines | open |
-| B-547 | Multi-turn memory: a value stated in the first turn asked back after two, five and ten distractor turns; a correction given in turn two honoured in turn six | D55, B-520 | Rows per distance: recalled, corrected | open |
-| B-548 | System-prompt obedience: a checkable rule in the system turn — capitals only, a closing word, a language by script — held across a conversation | D55, B-526 | Rows per turn: held | open |
-| B-549 | Saying it is not there: questions whose answer is absent from a passage given — whether a figure is invented or the absence stated | D55, B-517 | Rows per question: invented, stated absent | open |
-| B-550 | Code reading: the output of a short program predicted exactly, and the line of a planted bug named | D55, B-518 | Rows per program per trial | open |
-| B-551 | SQL and regular expressions: queries run in the container against a fixed database and compared exactly; patterns run against match and no-match cases | D55, B-523, B-025 | Rows per query and per pattern per case | open |
-| B-552 | Embedding retrieval: over fixed triples, whether the paraphrase ranks above the unrelated sentence by the model's own embedding | D55, B-501 | Rows per triple: right order, the two distances | open |
-| B-553 | Injection resistance: an instruction planted inside a document handed to the model — whether the answer follows it or the question | D55, B-517 | Rows per document per trial: followed | open |
-| B-554 | Thinking against accuracy: on a model that thinks, the tokens spent thinking beside the exact-answer rows, with thinking on and off | D55, B-441 | Rows per question per mode: right, thinking tokens | open |
-| B-555 | Load time by offload: from the server started to the first token at each layer count on the card | D55, B-491, D11 | Rows per layer count | open |
-| B-556 | Thread scaling: tokens a second on the processor at each thread count | D55, D11 | Rows per thread count | open |
-| B-557 | The prompt report and the comparison as rows: what each part of a prompt does and the bench's timings recorded as readings, not reports | D54, B-478 | Both answer `mcf data` | open |
-| B-558 | Retrieval past sixteen thousand: the single-fact and multi-fact retrievals at 32k, 64k and 128k where the window allows | D55, B-497, B-529 | Rows per depth, and a depth past the window says so | open |
+| B-543 | What the model sees: computed pictures with countable content — so many shapes, a rendered number — asked back exactly, beside the image-cost figures | D55, B-503, B-452 | Rows per picture per trial: right, tokens, time | done. F227: thirteen computed pictures, thirty-fourth measurement; the 2B 11 of 13 |
+| B-544 | Arithmetic by size: sums, differences and products at two to twelve digits, exact — where the digits run out | D55, A19 | Rows per operation per digit count | done. F228: fifty-four sums by digit count; the 2B multiplies to two digits |
+| B-545 | Dates, ordering and counting: the weekday of a date, days between two, ten numbers sorted, letters counted in a word — each exact | D55, A19 | Rows per task per trial | done. F235: twelve questions by kind; the 2B 5 of 12 |
+| B-546 | Long output under a constraint: so many distinct items, exactly so many lines, no repeats — duplicates and the count read by a parser | D55, B-526 | Rows per ask: items, distinct, lines | done. F236: eight asks, lines and repeats; the 2B held the count in 2 of 8 |
+| B-547 | Multi-turn memory: a value stated in the first turn asked back after two, five and ten distractor turns; a correction given in turn two honoured in turn six | D55, B-520 | Rows per distance: recalled, corrected | done. F229: three facts at three distances and a correction; the 2B 9 of 9 |
+| B-548 | System-prompt obedience: a checkable rule in the system turn — capitals only, a closing word, a language by script — held across a conversation | D55, B-526 | Rows per turn: held | done. F230: four rules over five turns; the 2B held two every turn and two never |
+| B-549 | Saying it is not there: questions whose answer is absent from a passage given — whether a figure is invented or the absence stated | D55, B-517 | Rows per question: invented, stated absent | done. F231: three passages; the 2B stated absence in 8 of 9 and invented 1 |
+| B-550 | Code reading: the output of a short program predicted exactly, and the line of a planted bug named | D55, B-518 | Rows per program per trial | done. F237: six outputs and five bugs; the 2B 2 and 2 |
+| B-551 | SQL and regular expressions: queries run in the container against a fixed database and compared exactly; patterns run against match and no-match cases | D55, B-523, B-025 | Rows per query and per pattern per case | done. F238: five queries and four patterns run in the container, the fifth suite; the 2B matched every query |
+| B-552 | Embedding retrieval: over fixed triples, whether the paraphrase ranks above the unrelated sentence by the model's own embedding | D55, B-501 | Rows per triple: right order, the two distances | done. F233: eight triples in millionths; a file that is not an embedding model says so |
+| B-553 | Injection resistance: an instruction planted inside a document handed to the model — whether the answer follows it or the question | D55, B-517 | Rows per document per trial: followed | done. F232: twelve planted instructions; the 2B followed none |
+| B-554 | Thinking against accuracy: on a model that thinks, the tokens spent thinking beside the exact-answer rows, with thinking on and off | D55, B-441 | Rows per question per mode: right, thinking tokens | done. F234: with and without the switch where the template takes it; the 2B has none |
+| B-555 | Load time by offload: from the server started to the first token at each layer count on the card | D55, B-491, D11 | Rows per layer count | done. F239: five shares of the header's layers timed to the first token |
+| B-556 | Thread scaling: tokens a second on the processor at each thread count | D55, D11 | Rows per thread count | done. F242: six thread counts in thousandths of a token a second |
+| B-557 | The prompt report and the comparison as rows: what each part of a prompt does and the bench's timings recorded as readings, not reports | D54, B-478 | Both answer `mcf data` | done. F240: prompt-report and comparison rows |
+| B-558 | Retrieval past sixteen thousand: the single-fact and multi-fact retrievals at 32k, 64k and 128k where the window allows | D55, B-497, B-529 | Rows per depth, and a depth past the window says so | done. F241: 32k, 64k and 128k; the 2B found every placement |
 | B-559 | The server a probe opens at the trained context outlives the probe: the usable-context probe started the 2B at 262,144 tokens and the daemon kept that server for every ask after it, so a suite that followed ran through a cache sized for a window nobody else asked for; a server opened for a probe's depth closes with the probe, or the next ask sizes its own | D48, B-459, F225 | After a probe, the next ask runs on a server sized for its own window | done. F226: a held window more than sixteen times the turn's need is replaced; the abandoned read that runs on is noted |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
 | B-439 | The prompt page is a readings table: a row a reading with its choice, its condition and what it costs in generations, and the served condition strings are labels a cell wide | B-438, B-429, B-434, B-435, B-436, A19, A22, B60, §3.4, §3.15 | Above the report the window used to explain each control in a sentence — what the temperature does, what the extras cost, what the run would spend. Under B-438 the report below became figures and labels while the controls above stayed prose. The controls become a table with the same discipline: a row a reading (unit, removed, control, alone, prefixes, seeds), the choice in the row (the buttons or the field), the condition as short labels joined by a middle dot, the generations the row costs on the right, and a total row that adds the one as-written draw; a reading not asked for shows its cost faint. The served `unit_chosen_by`, `addressed_as` and `sampler` strings are cut to the same register so the console's condition lines and the window's read alike (B-072) | **done** — `Readings` in the desk draws the table; the temperature field's condition names an empty field as "at 0 the seed changes nothing · no house value" (B60) and a bad entry as what it should be, with Analyse waiting (§3.15); the served strings are `chosen` / `text: blank lines` / `text: no blank line`, `one user turn · whole prompt · system turn: none, not probed` and `greedy · temperature 0 · seed held · as written, every removal, the control` |
@@ -574,6 +574,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 302 — the sixteen gaps built
+
+B-543 to B-558 done (F227 to F242).
 
 ### Version 301 — a window far wider than the turn
 

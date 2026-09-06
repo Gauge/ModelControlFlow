@@ -34,6 +34,7 @@ mod probe;
 mod prompt;
 mod provision;
 mod pull;
+mod queries;
 mod run;
 mod say;
 mod segment;
@@ -634,7 +635,7 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["eval", _, "--only"] => Request::MissingArgument {
             command: "eval --only",
-            needs: "a suite's name: coding, languages, editing or tests",
+            needs: "a suite's name: coding, languages, editing, tests or queries",
         },
         ["eval"] => Request::MissingArgument {
             command: "eval",
@@ -2003,7 +2004,8 @@ const COMMANDS: &str = "\
     \x20       [--only <suite>]              check what it did: each answer run\n\
     \x20                                     in a container, four outcomes and\n\
     \x20                                     no total; a suite is coding,\n\
-    \x20                                     languages, editing or tests\n\
+    \x20                                     languages, editing, tests or\n\
+    \x20                                     queries\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
     \x20             or --file <path>         receives each word, and how much\n\
     \x20       [--by word|phrase|sentence|   the answer moves without each\n\

@@ -531,8 +531,10 @@ fn every_diagnostic_is_a_row_and_runs_from_its_pane() {
     // The last measurement's row is far down the list, which scrolls: at
     // some offset it is in view, whatever the list has grown to.
     let last = mcf_serve::examine::MEASURES.len() - 1;
-    let reached = [900.0, 1200.0, 1500.0, 1800.0, 2100.0]
-        .into_iter()
+    // Three hundred points at a time, as far as a list of sixty rows
+    // reaches: the offsets grow with the list, not with a guess.
+    let reached = (3..=16_u8)
+        .map(|step| 300.0 * f32::from(step))
         .any(|offset| {
             let _was = desk.scrolls.insert(mcf_desk::Region::Checks, offset);
             let mut y = 60.0;

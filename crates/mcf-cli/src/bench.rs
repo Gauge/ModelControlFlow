@@ -571,6 +571,8 @@ pub(crate) fn bench_where(
         &method,
         Some(&machine),
         mcf_core::time::Timestamp::now(),
+        (left, right),
+        engine.unwrap_or("the engine the daemon chose"),
     );
     let competing_written = competing
         .as_ref()
@@ -1130,12 +1132,18 @@ fn generate(
 }
 
 /// Writes the comparison to the record, and says where or why not.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one comparison's record: what was held, what was found, how, where, when, of which two, on what"
+)]
 fn keep(
     held: &Comparison<Monotonic>,
     finding: &mcf_bench::compare::Finding,
     method: &Method,
     machine: Option<&MachineHeld>,
     at: Timestamp,
+    (left_model, right_model): (&str, &str),
+    engine_said: &str,
 ) -> Result<PathBuf, String> {
     let Some(path) = mcf_record::journal::default_path() else {
         return Err("there is nowhere to write a record on this machine".to_owned());
@@ -1148,8 +1156,34 @@ fn keep(
     // record kept another — two answers to one question (A6).
     let body = record::comparison(held, finding, method, machine);
     let appended = journal
-        .append(&Record::new(EntryKind::Comparison, at, body))
+        .append(&Record::new(EntryKind::Comparison, at, body.clone()))
         .map_err(|failure| format!("the comparison would not append — {failure}"))?;
+    // Every timed pair as rows, one a pair a side, so that a comparison
+    // answers `mcf data` like every other diagnostic (B-557, D54).
+    let pair_rows = comparison_rows(&body);
+    if !pair_rows.is_empty() {
+        for (side, model) in [("left", left_model), ("right", right_model)] {
+            let rows: Vec<mcf_serve::examine::Reading> = pair_rows
+                .iter()
+                .filter(|row| row.dim("side") == side)
+                .cloned()
+                .collect();
+            let _recorded = mcf_serve::examine::record_rows(
+                std::path::Path::new(model),
+                "comparison",
+                engine_said,
+                vec![(
+                    "against",
+                    Value::text(if side == "left" {
+                        right_model
+                    } else {
+                        left_model
+                    }),
+                )],
+                &rows,
+            );
+        }
+    }
     // The prompt is a condition and it is content, so the record keeps its
     // length and its digest and the text goes beside it, under this entry's
     // identifier (A25, A6, F105). A prompt that cannot be filed is said rather
@@ -1374,3 +1408,36 @@ fn per_cent_of(written: &str) -> Option<PartsPerMillion> {
 
 #[cfg(test)]
 mod tests;
+
+/// Every timed pair of a comparison as rows: for each side, the pair's
+/// nanoseconds and its position in the sequence, and whether that side
+/// went first (B-557, D54).
+fn comparison_rows(body: &Value) -> Vec<mcf_serve::examine::Reading> {
+    use mcf_serve::examine::Reading;
+    let mut rows = Vec::new();
+    let pairs = body.get("pairs").and_then(Value::as_list).unwrap_or(&[]);
+    for (at, pair) in pairs.iter().enumerate() {
+        let pair_at = Value::Integer(i64::try_from(at).unwrap_or(i64::MAX));
+        for side in ["left", "right"] {
+            let dims = [("side", Value::text(side)), ("pair", pair_at.clone())];
+            if let Some(ns) = pair.get(&format!("{side}_ns")).and_then(Value::as_integer) {
+                rows.push(Reading::new(&dims, "ns", ns, "ns"));
+            }
+            if let Some(position) = pair
+                .get(&format!("{side}_position"))
+                .and_then(Value::as_integer)
+            {
+                rows.push(Reading::new(&dims, "position", position, "count"));
+            }
+            if let Some(first) = pair.get("first").and_then(Value::as_text) {
+                rows.push(Reading::new(
+                    &dims,
+                    "went_first",
+                    i64::from(first == side),
+                    "bool",
+                ));
+            }
+        }
+    }
+    rows
+}

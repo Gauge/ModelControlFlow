@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 164 |
+| **Version** | 165 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -195,6 +195,22 @@ forward as one.
 | 224 | [F224 — The coding suites are four rows of the Diagnostics list under a Coding heading — Python coding, JavaScript and Rust, editing, test writing — each run from its pane by MCF's own `eval` started as a job the window reads line by line and can stop, with its readings under the pane and when it last ran from the daemon's summary; on the way, the window was found to read the probes' findings and applied settings from the wrong level of that summary, so every probe read as never run after a restart (B-519, D54, DEC-061)](#224-f224-the-coding-suites-are-four-rows-of-the-diagnostics-list-under-a-coding-heading-python-coding-javascript-and-rust-editing-test-writing-each-run-from-its-pane-by-mcfs-own-eval-started-as-a-job-the-window-reads-line-by-line-and-can-stop-with-its-readings-under-the-pane-and-when-it-last-ran-from-the-daemons-summary-on-the-way-the-window-was-found-to-read-the-probes-findings-and-applied-settings-from-the-wrong-level-of-that-summary-so-every-probe-read-as-never-run-after-a-restart-b-519-d54-dec-061) |
 | 225 | [F225 — A recording audit over the 2B's record found eleven measurements and five probes that had never written rows since rows were added, the coding suites' rows naming no engine, the daemon's summary going stale after a command-line run, and the vision probe's rows carrying its whole conditions sentence as their engine; all run or fixed, with a test that every measurement reads back as a sentence, and sixteen coverage gaps registered (B-542, D54, D55)](#225-f225-a-recording-audit-over-the-2bs-record-found-eleven-measurements-and-five-probes-that-had-never-written-rows-since-rows-were-added-the-coding-suites-rows-naming-no-engine-the-daemons-summary-going-stale-after-a-command-line-run-and-the-vision-probes-rows-carrying-its-whole-conditions-sentence-as-their-engine-all-run-or-fixed-with-a-test-that-every-measurement-reads-back-as-a-sentence-and-sixteen-coverage-gaps-registered-b-542-d54-d55) |
 | 226 | [F226 — A held server whose window is more than sixteen times what a turn needs is stopped and one sized to the turn started: after a context probe opened the 2B at 131,074 tokens, the suite that followed ran on a server of 4,096, where before it ran through the probe's; and an abandoned probe's request is not interrupted mid-read, so a 262k trial ran on for over an hour after its client was killed (B-559, D48, B-459)](#226-f226-a-held-server-whose-window-is-more-than-sixteen-times-what-a-turn-needs-is-stopped-and-one-sized-to-the-turn-started-after-a-context-probe-opened-the-2b-at-131074-tokens-the-suite-that-followed-ran-on-a-server-of-4096-where-before-it-ran-through-the-probes-and-an-abandoned-probes-request-is-not-interrupted-mid-read-so-a-262k-trial-ran-on-for-over-an-hour-after-its-client-was-killed-b-559-d48-b-459) |
+| 227 | [F227 — What the model sees is thirteen computed pictures — one to five circles, a three-digit number in seven-segment strokes, a square of one colour, the larger of two circles — each asked one question and read by a parser; the 2B counted every circle, named every colour and side, and read one number of three (B-543, D55, B-503)](#227-f227-what-the-model-sees-is-thirteen-computed-pictures-one-to-five-circles-a-three-digit-number-in-seven-segment-strokes-a-square-of-one-colour-the-larger-of-two-circles-each-asked-one-question-and-read-by-a-parser-the-2b-counted-every-circle-named-every-colour-and-side-and-read-one-number-of-three-b-543-d55-b-503) |
+| 228 | [F228 — Arithmetic by size puts fifty-four sums — three each of adding, subtracting and multiplying at two, four, six, eight, ten and twelve digits, from a fixed generator — and reads the reply's number; the 2B added to twelve digits with one lapse at ten, subtracted with a lapse a size from four, and multiplied nothing past two digits (B-544, D55, A19)](#228-f228-arithmetic-by-size-puts-fifty-four-sums-three-each-of-adding-subtracting-and-multiplying-at-two-four-six-eight-ten-and-twelve-digits-from-a-fixed-generator-and-reads-the-replys-number-the-2b-added-to-twelve-digits-with-one-lapse-at-ten-subtracted-with-a-lapse-a-size-from-four-and-multiplied-nothing-past-two-digits-b-544-d55-a19) |
+| 229 | [F229 — Multi-turn memory tells the model a fact, runs two, five and ten fixed distractor turns with the model's own replies kept in the transcript, and asks the fact back; and states a value, corrects it, and asks after three more turns; the 2B recalled every fact at every distance and honoured the correction (B-547, D55, B-520)](#229-f229-multi-turn-memory-tells-the-model-a-fact-runs-two-five-and-ten-fixed-distractor-turns-with-the-models-own-replies-kept-in-the-transcript-and-asks-the-fact-back-and-states-a-value-corrects-it-and-asks-after-three-more-turns-the-2b-recalled-every-fact-at-every-distance-and-honoured-the-correction-b-547-d55-b-520) |
+| 230 | [F230 — System-prompt obedience puts four checkable rules in the system turn — capitals only, a closing word, no digits, one sentence — over five user turns each with the model's replies kept; the 2B held no-digits and one-sentence in every turn and broke capitals-only and the closing word in every turn (B-548, D55, B-526)](#230-f230-system-prompt-obedience-puts-four-checkable-rules-in-the-system-turn-capitals-only-a-closing-word-no-digits-one-sentence-over-five-user-turns-each-with-the-models-replies-kept-the-2b-held-no-digits-and-one-sentence-in-every-turn-and-broke-capitals-only-and-the-closing-word-in-every-turn-b-548-d55-b-526) |
+| 231 | [F231 — Saying it is not there hands the model three passages with questions the text answers and questions it does not, told to answer *not stated* where the text does not say; the 2B answered five of six present figures rightly, stated the absence in eight of nine, and invented one figure (B-549, D55, B-517)](#231-f231-saying-it-is-not-there-hands-the-model-three-passages-with-questions-the-text-answers-and-questions-it-does-not-told-to-answer-not-stated-where-the-text-does-not-say-the-2b-answered-five-of-six-present-figures-rightly-stated-the-absence-in-eight-of-nine-and-invented-one-figure-b-549-d55-b-517) |
+| 232 | [F232 — Injection resistance hands the model four documents each carrying one of three planted instructions to answer with a fixed word instead of the question, and reads the reply for the word and for the number; the 2B followed none of the twelve and answered every question (B-553, D55, B-517)](#232-f232-injection-resistance-hands-the-model-four-documents-each-carrying-one-of-three-planted-instructions-to-answer-with-a-fixed-word-instead-of-the-question-and-reads-the-reply-for-the-word-and-for-the-number-the-2b-followed-none-of-the-twelve-and-answered-every-question-b-553-d55-b-517) |
+| 233 | [F233 — Embedding retrieval embeds eight triples — a sentence, its paraphrase, an unrelated sentence — with MCF's own engine in this process and writes the two similarities in millionths and whether the paraphrase sat nearer; a file that is not an embedding model, as the 2B is not, says so and has no rows (B-552, D55, B-501)](#233-f233-embedding-retrieval-embeds-eight-triples-a-sentence-its-paraphrase-an-unrelated-sentence-with-mcfs-own-engine-in-this-process-and-writes-the-two-similarities-in-millionths-and-whether-the-paraphrase-sat-nearer-a-file-that-is-not-an-embedding-model-as-the-2b-is-not-says-so-and-has-no-rows-b-552-d55-b-501) |
+| 234 | [F234 — Thinking against accuracy asks six exact questions with the thinking switch on and off where the template takes it, reading each reply's answer and the tokens spent inside the thinking markers; the 2B's template renders the same text either way, so the measurement says it has no switch and writes no rows (B-554, D55, B-441)](#234-f234-thinking-against-accuracy-asks-six-exact-questions-with-the-thinking-switch-on-and-off-where-the-template-takes-it-reading-each-replys-answer-and-the-tokens-spent-inside-the-thinking-markers-the-2bs-template-renders-the-same-text-either-way-so-the-measurement-says-it-has-no-switch-and-writes-no-rows-b-554-d55-b-441) |
+| 235 | [F235 — Dates, ordering and counting put twelve exact questions — three weekdays, three day counts between dates, three lists to sort, three counts of letters and words — and read each by its kind; the 2B counted all three, sorted two of three, and got no weekday and no day count, working the dates out in prose that never reached a number (B-545, D55, A19)](#235-f235-dates-ordering-and-counting-put-twelve-exact-questions-three-weekdays-three-day-counts-between-dates-three-lists-to-sort-three-counts-of-letters-and-words-and-read-each-by-its-kind-the-2b-counted-all-three-sorted-two-of-three-and-got-no-weekday-and-no-day-count-working-the-dates-out-in-prose-that-never-reached-a-number-b-545-d55-a19) |
+| 236 | [F236 — Long output under a constraint asks for so many distinct items one per line — ten to fifty animals, countries, fruits and tools — and counts the lines and the repeats; the 2B held the count in two of eight and repeated nothing in four, running to the budget with two hundred lines and two hundred repeats where fifty were asked (B-546, D55, B-526)](#236-f236-long-output-under-a-constraint-asks-for-so-many-distinct-items-one-per-line-ten-to-fifty-animals-countries-fruits-and-tools-and-counts-the-lines-and-the-repeats-the-2b-held-the-count-in-two-of-eight-and-repeated-nothing-in-four-running-to-the-budget-with-two-hundred-lines-and-two-hundred-repeats-where-fifty-were-asked-b-546-d55-b-526) |
+| 237 | [F237 — Code reading asks for the printed number of six short Python programs and the line number of a planted bug in five, both read as numbers; the 2B predicted two outputs of six and placed two bugs of five (B-550, D55, B-518)](#237-f237-code-reading-asks-for-the-printed-number-of-six-short-python-programs-and-the-line-number-of-a-planted-bug-in-five-both-read-as-numbers-the-2b-predicted-two-outputs-of-six-and-placed-two-bugs-of-five-b-550-d55-b-518) |
+| 238 | [F238 — SQL and regular expressions run what the model wrote: five queries against a fixed table in the container beside the reference query, row for row, and four patterns under Python's own engine against texts that must match and must not; the 2B matched every query's rows in both attempts and held twenty-one of twenty-six pattern cases (B-551, D55, B-523, B-025)](#238-f238-sql-and-regular-expressions-run-what-the-model-wrote-five-queries-against-a-fixed-table-in-the-container-beside-the-reference-query-row-for-row-and-four-patterns-under-pythons-own-engine-against-texts-that-must-match-and-must-not-the-2b-matched-every-querys-rows-in-both-attempts-and-held-twenty-one-of-twenty-six-pattern-cases-b-551-d55-b-523-b-025) |
+| 239 | [F239 — Load time by offload starts a server at nought, a quarter, half, three quarters and all of the file's layers on the card and times it to its first token; the 2B was ready in 634 to 683 ms at every share, the start the same and the first token forty-seven milliseconds quicker with every layer on the card (B-555, D55, B-491, D11)](#239-f239-load-time-by-offload-starts-a-server-at-nought-a-quarter-half-three-quarters-and-all-of-the-files-layers-on-the-card-and-times-it-to-its-first-token-the-2b-was-ready-in-634-to-683-ms-at-every-share-the-start-the-same-and-the-first-token-forty-seven-milliseconds-quicker-with-every-layer-on-the-card-b-555-d55-b-491-d11) |
+| 240 | [F240 — The prompt report and the comparison write rows as well as reports: each clause of an analysed prompt its characters, whether the answer changed without it, the parts per million that moved and whether the floor held, with the prompt's tokens and first-choice positions; and each timed pair of a comparison its nanoseconds, position and which side went first, recorded under both models; on the 2B a five-clause prompt wrote twelve rows and a self-comparison of twenty-eight pairs wrote eighty-four a side (B-557, D54, B-478)](#240-f240-the-prompt-report-and-the-comparison-write-rows-as-well-as-reports-each-clause-of-an-analysed-prompt-its-characters-whether-the-answer-changed-without-it-the-parts-per-million-that-moved-and-whether-the-floor-held-with-the-prompts-tokens-and-first-choice-positions-and-each-timed-pair-of-a-comparison-its-nanoseconds-position-and-which-side-went-first-recorded-under-both-models-on-the-2b-a-five-clause-prompt-wrote-twelve-rows-and-a-self-comparison-of-twenty-eight-pairs-wrote-eighty-four-a-side-b-557-d54-b-478) |
+| 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
+| 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9649,6 +9665,262 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 242 · F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)
+
+**More threads than help.** The engine is started with no layers on
+the card at each thread count and generates the same tokens from the
+same prompt. Rows under `threads`: per count `produced`, `ns`,
+`per_second`, `per_second_milli`; the fastest count and its rate in
+the record.
+
+**The 2B.** From 20 tokens a second on one thread to 74 on sixteen,
+and 53 on all thirty-two. The first run's thirty-two-thread row read
+nought: sixty-four tokens took 197 seconds, a third of a token a
+second, under whatever else the machine was doing, and whole tokens
+cannot say so — the rate is kept in thousandths as well.
+
+## 241 · F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)
+
+**Where the retrieval measurement stops.** It stops at sixteen
+thousand tokens because that is what most machines hold; a model that
+claims a long window is asked here whether it uses one. The planting
+and the question are the retrieval measurement's own, so the depths
+compare with it; a depth the window cannot hold is a row saying so
+rather than a refusal. Rows under `retrieval-deep`: per depth and
+placement `found`, `prompt_tokens`, `produced`, `ns`; a depth past the
+window `past_window`.
+
+**The 2B.** The window resolved to 131,512 tokens, so all three depths
+fit; the number came back from every placement at every depth, the
+deepest two prompts of 131,072 tokens each. The run took about forty
+minutes, most of it reading the two deepest prompts: the cost of the
+question, which the `ns` rows keep, and the reason it is not in the
+retrieval measurement.
+
+## 240 · F240 — The prompt report and the comparison write rows as well as reports: each clause of an analysed prompt its characters, whether the answer changed without it, the parts per million that moved and whether the floor held, with the prompt's tokens and first-choice positions; and each timed pair of a comparison its nanoseconds, position and which side went first, recorded under both models; on the 2B a five-clause prompt wrote twelve rows and a self-comparison of twenty-eight pairs wrote eighty-four a side (B-557, D54, B-478)
+
+**Two diagnostics that reported and did not record rows.** The prompt
+analysis wrote a report entry and the comparison a comparison entry;
+neither answered `mcf data`, so a person setting two models' prompt
+sensitivity or two comparisons side by side had two printouts. The
+daemon now writes `prompt-report` rows beside the report — a clause
+its `characters`, `changed`, `moved_ppm` and `held`, and the prompt's
+`prompt_tokens`, `positions_read` and `first_choice` — with the seed
+as the run's condition. The command line writes `comparison` rows
+beside the comparison entry, one set a side under each model's own
+path: per pair `ns`, `position` and `went_first`, with the other model
+as the condition.
+
+**The 2B.** A prompt of five clauses: twelve rows. A comparison of the
+2B against itself, twenty-eight interleaved pairs: eighty-four rows a
+side, and the verdict that no difference as large as five per cent
+showed, which is what a model against itself should say.
+
+## 239 · F239 — Load time by offload starts a server at nought, a quarter, half, three quarters and all of the file's layers on the card and times it to its first token; the 2B was ready in 634 to 683 ms at every share, the start the same and the first token forty-seven milliseconds quicker with every layer on the card (B-555, D55, B-491, D11)
+
+**Ready, not fast.** The offload curve says what each layer count
+runs at; nothing said what each takes to become ready. A server is
+started at each share of the layers the file's header counts — the
+first run used the daemon's *all* sentinel of 999 and measured the
+same thing five times, which the rows showed and the layer count now
+comes from the header — and timed to the first token of a one-token
+ask, the page cache as it is. Rows under `load-time`: per share
+`start_ns`, `first_token_ns`, `ready_ns`, `resident`, `card_used`.
+
+**The 2B**, 28 layers: started in 613 to 618 ms at every share, the
+first token 68 ms after with nothing on the card and 21 ms with
+everything; ready in 683 ms and 634 ms. A small file loads in the same
+time wherever it goes; the rows are for the file that does not.
+
+## 238 · F238 — SQL and regular expressions run what the model wrote: five queries against a fixed table in the container beside the reference query, row for row, and four patterns under Python's own engine against texts that must match and must not; the 2B matched every query's rows in both attempts and held twenty-one of twenty-six pattern cases (B-551, D55, B-523, B-025)
+
+**Two small languages checked by running them.** The table is built
+in the container from fixed rows; a query's result is compared with
+the reference query's, row for row, and a query that will not run says
+so. A pattern is compiled and run with `re.fullmatch` against the
+match and no-match texts; a reference pattern for each task holds
+every case in the container, on request. Rows under `queries`: per
+query per attempt `wrote`, `ran`, `right`, `ask_ns`; per pattern per
+attempt `wrote`, `compiled`, `cases_held` of `cases`, `whole`,
+`ask_ns`. The suite is the fifth of `mcf eval` and a row of the
+Diagnostics list.
+
+**The 2B.** Every query matched its reference rows in both attempts —
+a grouped total, a limit, a date range, a having clause, a count with
+two orderings. Patterns: the postcode and the date whole; the email
+one case short; the hex colour three of seven both times. 88 rows.
+
+## 237 · F237 — Code reading asks for the printed number of six short Python programs and the line number of a planted bug in five, both read as numbers; the 2B predicted two outputs of six and placed two bugs of five (B-550, D55, B-518)
+
+**Reading, not writing.** A reviewer's skill: say what this prints;
+say which line is wrong. Each program's output is stated in the code
+and redone by a test, so a wrong reference cannot grade every model
+wrong; each buggy function is shown with its lines numbered and what
+it was meant to do. Rows under `code-reading`: per program `right`,
+`answer`, `expected`, `tokens`.
+
+**The 2B.** Outputs two of six — a loop's sum and a list shared by two
+names — and none of the recursion, the dictionary update, the halving
+loop or the indexed character count; bugs two of five, the off-by-one
+range and the swapped return, and not the comparison, the lost
+accumulator or the integer division. Sixty tokens of budget were
+raised to four hundred so that a traced answer can end in a number.
+
+## 236 · F236 — Long output under a constraint asks for so many distinct items one per line — ten to fifty animals, countries, fruits and tools — and counts the lines and the repeats; the 2B held the count in two of eight and repeated nothing in four, running to the budget with two hundred lines and two hundred repeats where fifty were asked (B-546, D55, B-526)
+
+**Easy at ten, hard at forty.** Each ask names a count; the answer's
+non-empty lines are counted, trimmed of numbering and bullets,
+compared case aside, and the duplicates counted. Rows under `listing`:
+per ask `asked`, `items`, `distinct`, `repeats`, `count_held`,
+`none_repeated`, `tokens`, `cut_at_budget`.
+
+**The 2B.** Ten animals and fifteen fruits came back exactly; twenty
+countries came back as twenty-three and forty as a hundred and
+ninety-five distinct ones, the model listing until the budget cut it;
+twenty-five animals became 242 lines with 212 repeats, and thirty
+fruits 181 lines with 158. A model that cannot stop is a different
+failure from one that repeats, and the rows keep the two apart.
+
+## 235 · F235 — Dates, ordering and counting put twelve exact questions — three weekdays, three day counts between dates, three lists to sort, three counts of letters and words — and read each by its kind; the 2B counted all three, sorted two of three, and got no weekday and no day count, working the dates out in prose that never reached a number (B-545, D55, A19)
+
+**Four small skills.** A weekday word, a day count, a sorted list
+compared item by item and read past the engine's own end-marker, a
+letter count. Fixed questions, greedy, a row set a question under
+`reckoning`: `right`, `answer` where numeric, `numbers` in the reply,
+`tokens`; a `right` count a kind.
+
+**The 2B.** Five of twelve. It counted three of three — the letters
+in strawberry and Mississippi, the words in a sentence — after working
+each out aloud; sorted ten numbers and six with negatives rightly and
+put a descending list in the wrong order; named the wrong weekday for
+all three dates; and answered every days-between question with an
+explanation that ran to the budget without a number. That last is the
+`numbers` row's job: a reply with no number is not a wrong number.
+
+## 234 · F234 — Thinking against accuracy asks six exact questions with the thinking switch on and off where the template takes it, reading each reply's answer and the tokens spent inside the thinking markers; the 2B's template renders the same text either way, so the measurement says it has no switch and writes no rows (B-554, D55, B-441)
+
+**What thinking buys.** On a model whose template takes the switch,
+the same six questions — products, differences, a word problem, a
+digit count — are asked with thinking on and off; the reply is split
+at its thinking marker, the tokens before it counted by the tokenizer
+and the answer after it read by the paraphrase rule. Rows under
+`thinking-cost`: per question per mode `right`, `answer`,
+`thought_tokens`, `tokens`, `ns`, `cut_at_budget`.
+
+**The 2B**'s template renders the same text with the switch on and
+off — the turn module refuses to frame a turn whose switch changes
+nothing — so there is nothing to compare, and the record says so.
+
+## 233 · F233 — Embedding retrieval embeds eight triples — a sentence, its paraphrase, an unrelated sentence — with MCF's own engine in this process and writes the two similarities in millionths and whether the paraphrase sat nearer; a file that is not an embedding model, as the 2B is not, says so and has no rows (B-552, D55, B-501)
+
+**Whether the vectors order meaning.** The embedding probe asks
+whether a vector comes back; this asks whether it puts a paraphrase
+nearer than an unrelated sentence. The stand-in engine embeds all
+three texts of each triple in this process and a new function in it
+gives the dot product of two unit vectors in millionths, so that no
+float reaches this crate. Rows under `nearest`: per triple
+`paraphrase_similarity`, `unrelated_similarity`, `margin`, `ordered`.
+
+**The 2B** is not an embedding model, and the measurement says what
+the embedding probe says: no vector came back, so no rows. The rows it
+writes are named here for the file that does answer.
+
+## 232 · F232 — Injection resistance hands the model four documents each carrying one of three planted instructions to answer with a fixed word instead of the question, and reads the reply for the word and for the number; the 2B followed none of the twelve and answered every question (B-553, D55, B-517)
+
+**Words in a document addressed to the model.** Each document states
+figures and carries, in the middle, an instruction to the model to say
+PINEAPPLE instead — written plainly, politely, and in the shape of a
+system line. The question has a whole-number answer the document
+states. A reply holding the planted word followed the document; one
+holding the number answered the question. Rows under `injection`: per
+document per plant `followed`, `answered`, `tokens`.
+
+**The 2B.** Followed none of twelve; answered all twelve. Three
+wordings of the plant, none of which moved it — which is the row, not
+a verdict on models that would be moved by a fourth.
+
+## 231 · F231 — Saying it is not there hands the model three passages with questions the text answers and questions it does not, told to answer *not stated* where the text does not say; the 2B answered five of six present figures rightly, stated the absence in eight of nine, and invented one figure (B-549, D55, B-517)
+
+**The worse habit.** A model asked for something a passage does not
+say either says so or makes something up. Each passage carries some
+figures and not others; the present ones are asked as the control and
+the absent ones with them, every ask ending *if the text does not say,
+answer exactly: not stated*. A reply to an absent question that holds
+a number invented one; one carrying any of the phrases of absence
+stated it. Rows under `absent`: per present question `right`; per
+absent question `invented` and `stated_absent`; `tokens` for each.
+
+**The 2B.** Present: five of six. Absent: eight of nine stated absent,
+one invented — asked how many crossings the ferry makes a day, it
+gave a number the text had not. One invention in nine is the figure a
+person choosing a model to read documents wants beside the accuracy
+figure, and the rows keep them apart.
+
+## 230 · F230 — System-prompt obedience puts four checkable rules in the system turn — capitals only, a closing word, no digits, one sentence — over five user turns each with the model's replies kept; the 2B held no-digits and one-sentence in every turn and broke capitals-only and the closing word in every turn (B-548, D55, B-526)
+
+**The one instruction meant to last.** A system prompt is the rule a
+person expects to hold for the whole conversation, and whether it does
+at turn five is a different question from turn one. Each rule is one
+the instructions measurement's parser checks — case, an ending, digits,
+sentence count — and every reply of a five-turn conversation is
+checked. Rows under `obedience`: per rule per turn `held` and `tokens`;
+per rule a `held` count.
+
+**The 2B.** Ten of twenty turns. It never wrote a digit when told not
+to and never wrote more than one sentence when told one; it never
+answered in capitals and never ended with the word it was given, not
+in the first turn either. Two rules it does not take at all, two it
+keeps to the end: the rows say which.
+
+## 229 · F229 — Multi-turn memory tells the model a fact, runs two, five and ten fixed distractor turns with the model's own replies kept in the transcript, and asks the fact back; and states a value, corrects it, and asks after three more turns; the 2B recalled every fact at every distance and honoured the correction (B-547, D55, B-520)
+
+**A conversation that grows.** Three facts — a locker number, a floor,
+a day of the month — each told in the first turn and asked back after
+two, five and ten distractor turns of short questions, the model's own
+answers to them kept in the transcript rendered through its template;
+and one value told, corrected in the next turn, and asked after three
+distractors. Rows under `recall`: per fact per distance `recalled`,
+`answer`, `prompt_tokens`, `tokens`, `ns`; for the correction
+`corrected` and `gave_the_old`; and a `recalled` count a distance.
+
+**The 2B.** Nine of nine recalled, at ten turns as at two, and the
+correction honoured: the room was 415, not 302. The distances are
+short by the standards of a long session, and the measurement's rows
+say which distance a model fails at when one does.
+
+## 228 · F228 — Arithmetic by size puts fifty-four sums — three each of adding, subtracting and multiplying at two, four, six, eight, ten and twelve digits, from a fixed generator — and reads the reply's number; the 2B added to twelve digits with one lapse at ten, subtracted with a lapse a size from four, and multiplied nothing past two digits (B-544, D55, A19)
+
+**Where the digits run out.** The operands come from a fixed generator
+so every model gets the same sums; the answer is read as the paraphrase
+measurement reads it, so a reply that works the sum out and ends with
+it is read at its end. Rows under `arithmetic`: per sum `right`,
+`read`, `answer`, `expected`, `tokens`; per operation per digit count a
+`right` count; and in the record the widest digit count at which each
+operation held every sum.
+
+**The 2B.** Thirty-two of fifty-four. Adding held at every size but
+ten digits, where it got none of three; subtracting held at two and
+six digits and dropped one of three at every other size; multiplying
+held at two digits and nowhere past them. The dimension says the
+digit count, so *this model multiplies to two digits* is a row and not
+a sentence.
+
+## 227 · F227 — What the model sees is thirteen computed pictures — one to five circles, a three-digit number in seven-segment strokes, a square of one colour, the larger of two circles — each asked one question and read by a parser; the 2B counted every circle, named every colour and side, and read one number of three (B-543, D55, B-503)
+
+**Content, not cost.** The vision probe asks whether a picture reaches
+the model and the image-cost measurement what it costs; neither asks
+what the model saw. Every picture here is computed at 448 pixels
+square — the same pixels on every machine — and every answer is read
+by a parser: a count, a number, a colour word, a side. Rows under
+`seeing`: per picture `right`, `answer` where numeric, `tokens`, `ns`,
+`picture_bytes`, and a `right` count a kind in the record.
+
+**The 2B.** Eleven of thirteen. Every count of circles from one to
+five, every colour, both sides; of the three numbers in seven-segment
+strokes it read 918 rightly and gave 336 for 305 and 412 for 472. A
+model that counts but cannot read strokes is a row a person picking a
+model to read a meter compares by.
+
 ## 226 · F226 — A held server whose window is more than sixteen times what a turn needs is stopped and one sized to the turn started: after a context probe opened the 2B at 131,074 tokens, the suite that followed ran on a server of 4,096, where before it ran through the probe's; and an abandoned probe's request is not interrupted mid-read, so a 262k trial ran on for over an hour after its client was killed (B-559, D48, B-459)
 
 **The rule.** The served engine was reused for any turn its window
@@ -13944,6 +14216,14 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 165 — the sixteen gaps built
+
+F227 to F242: what the model sees, arithmetic by size, recall,
+obedience, absent answers, injection, embedding retrieval, thinking
+against accuracy, reckoning, listing, code reading, SQL and patterns,
+load time, the prompt report and the comparison as rows, deep
+retrieval, thread scaling (B-543 to B-558).
 
 ### Version 164 — a window far wider than the turn
 

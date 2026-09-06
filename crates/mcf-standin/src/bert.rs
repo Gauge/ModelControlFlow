@@ -483,3 +483,17 @@ fn biased(mut projected: Vec<f32>, biases: &[f32]) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests;
+
+/// The dot product of two unit-length embeddings, in millionths, so that
+/// a caller outside this crate compares them without a float of its own
+/// (B-552).
+#[must_use]
+pub fn similarity_millionths(left: &Embedding, right: &Embedding) -> i64 {
+    let dot = crate::ops::dot(&left.vector, &right.vector);
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a cosine in [-1, 1] scaled to millionths fits an i64 with room to spare"
+    )]
+    let scaled = (dot * 1_000_000.0).round() as i64;
+    scaled
+}

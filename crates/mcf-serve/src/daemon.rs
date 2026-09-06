@@ -403,6 +403,71 @@ fn prompt_report_conditions(
     ])
 }
 
+/// The report's figures as readings: each clause's characters, whether
+/// the answer changed without it, the parts per million that moved and
+/// whether the floor held; and the prompt's tokens, the positions read and
+/// how many were the model's first choice (B-557).
+fn prompt_report_rows(served: &Value) -> Vec<mcf_record::readings::Reading> {
+    use mcf_record::readings::Reading;
+    let count = |held: usize| i64::try_from(held).unwrap_or(i64::MAX);
+    let mut rows = Vec::new();
+    for (at, clause) in served
+        .get("clauses")
+        .and_then(Value::as_list)
+        .unwrap_or(&[])
+        .iter()
+        .enumerate()
+    {
+        let dims = [("clause", Value::Integer(count(at)))];
+        if let Some(text) = clause.get("text").and_then(Value::as_text) {
+            rows.push(Reading::new(
+                &dims,
+                "characters",
+                count(text.chars().count()),
+                "count",
+            ));
+        }
+        if let Some(Value::Bool(changed)) = clause.get("changed") {
+            rows.push(Reading::new(&dims, "changed", i64::from(*changed), "bool"));
+        }
+        if let Some(moved) = clause
+            .get("moved_parts_per_million")
+            .and_then(Value::as_integer)
+        {
+            rows.push(Reading::new(&dims, "moved_ppm", moved, "ppm"));
+        }
+        if let Some(Value::Bool(held)) = clause.get("held") {
+            rows.push(Reading::new(&dims, "held", i64::from(*held), "bool"));
+        }
+    }
+    let expected = served
+        .get("expected")
+        .and_then(Value::as_list)
+        .unwrap_or(&[]);
+    if !expected.is_empty() {
+        let first_choice = expected
+            .iter()
+            .filter(|row| matches!(row.get("rank"), Some(Value::Integer(1))))
+            .count();
+        rows.push(Reading::new(
+            &[],
+            "positions_read",
+            count(expected.len()),
+            "count",
+        ));
+        rows.push(Reading::new(
+            &[],
+            "first_choice",
+            count(first_choice),
+            "count",
+        ));
+    }
+    if let Some(tokens) = served.get("prompt_tokens").and_then(Value::as_integer) {
+        rows.push(Reading::new(&[], "prompt_tokens", tokens, "tokens"));
+    }
+    rows
+}
+
 fn prompt_report_entry(
     served: &Value,
     model: &Path,
@@ -4204,6 +4269,25 @@ impl Daemon {
         let entry = prompt_report_entry(&served, &path, prompt, seed, engines);
         let at = Timestamp::now();
         let recorded = self.note(EntryKind::PromptReported, at, entry.clone());
+        // The report's figures as rows beside it, one a clause and one a
+        // prompt, so that a prompt analysis answers `mcf data` like every
+        // other diagnostic (B-557, D54).
+        let engine = engines
+            .iter()
+            .cloned()
+            .collect::<Vec<String>>()
+            .join(" and ");
+        self.record_rows(
+            &path,
+            "prompt-report",
+            &engine,
+            vec![(
+                "seed",
+                Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
+            )],
+            &prompt_report_rows(&served),
+            at,
+        );
         if let Ok(mut reports) = self.prompt_reports.lock() {
             let _replaced = reports.insert(path, dated(entry, at));
         }
