@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 297 |
+| **Version** | 298 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 377 build items (280 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 42 open).** Every item cites
+decided, 23 resolved) and 377 build items (285 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 37 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -372,11 +372,11 @@ first and importance second.
 | B-534 | The cache's precision: speed and fidelity against the reference with the cache at 16, 8 and 4 bits | D55, DEC-062, B-491 | Rows per precision | done. F216: the cache at 16, 8 and 4 bits with card bytes and where the output parts, twenty-sixth measurement |
 | B-535 | Soak: two hundred requests through the hosted server — failures, latency by hundred, resident bytes at start and end | D55, DEC-062, B-232 | One row a request, plus the two resident readings | done. F217: two hundred requests each a row, by hundred, twenty-seventh measurement |
 | B-536 | Stop latency: time from a stop to the engine idle, at several depths | D55, DEC-062, B-459 | Rows per depth | done. F218: closed and idle clocks at three depths, twenty-eighth measurement; the stop waits for the prompt read |
-| B-537 | Fidelity over length: rank agreement against the reference at 100, 500 and 1,000 tokens deep | D55, DEC-062, B-491 | Rows per depth | open |
-| B-538 | Every quantization of a repository in one run: the fidelity measurement over every file here, with size and speed beside each | D55, DEC-062, B-491, D51 | One table a repository | open |
-| B-539 | Schema variety under a grammar: nested objects, arrays, enums and optional fields | D55, DEC-062, B-504 | Rows per schema per trial | open |
-| B-540 | Temperature sensitivity: distinct answers to an exact question at five temperatures | D55, DEC-062, A19 | Rows per temperature | open |
-| B-541 | Vocabulary coverage: byte-fallback and unknown-token rate over a mixed corpus | D55, DEC-062, B-502 | Rows per text | open |
+| B-537 | Fidelity over length: rank agreement against the reference at 100, 500 and 1,000 tokens deep | D55, DEC-062, B-491 | Rows per depth | done. F219: agreement at 100, 500 and 1,000 positions, twenty-ninth measurement |
+| B-538 | Every quantization of a repository in one run: the fidelity measurement over every file here, with size and speed beside each | D55, DEC-062, B-491, D51 | One table a repository | done. F220: every file here against the most precise, thirtieth measurement |
+| B-539 | Schema variety under a grammar: nested objects, arrays, enums and optional fields | D55, DEC-062, B-504 | Rows per schema per trial | done. F221: four shapes free and constrained, thirty-first measurement |
+| B-540 | Temperature sensitivity: distinct answers to an exact question at five temperatures | D55, DEC-062, A19 | Rows per temperature | done. F222: five temperatures, distinct and right, thirty-second measurement |
+| B-541 | Vocabulary coverage: byte-fallback and unknown-token rate over a mixed corpus | D55, DEC-062, B-502 | Rows per text | done. F223: twelve texts, byte fallbacks and unknowns, thirty-third measurement |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
 | B-439 | The prompt page is a readings table: a row a reading with its choice, its condition and what it costs in generations, and the served condition strings are labels a cell wide | B-438, B-429, B-434, B-435, B-436, A19, A22, B60, §3.4, §3.15 | Above the report the window used to explain each control in a sentence — what the temperature does, what the extras cost, what the run would spend. Under B-438 the report below became figures and labels while the controls above stayed prose. The controls become a table with the same discipline: a row a reading (unit, removed, control, alone, prefixes, seeds), the choice in the row (the buttons or the field), the condition as short labels joined by a middle dot, the generations the row costs on the right, and a total row that adds the one as-written draw; a reading not asked for shows its cost faint. The served `unit_chosen_by`, `addressed_as` and `sampler` strings are cut to the same register so the console's condition lines and the window's read alike (B-072) | **done** — `Readings` in the desk draws the table; the temperature field's condition names an empty field as "at 0 the seed changes nothing · no house value" (B60) and a bad entry as what it should be, with Analyse waiting (§3.15); the served strings are `chosen` / `text: blank lines` / `text: no blank line`, `one user turn · whole prompt · system turn: none, not probed` and `greedy · temperature 0 · seed held · as written, every removal, the control` |
 | B-438 | The prompt report is figures and short labels: the run's conditions a line each, a table a reading with the same columns on both surfaces, and no paragraph a person has to read to find a number | B-429, B-434, B-435, B-436, B-072, A7, A19, A22, §3.4, §3.15 | Every figure sits under a label of a word or two; the conditions (unit, addressing, prompt length, cap, what the generations were spent on, the floor and how it was drawn, whether the floor leaves the rows readable, where it is kept) come first, a line each; the removed, floors, alone and prefixes readings are tables with the same cells — moved, a bar, first-token rank, opening kept — so a figure means one thing everywhere; a rank or an opening that was not read is a dash, not a zero (A7); the cell text is made once and shared by both surfaces (B-072); the answer keeps its own page under the tables | **done** — `mcf_desk::held_mark` and `open_mark` make the rank and opening cells for both the console and the window. The console prints the conditions as `label  value` lines, then REMOVED, FLOORS, ALONE, PREFIXES tables with `#`, `moved`, a ten-cell bar, `1st`, `open` and the part's text, a SEEDS line, a TOKENS table of the ranks the model did not expect, PARTS and the answer; a reading not asked for is one line naming its flag and its cost. The window draws the same: the conditions as label/value lines, the tables with pressable rows that still show their answers, the token reading beside the tables where the window is wide enough, and the answer under it all |
@@ -556,6 +556,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 298 — the last five of D55
+
+B-537 to B-541 done (F219 to F223); every diagnostic D55 named is built.
 
 ### Version 297 — soak and stop
 

@@ -40,6 +40,7 @@ pub mod drafthead;
 pub mod energy;
 pub mod extraction;
 pub mod fidelity;
+pub mod fidelitydepth;
 pub mod grammar;
 pub mod image;
 pub mod instructions;
@@ -51,15 +52,19 @@ pub mod offload;
 pub mod paraphrase;
 pub mod prefill;
 pub mod prefix;
+pub mod repository;
 pub mod retrieval;
+pub mod schemas;
 pub mod soak;
 pub mod stoplatency;
 pub mod sustained;
+pub mod temperature;
 pub mod tokenizer;
 pub mod tooluse;
+pub mod vocabulary;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 28] = [
+pub const MEASURES: [&str; 33] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -88,6 +93,11 @@ pub const MEASURES: [&str; 28] = [
     cache::NAME,
     soak::NAME,
     stoplatency::NAME,
+    fidelitydepth::NAME,
+    repository::NAME,
+    schemas::NAME,
+    temperature::NAME,
+    vocabulary::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -134,6 +144,11 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             cache::NAME,
             soak::NAME,
             stoplatency::NAME,
+            fidelitydepth::NAME,
+            repository::NAME,
+            schemas::NAME,
+            temperature::NAME,
+            vocabulary::NAME,
         ],
     ),
 ];
@@ -355,6 +370,11 @@ pub fn run(
             cache::NAME => cache::measure(site),
             soak::NAME => soak::measure(site),
             stoplatency::NAME => stoplatency::measure(site),
+            fidelitydepth::NAME => fidelitydepth::measure(site),
+            repository::NAME => repository::measure(site),
+            schemas::NAME => schemas::measure(site),
+            temperature::NAME => temperature::measure(site),
+            vocabulary::NAME => vocabulary::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -599,6 +619,38 @@ pub fn recorded_said(body: &Value) -> Option<String> {
             "stopped at {} depth(s); a one-token probe on the idle engine takes {} ms",
             figure("depths").unwrap_or(0),
             as_ms(u64::try_from(figure("idle_probe_ns").unwrap_or(0)).unwrap_or(0))
+        ),
+        fidelitydepth::NAME => format!(
+            "agreed at {} of 100, {} of 500, {} of 1000 position(s); {} bits a token at 1000",
+            figure("agreed_100").unwrap_or(0),
+            figure("agreed_500").unwrap_or(0),
+            figure("agreed_1000").unwrap_or(0),
+            fidelity::millibits_said(figure("millibits_per_token_1000").unwrap_or(0))
+        ),
+        repository::NAME => format!(
+            "{} of {} file(s) of the repository read against {}",
+            figure("measured").unwrap_or(0),
+            figure("files").unwrap_or(0),
+            text("reference").unwrap_or("the reference")
+        ),
+        schemas::NAME => format!(
+            "the shape held in {} free and {} constrained trial(s) over {} shape(s)",
+            figure("free_shaped").unwrap_or(0),
+            figure("constrained_shaped").unwrap_or(0),
+            figure("shapes").unwrap_or(0)
+        ),
+        temperature::NAME => format!(
+            "{} of {} right at the coldest temperature, {} at the hottest",
+            figure("right_at_coldest").unwrap_or(0),
+            figure("asked_each").unwrap_or(0),
+            figure("right_at_hottest").unwrap_or(0)
+        ),
+        vocabulary::NAME => format!(
+            "{} token(s) over {} byte(s); {} byte fallback(s), {} unknown",
+            figure("tokens").unwrap_or(0),
+            figure("bytes").unwrap_or(0),
+            figure("byte_fallbacks").unwrap_or(0),
+            figure("unknown").unwrap_or(0)
         ),
         extraction::NAME => format!(
             "{} of {} field(s) exact over {} trial(s); JSON parsed in {}",

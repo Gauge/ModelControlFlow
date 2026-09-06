@@ -73,7 +73,7 @@ pub fn measure(site: &Site<'_>) -> Found {
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
     // The reference generates, then goes: two servers on one card at once
     // would be a fit nobody planned.
-    let (prompt, reference_tokens) = match reference_words(site, &reference) {
+    let (prompt, reference_tokens) = match reference_words(site, &reference, POSITIONS) {
         Ok(produced) => produced,
         Err(why) => {
             return Found::could_not_tell(&format!("the reference {reference_name}: {why}"));
@@ -160,7 +160,11 @@ pub fn measure(site: &Site<'_>) -> Found {
 
 /// What the reference said from the prompt: the prompt's identifiers and
 /// the tokens it produced, greedily.
-fn reference_words(site: &Site<'_>, reference: &Path) -> Result<(Vec<usize>, Vec<usize>), String> {
+pub(crate) fn reference_words(
+    site: &Site<'_>,
+    reference: &Path,
+    positions: usize,
+) -> Result<(Vec<usize>, Vec<usize>), String> {
     let said = |failure: mcf_core::Failure| failure.detail().to_owned();
     let engine = site.server_for(
         reference,
@@ -178,7 +182,7 @@ fn reference_words(site: &Site<'_>, reference: &Path) -> Result<(Vec<usize>, Vec
     let completed = engine
         .complete(
             Prompt::Identifiers(&prompt),
-            POSITIONS,
+            positions,
             Draw::greedy(0),
             false,
             site.waiting,
@@ -189,32 +193,46 @@ fn reference_words(site: &Site<'_>, reference: &Path) -> Result<(Vec<usize>, Vec
 
 /// What the file under measurement made of the reference's tokens.
 #[derive(Debug, Default)]
-struct Read {
+pub(crate) struct Read {
     /// Positions where its first choice was the reference's.
-    agreed: usize,
+    pub agreed: usize,
     /// The worst rank it gave a reference token, and where.
-    worst: Option<(usize, usize)>,
+    pub worst: Option<(usize, usize)>,
     /// Positions where the reference's token was past what was ranked.
-    bounded: usize,
+    pub bounded: usize,
     /// Millibits spent on the reference's tokens, in all.
-    spent: i64,
+    pub spent: i64,
     /// Every position: the rank given the reference's token, the millibits
     /// spent on it, and whether it was past what was ranked (D16).
-    positions: Vec<(usize, i64, bool)>,
+    pub positions: Vec<(usize, i64, bool)>,
 }
 
 /// Reads the reference's tokens with the file under measurement, position
 /// by position.
-fn read_against(
+pub(crate) fn read_against(
     site: &Site<'_>,
     prompt: Vec<usize>,
     reference_tokens: &[usize],
 ) -> Result<Read, String> {
+    read_with(site, site.model, prompt, reference_tokens)
+}
+
+/// The same, with the file named reading rather than the site's own
+/// (B-538).
+pub(crate) fn read_with(
+    site: &Site<'_>,
+    model: &Path,
+    prompt: Vec<usize>,
+    reference_tokens: &[usize],
+) -> Result<Read, String> {
     let said = |failure: mcf_core::Failure| failure.detail().to_owned();
-    let engine = site.server(&Startup {
-        projector: None,
-        ..site.startup()
-    })?;
+    let engine = site.server_for(
+        model,
+        &Startup {
+            projector: None,
+            ..site.startup()
+        },
+    )?;
     let mut read = Read::default();
     let mut prefix = prompt;
     for (at, wanted) in reference_tokens.iter().enumerate() {

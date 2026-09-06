@@ -1527,7 +1527,7 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;
     let all = Diagnostic::all();
-    assert_eq!(all.len(), 4 + 9 + 28, "{all:?}");
+    assert_eq!(all.len(), 4 + 9 + 33, "{all:?}");
     let names: std::collections::BTreeSet<&str> = all.iter().map(|held| held.name()).collect();
     assert_eq!(names.len(), all.len(), "two rows share a name");
     assert_eq!(Diagnostic::Probe(2).name(), "stop-conditions");
