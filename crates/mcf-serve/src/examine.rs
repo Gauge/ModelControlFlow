@@ -29,11 +29,13 @@ use crate::probes::run::Step;
 use crate::served::{Served, Startup, Waiting};
 
 pub mod agent;
+
 pub mod bits;
 pub mod cold;
 pub mod concurrency;
 pub mod degeneration;
 pub mod determinism;
+pub mod extraction;
 pub mod fidelity;
 pub mod grammar;
 pub mod image;
@@ -46,7 +48,7 @@ pub mod tokenizer;
 pub mod tooluse;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 16] = [
+pub const MEASURES: [&str; 17] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -63,6 +65,7 @@ pub const MEASURES: [&str; 16] = [
     image::NAME,
     tooluse::NAME,
     agent::NAME,
+    extraction::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -97,6 +100,7 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             image::NAME,
             tooluse::NAME,
             agent::NAME,
+            extraction::NAME,
         ],
     ),
 ];
@@ -306,6 +310,7 @@ pub fn run(
             image::NAME => image::measure(site),
             tooluse::NAME => tooluse::measure(site),
             agent::NAME => agent::measure(site),
+            extraction::NAME => extraction::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -463,6 +468,13 @@ pub fn recorded_said(body: &Value) -> Option<String> {
             figure("completed").unwrap_or(0),
             figure("asked").unwrap_or(0),
             figure("result_carried").unwrap_or(0)
+        ),
+        extraction::NAME => format!(
+            "{} of {} field(s) exact over {} trial(s); JSON parsed in {}",
+            figure("fields_right").unwrap_or(0),
+            figure("fields_asked").unwrap_or(0),
+            figure("trials").unwrap_or(0),
+            figure("parsed").unwrap_or(0)
         ),
         tooluse::NAME => format!(
             "right tool in {} of {} call(s), arguments matched in {}, result carried in {}, held back in {}",

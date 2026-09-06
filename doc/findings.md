@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 155 |
+| **Version** | 156 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -175,6 +175,7 @@ forward as one.
 | 204 | [F204 — Edit tasks are five small Python files with one change asked and the whole file wanted back: hidden cases run on the result and every function nobody asked about is looked for in the answer byte for byte, so what held and what was disturbed are separate rows under `editing`; the 2B held every case in four of the five and brought every untouched function back unchanged in all ten attempts (B-522, D55, B-518)](#204-f204-edit-tasks-are-five-small-python-files-with-one-change-asked-and-the-whole-file-wanted-back-hidden-cases-run-on-the-result-and-every-function-nobody-asked-about-is-looked-for-in-the-answer-byte-for-byte-so-what-held-and-what-was-disturbed-are-separate-rows-under-editing-the-2b-held-every-case-in-four-of-the-five-and-brought-every-untouched-function-back-unchanged-in-all-ten-attempts-b-522-d55-b-518) |
 | 205 | [F205 — The coding suite runs in JavaScript and in Rust as well as Python: the same twenty tasks, each language's cases in its own literals compared in its own canonical text, each answer run in the language's own pinned image under the Python one's confinement, and a `language` dimension on every coding row; a Rust answer records whether it compiled, an `export` or a written `main` is stripped the way a fence is, and on the 2B Python held every case in 24 attempts of 60, JavaScript in 16 and Rust in 9 with 33 that did not compile (B-523, D55, B-025)](#205-f205-the-coding-suite-runs-in-javascript-and-in-rust-as-well-as-python-the-same-twenty-tasks-each-languages-cases-in-its-own-literals-compared-in-its-own-canonical-text-each-answer-run-in-the-languages-own-pinned-image-under-the-python-ones-confinement-and-a-language-dimension-on-every-coding-row-a-rust-answer-records-whether-it-compiled-an-export-or-a-written-main-is-stripped-the-way-a-fence-is-and-on-the-2b-python-held-every-case-in-24-attempts-of-60-javascript-in-16-and-rust-in-9-with-33-that-did-not-compile-b-523-d55-b-025) |
 | 206 | [F206 — Test writing is five stated functions the model writes tests for, each suite run against a correct implementation and three broken ones in the container: tests passing on the good one and broken ones caught are separate rows, a suite is read as plain test functions, parametrized ones or a unittest class, and `mcf eval` takes `--only` for one suite; the 2B wrote suites that caught every bug on two tasks, and ran past a thousand-token budget on four of ten attempts (B-524, D55, B-518)](#206-f206-test-writing-is-five-stated-functions-the-model-writes-tests-for-each-suite-run-against-a-correct-implementation-and-three-broken-ones-in-the-container-tests-passing-on-the-good-one-and-broken-ones-caught-are-separate-rows-a-suite-is-read-as-plain-test-functions-parametrized-ones-or-a-unittest-class-and-mcf-eval-takes-only-for-one-suite-the-2b-wrote-suites-that-caught-every-bug-on-two-tasks-and-ran-past-a-thousand-token-budget-on-four-of-ten-attempts-b-524-d55-b-518) |
+| 207 | [F207 — Structured extraction is five fixed texts — an invoice line, a meeting note, a shipping note, a job listing, a weather line — pulled into JSON with the keys and forms stated, read by a parser and compared field by field exactly, one row a field a trial; the 2B parsed in every trial and had 90 of 99 fields exact, missing the same three in every trial: an order code, a day-first date and a title's case (B-525, D55, A19)](#207-f207-structured-extraction-is-five-fixed-texts-an-invoice-line-a-meeting-note-a-shipping-note-a-job-listing-a-weather-line-pulled-into-json-with-the-keys-and-forms-stated-read-by-a-parser-and-compared-field-by-field-exactly-one-row-a-field-a-trial-the-2b-parsed-in-every-trial-and-had-90-of-99-fields-exact-missing-the-same-three-in-every-trial-an-order-code-a-day-first-date-and-a-titles-case-b-525-d55-a19) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9629,6 +9630,33 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 207 · F207 — Structured extraction is five fixed texts — an invoice line, a meeting note, a shipping note, a job listing, a weather line — pulled into JSON with the keys and forms stated, read by a parser and compared field by field exactly, one row a field a trial; the 2B parsed in every trial and had 90 of 99 fields exact, missing the same three in every trial: an order code, a day-first date and a title's case (B-525, D55, A19)
+
+**The right JSON, not just JSON.** The grammar measurement asks whether
+JSON comes out; this asks whether what is in it is what the text said.
+Five short texts carry dates in three notations, amounts with
+thousands separators and decimals, names, codes and lists; each is
+asked for as one JSON object with exactly the keys named and the form
+each value must take — dates as `YYYY-MM-DD`, an amount as whole cents
+or grams, a list as an array in the order given. The object is found
+inside whatever prose or fence surrounds it and read by MCF's own
+parser; each field is compared with what the text says, exactly: an
+integer to an integer, text to text, a list item by item. Three trials
+a text, the first greedy and the rest drawn at temperature 0.7.
+
+**The rows.** Under `extraction`, each field is `right` and `present`
+with the text, trial and field as dimensions; each trial is `parsed`,
+`fields_right` of `fields`, `tokens` and `ns`. A model that gets every
+number and mangles every date reads as such, field by field, and no
+figure says whether a wrong field was nearly right.
+
+**The 2B.** Fifteen trials, every one parsed; 90 of 99 fields exact,
+273 rows. The invoice, the meeting and the weather line came back
+whole in every trial. The same three fields missed in all three
+trials: the order code, the date written day first, and the job title
+as the text had it. That constancy across greedy and drawn trials is
+itself a reading: the misses are the model's, not the draw's.
+
 ## 206 · F206 — Test writing is five stated functions the model writes tests for, each suite run against a correct implementation and three broken ones in the container: tests passing on the good one and broken ones caught are separate rows, a suite is read as plain test functions, parametrized ones or a unittest class, and `mcf eval` takes `--only` for one suite; the 2B wrote suites that caught every bug on two tasks, and ran past a thousand-token budget on four of ten attempts (B-524, D55, B-518)
 
 **Two counts that pull apart.** A test suite has two properties a
@@ -13432,6 +13460,10 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 156 — structured extraction
+
+F207: fixed texts pulled into JSON, every field a row (B-525).
 
 ### Version 155 — test writing
 

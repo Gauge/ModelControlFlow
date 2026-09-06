@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 292 |
+| **Version** | 293 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 377 build items (268 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 54 open).** Every item cites
+decided, 23 resolved) and 377 build items (269 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 53 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -360,7 +360,7 @@ first and importance second.
 | B-522 | Edit tasks: a whole file given, a change asked, hidden tests run on the result, and the parts not asked about compared byte for byte | D55, DEC-062, B-518 | Rows for tests held and for bytes changed outside the ask | done. F204: five files, one change each, `untouched_kept` and `outside_changed_bytes` beside the cases; the 2B kept every untouched function |
 | B-523 | The coding suite in a second and a third language, in the same container images, per-language rows | D55, DEC-062, B-518, B-025 | Every task has rows in each language, and a language the container cannot run says so | done. F205: JavaScript and Rust in their own pinned images, a `language` dimension on every coding row, `compiled` for Rust; on the 2B 24, 16 and 9 whole of 60 |
 | B-524 | Test writing: the model writes tests for a stated function, run against a correct and a deliberately broken implementation — passes on the good, catches on the broken | D55, DEC-062, B-518 | Rows for both counts, task by task | done. F206: five functions, three broken implementations each, `pass_on_good` and `caught` rows; `mcf eval --only <suite>` |
-| B-525 | Structured extraction: fixed texts with dates, amounts, names and lists pulled into JSON, checked field by field by exact match | D55, DEC-062, A19 | One row a field a trial | open |
+| B-525 | Structured extraction: fixed texts with dates, amounts, names and lists pulled into JSON, checked field by field by exact match | D55, DEC-062, A19 | One row a field a trial | done. F207: five texts, seventeenth measurement, `right` and `present` a field; the 2B 90 of 99 |
 | B-526 | Countable instructions: exactly N words, no digits, uppercase only, a list of a stated length, a stated closing phrase — each a parser's check | D55, DEC-062, A19 | One row a constraint a trial | open |
 | B-527 | Paraphrase consistency: one question with an exact answer in six phrasings — how many answers agree | D55, DEC-062, A19 | Rows per phrasing, the agreement count beside them | open |
 | B-528 | Multilingual exact answers: the same arithmetic and extraction tasks in six languages, the same exact match | D55, DEC-062, B-057 | Rows per language per task | open |
@@ -556,6 +556,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 293 — structured extraction
+
+B-525 done (F207).
 
 ### Version 292 — test writing
 

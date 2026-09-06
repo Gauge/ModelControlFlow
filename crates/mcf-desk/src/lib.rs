@@ -1588,7 +1588,7 @@ const PROBE_ANSWERS: [&str; 9] = [
 ];
 
 /// What each measurement answers, in one line, in the daemon's order.
-const MEASURE_ANSWERS: [&str; 16] = [
+const MEASURE_ANSWERS: [&str; 17] = [
     "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
     "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
     "What a conversation pays for its history every turn: a kept prefix against the prompt read again",
@@ -1605,6 +1605,7 @@ const MEASURE_ANSWERS: [&str; 16] = [
     "Tokens and prefill time a picture adds, at three sides",
     "Tool use over fixed tasks: the right tool, the arguments matched, the result carried, held back when nothing fits",
     "Chains of calls each from the last result, two calls at once, and an error to recover from: steps completed, results carried",
+    "Dates, amounts, names and lists pulled from fixed texts into JSON, each field compared exactly",
 ];
 
 impl Diagnostic {
