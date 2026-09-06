@@ -606,6 +606,9 @@ pub struct Model {
     /// a method: the lines the daemon wrote for it, when and through what
     /// (B-478, D52, D53).
     pub probed: Vec<Finding>,
+    /// When each method's readings were last taken on it, by method: how
+    /// a row the daemon does not run says when it last ran (B-519).
+    pub readings_at: std::collections::BTreeMap<String, String>,
     /// The hub repository it came from, where its provenance names one: a
     /// model is a repository with its quantizations, and this is which
     /// (D51, B-486).
@@ -816,6 +819,18 @@ fn repository_of(held: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// When each method's readings were last taken, as the daemon lists them
+/// beside the model (B-519).
+fn readings_at_of(held: &Value) -> std::collections::BTreeMap<String, String> {
+    match held.get("readings_at") {
+        Some(Value::Map(entries)) => entries
+            .iter()
+            .filter_map(|(method, at)| Some((method.clone(), at.as_text()?.to_owned())))
+            .collect(),
+        _ => std::collections::BTreeMap::new(),
+    }
+}
+
 /// What the record holds of the probes and the measurements, one
 /// sentence each, with when and through what (B-483, D53).
 fn probed_of(held: &Value) -> Vec<Finding> {
@@ -909,19 +924,25 @@ fn model_from(held: &Value) -> Model {
         cross_checked_at: results.3,
         prompt_reported: results.2,
         prompt_reported_at: results.4,
-        applied_addressing: held
-            .get("configured")
+        // **What the daemon says of a model's runs is under `runs`.** The
+        // probes' findings and the settings they applied were read at the
+        // top of the entry, where the daemon never put them, so a window
+        // opened after a probe run listed every probe as never run and no
+        // applied setting at all until it ran one itself (B-519).
+        applied_addressing: runs
+            .and_then(|runs| runs.get("configured"))
             .and_then(|applied| applied.get("addressing"))
             .and_then(Value::as_text)
             .map(str::to_owned),
-        applied_budget: held
-            .get("configured")
+        applied_budget: runs
+            .and_then(|runs| runs.get("configured"))
             .and_then(|applied| applied.get("budget"))
             .and_then(Value::as_text)
             .map(str::to_owned),
         repository: repository_of(held),
         file,
-        probed: probed_of(held),
+        probed: runs.map_or_else(Vec::new, probed_of),
+        readings_at: runs.map_or_else(std::collections::BTreeMap::new, readings_at_of),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
@@ -1467,11 +1488,14 @@ pub enum Card {
     Prompt,
     /// Two models on one question under one engine.
     Comparison,
+    /// The coding suites, run through the command line's container
+    /// (B-519, D54).
+    Coding,
 }
 
 impl Card {
     /// Every card, in the order the page shows them.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Throughput,
         Self::CrossCheck,
         Self::Capabilities,
@@ -1480,6 +1504,7 @@ impl Card {
         Self::Behaviour,
         Self::Prompt,
         Self::Comparison,
+        Self::Coding,
     ];
 
     /// The measurements this card runs, where it is one of the three that
@@ -1510,6 +1535,7 @@ impl Card {
             Self::Behaviour => "Behaviour",
             Self::Prompt => "Prompt analysis",
             Self::Comparison => "Comparison",
+            Self::Coding => "Coding",
         }
     }
 
@@ -1535,6 +1561,9 @@ impl Card {
             Self::Behaviour => "Retrieval by depth, degeneration, grammar cost, image cost",
             Self::Prompt => "What each part of a prompt does to the answer",
             Self::Comparison => "Two models on one question under one engine",
+            Self::Coding => {
+                "Twenty tasks in Python, JavaScript and Rust, edits, repairs and tests, every answer run in a container"
+            }
         }
     }
 
@@ -1545,6 +1574,7 @@ impl Card {
     pub fn command(self, model: &str) -> Option<String> {
         match self {
             Self::Comparison => Some(format!("mcf bench {model} <other-model> --prompt \"…\"")),
+            Self::Coding => Some(format!("mcf eval {model}")),
             Self::Throughput
             | Self::CrossCheck
             | Self::Capabilities
@@ -1572,7 +1602,27 @@ pub enum Diagnostic {
     Probe(usize),
     /// One measurement, by its place in the daemon's list.
     Measure(usize),
+    /// One of the command line's coding suites, by its place in `SUITES`
+    /// (B-519).
+    Eval(usize),
 }
+
+/// The coding suites `mcf eval --only` runs, each with the row's name and
+/// the method the record keeps its readings under (B-519, D54).
+pub const SUITES: [(&str, &str, &str); 4] = [
+    ("coding", "Coding", "coding"),
+    ("languages", "Coding in JavaScript and Rust", "coding"),
+    ("editing", "Editing", "editing"),
+    ("tests", "Test writing", "test-writing"),
+];
+
+/// What each suite answers, in one line, in `SUITES` order.
+const SUITE_ANSWERS: [&str; 4] = [
+    "Twenty Python tasks, three attempts each, run against hidden cases; every failed attempt handed back for a second try",
+    "The same twenty tasks in JavaScript and Rust, each in its own pinned image; a Rust answer says whether it compiled",
+    "A whole file given and one change asked: the cases held, and every untouched function compared byte for byte",
+    "Tests written for a stated function, run against a correct implementation and three broken ones",
+];
 
 /// What each probe answers, in one line, in the daemon's order.
 const PROBE_ANSWERS: [&str; 9] = [
@@ -1671,6 +1721,11 @@ impl Diagnostic {
             family(0, Card::Performance),
             family(1, Card::Fidelity),
             family(2, Card::Behaviour),
+            (
+                "Coding",
+                Some(Card::Coding),
+                (0..SUITES.len()).map(Self::Eval).collect(),
+            ),
         ]
     }
 
@@ -1687,6 +1742,16 @@ impl Diagnostic {
                 .copied()
                 .unwrap_or("?"),
             Self::Measure(at) => mcf_serve::examine::MEASURES.get(at).copied().unwrap_or("?"),
+            Self::Eval(at) => SUITES.get(at).map_or("?", |(_, name, _)| name),
+        }
+    }
+
+    /// The suite's own name, as `mcf eval --only` takes it.
+    #[must_use]
+    pub fn suite(self) -> Option<&'static str> {
+        match self {
+            Self::Eval(at) => SUITES.get(at).map(|(suite, _, _)| *suite),
+            _ => None,
         }
     }
 
@@ -1700,6 +1765,7 @@ impl Diagnostic {
             Self::Comparison => Card::Comparison.answers(),
             Self::Probe(at) => PROBE_ANSWERS.get(at).copied().unwrap_or(""),
             Self::Measure(at) => MEASURE_ANSWERS.get(at).copied().unwrap_or(""),
+            Self::Eval(at) => SUITE_ANSWERS.get(at).copied().unwrap_or(""),
         }
     }
 
@@ -1712,6 +1778,7 @@ impl Diagnostic {
             Self::Prompt => Card::Prompt,
             Self::Comparison => Card::Comparison,
             Self::Probe(_) => Card::Capabilities,
+            Self::Eval(_) => Card::Coding,
             Self::Measure(at) => {
                 let name = mcf_serve::examine::MEASURES.get(at).copied().unwrap_or("");
                 [Card::Performance, Card::Fidelity, Card::Behaviour]
@@ -1746,6 +1813,7 @@ impl Diagnostic {
             // `tool-calling`.
             Self::Probe(at) => mcf_serve::probes::run::RECORDED.get(at).copied(),
             Self::Measure(_) => Some(self.name()),
+            Self::Eval(at) => SUITES.get(at).map(|(_, _, method)| *method),
         }
     }
 }
@@ -2039,6 +2107,9 @@ pub enum Doing {
     Probing(job::Job),
     /// The measurements are running on the chosen model (D52).
     Examining(job::Job),
+    /// A coding suite is running on the chosen model, through the command
+    /// line and its container (B-519).
+    Evaluating(job::Job),
 }
 
 impl Doing {
@@ -2056,6 +2127,7 @@ impl Doing {
             | Self::Provisioning(job)
             | Self::Probing(job)
             | Self::Examining(job)
+            | Self::Evaluating(job)
             | Self::Hosting(job) => Some(job),
         }
     }
@@ -2160,6 +2232,11 @@ pub struct Desk {
     pub probes_apply: bool,
     /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
     pub diagnostic: Diagnostic,
+    /// Which coding suite is running, by its place in `SUITES`, or none
+    /// for every one (B-519).
+    pub evaluating: Option<usize>,
+    /// Whether a finished suite's readings have been read again.
+    evaluation_kept: bool,
     /// The chosen model's readings runs, newest first, as the daemon
     /// answered them, with the path they are of (D54, B-516).
     pub readings: Option<(String, Vec<Value>)>,
@@ -2299,6 +2376,8 @@ impl Desk {
             said: String::new(),
             tests: tests(),
             diagnostic: Diagnostic::Throughput,
+            evaluating: None,
+            evaluation_kept: true,
             readings: None,
             queued: std::collections::VecDeque::new(),
             queued_of: 0,
@@ -2524,6 +2603,7 @@ impl Desk {
             | Doing::Reporting(job)
             | Doing::Probing(job)
             | Doing::Examining(job)
+            | Doing::Evaluating(job)
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => job.drain(),
         };
@@ -2584,6 +2664,12 @@ impl Desk {
             && job.finished
         {
             self.keep_the_examination();
+        }
+        if let Doing::Evaluating(job) = &self.doing
+            && job.finished
+            && !self.evaluation_kept
+        {
+            self.keep_the_evaluation();
         }
         self.start_the_next_queued();
         if let Doing::Listing(job) = &self.doing
@@ -3309,6 +3395,7 @@ impl Desk {
                 self.page = Page::Diagnostics;
                 self.examine_only(at, vec![diagnostic.name().to_owned()]);
             }
+            Diagnostic::Eval(which) => self.evaluate(at, Some(which)),
             other => self.run_card_on(at, other.card()),
         }
     }
@@ -3328,13 +3415,14 @@ impl Desk {
     /// The runs a Run all takes, in order. The prompt analysis needs a
     /// prompt and the comparison runs at the command line, so neither is
     /// in it.
-    pub const EVERY_RUN: [Card; 6] = [
+    pub const EVERY_RUN: [Card; 7] = [
         Card::Throughput,
         Card::CrossCheck,
         Card::Capabilities,
         Card::Performance,
         Card::Fidelity,
         Card::Behaviour,
+        Card::Coding,
     ];
 
     /// Starts the next queued run where the one going has finished well;
@@ -3451,6 +3539,7 @@ impl Desk {
                 self.page = Page::Diagnostics;
                 self.examine(at, card);
             }
+            Card::Coding => self.evaluate(at, None),
             // Run at the command line until the daemon carries it; its
             // card says so and offers the command.
             Card::Comparison => {}
@@ -3924,7 +4013,82 @@ impl Desk {
                     .position(|held| *held == name)
                     .map(Diagnostic::Measure)
             }
+            Doing::Evaluating(job) if !job.finished => {
+                Some(Diagnostic::Eval(self.evaluating.unwrap_or(0)))
+            }
             _ => None,
+        }
+    }
+
+    /// Runs one coding suite, or every one where none is named, through
+    /// the command line: MCF's own binary with `eval`, read line by line
+    /// as a job (B-519). The record's readings and the model's summary are
+    /// read again when it ends.
+    fn evaluate(&mut self, at: usize, suite: Option<usize>) {
+        let Some(held) = self.models.get(at) else {
+            return;
+        };
+        if self.doing.busy() {
+            return;
+        }
+        let Ok(own) = std::env::current_exe() else {
+            self.refusal = Some("MCF cannot find its own binary to run the suite with".to_owned());
+            return;
+        };
+        let mut command = std::process::Command::new(own);
+        command.arg("eval").arg(&held.path);
+        if let Some(name) = suite
+            .and_then(|at| SUITES.get(at))
+            .map(|(name, _, _)| *name)
+        {
+            command.arg("--only").arg(name);
+        }
+        let what = match suite.and_then(|at| SUITES.get(at)) {
+            Some((_, name, _)) => format!("running the {name} suite on {}", held.name),
+            None => format!("running every coding suite on {}", held.name),
+        };
+        self.page = Page::Diagnostics;
+        self.evaluating = suite;
+        self.evaluation_kept = false;
+        self.doing = Doing::Evaluating(job::Job::spawned(command, what));
+    }
+
+    /// Reads the readings and the model's summary again once a suite has
+    /// finished, so that its rows and when it last ran are on the page.
+    fn keep_the_evaluation(&mut self) {
+        self.evaluation_kept = true;
+        self.fetch_readings();
+        self.refresh_readings_at();
+    }
+
+    /// Asks the daemon for the chosen model's summary again and keeps
+    /// only when each method's readings were last taken from it.
+    fn refresh_readings_at(&mut self) {
+        let Some(at) = self.chosen else {
+            return;
+        };
+        let Ok(answer) = ask_within(&self.socket, &Request::Holding, POLL) else {
+            return;
+        };
+        if !answer.served {
+            return;
+        }
+        let Some(path) = self.models.get(at).map(|held| held.path.clone()) else {
+            return;
+        };
+        let fresh = answer
+            .body
+            .get("models")
+            .and_then(Value::as_list)
+            .and_then(|models| {
+                models
+                    .iter()
+                    .find(|entry| entry.get("path").and_then(Value::as_text) == Some(path.as_str()))
+            })
+            .and_then(|entry| entry.get("runs"))
+            .map(readings_at_of);
+        if let (Some(fresh), Some(held)) = (fresh, self.models.get_mut(at)) {
+            held.readings_at = fresh;
         }
     }
 
@@ -3963,6 +4127,10 @@ impl Desk {
             Diagnostic::Probe(_) | Diagnostic::Measure(_) => {
                 let finding = self.finding_of(diagnostic)?;
                 finding.at.clone().map(|at| (at, finding.engine.clone()))
+            }
+            Diagnostic::Eval(_) => {
+                let method = diagnostic.readings_method()?;
+                held.readings_at.get(method).map(|at| (at.clone(), None))
             }
         }
     }
@@ -4256,7 +4424,8 @@ impl Desk {
             | Doing::CrossChecking(job)
             | Doing::Reporting(job)
             | Doing::Probing(job)
-            | Doing::Examining(job) => {
+            | Doing::Examining(job)
+            | Doing::Evaluating(job) => {
                 job.stop();
             }
             _ => {}
@@ -4497,6 +4666,7 @@ impl Desk {
             | Doing::Reporting(job)
             | Doing::Probing(job)
             | Doing::Examining(job)
+            | Doing::Evaluating(job)
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => (
                 if job.finished {

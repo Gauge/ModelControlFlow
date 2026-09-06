@@ -2668,6 +2668,10 @@ impl Daemon {
                         .unwrap_or_default(),
                 ),
             ),
+            // When each method's readings were last taken on this model, so
+            // that a row run outside the daemon — the command line's coding
+            // suites — says when it last ran like the rest (B-519, D54).
+            ("readings_at", self.readings_at(path)),
             ("trained_context", shape(trained)),
             ("cache_bytes_per_token", shape(cache)),
             ("resolved", resolved),
@@ -2676,6 +2680,35 @@ impl Daemon {
             // whole shows them with the rest (§3.15, D49).
             ("configured", self.applied_to(path)),
         ])
+    }
+
+    /// The latest `at` of each method's readings on a model, as a map from
+    /// the method to the time (B-519).
+    fn readings_at(&self, path: &std::path::Path) -> Value {
+        let mut latest: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        if let Ok(readings) = self.readings.lock()
+            && let Some(runs) = readings.get(path)
+        {
+            for run in runs {
+                let (Some(method), Some(at)) = (
+                    run.get("method").and_then(Value::as_text),
+                    run.get("at").and_then(Value::as_text),
+                ) else {
+                    continue;
+                };
+                let entry = latest.entry(method.to_owned()).or_default();
+                if at > entry.as_str() {
+                    at.clone_into(entry);
+                }
+            }
+        }
+        Value::Map(
+            latest
+                .into_iter()
+                .map(|(method, at)| (method, Value::text(at)))
+                .collect(),
+        )
     }
 
     /// What somebody applied to a model from a probe's finding, each part

@@ -47,6 +47,7 @@ fn four_models() -> Desk {
             applied_addressing: None,
             applied_budget: None,
             probed: Vec::new(),
+            readings_at: std::collections::BTreeMap::new(),
             repository: None,
             file: String::new(),
             on_a_card: true,
@@ -77,6 +78,7 @@ fn four_models() -> Desk {
             applied_addressing: None,
             applied_budget: None,
             probed: Vec::new(),
+            readings_at: std::collections::BTreeMap::new(),
             repository: None,
             file: String::new(),
             on_a_card: true,
@@ -2779,7 +2781,67 @@ fn review_the_diagnostics(desk: &mut Desk) {
         vec![run],
     ));
     let _ = drawn(desk, NIGHT, "review-diagnostics-examining");
+    review_the_coding_row(desk);
+}
+
+/// A coding suite's row: run through the command line, its readings
+/// under `coding` and when it last ran from the model's summary (B-519).
+fn review_the_coding_row(desk: &mut Desk) {
     desk.doing = mcf_desk::Doing::Nothing;
+    desk.diagnostic = mcf_desk::Diagnostic::Eval(0);
+    let coding_rows: Vec<mcf_record::readings::Reading> = ["merge-sorted", "glob-match"]
+        .iter()
+        .flat_map(|task| {
+            (0..3_i64).flat_map(move |attempt| {
+                let dims = [
+                    ("language", mcf_record::json::Value::text("python")),
+                    ("task", mcf_record::json::Value::text(*task)),
+                    ("attempt", mcf_record::json::Value::Integer(attempt)),
+                ];
+                [
+                    mcf_record::readings::Reading::new(&dims, "cases_held", 3 - attempt, "count"),
+                    mcf_record::readings::Reading::new(&dims, "cases", 3, "count"),
+                    mcf_record::readings::Reading::new(
+                        &dims,
+                        "ask_ns",
+                        2_400_000_000 + attempt * 10_000_000,
+                        "ns",
+                    ),
+                ]
+            })
+        })
+        .collect();
+    let mut coding = mcf_record::readings::run_body(
+        &desk
+            .models
+            .first()
+            .map(|held| held.path.clone())
+            .unwrap_or_default(),
+        "coding",
+        "through the daemon, run in a container",
+        vec![("tasks", mcf_record::json::Value::Integer(20))],
+        &coding_rows,
+    );
+    if let mcf_record::json::Value::Map(fields) = &mut coding {
+        let _at = fields.insert(
+            "at".to_owned(),
+            mcf_record::json::Value::text("2026-09-06T03:46:43.000000000Z (local offset +00:00)"),
+        );
+    }
+    if let Some(held) = desk.models.get_mut(0) {
+        let _was = held.readings_at.insert(
+            "coding".to_owned(),
+            "2026-09-06T03:46:43.000000000Z (local offset +00:00)".to_owned(),
+        );
+    }
+    desk.readings = Some((
+        desk.models
+            .first()
+            .map(|held| held.path.clone())
+            .unwrap_or_default(),
+        vec![coding],
+    ));
+    let _ = drawn(desk, DAY, "review-diagnostics-coding");
     desk.diagnostic = mcf_desk::Diagnostic::Throughput;
     desk.readings = None;
 }

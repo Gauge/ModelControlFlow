@@ -79,6 +79,22 @@ const DECLARED: &[Spawns] = &[
                container is the whole of why it may",
     },
     Spawns {
+        file: "crates/mcf-desk/src/lib.rs",
+        sites: 1,
+        what: "the command the window hands the console's job to run a coding suite from the \
+               Diagnostics list: MCF's own binary, found by asking the system where it is, \
+               with `eval` and the model's path. It is built here and started in the job; \
+               nothing acquired is named in it (B-519, B-025)",
+    },
+    Spawns {
+        file: "crates/mcf-tui/src/job.rs",
+        sites: 1,
+        what: "MCF's own binary with arguments, so that the window can run a command-line \
+               suite — `mcf eval <model>` — as a job it reads line by line and can stop. What \
+               starts is the program MCF is, never a model or anything acquired: what a model \
+               wrote runs inside that command's container, declared beside it (B-519, B-025)",
+    },
+    Spawns {
         file: "crates/mcf-cli/src/languages.rs",
         sites: 2,
         what: "podman again, for the same suite in JavaScript and in Rust: once to ask the \

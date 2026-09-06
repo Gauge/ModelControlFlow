@@ -3001,9 +3001,115 @@ fn diagnostic_pane(
             crate::Diagnostic::Probe(_) | crate::Diagnostic::Measure(_) => {
                 one_pane(paint, desk, mouse, inner, desk.diagnostic)
             }
+            crate::Diagnostic::Eval(_) => eval_pane(paint, desk, mouse, inner, desk.diagnostic),
         },
     );
     (act, menu)
+}
+
+/// A coding suite's pane: what it answers, Run — which starts MCF's own
+/// `eval` for the suite and reads it as it goes — or Stop while it runs,
+/// the command's last line meanwhile, when it last ran, and its readings
+/// (B-519, D54).
+fn eval_pane(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    diagnostic: crate::Diagnostic,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let inner_x = area.x + PAD;
+    let inner_w = area.w - 2.0 * PAD;
+    let running_one = desk.running_diagnostic() == Some(diagnostic);
+    let done = is_done_one(desk, diagnostic);
+    let height = head_height_of(paint, diagnostic.answers(), area.w)
+        + 44.0
+        + if done { 30.0 } else { 0.0 }
+        + 12.0;
+    let frame = Box::new(area.x, area.y, area.w, height);
+    let y = card_head_named(paint, frame, diagnostic.name(), diagnostic.answers());
+    let mut act = None;
+    let running = a_run_is_going(desk);
+    let (pressed, button) = ui::fitted(
+        paint,
+        mouse,
+        (inner_x, y),
+        run_label(desk, running_one),
+        if running && !running_one {
+            Kind::Quiet
+        } else {
+            Kind::Primary
+        },
+    );
+    if pressed && running_one {
+        act = Some(Act::Stop);
+    } else if pressed && !running {
+        act = Some(Act::RunOne(diagnostic));
+    }
+    if running_one {
+        // The command's own last line, as `mcf eval` prints it.
+        let said = desk
+            .doing
+            .job()
+            .and_then(|job| {
+                job.answers
+                    .iter()
+                    .rev()
+                    .find_map(|answer| answer.get("line").and_then(Value::as_text))
+            })
+            .map_or_else(|| "starting".to_owned(), |line| line.trim().to_owned());
+        let shown = paint.elide(
+            &said,
+            Weight::Regular,
+            size::SMALL,
+            inner_w - button.w - 12.0,
+        );
+        paint.say_at(
+            button.right() + 12.0,
+            y + 8.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.accent,
+        );
+    }
+    let mut below = y + 44.0;
+    if done {
+        paint.say_at(
+            inner_x,
+            below + 8.0,
+            "Done — the readings are below",
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        below += 30.0;
+    }
+    let mut y = frame.bottom() + 18.0;
+    spaced(paint, area.x, y, "last run", ink.faint);
+    y += 24.0;
+    let said = match desk.last_run(diagnostic) {
+        Some((at, _)) => format!("taken {}", crate::when_said(&at)),
+        None => "never run on this model".to_owned(),
+    };
+    paint.say_at(area.x, y, &said, Weight::Regular, size::SMALL, ink.faint);
+    y += 22.0;
+    if let Some(job) = desk.doing.job()
+        && matches!(desk.doing, Doing::Evaluating(_))
+        && job.finished
+        && let Some(why) = &job.refused
+    {
+        for wrapped in paint.wrap(why, Weight::Regular, size::BODY, area.w) {
+            paint.say_at(area.x, y, &wrapped, Weight::Regular, size::BODY, ink.ink);
+            y += 20.0;
+        }
+    }
+    let _ = below;
+    if let Some(run) = desk.readings_of(diagnostic) {
+        readings_table(paint, Box::new(area.x, y + 14.0, area.w, 0.0), run);
+    }
+    act
 }
 
 /// A run's pane: its card as it was, and under it what its last run
@@ -3325,6 +3431,16 @@ pub(crate) fn columns_said(line: &str) -> String {
 /// Whether a probe's or measurement's own run has finished with a
 /// finding for it (D53).
 fn is_done_one(desk: &Desk, diagnostic: crate::Diagnostic) -> bool {
+    if let (crate::Diagnostic::Eval(which), Doing::Evaluating(job)) = (diagnostic, &desk.doing) {
+        return job.finished
+            && job.refused.is_none()
+            && desk.evaluating.is_none_or(|running| running == which)
+            && job
+                .conclusion()
+                .and_then(|end| end.get("exit"))
+                .and_then(Value::as_integer)
+                == Some(0);
+    }
     let ((crate::Diagnostic::Probe(_), Doing::Probing(job))
     | (crate::Diagnostic::Measure(_), Doing::Examining(job))) = (diagnostic, &desk.doing)
     else {
@@ -3418,6 +3534,7 @@ fn a_run_is_going(desk: &Desk) -> bool {
             | Doing::CrossChecking(job)
             | Doing::Probing(job)
             | Doing::Examining(job)
+            | Doing::Evaluating(job)
             if !job.finished
     )
 }
@@ -3609,6 +3726,15 @@ fn is_done(desk: &Desk, card: Card) -> bool {
         (Card::Performance | Card::Fidelity | Card::Behaviour, Doing::Examining(job)) => {
             job.finished && job.refused.is_none()
         }
+        (Card::Coding, Doing::Evaluating(job)) => {
+            job.finished
+                && job.refused.is_none()
+                && job
+                    .conclusion()
+                    .and_then(|end| end.get("exit"))
+                    .and_then(Value::as_integer)
+                    == Some(0)
+        }
         _ => false,
     }
 }
@@ -3711,6 +3837,31 @@ fn small_card(
                 act = Some(pressed);
             }
         }
+        // Every coding suite in one run of MCF's own `eval`, read as a job
+        // (B-519); each suite is also a row of the list with its own Run.
+        Card::Coding => {
+            let evaluating = matches!(&desk.doing, Doing::Evaluating(job) if !job.finished);
+            let (pressed, _) = ui::fitted(
+                paint,
+                mouse,
+                (inner_x, y),
+                run_label(desk, evaluating),
+                if running && !evaluating {
+                    Kind::Quiet
+                } else {
+                    Kind::Primary
+                },
+            );
+            if pressed && evaluating {
+                act = Some(Act::Stop);
+            } else if pressed && !running {
+                act = Some(Act::Run(Card::Coding));
+            }
+            y += 44.0;
+            if let Some(pressed) = done_line(paint, desk, mouse, (inner_x, y), card) {
+                act = Some(pressed);
+            }
+        }
         // The probes and the measurements are rows of the list, each shown
         // whole from its own pane (D53); the ladder has its own card.
         Card::Throughput
@@ -3789,6 +3940,10 @@ fn small_card_height(
             44.0 + progress + done + 12.0
         }
         Card::Prompt => 34.0 + 16.0,
+        Card::Coding => {
+            let done = if is_done(desk, card) { 34.0 } else { 0.0 };
+            44.0 + done + 12.0
+        }
         Card::Comparison => {
             let command = card.command(model).map_or(0.0, |command| {
                 #[allow(clippy::cast_precision_loss, reason = "a line count")]

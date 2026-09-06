@@ -662,3 +662,37 @@ fn a_rung_says_how_many_pairs_it_was_read_off() {
         "a reading from before the count is not given one"
     );
 }
+
+/// A job over a command of MCF's own reads the command's lines as answers
+/// and its exit as the conclusion, and drains like a daemon's job (B-519).
+/// The command here is the shell saying two lines and leaving with a code,
+/// which stands in for `mcf eval` without running a suite.
+#[test]
+fn a_spawned_command_is_read_line_by_line_to_its_exit() {
+    let mut command = std::process::Command::new("sh");
+    command.arg("-c").arg("echo one; echo two; exit 3");
+    let mut job = crate::job::Job::spawned(command, "saying two lines".to_owned());
+    let began = std::time::Instant::now();
+    while !job.finished && began.elapsed().as_secs() < 10 {
+        let _heard = job.drain();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(job.finished, "the job did not finish");
+    let lines: Vec<&str> = job
+        .answers
+        .iter()
+        .filter_map(|answer| {
+            answer
+                .get("line")
+                .and_then(mcf_record::json::Value::as_text)
+        })
+        .collect();
+    assert_eq!(lines, ["one", "two"]);
+    let end = job.conclusion().expect("the exit is the conclusion");
+    assert_eq!(
+        end.get("exit")
+            .and_then(mcf_record::json::Value::as_integer),
+        Some(3)
+    );
+    assert!(job.refused.is_none());
+}

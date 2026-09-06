@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 161 |
+| **Version** | 162 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -192,6 +192,7 @@ forward as one.
 | 221 | [F221 — Schema variety under a grammar asks for four shapes — a nested object, an array of exactly three objects, two enumerated fields, a required pair with an optional third and nothing else — three times free and three times under the engine's schema constraint, each answer read by a parser for validity and for the shape; the 2B produced every shape every time both ways (B-539, D55, B-504)](#221-f221-schema-variety-under-a-grammar-asks-for-four-shapes-a-nested-object-an-array-of-exactly-three-objects-two-enumerated-fields-a-required-pair-with-an-optional-third-and-nothing-else-three-times-free-and-three-times-under-the-engines-schema-constraint-each-answer-read-by-a-parser-for-validity-and-for-the-shape-the-2b-produced-every-shape-every-time-both-ways-b-539-d55-b-504) |
 | 222 | [F222 — Temperature sensitivity draws three exact questions six times each at five temperatures from nought to one and a half and counts the distinct answers and the right ones at each, every draw a row; the 2B gave one answer per question, the right one, at every temperature (B-540, D55, A19)](#222-f222-temperature-sensitivity-draws-three-exact-questions-six-times-each-at-five-temperatures-from-nought-to-one-and-a-half-and-counts-the-distinct-answers-and-the-right-ones-at-each-every-draw-a-row-the-2b-gave-one-answer-per-question-the-right-one-at-every-temperature-b-540-d55-a19) |
 | 223 | [F223 — Vocabulary coverage tokenizes a corpus of twelve texts — ten languages in six scripts, code and symbols — and counts each text's tokens, byte fallbacks and unknown tokens beside its characters and bytes; the 2B's vocabulary spelled English at 210 tokens a thousand characters and Hindi at 950 with 28 byte fallbacks, Greek at 864 with five, and Korean and the symbol line with a few, unknown tokens nowhere (B-541, D55, B-502)](#223-f223-vocabulary-coverage-tokenizes-a-corpus-of-twelve-texts-ten-languages-in-six-scripts-code-and-symbols-and-counts-each-texts-tokens-byte-fallbacks-and-unknown-tokens-beside-its-characters-and-bytes-the-2bs-vocabulary-spelled-english-at-210-tokens-a-thousand-characters-and-hindi-at-950-with-28-byte-fallbacks-greek-at-864-with-five-and-korean-and-the-symbol-line-with-a-few-unknown-tokens-nowhere-b-541-d55-b-502) |
+| 224 | [F224 — The coding suites are four rows of the Diagnostics list under a Coding heading — Python coding, JavaScript and Rust, editing, test writing — each run from its pane by MCF's own `eval` started as a job the window reads line by line and can stop, with its readings under the pane and when it last ran from the daemon's summary; on the way, the window was found to read the probes' findings and applied settings from the wrong level of that summary, so every probe read as never run after a restart (B-519, D54, DEC-061)](#224-f224-the-coding-suites-are-four-rows-of-the-diagnostics-list-under-a-coding-heading-python-coding-javascript-and-rust-editing-test-writing-each-run-from-its-pane-by-mcfs-own-eval-started-as-a-job-the-window-reads-line-by-line-and-can-stop-with-its-readings-under-the-pane-and-when-it-last-ran-from-the-daemons-summary-on-the-way-the-window-was-found-to-read-the-probes-findings-and-applied-settings-from-the-wrong-level-of-that-summary-so-every-probe-read-as-never-run-after-a-restart-b-519-d54-dec-061) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9646,6 +9647,41 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 224 · F224 — The coding suites are four rows of the Diagnostics list under a Coding heading — Python coding, JavaScript and Rust, editing, test writing — each run from its pane by MCF's own `eval` started as a job the window reads line by line and can stop, with its readings under the pane and when it last ran from the daemon's summary; on the way, the window was found to read the probes' findings and applied settings from the wrong level of that summary, so every probe read as never run after a restart (B-519, D54, DEC-061)
+
+**The last row.** Every diagnostic was a row of one list except
+coding, which ran at the command line because its container is the
+command line's. The four suites are now rows under a Coding heading,
+each with its pane: what it answers, Run, the command's own last line
+while it runs, when it last ran, and its readings as a table. Run
+starts MCF's own binary — found by asking the system where it is —
+with `eval`, the model's path and `--only` the suite, as a job the
+console's job type now carries beside its daemon requests: the
+command's lines arrive as answers, its exit as the conclusion, and
+Stop kills it. The heading's Run all runs every suite in one `eval`,
+and the page's Run all takes the coding card after the measurements.
+The one place that starts a process is declared with the others:
+what starts is MCF, never a model.
+
+**When it last ran.** The daemon lists, beside each model, the latest
+time each method's readings were taken — from the readings it holds
+— so a row the daemon does not run says when it ran like the rest.
+When a suite ends, the window reads the readings and that summary
+again.
+
+**A defect found on the way.** The window read a model's probed
+findings and applied settings from the top of the daemon's entry,
+where the daemon never put them: they are under `runs`. A window
+opened after a probe run listed every probe as never run and no
+applied setting until it ran one itself; the readings of the ladder
+and the cross-check were read from the right place, so they showed.
+All three are read from under `runs` now, and a test holds the
+daemon's shape.
+
+**Seen.** The Diagnostics page rendered with the Coding row chosen:
+the card with Run, *last run taken 2026-09-06 03:46*, and the coding
+readings in the table under it.
+
 ## 223 · F223 — Vocabulary coverage tokenizes a corpus of twelve texts — ten languages in six scripts, code and symbols — and counts each text's tokens, byte fallbacks and unknown tokens beside its characters and bytes; the 2B's vocabulary spelled English at 210 tokens a thousand characters and Hindi at 950 with 28 byte fallbacks, Greek at 864 with five, and Korean and the symbol line with a few, unknown tokens nowhere (B-541, D55, B-502)
 
 **What a script costs.** A vocabulary with no piece for a script
@@ -13824,6 +13860,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 162 — coding in the list
+
+F224: the coding suites as rows of the Diagnostics list, run as a job;
+the probes' findings read from under runs (B-519).
 
 ### Version 161 — the last five of D55
 

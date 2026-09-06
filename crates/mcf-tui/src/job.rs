@@ -47,6 +47,10 @@ pub struct Job {
     connection: Option<UnixStream>,
     /// Whether it was cut short from this side.
     pub stopped: bool,
+    /// The process behind it, where the job is a command MCF ran rather
+    /// than a request to the daemon (B-519): the reader thread waits on it
+    /// once its output ends, and stopping kills it.
+    child: std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>,
 }
 
 /// One thing heard from the daemon.
@@ -81,6 +85,88 @@ impl Job {
             started: Instant::now(),
             connection: None,
             stopped: false,
+            child: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Starts a command of MCF's own and reads its lines as answers, each
+    /// `{"line": …}`, with `{"done": true, "exit": …}` when it ends (B-519).
+    ///
+    /// The command is MCF itself with arguments — `mcf eval <model>` from
+    /// the window — never something acquired: what a model wrote runs
+    /// inside that command's container, not here.
+    #[must_use]
+    pub fn spawned(mut command: std::process::Command, what: String) -> Self {
+        let (send, heard) = channel();
+        let spawned = command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+        let mut child = match spawned {
+            Ok(child) => child,
+            Err(error) => {
+                let _sent = send.send(Heard::Refused(format!(
+                    "the command could not be started: {error}"
+                )));
+                return Self {
+                    what,
+                    heard,
+                    answers: Vec::new(),
+                    refused: None,
+                    finished: false,
+                    started: Instant::now(),
+                    connection: None,
+                    stopped: false,
+                    child: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                };
+            }
+        };
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let held = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
+        let waited = std::sync::Arc::clone(&held);
+        let _worker = std::thread::spawn(move || {
+            if let Some(stdout) = stdout {
+                for read in BufReader::new(stdout).lines() {
+                    let Ok(read) = read else { break };
+                    if send
+                        .send(Heard::Answer(Value::map([
+                            ("line", Value::text(read)),
+                            ("done", Value::Bool(false)),
+                        ])))
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+            let mut last_words = String::new();
+            if let Some(stderr) = stderr {
+                let _read =
+                    std::io::Read::read_to_string(&mut BufReader::new(stderr), &mut last_words);
+            }
+            let exit = waited
+                .lock()
+                .ok()
+                .and_then(|mut slot| slot.as_mut().and_then(|child| child.wait().ok()));
+            let code = exit.and_then(|status| status.code()).unwrap_or(-1);
+            let _sent = send.send(Heard::Answer(Value::map([
+                ("done", Value::Bool(true)),
+                ("exit", Value::Integer(i64::from(code))),
+                ("last_words", Value::text(last_words.trim().to_owned())),
+            ])));
+        });
+        Self {
+            what,
+            heard,
+            answers: Vec::new(),
+            refused: None,
+            finished: false,
+            started: Instant::now(),
+            connection: None,
+            stopped: false,
+            child: held,
         }
     }
 
@@ -191,6 +277,7 @@ impl Job {
             started: Instant::now(),
             connection: kept,
             stopped: false,
+            child: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -207,6 +294,12 @@ impl Job {
         }
         if let Some(connection) = self.connection.take() {
             let _closed = connection.shutdown(std::net::Shutdown::Both);
+        }
+        if let Ok(mut slot) = self.child.lock()
+            && let Some(mut child) = slot.take()
+        {
+            let _killed = child.kill();
+            let _reaped = child.wait();
         }
         self.stopped = true;
         self.finished = true;

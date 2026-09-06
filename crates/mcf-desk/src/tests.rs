@@ -1527,7 +1527,7 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;
     let all = Diagnostic::all();
-    assert_eq!(all.len(), 4 + 9 + 33, "{all:?}");
+    assert_eq!(all.len(), 4 + 9 + 33 + 4, "{all:?}");
     let names: std::collections::BTreeSet<&str> = all.iter().map(|held| held.name()).collect();
     assert_eq!(names.len(), all.len(), "two rows share a name");
     assert_eq!(Diagnostic::Probe(2).name(), "stop-conditions");
@@ -1545,8 +1545,14 @@ fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
         "a probe's readings are under its record name"
     );
     let families = Diagnostic::families();
-    assert_eq!(families.len(), 5);
+    assert_eq!(families.len(), 6);
     assert_eq!(families[1].1, Some(crate::Card::Capabilities));
+    assert_eq!(families[5].1, Some(crate::Card::Coding));
+    assert_eq!(families[5].2.len(), crate::SUITES.len());
+    assert_eq!(Diagnostic::Eval(2).name(), "Editing");
+    assert_eq!(Diagnostic::Eval(3).readings_method(), Some("test-writing"));
+    assert_eq!(Diagnostic::Eval(1).suite(), Some("languages"));
+    assert_eq!(Diagnostic::Eval(0).card(), crate::Card::Coding);
 
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     assert_eq!(desk.diagnostic, Diagnostic::Throughput);
@@ -1640,7 +1646,7 @@ fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
     desk.doing = crate::Doing::Measuring(going);
     assert!((desk.run_fraction().unwrap_or(0.0) - 0.5).abs() < 0.01);
     let whole = desk.sequence_fraction().unwrap_or(0.0);
-    assert!((whole - 0.5 / 6.0).abs() < 0.01, "{whole}");
+    assert!((whole - 0.5 / 7.0).abs() < 0.01, "{whole}");
     // It finishes well: the next run starts.
     if let crate::Doing::Measuring(job) = &mut desk.doing {
         job.finished = true;
@@ -1722,6 +1728,7 @@ fn a_family_runs_whole_and_a_row_runs_one() {
             engine: Some("provisioned llama.cpp".to_owned()),
             lines: vec!["old".to_owned()],
         }],
+        readings_at: std::collections::BTreeMap::new(),
         ..Model::default()
     }];
     desk.chosen = Some(0);
@@ -2052,4 +2059,65 @@ fn the_filters_narrow_the_library_with_the_words() {
     assert!(!desk.filters.any_set());
     desk.act(crate::Act::ToggleFilters);
     assert!(desk.filters.open);
+}
+
+/// A model as the daemon lists it: what it has run is under `runs`, and
+/// the window reads the probes' findings, the applied settings and when
+/// each method's readings were last taken from there (B-519).
+#[test]
+fn a_models_runs_are_read_from_under_runs() {
+    let line = r#"{"path":"/models/a.gguf","bytes":10,"companion":false,"parts":1,"provenance":null,"runs":{"architecture":"llama","measured":null,"cross_checked":null,"prompt_reported":null,"probed":[{"method":"chat-template","at":"2026-09-06T02:26:33Z","engine":"provisioned llama.cpp","said":"im_start…im_end as assistant"}],"configured":{"addressing":"set by the chat-template probe","budget":null},"readings_at":{"coding":"2026-09-06T05:07:15Z","editing":"2026-09-06T05:06:35Z"},"trained_context":4096,"cache_bytes_per_token":null,"resolved":null}}"#;
+    let held = mcf_record::json::parse(line).unwrap();
+    let model = crate::model_from(&held);
+    assert_eq!(model.probed.len(), 1);
+    assert_eq!(model.probed[0].name, "chat-template");
+    assert_eq!(
+        model.applied_addressing.as_deref(),
+        Some("set by the chat-template probe")
+    );
+    assert_eq!(
+        model.readings_at.get("coding").map(String::as_str),
+        Some("2026-09-06T05:07:15Z")
+    );
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.models.push(model);
+    desk.chosen = Some(0);
+    assert!(
+        desk.last_run(crate::Diagnostic::Eval(0)).is_some(),
+        "coding's row says when it last ran"
+    );
+    assert!(
+        desk.last_run(crate::Diagnostic::Eval(2)).is_some(),
+        "editing's row says when it last ran"
+    );
+    assert!(
+        desk.last_run(crate::Diagnostic::Eval(3)).is_none(),
+        "test writing has not run"
+    );
+}
+
+/// Against a running daemon named by `MCF_LIVE_SOCKET`: the models it
+/// lists carry, under `runs`, when each method's readings were last
+/// taken, and the window keeps them (B-519). Ignored unless asked for.
+#[test]
+#[ignore = "needs a running daemon; set MCF_LIVE_SOCKET to its control socket"]
+fn a_live_daemon_says_when_each_methods_readings_were_taken() {
+    let Ok(socket) = std::env::var("MCF_LIVE_SOCKET") else {
+        return;
+    };
+    let mut desk = Desk::new(std::path::PathBuf::from(socket));
+    desk.refresh();
+    assert!(!desk.models.is_empty(), "the daemon listed no models");
+    let with_readings = desk
+        .models
+        .iter()
+        .filter(|held| !held.readings_at.is_empty())
+        .count();
+    assert!(with_readings > 0, "no model carried readings_at");
+    let with_findings = desk
+        .models
+        .iter()
+        .filter(|held| !held.probed.is_empty())
+        .count();
+    assert!(with_findings > 0, "no model carried its probed findings");
 }
