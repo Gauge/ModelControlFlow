@@ -4045,6 +4045,10 @@ impl Daemon {
     /// run and what each found as it lands — the probes' shape, with the
     /// engine started by the measurement itself under the settings it
     /// varies (D52).
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run read straight through: the file resolved, the site built, each step announced and recorded"
+    )]
     fn examining(
         &self,
         named: &str,
@@ -4088,6 +4092,13 @@ impl Daemon {
                     .iter()
                     .any(|device| device.kind == crate::engines::Kind::Gpu)
         });
+        // The daemon's own server is idle while the measurements start
+        // theirs, and it is a copy of a model the measurements will hold:
+        // stopped first, so that a measurement does not sit beside the
+        // ladder's server as well as any hosted one (B-560, F243).
+        if let Ok(mut slot) = self.server.lock() {
+            *slot = None;
+        }
         let listener = asker_of(writer);
         let gone = || asker_has_gone(listener.as_ref());
         let runtime = self

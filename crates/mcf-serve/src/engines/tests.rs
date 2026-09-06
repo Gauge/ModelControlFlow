@@ -668,3 +668,34 @@ fn a_cards_sensors_are_read_from_its_hardware_monitor() {
     assert_eq!(card_sensors_under(&root), CardSensors::default());
     assert!(!CardSensors::default().any());
 }
+
+/// The card's free memory and whether that memory is the host's own are
+/// read from the kernel's files: a small carve-out is an integrated card,
+/// whose free memory is not memory beside the host's (B-560).
+#[test]
+fn a_cards_free_memory_and_whether_it_is_the_hosts_are_read() {
+    let root = std::env::temp_dir().join(format!("mcf-cardmem-{}", std::process::id()));
+    let device = root.join("card0").join("device");
+    std::fs::create_dir_all(&device).unwrap();
+    std::fs::write(device.join("mem_info_vram_total"), "536870912\n").unwrap();
+    std::fs::write(device.join("mem_info_vram_used"), "433000448\n").unwrap();
+    assert_eq!(
+        card_memory_free_under(&root),
+        Some(536_870_912 - 433_000_448)
+    );
+    assert!(
+        card_memory_is_the_hosts_under(&root),
+        "half a gigabyte is a carve-out"
+    );
+    std::fs::write(device.join("mem_info_vram_total"), "25769803776\n").unwrap();
+    assert!(
+        !card_memory_is_the_hosts_under(&root),
+        "twenty-four gigabytes is a card's own"
+    );
+    let _gone = std::fs::remove_dir_all(&root);
+    assert_eq!(card_memory_free_under(&root), None);
+    assert!(
+        card_memory_is_the_hosts_under(&root),
+        "no card: nothing beside the host"
+    );
+}

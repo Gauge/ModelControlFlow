@@ -637,6 +637,96 @@ pub fn card_sensors_under(drm: &Path) -> CardSensors {
     CardSensors::default()
 }
 
+/// The first card's free memory: its total less what is used, from the
+/// kernel's files; `None` where no card says (B-560).
+#[must_use]
+pub fn card_memory_free() -> Option<u64> {
+    card_memory_free_under(Path::new("/sys/class/drm"))
+}
+
+/// The same, over the directory it reads.
+#[must_use]
+pub fn card_memory_free_under(drm: &Path) -> Option<u64> {
+    let device = first_card_under(drm)?.join("device");
+    let read = |file: &str| {
+        std::fs::read_to_string(device.join(file))
+            .ok()
+            .and_then(|text| text.trim().parse::<u64>().ok())
+    };
+    Some(read("mem_info_vram_total")?.saturating_sub(read("mem_info_vram_used")?))
+}
+
+/// Whether the first card's memory is the host's own: an integrated card
+/// reports a small carve-out as its memory and takes the rest from the
+/// host, so its free memory is not memory beside the host's (B-560).
+#[must_use]
+pub fn card_memory_is_the_hosts() -> bool {
+    card_memory_is_the_hosts_under(Path::new("/sys/class/drm"))
+}
+
+/// The same, over the directory it reads.
+#[must_use]
+pub fn card_memory_is_the_hosts_under(drm: &Path) -> bool {
+    let Some(card) = first_card_under(drm) else {
+        return true;
+    };
+    std::fs::read_to_string(card.join("device").join("mem_info_vram_total"))
+        .ok()
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .is_none_or(|total| total < CARVE_OUT_AT_MOST)
+}
+
+/// The most memory an integrated card reports as its own: a discrete card
+/// has more than this of its own.
+const CARVE_OUT_AT_MOST: u64 = 4 * 1024 * 1024 * 1024;
+
+/// The first card's directory under the drm tree, by name.
+fn first_card_under(drm: &Path) -> Option<PathBuf> {
+    let mut cards: Vec<PathBuf> = std::fs::read_dir(drm)
+        .ok()?
+        .flatten()
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("card") && !name.contains('-')
+        })
+        .map(|entry| entry.path())
+        .collect();
+    cards.sort();
+    cards.into_iter().next()
+}
+
+/// What a server for this model would need beside what is resident, and
+/// what is available now, where the first is more than the second: the
+/// file's bytes and its cache at the window, against the host's available
+/// memory and, where the card's memory is its own and layers go to it,
+/// the card's free memory (B-560).
+///
+/// **A server that would not fit is refused, not started.** A model of
+/// fifty gigabytes hosted through the window, then measured, had three
+/// copies resident — the hosted server, the daemon's own from the ladder,
+/// and the measurement's — on a machine of a hundred and twenty-five whose
+/// card's memory is the host's, and the kernel killed the desktop rather
+/// than MCF (F243). The arithmetic is conservative in one direction only:
+/// what is asked is compared with what the kernel says could be had, and a
+/// server that fits is never refused for want of headroom nobody measured.
+#[must_use]
+pub fn would_not_fit(model: &Path, context: u64, gpu_layers: u32) -> Option<(u64, u64)> {
+    let bytes = std::fs::metadata(model).ok()?.len();
+    let cache = crate::declared::header(model)
+        .and_then(|file| cache_bytes_per_token(&file))
+        .map_or(0, |per_token| per_token.saturating_mul(context));
+    let needs = bytes.saturating_add(cache);
+    let host = mcf_core::hardware::memory_available_now()?;
+    let card = if gpu_layers > 0 && !card_memory_is_the_hosts() {
+        card_memory_free().unwrap_or(0)
+    } else {
+        0
+    };
+    let available = host.saturating_add(card);
+    (needs > available).then_some((needs, available))
+}
+
 /// The component this machine's card wants, where it has one and an engine
 /// for it is not already provisioned.
 #[must_use]

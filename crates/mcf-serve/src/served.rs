@@ -844,6 +844,10 @@ impl Served {
     /// # Errors
     ///
     /// As [`Self::start`].
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one start read straight through: the binary, the fit, the socket, every switch, the wait"
+    )]
     pub fn start_as(
         llama: &ProvisionedLlama,
         model: &Path,
@@ -870,6 +874,25 @@ impl Served {
             .with_context("looked_for", binary.display().to_string()));
         }
 
+        // **A server that would not fit beside what is resident is refused
+        // here, before anything is allocated** (B-560, F243): the kernel's
+        // answer to a model that does not fit is to kill something, and what
+        // it killed was the desktop.
+        if let Some((needs, available)) = crate::engines::would_not_fit(model, context, gpu_layers)
+        {
+            return Err(Failure::new(
+                Category::ResourceMemoryExhausted,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::served"),
+                "a server for this model would not fit in the memory left beside what is \
+                 already resident: a server holding this or another model has the rest, and \
+                 unhosting it or stopping the run that holds it makes room",
+            )
+            .with_context("needs_bytes", needs.to_string())
+            .with_context("available_bytes", available.to_string())
+            .with_context("window", context.to_string()));
+        }
         // The socket goes under MCF's own runtime directory, named for the
         // process that owns it, so a server left behind by a killed daemon is
         // identifiable rather than anonymous (A27, B58).

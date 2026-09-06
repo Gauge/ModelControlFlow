@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 302 |
+| **Version** | 303 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**457 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 395 build items (304 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 36 open).** Every item cites
+**459 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
+decided, 23 resolved) and 397 build items (305 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 37 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -395,6 +395,8 @@ first and importance second.
 | B-557 | The prompt report and the comparison as rows: what each part of a prompt does and the bench's timings recorded as readings, not reports | D54, B-478 | Both answer `mcf data` | done. F240: prompt-report and comparison rows |
 | B-558 | Retrieval past sixteen thousand: the single-fact and multi-fact retrievals at 32k, 64k and 128k where the window allows | D55, B-497, B-529 | Rows per depth, and a depth past the window says so | done. F241: 32k, 64k and 128k; the 2B found every placement |
 | B-559 | The server a probe opens at the trained context outlives the probe: the usable-context probe started the 2B at 262,144 tokens and the daemon kept that server for every ask after it, so a suite that followed ran through a cache sized for a window nobody else asked for; a server opened for a probe's depth closes with the probe, or the next ask sizes its own | D48, B-459, F225 | After a probe, the next ask runs on a server sized for its own window | done. F226: a held window more than sixteen times the turn's need is replaced; the abandoned read that runs on is noted |
+| B-560 | A server that would not fit beside what is resident is refused before it starts, and the daemon stops its own idle server before a measurement starts one | D41, DEC-018, F243 | Three copies of a model cannot be started on a machine that holds two | done. F243: the fit is the file's bytes and its cache against the host's available memory and a discrete card's free memory |
+| B-561 | A memory cap on the daemon the window and the command line start, so that what the kernel kills under pressure is MCF and not the desktop; and the window saying, before a measurement on a hosted model, that it will hold a second copy | D41, F243, B-560 | The daemon runs under a cap where the system offers one, and the window says what a measurement on a hosted model costs | open |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
 | B-439 | The prompt page is a readings table: a row a reading with its choice, its condition and what it costs in generations, and the served condition strings are labels a cell wide | B-438, B-429, B-434, B-435, B-436, A19, A22, B60, §3.4, §3.15 | Above the report the window used to explain each control in a sentence — what the temperature does, what the extras cost, what the run would spend. Under B-438 the report below became figures and labels while the controls above stayed prose. The controls become a table with the same discipline: a row a reading (unit, removed, control, alone, prefixes, seeds), the choice in the row (the buttons or the field), the condition as short labels joined by a middle dot, the generations the row costs on the right, and a total row that adds the one as-written draw; a reading not asked for shows its cost faint. The served `unit_chosen_by`, `addressed_as` and `sampler` strings are cut to the same register so the console's condition lines and the window's read alike (B-072) | **done** — `Readings` in the desk draws the table; the temperature field's condition names an empty field as "at 0 the seed changes nothing · no house value" (B60) and a bad entry as what it should be, with Analyse waiting (§3.15); the served strings are `chosen` / `text: blank lines` / `text: no blank line`, `one user turn · whole prompt · system turn: none, not probed` and `greedy · temperature 0 · seed held · as written, every removal, the control` |
 | B-438 | The prompt report is figures and short labels: the run's conditions a line each, a table a reading with the same columns on both surfaces, and no paragraph a person has to read to find a number | B-429, B-434, B-435, B-436, B-072, A7, A19, A22, §3.4, §3.15 | Every figure sits under a label of a word or two; the conditions (unit, addressing, prompt length, cap, what the generations were spent on, the floor and how it was drawn, whether the floor leaves the rows readable, where it is kept) come first, a line each; the removed, floors, alone and prefixes readings are tables with the same cells — moved, a bar, first-token rank, opening kept — so a figure means one thing everywhere; a rank or an opening that was not read is a dash, not a zero (A7); the cell text is made once and shared by both surfaces (B-072); the answer keeps its own page under the tables | **done** — `mcf_desk::held_mark` and `open_mark` make the rank and opening cells for both the console and the window. The console prints the conditions as `label  value` lines, then REMOVED, FLOORS, ALONE, PREFIXES tables with `#`, `moved`, a ten-cell bar, `1st`, `open` and the part's text, a SEEDS line, a TOKENS table of the ranks the model did not expect, PARTS and the answer; a reading not asked for is one line naming its flag and its cost. The window draws the same: the conditions as label/value lines, the tables with pressable rows that still show their answers, the token reading beside the tables where the window is wide enough, and the answer under it all |
@@ -574,6 +576,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 303 — the desktop killed under three copies
+
+B-560 done (F243); B-561 opened.
 
 ### Version 302 — the sixteen gaps built
 
