@@ -602,12 +602,45 @@ pub(crate) fn run_in_container(podman: &Path, scratch: &Path, task: &Task, writt
             wrote_something: false,
         };
     }
-    let program = scratch.join("answer.py");
-    if let Err(error) = std::fs::write(&program, checker(task, written)) {
+    let said = match run_python(podman, scratch, &checker(task, written)) {
+        Ok(said) => said,
+        Err(because) => {
+            return Ran::Refused {
+                because,
+                wrote_something: true,
+            };
+        }
+    };
+    let _kept = std::fs::write(scratch.join("answer.out"), said.as_bytes());
+    let held: Vec<&str> = said
+        .lines()
+        .filter(|line| matches!(*line, "ok" | "no"))
+        .collect();
+    if held.len() != task.cases.len() {
+        // The program did not reach every case: it failed to parse, raised
+        // before the checks, or was stopped. That is not a wrong answer.
         return Ran::Refused {
-            because: format!("the answer could not be written down: {error}"),
+            because: format!(
+                "the answer did not run to the end of the cases ({} of {} reported)",
+                held.len(),
+                task.cases.len()
+            ),
             wrote_something: true,
         };
+    }
+    Ran::Checked {
+        passed: held.iter().filter(|line| **line == "ok").count(),
+        of: task.cases.len(),
+    }
+}
+
+/// Runs one Python program in the container and returns what it printed:
+/// no network, no capabilities, a read-only root, a memory ceiling, a
+/// process limit and a deadline, over the scratch directory mounted
+/// read-only. What a model wrote is not what MCF built (B-025).
+pub(crate) fn run_python(podman: &Path, scratch: &Path, program: &str) -> Result<String, String> {
+    if let Err(error) = std::fs::write(scratch.join("answer.py"), program) {
+        return Err(format!("the answer could not be written down: {error}"));
     }
     let pinned = format!("{IMAGE}@{IMAGE_DIGEST}");
     let spoke = std::process::Command::new(podman)
@@ -630,38 +663,9 @@ pub(crate) fn run_in_container(podman: &Path, scratch: &Path, task: &Task, writt
         .arg(SECONDS)
         .arg("python3")
         .arg("/work/answer.py")
-        .output();
-    let spoke = match spoke {
-        Ok(spoke) => spoke,
-        Err(error) => {
-            return Ran::Refused {
-                because: format!("the checker could not be started: {error}"),
-                wrote_something: true,
-            };
-        }
-    };
-    let said = String::from_utf8_lossy(&spoke.stdout);
-    let _kept = std::fs::write(scratch.join("answer.out"), said.as_bytes());
-    let held: Vec<&str> = said
-        .lines()
-        .filter(|line| matches!(*line, "ok" | "no"))
-        .collect();
-    if held.len() != task.cases.len() {
-        // The program did not reach every case: it failed to parse, raised
-        // before the checks, or was stopped. That is not a wrong answer.
-        return Ran::Refused {
-            because: format!(
-                "the answer did not run to the end of the cases ({} of {} reported)",
-                held.len(),
-                task.cases.len()
-            ),
-            wrote_something: true,
-        };
-    }
-    Ran::Checked {
-        passed: held.iter().filter(|line| **line == "ok").count(),
-        of: task.cases.len(),
-    }
+        .output()
+        .map_err(|error| format!("the checker could not be started: {error}"))?;
+    Ok(String::from_utf8_lossy(&spoke.stdout).into_owned())
 }
 
 /// Which cases held, in the task's order, from the checker's lines; empty
@@ -734,12 +738,27 @@ fn which_podman() -> Result<PathBuf, Failure> {
     ))
 }
 
-/// Evaluates one model against every task.
+/// The suites `mcf eval` runs, by the name `--only` takes.
+pub(crate) const SUITES: [&str; 4] = ["coding", "languages", "editing", "tests"];
+
+/// Evaluates one model against every task, or one suite's.
 #[allow(
     clippy::too_many_lines,
     reason = "the laboratory's one drive: the container found, each task asked and run, every attempt a row, the report said"
 )]
-pub(crate) fn eval(named: &str) -> Response {
+pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
+    if let Some(suite) = only
+        && !SUITES.contains(&suite)
+    {
+        return Response {
+            text: format!(
+                "mcf: no suite is called {suite}; --only takes one of {}",
+                SUITES.join(", ")
+            ),
+            served: false,
+        };
+    }
+    let wants = |suite: &str| only.is_none_or(|named| named == suite);
     let podman = match which_podman() {
         Ok(podman) => podman,
         Err(failure) => {
@@ -782,11 +801,15 @@ pub(crate) fn eval(named: &str) -> Response {
     let mut lines = vec![
         format!("evaluated {named}"),
         String::new(),
-        format!(
-            "  {} task(s), {ATTEMPTS} attempt(s) each, every answer run in a container with no \
-             network",
-            TASKS.len()
-        ),
+        if wants("coding") {
+            format!(
+                "  {} task(s), {ATTEMPTS} attempt(s) each, every answer run in a container with \
+                 no network",
+                TASKS.len()
+            )
+        } else {
+            format!("  only the {} suite", only.unwrap_or(""))
+        },
         match &addressed {
             Some(how) => format!("  addressed as {how}"),
             None => "  addressed as: nothing was applied, so each task is sent as raw text — a                      model trained to be addressed will complete it rather than answer it, and                      that is a condition of everything below. `mcf probe <model> --apply`                      settles it"
@@ -804,7 +827,7 @@ pub(crate) fn eval(named: &str) -> Response {
     let mut second_tries: std::collections::BTreeMap<(String, usize), String> =
         std::collections::BTreeMap::new();
     let (mut failed, mut repaired) = (0_usize, 0_usize);
-    for task in TASKS {
+    for task in if wants("coding") { TASKS } else { &[] } {
         let mut timings: Vec<(u64, usize, String)> = Vec::new();
         let mut cases: Vec<Vec<bool>> = Vec::new();
         let mut ask = |task: &Task| {
@@ -907,27 +930,61 @@ pub(crate) fn eval(named: &str) -> Response {
     }
     // The same tasks in the other languages, each in its own image, their
     // rows beside the Python ones under the same method (B-523).
-    let (language_lines, language_rows, language_conditions) =
-        crate::languages::run(&socket, named, &podman, &scratch, ATTEMPTS);
+    let (language_lines, language_rows, language_conditions) = if wants("languages") {
+        crate::languages::run(&socket, named, &podman, &scratch, ATTEMPTS)
+    } else {
+        (Vec::new(), Vec::new(), Vec::new())
+    };
     rows.extend(language_rows);
     // The edit tasks after the writing ones, in the same container (B-522).
-    let (edit_lines, edit_rows) = crate::edits::run(&socket, named, &podman, &scratch);
-    let edits_recorded = mcf_serve::examine::record_rows(
-        Path::new(named),
-        "editing",
-        "through the daemon, run in a container",
-        vec![
-            (
-                "tasks",
-                Value::Integer(i64::try_from(crate::edits::EDITS.len()).unwrap_or(i64::MAX)),
-            ),
-            (
-                "attempts",
-                Value::Integer(i64::try_from(crate::edits::ATTEMPTS).unwrap_or(i64::MAX)),
-            ),
-        ],
-        &edit_rows,
-    );
+    let (edit_lines, edit_rows) = if wants("editing") {
+        crate::edits::run(&socket, named, &podman, &scratch)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let edits_recorded = wants("editing").then(|| {
+        mcf_serve::examine::record_rows(
+            Path::new(named),
+            "editing",
+            "through the daemon, run in a container",
+            vec![
+                (
+                    "tasks",
+                    Value::Integer(i64::try_from(crate::edits::EDITS.len()).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "attempts",
+                    Value::Integer(i64::try_from(crate::edits::ATTEMPTS).unwrap_or(i64::MAX)),
+                ),
+            ],
+            &edit_rows,
+        )
+    });
+    // Tests written for a stated function, run against a correct and
+    // broken implementations (B-524).
+    let (test_lines, test_rows) = if wants("tests") {
+        crate::testing::run(&socket, named, &podman, &scratch)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let tests_recorded = wants("tests").then(|| {
+        mcf_serve::examine::record_rows(
+            Path::new(named),
+            "test-writing",
+            "through the daemon, run in a container",
+            vec![
+                (
+                    "tasks",
+                    Value::Integer(i64::try_from(crate::testing::TASKS.len()).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "attempts",
+                    Value::Integer(i64::try_from(crate::testing::ATTEMPTS).unwrap_or(i64::MAX)),
+                ),
+            ],
+            &test_rows,
+        )
+    });
     let _gone = std::fs::remove_dir_all(&scratch);
     let repairs_recorded = if repairs.is_empty() {
         None
@@ -949,29 +1006,31 @@ pub(crate) fn eval(named: &str) -> Response {
             &repairs,
         ))
     };
-    let recorded = mcf_serve::examine::record_rows(
-        Path::new(named),
-        "coding",
-        "through the daemon, run in a container",
-        vec![
-            (
-                "tasks",
-                Value::Integer(i64::try_from(TASKS.len()).unwrap_or(i64::MAX)),
-            ),
-            (
-                "attempts",
-                Value::Integer(i64::try_from(ATTEMPTS).unwrap_or(i64::MAX)),
-            ),
-            (
-                "addressed",
-                addressed.clone().map_or(Value::Null, Value::text),
-            ),
-        ]
-        .into_iter()
-        .chain(language_conditions)
-        .collect(),
-        &rows,
-    );
+    let recorded = (!rows.is_empty()).then(|| {
+        mcf_serve::examine::record_rows(
+            Path::new(named),
+            "coding",
+            "through the daemon, run in a container",
+            vec![
+                (
+                    "tasks",
+                    Value::Integer(i64::try_from(TASKS.len()).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "attempts",
+                    Value::Integer(i64::try_from(ATTEMPTS).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "addressed",
+                    addressed.clone().map_or(Value::Null, Value::text),
+                ),
+            ]
+            .into_iter()
+            .chain(language_conditions)
+            .collect(),
+            &rows,
+        )
+    });
 
     for trials in &held {
         lines.push(format!("  {}", trials.task));
@@ -997,11 +1056,14 @@ pub(crate) fn eval(named: &str) -> Response {
         }
         lines.push(String::new());
     }
-    lines.push(
-        "  There is no total. Four outcomes and no overall rating: a task that could not be run \
-         is not a low score, and *which model is better* has no referent once quality is plural."
-            .to_owned(),
-    );
+    if wants("coding") {
+        lines.push(
+            "  There is no total. Four outcomes and no overall rating: a task that could not be \
+             run is not a low score, and *which model is better* has no referent once quality is \
+             plural."
+                .to_owned(),
+        );
+    }
     if addressed.is_none() {
         lines.push(String::new());
         lines.push(
@@ -1011,31 +1073,50 @@ pub(crate) fn eval(named: &str) -> Response {
         );
     }
     lines.push(String::new());
-    lines.push(match recorded {
-        Ok(_) => format!(
-            "  {} reading(s) recorded; `mcf data {named} --method coding` writes them",
-            rows.len()
-        ),
-        Err(why) => format!("  READINGS NOT RECORDED: {why}"),
-    });
-    lines.push(format!(
-        "  repaired on a second try, handed back what did not hold: {repaired} of {failed} \
-         failed attempt(s){}",
-        match repairs_recorded {
-            Some(Ok(_)) => format!(" — {} reading(s) under coding-repair", repairs.len()),
-            Some(Err(why)) => format!(" — READINGS NOT RECORDED: {why}"),
-            None => String::new(),
-        }
-    ));
-    lines.push(String::new());
+    if let Some(recorded) = recorded {
+        lines.push(match recorded {
+            Ok(_) => format!(
+                "  {} reading(s) recorded; `mcf data {named} --method coding` writes them",
+                rows.len()
+            ),
+            Err(why) => format!("  READINGS NOT RECORDED: {why}"),
+        });
+    }
+    if wants("coding") {
+        lines.push(format!(
+            "  repaired on a second try, handed back what did not hold: {repaired} of {failed} \
+             failed attempt(s){}",
+            match repairs_recorded {
+                Some(Ok(_)) => format!(" — {} reading(s) under coding-repair", repairs.len()),
+                Some(Err(why)) => format!(" — READINGS NOT RECORDED: {why}"),
+                None => String::new(),
+            }
+        ));
+    }
+    if wants("coding") {
+        lines.push(String::new());
+    }
     lines.extend(language_lines);
     lines.extend(edit_lines);
     lines.push(match edits_recorded {
-        Ok(_) => format!(
+        Some(Ok(_)) => format!(
             "  {} reading(s) recorded under editing; `mcf data {named} --method editing` writes them",
             edit_rows.len()
         ),
-        Err(why) => format!("  EDIT READINGS NOT RECORDED: {why}"),
+        Some(Err(why)) => format!("  EDIT READINGS NOT RECORDED: {why}"),
+        None => String::new(),
+    });
+    if wants("editing") {
+        lines.push(String::new());
+    }
+    lines.extend(test_lines);
+    lines.push(match tests_recorded {
+        Some(Ok(_)) => format!(
+            "  {} reading(s) recorded under test-writing; `mcf data {named} --method test-writing` writes them",
+            test_rows.len()
+        ),
+        Some(Err(why)) => format!("  TEST-WRITING READINGS NOT RECORDED: {why}"),
+        None => String::new(),
     });
     Response {
         text: lines.join("\n"),

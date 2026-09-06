@@ -41,6 +41,7 @@ mod serve;
 mod share;
 mod show;
 mod support;
+mod testing;
 mod tui;
 mod verify;
 
@@ -347,6 +348,8 @@ enum Request<'a> {
     Eval {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
+        /// One suite to run rather than all of them.
+        only: Option<&'a str>,
     },
     /// A model's readings as a table (D54).
     Data {
@@ -624,7 +627,15 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 argument,
             },
         },
-        ["eval", model] => Request::Eval { model },
+        ["eval", model] => Request::Eval { model, only: None },
+        ["eval", model, "--only", suite] => Request::Eval {
+            model,
+            only: Some(suite),
+        },
+        ["eval", _, "--only"] => Request::MissingArgument {
+            command: "eval --only",
+            needs: "a suite's name: coding, languages, editing or tests",
+        },
         ["eval"] => Request::MissingArgument {
             command: "eval",
             needs: "<model>",
@@ -1989,9 +2000,10 @@ const COMMANDS: &str = "\
     \x20       [--rope-scaling <kind>]        held the same across both arms\n\
     \x20       [--rope-scale <n>]             and named in the report\n\
     \x20 mcf eval <model>                    ask a model to do the work and\n\
-    \x20                                     check what it did: each answer run\n\
+    \x20       [--only <suite>]              check what it did: each answer run\n\
     \x20                                     in a container, four outcomes and\n\
-    \x20                                     no total (B-110)\n\
+    \x20                                     no total; a suite is coding,\n\
+    \x20                                     languages, editing or tests\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
     \x20             or --file <path>         receives each word, and how much\n\
     \x20       [--by word|phrase|sentence|   the answer moves without each\n\
@@ -2278,7 +2290,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             },
             *as_json,
         ),
-        Request::Eval { model } => eval::eval(model),
+        Request::Eval { model, only } => eval::eval(model, *only),
         Request::Probe {
             model,
             engine,
