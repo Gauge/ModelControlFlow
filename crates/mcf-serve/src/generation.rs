@@ -1563,7 +1563,7 @@ fn serving<'slot>(
         held.model == path
             && held.prefix == llama.prefix
             && held.gpu_layers == gpu_layers
-            && held.window >= window
+            && window_suits(held.window, window)
             && held.started == started
     });
     if !reused {
@@ -1587,6 +1587,25 @@ fn serving<'slot>(
         .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
     Ok((engine, reused))
 }
+
+/// Whether a held server's window serves a turn that needs `wanted`: at
+/// least as large, and not more than `TOO_WIDE` times larger.
+///
+/// **A window far wider than the turn is not this turn's server either.**
+/// The usable-context probe opened the 2B at its trained 262,144 tokens,
+/// and the daemon kept that server for every ask after it — a coding suite
+/// then ran through a cache sized for a window nobody else had asked for,
+/// and every token paid for it (F225, B-559). A held window up to sixteen
+/// times the need is kept, since a conversation's turns vary and a restart
+/// is seconds; past that the server is stopped and one sized to the turn
+/// started.
+pub(crate) fn window_suits(held: u64, wanted: u64) -> bool {
+    held >= wanted && held <= wanted.saturating_mul(TOO_WIDE)
+}
+
+/// How many times wider than the turn a held window may be and still be
+/// reused.
+const TOO_WIDE: u64 = 16;
 
 /// **The window the REQUEST needs, not the largest one that fits.**
 ///
@@ -3255,5 +3274,24 @@ mod tokenizer_tests {
         assert_eq!(tail_of(None, None, Given::Text, None), None);
         let text_last = [Piece::Text("assistant\n".to_owned())];
         assert_eq!(trailing_markers_of(&text_last), None);
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::{TOO_WIDE, window_suits};
+
+    /// A held window serves a turn it is at least as large as, and not one
+    /// it is far wider than: the probe's 262k server does not answer a
+    /// 4k turn (B-559).
+    #[test]
+    fn a_window_far_wider_than_the_turn_is_not_reused() {
+        assert!(window_suits(4096, 4096));
+        assert!(window_suits(8192, 4096));
+        assert!(window_suits(4096 * TOO_WIDE, 4096));
+        assert!(!window_suits(4096 * TOO_WIDE + 1, 4096));
+        assert!(!window_suits(262_144, 4096));
+        assert!(!window_suits(2048, 4096));
+        assert!(window_suits(33_000, 4096));
     }
 }

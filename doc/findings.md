@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 163 |
+| **Version** | 164 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -194,6 +194,7 @@ forward as one.
 | 223 | [F223 — Vocabulary coverage tokenizes a corpus of twelve texts — ten languages in six scripts, code and symbols — and counts each text's tokens, byte fallbacks and unknown tokens beside its characters and bytes; the 2B's vocabulary spelled English at 210 tokens a thousand characters and Hindi at 950 with 28 byte fallbacks, Greek at 864 with five, and Korean and the symbol line with a few, unknown tokens nowhere (B-541, D55, B-502)](#223-f223-vocabulary-coverage-tokenizes-a-corpus-of-twelve-texts-ten-languages-in-six-scripts-code-and-symbols-and-counts-each-texts-tokens-byte-fallbacks-and-unknown-tokens-beside-its-characters-and-bytes-the-2bs-vocabulary-spelled-english-at-210-tokens-a-thousand-characters-and-hindi-at-950-with-28-byte-fallbacks-greek-at-864-with-five-and-korean-and-the-symbol-line-with-a-few-unknown-tokens-nowhere-b-541-d55-b-502) |
 | 224 | [F224 — The coding suites are four rows of the Diagnostics list under a Coding heading — Python coding, JavaScript and Rust, editing, test writing — each run from its pane by MCF's own `eval` started as a job the window reads line by line and can stop, with its readings under the pane and when it last ran from the daemon's summary; on the way, the window was found to read the probes' findings and applied settings from the wrong level of that summary, so every probe read as never run after a restart (B-519, D54, DEC-061)](#224-f224-the-coding-suites-are-four-rows-of-the-diagnostics-list-under-a-coding-heading-python-coding-javascript-and-rust-editing-test-writing-each-run-from-its-pane-by-mcfs-own-eval-started-as-a-job-the-window-reads-line-by-line-and-can-stop-with-its-readings-under-the-pane-and-when-it-last-ran-from-the-daemons-summary-on-the-way-the-window-was-found-to-read-the-probes-findings-and-applied-settings-from-the-wrong-level-of-that-summary-so-every-probe-read-as-never-run-after-a-restart-b-519-d54-dec-061) |
 | 225 | [F225 — A recording audit over the 2B's record found eleven measurements and five probes that had never written rows since rows were added, the coding suites' rows naming no engine, the daemon's summary going stale after a command-line run, and the vision probe's rows carrying its whole conditions sentence as their engine; all run or fixed, with a test that every measurement reads back as a sentence, and sixteen coverage gaps registered (B-542, D54, D55)](#225-f225-a-recording-audit-over-the-2bs-record-found-eleven-measurements-and-five-probes-that-had-never-written-rows-since-rows-were-added-the-coding-suites-rows-naming-no-engine-the-daemons-summary-going-stale-after-a-command-line-run-and-the-vision-probes-rows-carrying-its-whole-conditions-sentence-as-their-engine-all-run-or-fixed-with-a-test-that-every-measurement-reads-back-as-a-sentence-and-sixteen-coverage-gaps-registered-b-542-d54-d55) |
+| 226 | [F226 — A held server whose window is more than sixteen times what a turn needs is stopped and one sized to the turn started: after a context probe opened the 2B at 131,074 tokens, the suite that followed ran on a server of 4,096, where before it ran through the probe's; and an abandoned probe's request is not interrupted mid-read, so a 262k trial ran on for over an hour after its client was killed (B-559, D48, B-459)](#226-f226-a-held-server-whose-window-is-more-than-sixteen-times-what-a-turn-needs-is-stopped-and-one-sized-to-the-turn-started-after-a-context-probe-opened-the-2b-at-131074-tokens-the-suite-that-followed-ran-on-a-server-of-4096-where-before-it-ran-through-the-probes-and-an-abandoned-probes-request-is-not-interrupted-mid-read-so-a-262k-trial-ran-on-for-over-an-hour-after-its-client-was-killed-b-559-d48-b-459) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9648,6 +9649,35 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 226 · F226 — A held server whose window is more than sixteen times what a turn needs is stopped and one sized to the turn started: after a context probe opened the 2B at 131,074 tokens, the suite that followed ran on a server of 4,096, where before it ran through the probe's; and an abandoned probe's request is not interrupted mid-read, so a 262k trial ran on for over an hour after its client was killed (B-559, D48, B-459)
+
+**The rule.** The served engine was reused for any turn its window
+held: the model, the build, the layers on the card, the switches and a
+window at least as wide. Wider was never too wide, so the usable-
+context probe's server — opened at the trained context so that the
+probe could climb — answered every ask after it through a cache sized
+for a window nobody else wanted, and each token paid for it (F225). A
+held window is now reused when it is at least as wide as the turn
+needs and no more than sixteen times wider; past that the server is
+stopped and one sized to the turn started. Sixteen keeps a
+conversation's turns, which vary, on one server, and a restart is
+seconds.
+
+**Seen.** With the context probe asked up to 65,536 tokens, the
+daemon held a server at 131,074; the test-writing suite that followed
+ran on a server of 4,096, started for it. Before the rule the same
+suite ran through the 262,144-token server the unbounded probe had
+opened.
+
+**What is not fixed.** A probe abandoned mid-read is not interrupted:
+the daemon closes the request when the client goes, but a batch being
+read is read to its end, and a 262,143-token trial on the 2B ran on
+for over an hour after its client had been killed, every ask behind
+it waiting. The stop-latency measurement says the same at sixteen
+thousand tokens in a second and a half; at the trained context it is
+the hour. A ceiling on the context probe's trial, or a read the
+engine can interrupt, is a separate item.
+
 ## 225 · F225 — A recording audit over the 2B's record found eleven measurements and five probes that had never written rows since rows were added, the coding suites' rows naming no engine, the daemon's summary going stale after a command-line run, and the vision probe's rows carrying its whole conditions sentence as their engine; all run or fixed, with a test that every measurement reads back as a sentence, and sixteen coverage gaps registered (B-542, D54, D55)
 
 **What was asked.** Whether every diagnostic records, and what the
@@ -13914,6 +13944,10 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 164 — a window far wider than the turn
+
+F226: a held server too wide for the turn is replaced (B-559).
 
 ### Version 163 — the recording audit
 
