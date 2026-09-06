@@ -434,6 +434,10 @@ pub const RECORDED: [&str; 9] = [
 #[must_use]
 pub fn recorded_said(body: &mcf_record::json::Value) -> String {
     use mcf_record::json::Value;
+    // A measurement's finding reads back through its own module (D52).
+    if let Some(said) = crate::examine::recorded_said(body) {
+        return said;
+    }
     let text = |key: &str| body.get(key).and_then(Value::as_text);
     let figure = |key: &str| body.get(key).and_then(Value::as_integer);
     match text("method") {
@@ -638,7 +642,7 @@ fn record_probed_context(
 
 /// Writes what any probe observed (B-386, B-054, D42, A1): one writer,
 /// because two would eventually disagree about what a probe result is (F79).
-fn record_probed(
+pub(crate) fn record_probed(
     model: &Path,
     method: &str,
     engine: &str,

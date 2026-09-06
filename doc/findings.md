@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 144 |
+| **Version** | 145 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 196 | [F196 — Fourteen measurements, one run: `mcf examine` and three Diagnostics cards take the offload curve, prefill saturation, prefix reuse, memory as predicted, concurrency, cold start, quantization fidelity, bits per byte, determinism, the tokenizer round trip, retrieval by depth, degeneration, grammar cost and image cost on one model, each a count or a clock, each recorded under its method; on the 2B reference model the first run found a timing read through the watcher's glance, a window opened for the whole trained context, and a first request after a start that stands alone (D52, B-491 to B-504, A7)](#196--f196--fourteen-measurements-one-run-mcf-examine-and-three-diagnostics-cards-take-the-offload-curve-prefill-saturation-prefix-reuse-memory-as-predicted-concurrency-cold-start-quantization-fidelity-bits-per-byte-determinism-the-tokenizer-round-trip-retrieval-by-depth-degeneration-grammar-cost-and-image-cost-on-one-model-each-a-count-or-a-clock-each-recorded-under-its-method-on-the-2b-reference-model-the-first-run-found-a-timing-read-through-the-watchers-glance-a-window-opened-for-the-whole-trained-context-and-a-first-request-after-a-start-that-stands-alone-d52-b-491-to-b-504-a7) |
 | 195 | [F195 — A splitter dragged moved a few points and dropped: the drag was judged by whether the press began inside the band, and the band moves with the line, so once the line was further from the press than the band is wide the drag ended and each press shifted the line by about the band's width; a splitter taken hold of now follows the pointer until the button is let go (B-490, A7)](#195--f195--a-splitter-dragged-moved-a-few-points-and-dropped-the-drag-was-judged-by-whether-the-press-began-inside-the-band-and-the-band-moves-with-the-line-so-once-the-line-was-further-from-the-press-than-the-band-is-wide-the-drag-ended-and-each-press-shifted-the-line-by-about-the-bands-width-a-splitter-taken-hold-of-now-follows-the-pointer-until-the-button-is-let-go-b-490-a7) |
 | 194 | [F194 — Picking a repository from the hub list showed nothing: the daemon answered a look-up in one line with no closing word, the window's job took the connection closing for MCF dying mid-sentence, and the hub page drew that refusal over the files it already had; the daemon's one-line hub answers now say they are done, and the page shows the files it has before any complaint about the stream (B-486, B-488, A2)](#194--f194--picking-a-repository-from-the-hub-list-showed-nothing-the-daemon-answered-a-look-up-in-one-line-with-no-closing-word-the-windows-job-took-the-connection-closing-for-mcf-dying-mid-sentence-and-the-hub-page-drew-that-refusal-over-the-files-it-already-had-the-daemons-one-line-hub-answers-now-say-they-are-done-and-the-page-shows-the-files-it-has-before-any-complaint-about-the-stream-b-486-b-488-a2) |
 | 193 | [F193 — Every area that can overflow scrolls, and the areas resize: the library's rows, the model page under its tabs, a hub or pending page, the Diagnostics, Server, System and prompt pages each scroll by the wheel over them or a bar at their right edge, drawn only when the content is taller than the region, and the column, the library and the Diagnostics columns are dragged wider or narrower within the room each needs (B-490, §3.15, A7)](#193--f193-every-area-that-can-overflow-scrolls-and-the-areas-resize-the-librarys-rows-the-model-page-under-its-tabs-a-hub-or-pending-page-the-diagnostics-server-system-and-prompt-pages-each-scroll-by-the-wheel-over-them-or-a-bar-at-their-right-edge-drawn-only-when-the-content-is-taller-than-the-region-and-the-column-the-library-and-the-diagnostics-columns-are-dragged-wider-or-narrower-within-the-room-each-needs-b-490-315-a7) |
@@ -9618,6 +9619,78 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 196 · F196 — Fourteen measurements, one run: `mcf examine` and three Diagnostics cards take the offload curve, prefill saturation, prefix reuse, memory as predicted, concurrency, cold start, quantization fidelity, bits per byte, determinism, the tokenizer round trip, retrieval by depth, degeneration, grammar cost and image cost on one model, each a count or a clock, each recorded under its method; on the 2B reference model the first run found a timing read through the watcher's glance, a window opened for the whole trained context, and a first request after a start that stands alone (D52, B-491 to B-504, A7)
+
+The operator asked for the fourteen measurements of D52 to be built.
+They are one run the daemon carries — `Request::Examine`, `mcf examine
+<model> [--only names]` — announcing each measurement as it starts and
+its finding as it lands, the stream the probes use; the window offers
+them as three cards on Diagnostics, Performance, Fidelity and
+Behaviour, each with its measurements ticked and its own Run and Stop;
+every finding is written to the record under its method and read back
+on the model's Statistics tab beside the probes' findings. A
+measurement starts the provisioned engine itself, under the settings it
+varies, through a `Startup` the server now takes — threads, batch,
+physical batch, slots — and asks it through `Extras` a completion now
+takes: a kept prefix, a schema, and how many ranked candidates come
+back with a token. A log-probability the engine writes as a decimal is
+read to millibits, so that a shipped crate holds an integer and a
+record can be ordered (A6).
+
+**What the 2B reference model measured as.** Offload: 14.5 ms a token
+with nothing on the card, 7.8 with all 29 layers there, the prompt read
+at 2,713 then 3,965 tokens a second. Prefill saturates at batch 256:
+4,021 tokens a second there and no more at 1,024 or 2,048, 2,525 at 64.
+A kept prefix of 1,024 tokens brings the next turn's first token from
+248.9 ms to 14.8, a saving of 94.1%. Memory: the engine holds 42.0%
+more than MCF predicts at a window of 2,048, 31.5% more at 8,192 and
+16.0% more at 32,768 — the allowance over the weights is too small for
+a small model on a card, and the shortfall shrinks as the cache grows.
+Eight requests at once give 259% of the throughput of one, each at
+37 tokens a second against 115 alone. Cold start: the file's pages
+evicted to 0.0% resident and confirmed by asking the kernel, and the
+cold load within half a second of the warm one, which is inside the
+tenth of a second a start is looked for at, so no read rate is claimed.
+Fidelity against the repository's BF16 file: the Q4 file agrees at 88
+of 96 positions, its worst rank 4, and spends 0.837 bits a token on the
+reference's choices. Bits per byte on MCF's own text: 0.940, fourteen
+positions past the 128 ranked and counted at the bound. Determinism:
+runs two to five agree with each other and differ from the first at
+token 33, on one server; a fresh server under another thread count or
+batch matches the first — the first request after a start stands alone,
+which is what the ladder's unread warm-up request was for. The
+tokenizer round-trips all thirteen texts and counts them the same as
+MCF's own. Retrieval: a fresh six-digit number found at every placement
+at 1,024, 4,096 and 16,384 tokens. Degeneration: the model loops from
+token 467, with 63.9% of four-token runs repeated in every hundred from
+the fifth. Grammar: valid JSON with the keys in five of five trials
+free and constrained alike, 22 tokens a trial against 21, 197 ms
+against 199. Image: 52, 199 and 787 tokens for a picture of 224, 448
+and 896 pixels a side, read in 133, 192 and 715 ms.
+
+**What the first run found wrong, and what changed.** Every timing came
+out in multiples of a quarter second — 512.0 ms for a prompt of 1,024
+identifiers at every batch size, 256.3 for 256 — because a request
+somebody waits on is watched, and the watcher notices it done only when
+its quarter-second read of the client's socket times out. A timed
+request now waits for the engine alone, with the asker looked at
+between requests; a long request that a person might leave — retrieval,
+degeneration — stays watched. The plain load opened the window MCF had
+resolved for the model, which for a small model is its whole trained
+context: a cache for 262,144 tokens allocated for a request of sixty,
+and a 6.5-second load. A plain load now opens 4,096 — the same start
+takes a second — and a measurement that needs more opens what it
+needs: retrieval its deepest depth, the memory measurement each window
+it measures. Cold start states its
+resolution rather than reading a read rate off a difference smaller
+than the polling that produced it.
+
+**What is not claimed.** Nothing here grades what the model said: a
+loop is counted, a retrieved number is matched exactly, a schema is
+checked by a parser. The two figures that could be mistaken for quality
+— bits a token against a reference, bits a byte on a text — are stated
+with what they compare across and what they do not.
+
 ## 195 · F195 — A splitter dragged moved a few points and dropped: the drag was judged by whether the press began inside the band, and the band moves with the line, so once the line was further from the press than the band is wide the drag ended and each press shifted the line by about the band's width; a splitter taken hold of now follows the pointer until the button is let go (B-490, A7)
 
 The operator reported that the resizing bars were not smooth: each
@@ -12971,6 +13044,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 145 — fourteen measurements
+
+F196: the fourteen measurements of D52 built as one run and three
+cards, run end to end on the 2B reference model (B-491 to B-504).
 
 ### Version 144 — a splitter follows the hand
 

@@ -403,6 +403,26 @@ fn a_probe_request_round_trips() {
     assert!(Request::read(r#"{"protocol":1,"ask":"probe"}"#).is_err());
 }
 
+/// An examination carries which measurements and the engine, and reads
+/// back as itself; a line naming no model is refused (D52).
+#[test]
+fn an_examine_request_round_trips() {
+    let asked = Request::Examine {
+        model: "m".to_owned(),
+        engine: Some("provisioned".to_owned()),
+        only: vec!["determinism".to_owned(), "cold-start".to_owned()],
+    };
+    let read = Request::read(&asked.to_line()).unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(read, asked);
+    let bare = r#"{"protocol":1,"ask":"examine","model":"m"}"#;
+    let Ok(Request::Examine { engine, only, .. }) = Request::read(bare) else {
+        panic!("a bare examine request did not read");
+    };
+    assert_eq!(engine, None);
+    assert!(only.is_empty());
+    assert!(Request::read(r#"{"protocol":1,"ask":"examine"}"#).is_err());
+}
+
 /// A search and a listing carry whether the hub is to be asked again, and
 /// a line without the flag reads as not (B-488).
 #[test]

@@ -23,6 +23,7 @@ pub mod crosscheck;
 pub mod daemon;
 pub mod declared;
 pub mod engines;
+pub mod examine;
 mod generation;
 pub mod hosting;
 pub mod ladder;

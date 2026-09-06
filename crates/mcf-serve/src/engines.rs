@@ -72,7 +72,7 @@ const OVERHEAD: u64 = 512 << 20;
     clippy::integer_division,
     reason = "half of a byte count, floored, which is what a memory allowance is"
 )]
-fn overhead_for(weights: u64) -> u64 {
+pub(crate) fn overhead_for(weights: u64) -> u64 {
     OVERHEAD.max(weights / 2)
 }
 

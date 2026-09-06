@@ -490,6 +490,23 @@ fn every_run_starts_from_its_own_card() {
             "nothing on Diagnostics starts {wanted:?}"
         );
     }
+    // The three measurement families are further down the column, which
+    // scrolls (D52, B-490); each is ticked and run on its own card.
+    let place = mcf_serve::examine::MEASURES
+        .iter()
+        .position(|name| *name == "cold-start")
+        .unwrap_or(0);
+    for wanted in [
+        mcf_desk::Act::Run(mcf_desk::Card::Performance),
+        mcf_desk::Act::Run(mcf_desk::Card::Fidelity),
+        mcf_desk::Act::Run(mcf_desk::Card::Behaviour),
+        mcf_desk::Act::ToggleMeasure(place),
+    ] {
+        assert!(
+            act_on_diagnostics(&mut desk, &wanted, 500.0),
+            "nothing on Diagnostics, scrolled, starts {wanted:?}"
+        );
+    }
 }
 
 /// The cross-check row is a run of its own: it carries a checkbox, and its
@@ -912,6 +929,18 @@ fn act_somewhere(desk: &Desk, wanted: &mcf_desk::Act) -> bool {
     // and a sweep starting under it cannot press a tab — which is a test that
     // reports the menu unreachable when what is unreachable is the sweep.
     act_within(desk, wanted, (0.0, 750.0))
+}
+
+/// The same on the Diagnostics page, scrolled as a person would scroll
+/// it: a column taller than the window is reached by its bar (B-490),
+/// and a sweep that could not scroll would report a card unreachable
+/// when what was unreachable was the sweep. Leaves the page where it was.
+fn act_on_diagnostics(desk: &mut Desk, wanted: &mcf_desk::Act, offset: f32) -> bool {
+    let was = desk.scrolled(mcf_desk::Region::Diagnostics);
+    let _replaced = desk.scrolls.insert(mcf_desk::Region::Diagnostics, offset);
+    let found = act_within(desk, wanted, (0.0, 750.0));
+    let _restored = desk.scrolls.insert(mcf_desk::Region::Diagnostics, was);
+    found
 }
 
 /// The same, over a band of the window.
@@ -2458,7 +2487,11 @@ fn every_page_is_drawn_for_review() {
     let _ = drawn(&desk, NIGHT, "review-diagnostics-running");
     desk.doing = mcf_desk::Doing::Probing(a_probe_run_under_way());
     let _ = drawn(&desk, DAY, "review-diagnostics-probing");
+    desk.doing = mcf_desk::Doing::Examining(an_examination_under_way());
+    desk.examining_card = Some(mcf_desk::Card::Performance);
+    let _ = drawn(&desk, NIGHT, "review-diagnostics-examining");
     desk.doing = mcf_desk::Doing::Nothing;
+    desk.examining_card = None;
 
     review_the_library(&recommended);
 
@@ -2623,6 +2656,28 @@ fn a_probe_run_under_way() -> mcf_desk::job::Job {
                     ("name", mcf_record::json::Value::text("stop-conditions")),
                     ("count", mcf_record::json::Value::Integer(3)),
                     ("of", mcf_record::json::Value::Integer(9)),
+                ]),
+            ),
+            ("lines", mcf_record::json::Value::List(Vec::new())),
+            ("done", mcf_record::json::Value::Bool(false)),
+        ])],
+    );
+    going.finished = false;
+    going
+}
+
+/// The measurements two in: the daemon has announced the second.
+fn an_examination_under_way() -> mcf_desk::job::Job {
+    let mut going = mcf_desk::job::Job::already(
+        "examining Assistant-8B".to_owned(),
+        vec![mcf_record::json::Value::map([
+            ("examining", mcf_record::json::Value::text("a-model")),
+            (
+                "step",
+                mcf_record::json::Value::map([
+                    ("name", mcf_record::json::Value::text("prefill-saturation")),
+                    ("count", mcf_record::json::Value::Integer(2)),
+                    ("of", mcf_record::json::Value::Integer(6)),
                 ]),
             ),
             ("lines", mcf_record::json::Value::List(Vec::new())),

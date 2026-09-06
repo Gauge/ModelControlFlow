@@ -267,6 +267,17 @@ pub enum Request {
         /// Which probes, by name; empty is all of them.
         only: Vec<String>,
     },
+    /// The measurements, as one run the daemon carries: each announced as
+    /// it starts and its finding as it lands, the same stream a probe run
+    /// has (D52).
+    Examine {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// Which engine to measure through, where the caller named one.
+        engine: Option<String>,
+        /// Which measurements, by name; empty is all of them.
+        only: Vec<String>,
+    },
     /// Which repositories a hub lists for a word, most downloaded first.
     Search {
         /// The word, as a person typed it.
@@ -562,6 +573,21 @@ fn probe_line(request: &Request) -> Value {
     Value::map(fields)
 }
 
+fn examine_line(model: &str, engine: Option<&str>, only: &[String]) -> Value {
+    let mut fields = vec![
+        ("ask", Value::text("examine")),
+        ("model", Value::text(model.to_owned())),
+        (
+            "only",
+            Value::List(only.iter().cloned().map(Value::text).collect()),
+        ),
+    ];
+    if let Some(engine) = engine {
+        fields.push(("engine", Value::text(engine.to_owned())));
+    }
+    Value::map(fields)
+}
+
 fn prompt_report_line(request: &Request) -> Value {
     let Request::PromptReport {
         model,
@@ -610,6 +636,10 @@ fn prompt_report_line(request: &Request) -> Value {
 impl Request {
     /// The line a client sends.
     #[must_use]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per request, each a call or a short map; the match is total by design"
+    )]
     pub fn to_line(&self) -> String {
         let body = match self {
             Self::Status => Value::map([("ask", Value::text("status"))]),
@@ -661,6 +691,11 @@ impl Request {
             } => offered_line(reference, from.as_deref(), *fresh),
             Self::Search { query, from, fresh } => search_line(query, from.as_deref(), *fresh),
             Self::Probe { .. } => probe_line(self),
+            Self::Examine {
+                model,
+                engine,
+                only,
+            } => examine_line(model, engine.as_deref(), only),
             Self::Acquire {
                 reference,
                 file,
@@ -776,6 +811,22 @@ impl Request {
                     .get("up_to")
                     .and_then(Value::as_integer)
                     .and_then(|held| usize::try_from(held).ok()),
+                only: value
+                    .get("only")
+                    .and_then(Value::as_list)
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter_map(Value::as_text)
+                    .map(str::to_owned)
+                    .collect(),
+            }),
+            Some("examine") => Ok(Self::Examine {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("an examination naming no model", line))?
+                    .to_owned(),
+                engine: optional("engine"),
                 only: value
                     .get("only")
                     .and_then(Value::as_list)

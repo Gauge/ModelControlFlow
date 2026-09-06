@@ -419,6 +419,70 @@ fn slot_progress(reach: &Reach) -> Option<(u64, u64, u64)> {
 /// The model stays loaded between requests, which is the residency F36 left
 /// open — there, every generation paid the load again, and a 16 GB model
 /// cannot sensibly be probed that way.
+/// How a server is started: the plain load, and the settings a measurement
+/// varies (D52).
+///
+/// Everything a measurement does not set is the engine's own default, so
+/// that a server started for a generation is the same command it always
+/// was, and a measurement that varied one thing varied one thing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Startup {
+    /// How many times to look for the server before giving up.
+    pub attempts: usize,
+    /// How many layers go on a card.
+    pub gpu_layers: u32,
+    /// The window it opens, in tokens.
+    pub context: u64,
+    /// The projector beside the model, where a picture has to reach it.
+    pub projector: Option<PathBuf>,
+    /// What it is started with beyond the plain load.
+    pub started: crate::declared::Started,
+    /// How many threads compute, where a measurement sets it.
+    pub threads: Option<u32>,
+    /// The logical batch a prompt is read in, where a measurement sets it;
+    /// the physical batch is set with it, since the engine reads no more
+    /// at once than the smaller of the two.
+    pub batch: Option<u32>,
+    /// The physical batch, where a measurement sets it apart from the
+    /// logical one.
+    pub ubatch: Option<u32>,
+    /// How many requests it serves at once, where a measurement sets it.
+    pub parallel: Option<u32>,
+}
+
+impl Default for Startup {
+    fn default() -> Self {
+        Self {
+            attempts: ATTEMPTS,
+            gpu_layers: 0,
+            context: 4096,
+            projector: None,
+            started: crate::declared::Started::default(),
+            threads: None,
+            batch: None,
+            ubatch: None,
+            parallel: None,
+        }
+    }
+}
+
+/// What a completion asks for beyond the prompt, the limit and the draw
+/// (D52): whether the engine may keep the prompt's prefix between
+/// requests, a schema the answer is constrained to, and how many of the
+/// engine's ranked candidates come back with each token.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Extras {
+    /// Whether the engine keeps what it read of a prompt for the next
+    /// request that shares its prefix. Off for every measurement but the
+    /// one that measures it (§3.12).
+    pub cached: bool,
+    /// A JSON schema the engine constrains the answer to, where asked.
+    pub json_schema: Option<Value>,
+    /// How many ranked candidates come back with each produced token.
+    pub ranked: usize,
+}
+
+/// A provisioned server MCF started, held for as long as this value is.
 #[derive(Debug)]
 pub struct Served {
     child: Child,
@@ -754,6 +818,41 @@ impl Served {
         projector: Option<&Path>,
         started: crate::declared::Started,
     ) -> Result<Self, Failure> {
+        Self::start_as(
+            llama,
+            model,
+            runtime,
+            &Startup {
+                attempts,
+                gpu_layers,
+                context,
+                projector: projector.map(Path::to_path_buf),
+                started,
+                ..Startup::default()
+            },
+        )
+    }
+
+    /// Starts a server under a [`Startup`]: the plain load, or one with
+    /// its threads, batch or slots set for a measurement that varies them
+    /// (D52).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start`].
+    pub fn start_as(
+        llama: &ProvisionedLlama,
+        model: &Path,
+        runtime: &Path,
+        startup: &Startup,
+    ) -> Result<Self, Failure> {
+        let (attempts, gpu_layers, context, started) = (
+            startup.attempts,
+            startup.gpu_layers,
+            startup.context,
+            startup.started,
+        );
+        let projector = startup.projector.as_deref();
         let binary = llama.prefix.join("build").join("bin").join("llama-server");
         if !binary.exists() {
             return Err(Failure::new(
@@ -827,6 +926,22 @@ impl Served {
         // Nothing here is derived from the model: these are switches, and an
         // empty set of them is the plain load.
         command.args(started.arguments());
+        // **What a measurement varies, where it varies it** (D52): the
+        // engine's own defaults otherwise, so a server started for a
+        // generation is byte-for-byte the command it was before.
+        if let Some(threads) = startup.threads {
+            command.arg("--threads").arg(threads.to_string());
+        }
+        if let Some(batch) = startup.batch {
+            command
+                .arg("--batch-size")
+                .arg(batch.to_string())
+                .arg("--ubatch-size")
+                .arg(batch.min(startup.ubatch.unwrap_or(batch)).to_string());
+        }
+        if let Some(parallel) = startup.parallel {
+            command.arg("--parallel").arg(parallel.to_string());
+        }
         let media_marker = fresh_marker();
         command
             .env("LLAMA_MEDIA_MARKER", &media_marker)
@@ -952,7 +1067,40 @@ impl Served {
         pinned: bool,
         waiting: Waiting<'_>,
     ) -> Result<Completed, Failure> {
-        let body = completion_body(prompt, limit, draw, pinned, false).to_line();
+        self.complete_with(prompt, limit, draw, pinned, &Extras::default(), waiting)
+    }
+
+    /// The same, with what a measurement asks for beyond the plain
+    /// request (D52).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::complete`].
+    pub fn complete_with(
+        &self,
+        prompt: Prompt<'_>,
+        limit: usize,
+        draw: crate::generation::Draw,
+        pinned: bool,
+        extras: &Extras,
+        waiting: Waiting<'_>,
+    ) -> Result<Completed, Failure> {
+        let mut body = completion_body(prompt, limit, draw, pinned, false);
+        if let Value::Map(fields) = &mut body {
+            if extras.cached {
+                fields.insert("cache_prompt".to_owned(), Value::Bool(true));
+            }
+            if let Some(schema) = &extras.json_schema {
+                fields.insert("json_schema".to_owned(), schema.clone());
+            }
+            if extras.ranked > 0 {
+                fields.insert(
+                    "n_probs".to_owned(),
+                    Value::Integer(i64::try_from(extras.ranked).unwrap_or(i64::MAX)),
+                );
+            }
+        }
+        let body = body.to_line();
         // A refusal comes back with the server's one line for it; the reason
         // is on the engine's error stream, where it wrote one, and goes on
         // the refusal too, so that a person reads why and not only that
@@ -1143,6 +1291,58 @@ impl Served {
         .to_line();
         let answered = self.request("POST", "/completion", Some(&body))?;
         Ok(ranked_in(&answered, wanted))
+    }
+
+    /// The engine's ranked candidates for the token after `prefix`: each
+    /// identifier with the log-probability the engine gives it, in
+    /// millibits, highest first (D52, B-491, B-499).
+    ///
+    /// **Millibits, not a float.** The engine writes a natural
+    /// log-probability as a decimal; it is read here to thousandths of a
+    /// bit so that a shipped crate holds an integer and a record can be
+    /// ordered (A6). What is *not* in the list is bounded rather than
+    /// lost: the caller reads a token that is absent as ranked past
+    /// `how_many` and no likelier than the last one listed.
+    ///
+    /// Cached, for the reason [`Self::ranked_next`] is: prefixes each one
+    /// token longer than the last, nothing timed, nothing generated.
+    ///
+    /// # Errors
+    ///
+    /// Whatever the server answered with, where that was not a completion
+    /// carrying its candidates.
+    pub fn distribution_at(
+        &self,
+        prefix: &[usize],
+        how_many: usize,
+    ) -> Result<Vec<(usize, i64)>, Failure> {
+        let identifiers = Value::List(
+            prefix
+                .iter()
+                .map(|held| Value::Integer(i64::try_from(*held).unwrap_or(0)))
+                .collect(),
+        );
+        let body = Value::map([
+            ("prompt", identifiers),
+            ("n_predict", Value::Integer(1)),
+            ("temperature", Value::Integer(0)),
+            (
+                "n_probs",
+                Value::Integer(i64::try_from(how_many).unwrap_or(0)),
+            ),
+            ("cache_prompt", Value::Bool(true)),
+        ])
+        .to_line();
+        let answered = self.request("POST", "/completion", Some(&body))?;
+        distribution_in(&answered).ok_or_else(|| {
+            Failure::new(
+                Category::EngineProtocolMalformed,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::served"),
+                "the provisioned server's answer carried no ranked candidates",
+            )
+        })
     }
 
     /// Some text as this server's model receives it: the identifiers, and
@@ -1825,6 +2025,89 @@ fn ranked_in(answer: &str, wanted: usize) -> (Option<usize>, Option<String>) {
     (None, None)
 }
 
+/// The ranked candidates in a one-token completion, each with its
+/// log-probability in millibits.
+fn distribution_in(answer: &str) -> Option<Vec<(usize, i64)>> {
+    let value = json::parse(answer).ok()?;
+    let first = value
+        .get("completion_probabilities")
+        .and_then(Value::as_list)
+        .and_then(<[Value]>::first)?;
+    let ranked = first.get("top_logprobs").and_then(Value::as_list)?;
+    let mut out = Vec::with_capacity(ranked.len());
+    for candidate in ranked {
+        let id = candidate
+            .get("id")
+            .and_then(Value::as_integer)
+            .and_then(|held| usize::try_from(held).ok())?;
+        let logprob = candidate.get("logprob").and_then(millibits)?;
+        out.push((id, logprob));
+    }
+    Some(out)
+}
+
+/// A natural log-probability as the engine writes it — an integer, or a
+/// decimal MCF does not otherwise carry — read to millibits: thousandths
+/// of a bit, negative for anything under certainty.
+///
+/// The decimal is parsed by hand and only here: the sign, the whole part
+/// and up to nine places of fraction, then scaled by the bit's worth in
+/// nats in integers. A shipped crate holds no float (A6, A1), and a
+/// log-probability read to a thousandth of a bit is read finer than any
+/// engine states it.
+#[must_use]
+#[expect(
+    clippy::integer_division,
+    reason = "nanonats scaled to millibits; what is discarded is under a millibit"
+)]
+pub fn millibits(held: &Value) -> Option<i64> {
+    let written = match held {
+        Value::Integer(whole) => return Some(whole.saturating_mul(1_442_695) / 1_000),
+        // As the engine wrote it: the record's reader keeps a decimal as
+        // its text, and its line is that text.
+        Value::ForeignNumber(_) => held.to_line(),
+        _ => return None,
+    };
+    let (negative, digits) = written
+        .strip_prefix('-')
+        .map_or((false, written.as_str()), |rest| (true, rest));
+    // An exponent: the engine writes `-1.5e-05` for a near-certain token,
+    // which is under a millibit either way.
+    let (mantissa, exponent) = digits
+        .split_once(['e', 'E'])
+        .map_or((digits, 0_i32), |(mantissa, exponent)| {
+            (mantissa, exponent.parse::<i32>().unwrap_or(0))
+        });
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let whole: i128 = whole
+        .parse()
+        .ok()
+        .or_else(|| whole.is_empty().then_some(0))?;
+    let mut nanos: i128 = 0;
+    for (place, digit) in fraction.bytes().take(9).enumerate() {
+        let digit = i128::from(digit.checked_sub(b'0')?);
+        if digit > 9 {
+            return None;
+        }
+        nanos += digit * 10_i128.pow(8 - u32::try_from(place).ok()?);
+    }
+    // Nanonats, then scaled by the exponent, then to millibits: a nat is
+    // 1.442695 bits.
+    let mut nanonats = whole * 1_000_000_000 + nanos;
+    match exponent.cmp(&0) {
+        std::cmp::Ordering::Greater => {
+            nanonats = nanonats.saturating_mul(10_i128.pow(u32::try_from(exponent).ok()?));
+        }
+        std::cmp::Ordering::Less => {
+            nanonats /= 10_i128.pow(u32::try_from(-exponent).ok()?);
+        }
+        std::cmp::Ordering::Equal => {}
+    }
+    let millibits = nanonats * 1_442_695 / 1_000_000_000_000;
+    let signed = if negative { -millibits } else { millibits };
+    i64::try_from(signed).ok()
+}
+
 /// What the server said, read as a completion.
 ///
 /// Its own function, taking the answer as text, so that the laboratory can
@@ -2104,6 +2387,21 @@ mod request_tests {
             "{one}"
         );
         assert_eq!(one.len(), "<__media_".len() + 16 + "__>".len());
+    }
+
+    /// A log-probability as the engine writes it is read to millibits:
+    /// a nat is 1.443 bits, an exponent is honoured, and a token near
+    /// certainty rounds to nought (D52).
+    #[test]
+    fn a_log_probability_is_read_to_millibits() {
+        use mcf_record::json::{Value, parse};
+        let read = |text: &str| super::millibits(&parse(text).unwrap_or(Value::Null));
+        assert_eq!(read("-0.693147"), Some(-999));
+        assert_eq!(read("-2"), Some(-2885));
+        assert_eq!(read("-1.5e-05"), Some(0));
+        assert_eq!(read("-1.5e+01"), Some(-21640));
+        assert_eq!(read("0"), Some(0));
+        assert_eq!(read("\"text\""), None);
     }
 
     /// The alphabet and the padding, against the reference values.

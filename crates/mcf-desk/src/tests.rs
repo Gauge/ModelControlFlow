@@ -1572,6 +1572,82 @@ fn the_capabilities_card_asks_for_the_probes_ticked() {
     assert_eq!(probed[0].1.len(), 2);
 }
 
+/// A measurement card asks for its own measurements ticked, and what a
+/// finished examination found joins the model's findings, a measurement
+/// taken again replacing its last reading (D52).
+#[test]
+fn a_measurement_card_asks_for_its_measurements_ticked() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let fidelity = desk.measures_only(crate::Card::Fidelity);
+    assert_eq!(fidelity.len(), 4, "{fidelity:?}");
+    assert!(fidelity.iter().any(|name| name == "determinism"));
+    assert!(
+        !fidelity.iter().any(|name| name == "cold-start"),
+        "a card asks for another family's measurement"
+    );
+    let place = mcf_serve::examine::MEASURES
+        .iter()
+        .position(|name| *name == "determinism")
+        .unwrap_or_else(|| panic!("determinism is not a measurement"));
+    desk.act(crate::Act::ToggleMeasure(place));
+    let fewer = desk.measures_only(crate::Card::Fidelity);
+    assert_eq!(fewer.len(), 3);
+    assert!(!fewer.iter().any(|name| name == "determinism"));
+    assert!(
+        crate::Card::Performance.measures().len() == 6
+            && crate::Card::Throughput.measures().is_empty()
+    );
+    desk.models = vec![Model {
+        probed: vec![("determinism".to_owned(), vec!["old".to_owned()])],
+        ..Model::default()
+    }];
+    desk.chosen = Some(0);
+    let step = |name: &str| {
+        mcf_record::json::Value::map([
+            ("name", mcf_record::json::Value::text(name)),
+            ("count", mcf_record::json::Value::Integer(1)),
+            ("of", mcf_record::json::Value::Integer(2)),
+        ])
+    };
+    let mut job = crate::job::Job::already(
+        "examining".to_owned(),
+        vec![
+            mcf_record::json::Value::map([
+                ("step", step("determinism")),
+                (
+                    "lines",
+                    mcf_record::json::Value::List(vec![mcf_record::json::Value::text(
+                        "  5 of 5 run(s) identical",
+                    )]),
+                ),
+            ]),
+            mcf_record::json::Value::map([
+                ("step", step("bits-per-byte")),
+                (
+                    "lines",
+                    mcf_record::json::Value::List(vec![mcf_record::json::Value::text(
+                        "  1.2 bits a byte",
+                    )]),
+                ),
+            ]),
+        ],
+    );
+    job.finished = true;
+    desk.doing = crate::Doing::Examining(job);
+    desk.examining_card = Some(crate::Card::Fidelity);
+    desk.keep_the_examination();
+    let probed = &desk.models[0].probed;
+    assert_eq!(probed.len(), 2, "{probed:?}");
+    assert_eq!(probed[0].1, vec!["  5 of 5 run(s) identical".to_owned()]);
+    assert_eq!(probed[1].0, "bits-per-byte");
+    desk.act(crate::Act::Run(crate::Card::Behaviour));
+    assert!(
+        matches!(desk.doing, crate::Doing::Examining(_)),
+        "the behaviour card did not start an examination"
+    );
+    assert_eq!(desk.examining_card, Some(crate::Card::Behaviour));
+}
+
 /// The settings a model was last held under come back with one press, and
 /// the recommendation with another (B-475).
 #[test]

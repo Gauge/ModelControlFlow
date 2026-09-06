@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 52 |
+| **Version** | 54 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4911,6 +4911,101 @@ architecture, fits here, size — applied with the words to what is here
 and to what the hub found. Each says *any* until somebody sets it, so an
 empty list is a list nothing matched and not one a filter hid.
 
+### D52 — Every part of a model is measured by a count or a clock, never by a rater *(on the operator's instruction)*
+
+**Fourteen measurements, each answered by a parser or a clock, each with
+the three outcomes a probe has, each recorded with its conditions; none
+of them grades what a model said.**
+
+**What was measured before.** The ladder timed generation by depth, the
+cross-check read one engine with another, the prompt report took a prompt
+apart, and nine probes asked whether the model does a thing. What decided
+a person's choices went unmeasured: which quantization to run, how many
+layers to put on the card, what batch to read a prompt with, whether a
+chat pays for its history every turn, whether the fit MCF predicts is
+the fit the engine takes, and whether a figure on this model is
+comparable with itself.
+
+**The rule, D42's, applied to every one.** A measurement earns its place
+when a wrong answer would corrupt a served answer or another measurement,
+and it is answerable without judgement: a rank, a count, a byte, a
+nanosecond. Fluency, correctness of prose and embedding quality are left
+where §XIII puts them.
+
+**Performance.** The offload curve: tokens a second at nought, a quarter,
+half, three quarters and all of the layers on the card. Prefill
+saturation: prompt-reading tokens a second across batch sizes. Prefix
+reuse: the first-token time of a prompt whose prefix was just read,
+against the same prompt read cold. Memory as predicted: the engine's
+resident bytes at each window against the figure MCF predicted from the
+header. Concurrency: aggregate and per-request tokens a second at one,
+two, four and eight simultaneous requests. Cold start: the first-token
+time with the file evicted from the page cache, and the load bandwidth
+that implies.
+
+**Fidelity.** Quantization fidelity: each file of a repository
+teacher-forced against the highest-precision file here, rank agreement
+per position and the bits the file gives the reference's token.
+Bits per byte: the log-likelihood of a bundled neutral text, per byte so
+vocabularies compare. Determinism: the same prompt, seed and greedy draw
+repeated, and under another thread count and batch size — how many runs
+diverge, and where. Tokenizer round trip: a corpus of code, whitespace
+and non-Latin text encoded and decoded, bytes lost and counts compared
+between MCF's tokenizer and the engine's.
+
+**Behaviour.** Retrieval by depth: a random digit string planted at a
+stated position in filler of a stated length and asked back, checked by
+exact match. Degeneration: over one long greedy generation, the share of
+repeated n-grams and where a loop begins. Grammar cost: valid-JSON rate
+and token cost with and without a grammar. Image cost: tokens and prefill
+time per image at several resolutions.
+
+**Where they run and where they show.** One request the daemon carries,
+`mcf examine`, announcing each measurement as it starts and its finding
+as it lands, the same stream the probes use; three cards on the window's
+Diagnostics page — Performance, Fidelity, Behaviour — each with its
+measurements ticked and its own Run; every finding written to the record
+under its method and read back on the model's page.
+
+### D53 — Diagnostics is one list, and a diagnostic chosen shows its whole *(on the operator's instruction)*
+
+**Every diagnostic MCF can take of a model is one row of one list; the
+row says when it last ran, or that it is running now and which step it
+is on; choosing a row shows the diagnostic whole — what it answers, its
+controls, its Run and its cost, its progress, and its last finding with
+when it was taken.**
+
+**What the page was.** Cards: one for the ladder with its pickers and
+readings, one each for the cross-check, the probes, the prompt analysis
+and the comparison, and after D52 three more for the measurement
+families with a checkbox a measurement. Eight cards in two columns
+overflowed a window and scrolled, a probe's finding was a sentence on
+another page, and nothing on the page said when anything had last run.
+The operator asked for a list.
+
+**The list.** Down the left, under headings — Runs, Probes,
+Performance, Fidelity, Behaviour — one row a diagnostic: the ladder, the
+cross-check, the prompt analysis, the comparison, each of the nine
+probes, each of the fourteen measurements. A row names its diagnostic
+and says beneath it when it last ran on this model and through what,
+*never run* where it has not, or *running* with the step it is on. Each
+family's heading has a Run all, so a run of every probe or every
+measurement of a family is one press, as it was.
+
+**The chosen one.** To the right, the diagnostic chosen: its name and
+what it answers in a line; the controls it takes — the ladder's device
+and window, a probe's Apply — with MCF's recommendation as the default;
+what it will cost in time; its Run, and a Stop while it goes with the
+step it is on; and its last finding, the lines the daemon wrote for it
+with when they were taken and on what engine, or the record's sentence
+where the finding is from before this window opened. The ladder's
+readings arrive there as they come, as they did on its card.
+
+**When.** A finding carries its time. The probes' and the measurements'
+did already; the ladder's, the cross-check's and the prompt report's
+now travel beside their bodies from the record, so that a surface can
+say when rather than only that.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -4940,6 +5035,18 @@ empty list is a list nothing matched and not one a filter hid.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 54 — one list of diagnostics
+
+D53 written on the operator's instruction: the Diagnostics page is one
+list of every diagnostic with when it last ran, and the one chosen
+shows its whole.
+
+### Version 53 — every part is measured
+
+D52 written on the operator's instruction: fourteen measurements, each
+answered by a count or a clock, in three families — performance,
+fidelity, behaviour — as one daemon-carried run and three cards.
 
 ### Version 52 — the library is one search
 

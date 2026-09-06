@@ -69,6 +69,10 @@ const REACHES: &[Reaches] = &[
         subcommand: Some("probe"),
     },
     Reaches {
+        module: "crates/mcf-cli/src/examine.rs",
+        subcommand: Some("examine"),
+    },
+    Reaches {
         module: "crates/mcf-cli/src/measure.rs",
         subcommand: Some("measure"),
     },

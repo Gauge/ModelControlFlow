@@ -1864,9 +1864,22 @@ fn newest_of(journal: &Path, kind: EntryKind) -> std::collections::BTreeMap<Path
         // Later entries overwrite earlier ones, and the index is in order, so
         // what is left is the newest. Nothing is merged: two runs under
         // different settings are two facts (A1).
-        let _replaced = newest.insert(PathBuf::from(model), entry.body().clone());
+        let _replaced = newest.insert(
+            PathBuf::from(model),
+            dated(entry.body().clone(), entry.recorded_at()),
+        );
     }
     newest
+}
+
+/// A run's body with when it was recorded beside it, so that a surface
+/// can say when a diagnostic last ran rather than only that it did (D53,
+/// B-507). The time is the record's, never the body's own to overwrite.
+fn dated(mut body: Value, at: Timestamp) -> Value {
+    if let Value::Map(fields) = &mut body {
+        let _added = fields.insert("at".to_owned(), Value::text(at.to_string()));
+    }
+    body
 }
 
 /// The settings each model was last held under, with when: the newest
@@ -1957,11 +1970,35 @@ fn newest_probes(
         .map(|(model, by_method)| {
             let listed = crate::probes::run::RECORDED
                 .iter()
+                .chain(crate::examine::MEASURES.iter())
                 .filter_map(|method| by_method.get(*method).cloned())
                 .collect();
             (model, listed)
         })
         .collect()
+}
+
+/// The asker's own connection, cloned to be read for its end with a
+/// millisecond's patience: a client that has gone reads as closed, and a
+/// run stops at its next trial (B-468).
+fn asker_of(writer: &UnixStream) -> Option<UnixStream> {
+    let listener = writer.try_clone().ok()?;
+    let _deadline = listener.set_read_timeout(Some(std::time::Duration::from_millis(1)));
+    Some(listener)
+}
+
+/// Whether the asker's connection has closed.
+fn asker_has_gone(listener: Option<&UnixStream>) -> bool {
+    use std::io::Read as _;
+    let mut byte = [0_u8; 1];
+    match listener.map(|listener| (&*listener).read(&mut byte)) {
+        Some(Ok(0)) => true,
+        Some(Err(error)) => !matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ),
+        Some(Ok(_)) | None => false,
+    }
 }
 
 /// How long what the hub answered is kept for: a day (B-488).
@@ -2802,6 +2839,7 @@ impl Daemon {
             Request::Host { model, .. } => Some(("hosting", model.clone())),
             Request::PromptReport { model, .. } => Some(("prompt report", model.clone())),
             Request::Probe { model, .. } => Some(("probing", model.clone())),
+            Request::Examine { model, .. } => Some(("examining", model.clone())),
             Request::Acquire { reference, .. } => Some(("acquisition", reference.clone())),
             Request::Provision { component } => Some((
                 "provisioning",
@@ -2959,6 +2997,11 @@ impl Daemon {
                 up_to,
                 only,
             } => self.probing(&model, engine.as_deref(), (apply, up_to), &only, writer),
+            Request::Examine {
+                model,
+                engine,
+                only,
+            } => self.examining(&model, engine.as_deref(), &only, waiting, writer),
             Request::Acquire {
                 reference,
                 file,
@@ -3667,25 +3710,8 @@ impl Daemon {
         });
         // The asker's own connection, read for its end: a client that has
         // gone reads as closed, and the run stops at its next trial.
-        let listener = (**writer).try_clone().ok();
-        if let Some(listener) = &listener {
-            let _deadline = listener.set_read_timeout(Some(std::time::Duration::from_millis(1)));
-        }
-        let gone = || {
-            use std::io::Read as _;
-            let mut byte = [0_u8; 1];
-            match listener
-                .as_ref()
-                .map(|listener| (&*listener).read(&mut byte))
-            {
-                Some(Ok(0)) => true,
-                Some(Err(error)) => !matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ),
-                Some(Ok(_)) | None => false,
-            }
-        };
+        let listener = asker_of(writer);
+        let gone = || asker_has_gone(listener.as_ref());
         let at = crate::probes::run::Places {
             socket: &self.places.socket,
             models: &self.places.models,
@@ -3724,6 +3750,117 @@ impl Daemon {
         let answer = match ran {
             Ok(closing) => Answer::served(Value::map([
                 ("probing", Value::text(model)),
+                (
+                    "lines",
+                    Value::List(closing.into_iter().map(Value::text).collect()),
+                ),
+                ("done", Value::Bool(true)),
+            ])),
+            Err(why) => Answer::refused(&crate::control::refused(&why, named)),
+        };
+        Self::write_refusal(writer, &answer);
+    }
+
+    /// Carries the measurements on one model, saying which is about to
+    /// run and what each found as it lands — the probes' shape, with the
+    /// engine started by the measurement itself under the settings it
+    /// varies (D52).
+    fn examining(
+        &self,
+        named: &str,
+        engine: Option<&str>,
+        only: &[String],
+        waiting: crate::served::Waiting<'_>,
+        writer: &mut &UnixStream,
+    ) {
+        let path = crate::generation::resolved(&self.places.models, named);
+        if !path.is_file() {
+            return Self::write_refusal(
+                writer,
+                &Answer::refused(&crate::control::refused(
+                    "there is no model at this name; `mcf list` says what this machine holds",
+                    named,
+                )),
+            );
+        }
+        if engine.is_some_and(|engine| engine != "provisioned") {
+            return Self::write_refusal(
+                writer,
+                &Answer::refused(&crate::control::refused(
+                    "a measurement starts the provisioned engine under the settings it varies; \
+                     MCF's own engine takes none of them",
+                    engine.unwrap_or_default(),
+                )),
+            );
+        }
+        let (llama, gpu_layers, context) = match self.picked_engine_or_why(named) {
+            Ok(picked) => picked,
+            Err(why) => {
+                return Self::write_refusal(
+                    writer,
+                    &Answer::refused(&crate::control::refused(&why, named)),
+                );
+            }
+        };
+        let has_card = self.engines_held().iter().any(|(held, devices)| {
+            held.name == llama.component
+                && devices
+                    .iter()
+                    .any(|device| device.kind == crate::engines::Kind::Gpu)
+        });
+        let listener = asker_of(writer);
+        let gone = || asker_has_gone(listener.as_ref());
+        let runtime = self
+            .places
+            .socket
+            .parent()
+            .map_or_else(std::env::temp_dir, Path::to_path_buf);
+        let site = crate::examine::Site {
+            llama: &llama,
+            model: &path,
+            runtime: &runtime,
+            gpu_layers,
+            context,
+            projector: crate::projector::beside(&path),
+            has_card,
+            engine: format!(
+                "provisioned {} @{}",
+                llama.component,
+                llama.commit.get(..12).unwrap_or(&llama.commit)
+            ),
+            gone: &gone,
+            waiting,
+        };
+        let model = path.display().to_string();
+        let mut say = |step: &crate::probes::run::Step, lines: &[String]| -> bool {
+            let line = Answer::served(Value::map([
+                ("examining", Value::text(model.clone())),
+                ("step", step.to_value()),
+                (
+                    "lines",
+                    Value::List(lines.iter().cloned().map(Value::text).collect()),
+                ),
+                ("done", Value::Bool(false)),
+            ]));
+            writeln!(writer, "{}", line.to_line())
+                .and_then(|()| writer.flush())
+                .is_ok()
+        };
+        let ran = crate::examine::run(&site, only, &mut say);
+        let fresh = newest_probes(&self.places.journal, Some(&path));
+        if let Ok(mut probed) = self.probed.lock() {
+            match fresh.get(&path) {
+                Some(found) => {
+                    let _replaced = probed.insert(path.clone(), found.clone());
+                }
+                None => {
+                    let _gone = probed.remove(&path);
+                }
+            }
+        }
+        let answer = match ran {
+            Ok(closing) => Answer::served(Value::map([
+                ("examining", Value::text(model)),
                 (
                     "lines",
                     Value::List(closing.into_iter().map(Value::text).collect()),
@@ -3849,9 +3986,10 @@ impl Daemon {
     ) -> Value {
         let path = crate::generation::resolved(&self.places.models, named);
         let entry = prompt_report_entry(&served, &path, prompt, seed, engines);
-        let recorded = self.note(EntryKind::PromptReported, Timestamp::now(), entry.clone());
+        let at = Timestamp::now();
+        let recorded = self.note(EntryKind::PromptReported, at, entry.clone());
         if let Ok(mut reports) = self.prompt_reports.lock() {
-            let _replaced = reports.insert(path, entry);
+            let _replaced = reports.insert(path, dated(entry, at));
         }
         if let Value::Map(fields) = &mut served {
             let _added = fields.insert(
@@ -3913,10 +4051,12 @@ impl Daemon {
             | Request::Provision { .. }
             | Request::Host { .. }
             | Request::PromptReport { .. }
-            | Request::Probe { .. } => (
+            | Request::Probe { .. }
+            | Request::Examine { .. } => (
                 Answer::refused(&crate::control::refused(
                     "a request that answers in many lines reached the one-answer path",
-                    "generate, acquire, measure, cross-check, provision, host, prompt-report or probe",
+                    "generate, acquire, measure, cross-check, provision, host, prompt-report, \
+                     probe or examine",
                 )),
                 None,
             ),
@@ -4089,11 +4229,12 @@ impl Daemon {
         // measurement nobody can find later is the same as one not taken
         // (A1), and until this existed a model's page said `Unknown` about
         // speed the moment a run finished.
-        let _recorded = self.note(EntryKind::ModelTimed, Timestamp::now(), last.body.clone());
+        let at = Timestamp::now();
+        let _recorded = self.note(EntryKind::ModelTimed, at, last.body.clone());
         // And into what the daemon holds, so the next listing has it without
-        // re-reading the record.
+        // re-reading the record, with when (D53).
         if let Ok(mut timings) = self.timings.lock() {
-            let _replaced = timings.insert(path.clone(), last.body.clone());
+            let _replaced = timings.insert(path.clone(), dated(last.body.clone(), at));
         }
         say(writer, &last);
     }
@@ -4220,9 +4361,10 @@ impl Daemon {
             ),
             ("done", Value::Bool(true)),
         ]));
-        let _recorded = self.note(EntryKind::CrossChecked, Timestamp::now(), last.body.clone());
+        let at = Timestamp::now();
+        let _recorded = self.note(EntryKind::CrossChecked, at, last.body.clone());
         if let Ok(mut checks) = self.cross_checks.lock() {
-            let _replaced = checks.insert(path, last.body.clone());
+            let _replaced = checks.insert(path, dated(last.body.clone(), at));
         }
         say(writer, &last);
     }

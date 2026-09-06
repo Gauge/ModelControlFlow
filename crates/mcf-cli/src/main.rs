@@ -19,6 +19,7 @@ mod desk;
 mod doctor;
 mod embed;
 mod eval;
+mod examine;
 mod explain;
 mod history;
 mod hosting;
@@ -344,6 +345,16 @@ enum Request<'a> {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
     },
+    /// Measure a model's parts by count and clock (D52).
+    Examine {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+        /// Which engine to measure through, if the caller named one.
+        engine: Option<&'a str>,
+        /// Which measurements, by name and separated by commas; every one
+        /// when absent.
+        only: Option<&'a str>,
+    },
     Probe {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
@@ -605,6 +616,17 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["eval"] => Request::MissingArgument {
             command: "eval",
             needs: "<model>",
+        },
+        ["examine"] => Request::MissingArgument {
+            command: "examine",
+            needs: "<model>",
+        },
+        ["examine", model, rest @ ..] => match examine_options(model, rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "examine",
+                argument,
+            },
         },
         ["probe"] => Request::MissingArgument {
             command: "probe",
@@ -881,6 +903,42 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
         engine,
         on,
         started,
+    })
+}
+
+/// The flags `mcf examine <model>` takes, in any order: `--only` names the
+/// measurements, `--engine` the engine (D52).
+fn examine_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut engine = None;
+    let mut only = None;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--only" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "examine --only",
+                        needs: "measurement names, separated by commas",
+                    });
+                };
+                only = Some(*value);
+            }
+            "--engine" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "examine --engine",
+                        needs: "an engine's name",
+                    });
+                };
+                engine = Some(*value);
+            }
+            other => return Err(other),
+        }
+    }
+    Ok(Request::Examine {
+        model,
+        engine,
+        only,
     })
 }
 
@@ -1913,6 +1971,16 @@ const COMMANDS: &str = "\
     \x20                                     trial is projected before it is\n\
     \x20                                     spent, --up-to asks for less, and\n\
     \x20                                     --only names the probes to run\n\
+    \x20 mcf examine <model> [--engine <name>]\n\
+    \x20           [--only <names>]          measure a model's parts by count\n\
+    \x20                                     and clock — the offload curve,\n\
+    \x20                                     prefill, prefix reuse, memory,\n\
+    \x20                                     concurrency, cold start, fidelity\n\
+    \x20                                     to a reference file, bits a byte,\n\
+    \x20                                     determinism, tokenizer round trip,\n\
+    \x20                                     retrieval, degeneration, grammar\n\
+    \x20                                     and image cost (D52); --only names\n\
+    \x20                                     the measurements to take\n\
     \x20 mcf provision [<component>]         build a pinned component in a\n\
     \x20     [--list] [--remove <c>          container, everything recorded,\n\
     \x20      --because <why>] [--into <dir>] removable without residue; unnamed,\n\
@@ -2162,6 +2230,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             up_to,
             only,
         } => probe::run(model, *engine, *apply, *up_to, *only),
+        Request::Examine {
+            model,
+            engine,
+            only,
+        } => examine::run(model, *engine, *only),
         Request::Provision { name, into } => provision::run(*name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {
@@ -2274,6 +2347,7 @@ mod tests {
         // the thing (B-051, B-052) and `mcf provision` builds a component in a
         // controlled environment (B-367).
         assert!(text.contains("mcf probe"), "{text}");
+        assert!(text.contains("mcf examine"), "{text}");
         assert!(text.contains("mcf provision"), "{text}");
         // And `mcf bench`, which compares two models on an engine that can be
         // timed and has no pass condition (B-080, A18).

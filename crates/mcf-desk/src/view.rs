@@ -2743,10 +2743,16 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
         menu = Some(opened);
     }
     let mut y = right.y;
+    // The three measurement families after the prompt analysis: the
+    // column is taller than a window and scrolls (B-490), and what a
+    // person reaches for most stays above the fold.
     for card in [
         Card::CrossCheck,
         Card::Capabilities,
         Card::Prompt,
+        Card::Performance,
+        Card::Fidelity,
+        Card::Behaviour,
         Card::Comparison,
     ] {
         let (pressed, below) =
@@ -2830,7 +2836,11 @@ fn download_then(desk: &Desk, act: Act) -> Act {
 fn a_run_is_going(desk: &Desk) -> bool {
     matches!(
         &desk.doing,
-        Doing::Measuring(job) | Doing::CrossChecking(job) | Doing::Probing(job) if !job.finished
+        Doing::Measuring(job)
+            | Doing::CrossChecking(job)
+            | Doing::Probing(job)
+            | Doing::Examining(job)
+            if !job.finished
     )
 }
 
@@ -2988,6 +2998,9 @@ fn is_done(desk: &Desk, card: Card) -> bool {
         (Card::Throughput, Doing::Measuring(job))
         | (Card::CrossCheck, Doing::CrossChecking(job))
         | (Card::Capabilities, Doing::Probing(job)) => job.finished && job.refused.is_none(),
+        (Card::Performance | Card::Fidelity | Card::Behaviour, Doing::Examining(job)) => {
+            desk.examining_card == Some(card) && job.finished && job.refused.is_none()
+        }
         _ => false,
     }
 }
@@ -3087,6 +3100,9 @@ fn small_card(
         }
         Card::Capabilities => {
             act = capabilities_rows(paint, desk, mouse, (inner_x, y), inner_w);
+        }
+        Card::Performance | Card::Fidelity | Card::Behaviour => {
+            act = measure_rows(paint, desk, mouse, (inner_x, y), inner_w, card);
         }
         Card::Comparison => {
             if let Some(pressed) = command_rows(paint, mouse, (inner_x, y), inner_w, card, &model) {
@@ -3188,6 +3204,117 @@ fn capabilities_rows(
     act
 }
 
+/// How many rows a card's measurement checkboxes take, two to a row.
+fn measure_rows_of(card: Card) -> f32 {
+    #[allow(clippy::cast_precision_loss, reason = "a count of a few measurements")]
+    let rows = card.measures().len().div_ceil(2) as f32;
+    rows
+}
+
+/// A measurement card's rows: one checkbox a measurement, Run with its
+/// step and a Stop while the run goes, and where the findings went once
+/// they have (D52).
+fn measure_rows(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    (x, mut y): (f32, f32),
+    wide: f32,
+    card: Card,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let column = wide / 2.0;
+    let place_of = |name: &str| {
+        mcf_serve::examine::MEASURES
+            .iter()
+            .position(|held| *held == name)
+    };
+    for (at, name) in card.measures().iter().enumerate() {
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::integer_division,
+            reason = "a column of two and a row of a few: the quotient is the row"
+        )]
+        let (col, row) = ((at % 2) as f32, (at / 2) as f32);
+        let (bx, by) = (x + col * column, y + row * 20.0);
+        let Some(place) = place_of(name) else {
+            continue;
+        };
+        let wanted = desk.measures_wanted.get(place).copied().unwrap_or(false);
+        if tick_box(paint, mouse, (bx, by), name, wanted) {
+            act = Some(Act::ToggleMeasure(place));
+        }
+    }
+    y += measure_rows_of(card) * 20.0 + 8.0;
+    let examining = matches!(&desk.doing, Doing::Examining(job) if !job.finished)
+        && desk.examining_card == Some(card);
+    let running = a_run_is_going(desk);
+    let none_ticked = desk.measures_only(card).is_empty();
+    let (pressed, button) = ui::fitted(
+        paint,
+        mouse,
+        (x, y),
+        run_label(desk, examining),
+        if (running && !examining) || none_ticked {
+            Kind::Quiet
+        } else {
+            Kind::Primary
+        },
+    );
+    if pressed && examining {
+        act = Some(Act::Stop);
+    } else if pressed && !running && !none_ticked {
+        act = Some(download_then(desk, Act::Run(card)));
+    }
+    if let Doing::Examining(job) = &desk.doing
+        && !job.finished
+        && desk.examining_card == Some(card)
+    {
+        let step = job
+            .latest()
+            .and_then(measure_step_said)
+            .unwrap_or_else(|| "starting".to_owned());
+        let shown = paint.elide(&step, Weight::Regular, size::SMALL, wide - button.w - 12.0);
+        paint.say_at(
+            button.right() + 12.0,
+            y + 8.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.accent,
+        );
+    } else if none_ticked {
+        paint.say_at(
+            button.right() + 12.0,
+            y + 8.0,
+            "nothing ticked runs",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    y += 44.0;
+    if let Some(pressed) = done_line(paint, desk, mouse, (x, y), card) {
+        act = Some(pressed);
+    }
+    act
+}
+
+/// A step the daemon announced for the measurements, as one line:
+/// *measurement 3 of 14: prefix-reuse* — the same words `mcf examine`
+/// prints (A22).
+fn measure_step_said(body: &Value) -> Option<String> {
+    let step = body.get("step")?;
+    let figure = |key: &str| step.get(key).and_then(Value::as_integer);
+    Some(format!(
+        "measurement {} of {}: {}",
+        figure("count")?,
+        figure("of")?,
+        step.get("name").and_then(Value::as_text)?
+    ))
+}
+
 /// A step the daemon announced for the probes, as one line: *probe 3 of
 /// 9: stop-conditions* — the same words `mcf probe` prints (A22).
 fn probe_step_said(body: &Value) -> Option<String> {
@@ -3244,6 +3371,10 @@ fn small_card_height(
         Card::Capabilities => {
             let done = if is_done(desk, card) { 34.0 } else { 0.0 };
             probe_rows() * 20.0 + 8.0 + 30.0 + 44.0 + done + 12.0
+        }
+        Card::Performance | Card::Fidelity | Card::Behaviour => {
+            let done = if is_done(desk, card) { 34.0 } else { 0.0 };
+            measure_rows_of(card) * 20.0 + 8.0 + 44.0 + done + 12.0
         }
         Card::Comparison => {
             let command = card.command(model).map_or(0.0, |command| {

@@ -89,19 +89,36 @@ fn in_circle(x: i64, y: i64) -> bool {
 /// front of the same model (§3.4).
 #[must_use]
 pub fn image(shape: Shape) -> Vec<u8> {
-    let mut rows = Vec::with_capacity(SIDE as usize);
-    for y in 0..SIDE {
-        let mut row = Vec::with_capacity(SIDE as usize * 3);
-        for x in 0..SIDE {
+    image_of(shape, SIDE)
+}
+
+/// The same picture at another side: the shape's geometry is the probe's,
+/// scaled to the side asked for, so that a picture at every size is the
+/// same picture (D52, B-503).
+#[must_use]
+pub fn image_of(shape: Shape, side: u32) -> Vec<u8> {
+    let side = side.max(1);
+    let scaled = |at: u32| {
+        #[expect(
+            clippy::integer_division,
+            reason = "a pixel's place on the probe's own grid, floored to a pixel"
+        )]
+        let on_the_grid = u64::from(at) * u64::from(SIDE) / u64::from(side);
+        i64::try_from(on_the_grid).unwrap_or(i64::MAX)
+    };
+    let mut rows = Vec::with_capacity(side as usize);
+    for y in 0..side {
+        let mut row = Vec::with_capacity(side as usize * 3);
+        for x in 0..side {
             let (inside, ink) = match shape {
-                Shape::Triangle => (in_triangle(i64::from(x), i64::from(y)), RED),
-                Shape::Circle => (in_circle(i64::from(x), i64::from(y)), BLUE),
+                Shape::Triangle => (in_triangle(scaled(x), scaled(y)), RED),
+                Shape::Circle => (in_circle(scaled(x), scaled(y)), BLUE),
             };
             row.extend_from_slice(if inside { &ink } else { &GROUND });
         }
         rows.push(row);
     }
-    png::encode(SIDE, SIDE, &rows)
+    png::encode(side, side, &rows)
 }
 
 /// Which of the two pictures.
