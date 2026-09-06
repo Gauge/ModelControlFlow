@@ -192,6 +192,7 @@ impl Places<'_> {
                 trial: crate::probes::Trial::CouldNotTell(crate::served::CLIENT_LEFT.to_owned()),
                 text: String::new(),
                 answer: None,
+                engine_ran: None,
             };
         }
         crate::probes::spoken(self.socket, model, prompt, pieces, budget, engine)
@@ -1397,7 +1398,11 @@ fn vision_lines(home: &std::path::Path, path: &std::path::Path, bytes: &[u8]) ->
     let projector = crate::projector::beside(path);
 
     let Some((commit, binary)) = tool else {
-        return vision_result_lines(path, &crate::probes::vision::without_a_tool(path));
+        return vision_result_lines(
+            path,
+            &crate::probes::vision::without_a_tool(path),
+            "no engine with a tool that takes an image",
+        );
     };
 
     let engine = format!("provisioned llama.cpp @{commit}, driven with an image");
@@ -1440,7 +1445,7 @@ fn vision_lines(home: &std::path::Path, path: &std::path::Path, bytes: &[u8]) ->
 
     let probed =
         crate::probes::vision::vision(path, bytes, projector.as_deref(), &engine, &mut look);
-    vision_result_lines(path, &probed)
+    vision_result_lines(path, &probed, &engine)
 }
 
 /// What the record keeps of a vision observation.
@@ -1482,6 +1487,7 @@ fn vision_fields(
 fn vision_result_lines(
     path: &std::path::Path,
     probed: &mcf_core::probe::Probed<crate::probes::vision::Sees>,
+    engine: &str,
 ) -> Vec<String> {
     let mut lines = vec![
         format!("  {}", probed.method.name),
@@ -1523,12 +1529,9 @@ fn vision_result_lines(
                 usize::from(sees.answers_differ),
                 "bool",
             )];
-            lines.push(rows_recorded(
-                path,
-                probed.method.name,
-                &probed.conditions.to_string(),
-                &rows,
-            ));
+            // The rows name the engine the way every other probe's do,
+            // rather than carrying the whole conditions sentence (B-542).
+            lines.push(rows_recorded(path, probed.method.name, engine, &rows));
             lines.push(String::new());
             if sees.answers_differ {
                 lines.push(

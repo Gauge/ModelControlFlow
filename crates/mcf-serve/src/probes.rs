@@ -823,6 +823,9 @@ pub struct Spoken {
     /// or it would read the model's draft of one out of its thought (F171).
     /// `None` where nothing was closed, and the text is the whole answer.
     pub answer: Option<String>,
+    /// The engine the daemon ran it on, as the account names it, so that
+    /// a reading taken through the daemon can say what answered (B-542).
+    pub engine_ran: Option<String>,
 }
 
 impl Spoken {
@@ -856,6 +859,10 @@ pub fn trial(
 /// The turn goes as markers and text where the probe built one, and the
 /// daemon reads it through the tokenizer of the engine that answers (B-442).
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one account read straight through: how it ended, what it said, what ran it"
+)]
 pub fn spoken(
     socket: &Path,
     model: &Path,
@@ -974,6 +981,11 @@ pub fn spoken(
                 };
                 return Spoken {
                     trial: ended,
+                    engine_ran: account
+                        .get("conditions")
+                        .and_then(|conditions| conditions.get("engine"))
+                        .and_then(mcf_record::json::Value::as_text)
+                        .map(str::to_owned),
                     text: account
                         .get("text")
                         .and_then(mcf_record::json::Value::as_text)
@@ -998,6 +1010,7 @@ fn could_not_tell(because: impl Into<String>) -> Spoken {
         trial: Trial::CouldNotTell(because.into()),
         text: String::new(),
         answer: None,
+        engine_ran: None,
     }
 }
 

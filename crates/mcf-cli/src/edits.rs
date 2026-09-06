@@ -363,7 +363,7 @@ pub(crate) fn run(
     named: &str,
     podman: &Path,
     scratch: &Path,
-) -> (Vec<String>, Vec<Reading>) {
+) -> (Vec<String>, Vec<Reading>, Option<String>) {
     let mut lines = vec![
         format!(
             "  {} edit task(s), {ATTEMPTS} attempt(s) each: a whole file given, one change \
@@ -373,6 +373,7 @@ pub(crate) fn run(
         String::new(),
     ];
     let mut rows = Vec::new();
+    let mut engine_ran = None;
     for edit in EDITS {
         lines.push(format!("  {}", edit.task.name));
         for attempt in 0..ATTEMPTS {
@@ -386,6 +387,9 @@ pub(crate) fn run(
                 None,
             );
             let ask_ns = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            if engine_ran.is_none() {
+                engine_ran.clone_from(&spoken.engine_ran);
+            }
             let answer = crate::eval::code_in(&spoken.text);
             let ran = crate::eval::run_in_container(podman, scratch, &edit.task, &answer);
             let kept = outside(edit, &answer);
@@ -406,7 +410,7 @@ pub(crate) fn run(
         }
         lines.push(String::new());
     }
-    (lines, rows)
+    (lines, rows, engine_ran)
 }
 
 #[cfg(test)]

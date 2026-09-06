@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 162 |
+| **Version** | 163 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -193,6 +193,7 @@ forward as one.
 | 222 | [F222 — Temperature sensitivity draws three exact questions six times each at five temperatures from nought to one and a half and counts the distinct answers and the right ones at each, every draw a row; the 2B gave one answer per question, the right one, at every temperature (B-540, D55, A19)](#222-f222-temperature-sensitivity-draws-three-exact-questions-six-times-each-at-five-temperatures-from-nought-to-one-and-a-half-and-counts-the-distinct-answers-and-the-right-ones-at-each-every-draw-a-row-the-2b-gave-one-answer-per-question-the-right-one-at-every-temperature-b-540-d55-a19) |
 | 223 | [F223 — Vocabulary coverage tokenizes a corpus of twelve texts — ten languages in six scripts, code and symbols — and counts each text's tokens, byte fallbacks and unknown tokens beside its characters and bytes; the 2B's vocabulary spelled English at 210 tokens a thousand characters and Hindi at 950 with 28 byte fallbacks, Greek at 864 with five, and Korean and the symbol line with a few, unknown tokens nowhere (B-541, D55, B-502)](#223-f223-vocabulary-coverage-tokenizes-a-corpus-of-twelve-texts-ten-languages-in-six-scripts-code-and-symbols-and-counts-each-texts-tokens-byte-fallbacks-and-unknown-tokens-beside-its-characters-and-bytes-the-2bs-vocabulary-spelled-english-at-210-tokens-a-thousand-characters-and-hindi-at-950-with-28-byte-fallbacks-greek-at-864-with-five-and-korean-and-the-symbol-line-with-a-few-unknown-tokens-nowhere-b-541-d55-b-502) |
 | 224 | [F224 — The coding suites are four rows of the Diagnostics list under a Coding heading — Python coding, JavaScript and Rust, editing, test writing — each run from its pane by MCF's own `eval` started as a job the window reads line by line and can stop, with its readings under the pane and when it last ran from the daemon's summary; on the way, the window was found to read the probes' findings and applied settings from the wrong level of that summary, so every probe read as never run after a restart (B-519, D54, DEC-061)](#224-f224-the-coding-suites-are-four-rows-of-the-diagnostics-list-under-a-coding-heading-python-coding-javascript-and-rust-editing-test-writing-each-run-from-its-pane-by-mcfs-own-eval-started-as-a-job-the-window-reads-line-by-line-and-can-stop-with-its-readings-under-the-pane-and-when-it-last-ran-from-the-daemons-summary-on-the-way-the-window-was-found-to-read-the-probes-findings-and-applied-settings-from-the-wrong-level-of-that-summary-so-every-probe-read-as-never-run-after-a-restart-b-519-d54-dec-061) |
+| 225 | [F225 — A recording audit over the 2B's record found eleven measurements and five probes that had never written rows since rows were added, the coding suites' rows naming no engine, the daemon's summary going stale after a command-line run, and the vision probe's rows carrying its whole conditions sentence as their engine; all run or fixed, with a test that every measurement reads back as a sentence, and sixteen coverage gaps registered (B-542, D54, D55)](#225-f225-a-recording-audit-over-the-2bs-record-found-eleven-measurements-and-five-probes-that-had-never-written-rows-since-rows-were-added-the-coding-suites-rows-naming-no-engine-the-daemons-summary-going-stale-after-a-command-line-run-and-the-vision-probes-rows-carrying-its-whole-conditions-sentence-as-their-engine-all-run-or-fixed-with-a-test-that-every-measurement-reads-back-as-a-sentence-and-sixteen-coverage-gaps-registered-b-542-d54-d55) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9647,6 +9648,59 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 225 · F225 — A recording audit over the 2B's record found eleven measurements and five probes that had never written rows since rows were added, the coding suites' rows naming no engine, the daemon's summary going stale after a command-line run, and the vision probe's rows carrying its whole conditions sentence as their engine; all run or fixed, with a test that every measurement reads back as a sentence, and sixteen coverage gaps registered (B-542, D54, D55)
+
+**What was asked.** Whether every diagnostic records, and what the
+set still does not measure. The record was read whole: every reading
+of the 2B by method, with its rows, dimensions, units and times, set
+against every method the code names — nine probes, thirty-three
+measurements, the ladder, the cross-check and the four coding suites.
+
+**What the record showed.** Forty-eight methods in the code; thirty
+with rows. No sentinel value, no negative count, no row without a
+unit or an engine, no bool outside nought and one. Eleven
+measurements had never written rows since rows were added under D54
+— the offload curve, prefill saturation, memory as predicted,
+concurrency, cold start, quantization fidelity, bits per byte,
+retrieval by depth, degeneration, grammar cost, image cost — and five
+probes likewise: usable context, structured output, thinking,
+embedding, vision. Each was run on the 2B and each wrote its rows,
+except the embedding probe, which found this file is not an embedding
+model and wrote its finding without rows, as an inconclusive probe
+does; and the cross-check, which refuses the 2B because MCF's own
+engine does not implement its architecture, and says so.
+
+**Four things wrong with the recording, fixed.** The coding suites'
+rows named their engine as *through the daemon*: the account of every
+ask names the engine under its conditions, so a spoken answer now
+carries it and the suites' rows say which engine answered. The
+daemon's summary said when each method last ran from a cache the
+command-line suites do not touch, so a window opened after a suite
+was behind; the readings are read again before the summary is built.
+The vision probe's rows carried the probe's whole conditions sentence
+as their engine; they name the engine the way every other probe's do.
+And a measurement with no recorded sentence would show nothing on the
+page after a run: a test now holds every measurement to one.
+
+**A server that outlived its probe.** The usable-context probe, asked
+without a ceiling, opened the 2B at its trained 262,144 tokens and
+climbed; the daemon kept that server for every ask after it, and a
+suite that followed ran through a cache sized for a window nobody
+else had asked for. Registered as B-559; the probe was run again
+under `--up-to 16384`.
+
+**What is not measured.** Sixteen gaps, each a parser's check,
+registered as B-543 to B-558: what the model sees in a picture,
+arithmetic by digit count, dates and ordering and counting, long
+output under a constraint, multi-turn memory, system-prompt obedience,
+saying an answer is not in the text, code reading, SQL and regular
+expressions, embedding retrieval, injection resistance, thinking
+against accuracy, load time by offload, thread scaling, the prompt
+report and the comparison as rows, and retrieval past sixteen
+thousand tokens. Rows from before a dimension existed lack it — the
+coding rows before the `language` dimension — which the table shows
+as an empty cell; the record is not rewritten.
+
 ## 224 · F224 — The coding suites are four rows of the Diagnostics list under a Coding heading — Python coding, JavaScript and Rust, editing, test writing — each run from its pane by MCF's own `eval` started as a job the window reads line by line and can stop, with its readings under the pane and when it last ran from the daemon's summary; on the way, the window was found to read the probes' findings and applied settings from the wrong level of that summary, so every probe read as never run after a restart (B-519, D54, DEC-061)
 
 **The last row.** Every diagnostic was a row of one list except
@@ -13860,6 +13914,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 163 — the recording audit
+
+F225: every diagnostic made to record, four recording faults fixed, and
+the gaps registered (B-542).
 
 ### Version 162 — coding in the list
 

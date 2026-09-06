@@ -288,19 +288,29 @@ pub(crate) fn run_in_container(
     }
 }
 
+/// What a run of the languages came to: the lines said, the rows, a
+/// condition a language saying whether it could be run, and the engine
+/// the daemon ran the asks on where an account named one (B-523, B-542).
+pub(crate) type Suite = (
+    Vec<String>,
+    Vec<Reading>,
+    Vec<(&'static str, Value)>,
+    Option<String>,
+);
+
 /// Runs every task in every language beyond Python, each answer in its
-/// language's container: the lines said, the rows, and a condition a
-/// language saying whether it could be run (B-523).
+/// language's container.
 pub(crate) fn run(
     socket: &Path,
     named: &str,
     podman: &Path,
     scratch: &Path,
     attempts: usize,
-) -> (Vec<String>, Vec<Reading>, Vec<(&'static str, Value)>) {
+) -> Suite {
     let mut lines = Vec::new();
     let mut rows = Vec::new();
     let mut conditions = Vec::new();
+    let mut engine_ran = None;
     for language in LANGUAGES {
         let version = match present(podman, language) {
             Ok(version) => version,
@@ -326,6 +336,9 @@ pub(crate) fn run(
                 let spoken =
                     mcf_serve::probes::spoken(socket, Path::new(named), task.asks, None, 400, None);
                 let ask_ns = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                if engine_ran.is_none() {
+                    engine_ran.clone_from(&spoken.engine_ran);
+                }
                 let written = crate::eval::code_in(&spoken.text);
                 let ran = run_in_container(podman, scratch, language, task, &written);
                 said.push(match &ran {
@@ -365,7 +378,7 @@ pub(crate) fn run(
         }
         lines.push(String::new());
     }
-    (lines, rows, conditions)
+    (lines, rows, conditions, engine_ran)
 }
 
 /// The tasks in JavaScript. The cases are compared as `JSON.stringify`

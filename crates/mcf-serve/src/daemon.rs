@@ -6334,6 +6334,12 @@ impl Daemon {
     }
 
     fn holding(&self) -> Value {
+        // The readings are read again first: a suite run from the command
+        // line writes the journal directly, and a summary built from the
+        // cache would say it last ran before it did (B-519, B-542).
+        if let Ok(mut readings) = self.readings.lock() {
+            *readings = all_readings(&self.places.journal, None);
+        }
         match mcf_hub::store::held(&self.places.models) {
             Err(failure) => Value::map([
                 ("readable", Value::Bool(false)),

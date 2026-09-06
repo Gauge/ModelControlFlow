@@ -827,6 +827,10 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
     let mut second_tries: std::collections::BTreeMap<(String, usize), String> =
         std::collections::BTreeMap::new();
     let (mut failed, mut repaired) = (0_usize, 0_usize);
+    // The engine the daemon ran the asks on, as the first account named
+    // it: the rows' conditions say what answered, not only that the
+    // daemon did (B-542).
+    let mut engine_ran: Option<String> = None;
     for task in if wants("coding") { TASKS } else { &[] } {
         let mut timings: Vec<(u64, usize, String)> = Vec::new();
         let mut cases: Vec<Vec<bool>> = Vec::new();
@@ -835,6 +839,9 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
             let spoken =
                 mcf_serve::probes::spoken(&socket, Path::new(named), task.asks, None, 400, None);
             let took = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            if engine_ran.is_none() {
+                engine_ran.clone_from(&spoken.engine_ran);
+            }
             let written = (!spoken.text.trim().is_empty()).then(|| code_in(&spoken.text));
             timings.push((
                 took,
@@ -930,23 +937,37 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
     }
     // The same tasks in the other languages, each in its own image, their
     // rows beside the Python ones under the same method (B-523).
-    let (language_lines, language_rows, language_conditions) = if wants("languages") {
-        crate::languages::run(&socket, named, &podman, &scratch, ATTEMPTS)
-    } else {
-        (Vec::new(), Vec::new(), Vec::new())
-    };
+    let (language_lines, language_rows, language_conditions, language_engine) =
+        if wants("languages") {
+            crate::languages::run(&socket, named, &podman, &scratch, ATTEMPTS)
+        } else {
+            (Vec::new(), Vec::new(), Vec::new(), None)
+        };
     rows.extend(language_rows);
+    if engine_ran.is_none() {
+        engine_ran = language_engine;
+    }
     // The edit tasks after the writing ones, in the same container (B-522).
-    let (edit_lines, edit_rows) = if wants("editing") {
+    let (edit_lines, edit_rows, edit_engine) = if wants("editing") {
         crate::edits::run(&socket, named, &podman, &scratch)
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), None)
     };
+    if engine_ran.is_none() {
+        engine_ran = edit_engine;
+    }
+    let said_of = |engine: &Option<String>| {
+        engine.as_ref().map_or_else(
+            || "through the daemon, run in a container".to_owned(),
+            |engine| format!("through {engine}, run in a container"),
+        )
+    };
+    let engine_said = said_of(&engine_ran);
     let edits_recorded = wants("editing").then(|| {
         mcf_serve::examine::record_rows(
             Path::new(named),
             "editing",
-            "through the daemon, run in a container",
+            &engine_said,
             vec![
                 (
                     "tasks",
@@ -962,16 +983,20 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
     });
     // Tests written for a stated function, run against a correct and
     // broken implementations (B-524).
-    let (test_lines, test_rows) = if wants("tests") {
+    let (test_lines, test_rows, test_engine) = if wants("tests") {
         crate::testing::run(&socket, named, &podman, &scratch)
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), None)
     };
+    if engine_ran.is_none() {
+        engine_ran = test_engine;
+    }
+    let engine_said = said_of(&engine_ran);
     let tests_recorded = wants("tests").then(|| {
         mcf_serve::examine::record_rows(
             Path::new(named),
             "test-writing",
-            "through the daemon, run in a container",
+            &engine_said,
             vec![
                 (
                     "tasks",
@@ -992,7 +1017,7 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
         Some(mcf_serve::examine::record_rows(
             Path::new(named),
             "coding-repair",
-            "through the daemon, run in a container",
+            &engine_said,
             vec![
                 (
                     "failed",
@@ -1010,7 +1035,7 @@ pub(crate) fn eval(named: &str, only: Option<&str>) -> Response {
         mcf_serve::examine::record_rows(
             Path::new(named),
             "coding",
-            "through the daemon, run in a container",
+            &engine_said,
             vec![
                 (
                     "tasks",

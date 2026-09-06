@@ -241,3 +241,20 @@ fn siblings_are_the_model_files_beside_it() {
     );
     let _ = Path::new("/");
 }
+
+/// Every measurement's recorded finding reads back as a sentence, even
+/// from a record that kept no field but the method: a measurement with
+/// no arm would show nothing on the page after a run (D53).
+#[test]
+fn every_measurement_reads_back_as_a_sentence() {
+    for name in MEASURES {
+        let body = mcf_record::json::Value::map([(
+            "method",
+            mcf_record::json::Value::text((*name).to_owned()),
+        )]);
+        assert!(
+            super::recorded_said(&body).is_some(),
+            "{name} has no recorded sentence"
+        );
+    }
+}
