@@ -31,16 +31,19 @@ use crate::served::{Served, Startup, Waiting};
 pub mod agent;
 
 pub mod bits;
+pub mod cache;
 pub mod cold;
 pub mod concurrency;
 pub mod degeneration;
 pub mod determinism;
+pub mod drafthead;
 pub mod energy;
 pub mod extraction;
 pub mod fidelity;
 pub mod grammar;
 pub mod image;
 pub mod instructions;
+pub mod jitter;
 pub mod memory;
 pub mod multifact;
 pub mod multilingual;
@@ -54,7 +57,7 @@ pub mod tokenizer;
 pub mod tooluse;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 23] = [
+pub const MEASURES: [&str; 26] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -78,6 +81,9 @@ pub const MEASURES: [&str; 23] = [
     multifact::NAME,
     sustained::NAME,
     energy::NAME,
+    jitter::NAME,
+    drafthead::NAME,
+    cache::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -119,6 +125,9 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             multifact::NAME,
             sustained::NAME,
             energy::NAME,
+            jitter::NAME,
+            drafthead::NAME,
+            cache::NAME,
         ],
     ),
 ];
@@ -335,6 +344,9 @@ pub fn run(
             multifact::NAME => multifact::measure(site),
             sustained::NAME => sustained::measure(site),
             energy::NAME => energy::measure(site),
+            jitter::NAME => jitter::measure(site),
+            drafthead::NAME => drafthead::measure(site),
+            cache::NAME => cache::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -535,6 +547,38 @@ pub fn recorded_said(body: &Value) -> Option<String> {
                     .unwrap_or(0)
                     .saturating_div(1000)
             )
+        ),
+        jitter::NAME => format!(
+            "{} piece(s); typical gap {} ms, longest {} ms at token {}; {} gap(s) past five times the typical",
+            figure("pieces").unwrap_or(0),
+            as_ms(u64::try_from(figure("typical_ns").unwrap_or(0)).unwrap_or(0)),
+            as_ms(u64::try_from(figure("longest_ns").unwrap_or(0)).unwrap_or(0)),
+            figure("longest_at").unwrap_or(0),
+            figure("past_five_times").unwrap_or(0)
+        ),
+        drafthead::NAME => format!(
+            "{} tokens/s without the draft head, {} with; outputs {}",
+            figure("without_per_second").unwrap_or(0),
+            figure("with_per_second").unwrap_or(0),
+            same(body.get("identical"))
+        ),
+        cache::NAME => format!(
+            "{} tokens/s at 16 bits, {} at 8, {} at 4; the 8-bit run {}, the 4-bit {}",
+            figure("f16_per_second").unwrap_or(0),
+            figure("q8_per_second").unwrap_or(0),
+            figure("q4_per_second").unwrap_or(0),
+            body.get("q8_divergence")
+                .and_then(Value::as_integer)
+                .map_or_else(
+                    || "identical".to_owned(),
+                    |at| format!("parts at token {at}")
+                ),
+            body.get("q4_divergence")
+                .and_then(Value::as_integer)
+                .map_or_else(
+                    || "identical".to_owned(),
+                    |at| format!("parts at token {at}")
+                )
         ),
         extraction::NAME => format!(
             "{} of {} field(s) exact over {} trial(s); JSON parsed in {}",

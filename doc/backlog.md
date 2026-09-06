@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 295 |
+| **Version** | 296 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 377 build items (275 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 47 open).** Every item cites
+decided, 23 resolved) and 377 build items (278 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 44 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -367,9 +367,9 @@ first and importance second.
 | B-529 | Multi-fact retrieval: several planted facts to list, order and sum at depth — found, ordered rightly, summed rightly | D55, DEC-062, B-497 | Rows per depth per ask | done. F211: four prices to list, order and sum, twenty-first measurement; the 2B lost the order at 16k |
 | B-530 | Sustained generation: tokens a second sampled every thirty seconds over five minutes with card temperature and clock beside them | D55, DEC-062, D11 | Rows per sample | done. F212: a sample every thirty seconds for five minutes with temperature, clock and power, twenty-second measurement |
 | B-531 | Energy per token: card and package power during a pinned generation where the hardware publishes it — joules a token, joules a prompt token | D55, DEC-062, D11, B-189 | Rows where power is read, could not tell where it is not | done. F213: microjoules a prompt token and a produced token above idle, twenty-third measurement |
-| B-532 | Streaming jitter: every inter-token gap in a long generation, the longest stall and the distribution | D55, DEC-062, D16 | One row a gap | open |
-| B-533 | The draft head's gain: the same generation with and without the model's own draft head — tokens a second, and agreement of the output | D55, DEC-062, B-456 | Two rows a depth, and the agreement | open |
-| B-534 | The cache's precision: speed and fidelity against the reference with the cache at 16, 8 and 4 bits | D55, DEC-062, B-491 | Rows per precision | open |
+| B-532 | Streaming jitter: every inter-token gap in a long generation, the longest stall and the distribution | D55, DEC-062, D16 | One row a gap | done. F214: every gap a row, the longest and where it fell, twenty-fourth measurement |
+| B-533 | The draft head's gain: the same generation with and without the model's own draft head — tokens a second, and agreement of the output | D55, DEC-062, B-456 | Two rows a depth, and the agreement | done. F215: with and without the declared draft head, twenty-fifth measurement; a file without one says so |
+| B-534 | The cache's precision: speed and fidelity against the reference with the cache at 16, 8 and 4 bits | D55, DEC-062, B-491 | Rows per precision | done. F216: the cache at 16, 8 and 4 bits with card bytes and where the output parts, twenty-sixth measurement |
 | B-535 | Soak: two hundred requests through the hosted server — failures, latency by hundred, resident bytes at start and end | D55, DEC-062, B-232 | One row a request, plus the two resident readings | open |
 | B-536 | Stop latency: time from a stop to the engine idle, at several depths | D55, DEC-062, B-459 | Rows per depth | open |
 | B-537 | Fidelity over length: rank agreement against the reference at 100, 500 and 1,000 tokens deep | D55, DEC-062, B-491 | Rows per depth | open |
@@ -556,6 +556,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 296 — gaps, the draft head, the cache
+
+B-532, B-533 and B-534 done (F214, F215, F216).
 
 ### Version 295 — depth, time and energy
 

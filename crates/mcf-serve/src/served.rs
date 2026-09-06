@@ -448,6 +448,9 @@ pub struct Startup {
     pub ubatch: Option<u32>,
     /// How many requests it serves at once, where a measurement sets it.
     pub parallel: Option<u32>,
+    /// The type the key-value cache holds its values in, as the engine
+    /// names it, where a measurement sets it (B-534).
+    pub cache: Option<&'static str>,
 }
 
 impl Default for Startup {
@@ -462,6 +465,7 @@ impl Default for Startup {
             batch: None,
             ubatch: None,
             parallel: None,
+            cache: None,
         }
     }
 }
@@ -941,6 +945,17 @@ impl Served {
         }
         if let Some(parallel) = startup.parallel {
             command.arg("--parallel").arg(parallel.to_string());
+        }
+        if let Some(cache) = startup.cache {
+            // A quantized value cache needs the fused attention path, which
+            // the engine does not turn on by itself for every model.
+            command
+                .arg("--cache-type-k")
+                .arg(cache)
+                .arg("--cache-type-v")
+                .arg(cache)
+                .arg("--flash-attn")
+                .arg("on");
         }
         let media_marker = fresh_marker();
         command

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 158 |
+| **Version** | 159 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -182,6 +182,9 @@ forward as one.
 | 211 | [F211 — Multi-fact retrieval plants four prices for four named items through the filler at each depth and asks three things of the prompt — list every price, give the items in the order they came, total them — each read by a parser: the values found, the names in their order, the one number given as the sum; the 2B listed and summed rightly at every depth and lost the order at 16k (B-529, D55, B-497)](#211-f211-multi-fact-retrieval-plants-four-prices-for-four-named-items-through-the-filler-at-each-depth-and-asks-three-things-of-the-prompt-list-every-price-give-the-items-in-the-order-they-came-total-them-each-read-by-a-parser-the-values-found-the-names-in-their-order-the-one-number-given-as-the-sum-the-2b-listed-and-summed-rightly-at-every-depth-and-lost-the-order-at-16k-b-529-d55-b-497) |
 | 212 | [F212 — Sustained generation keeps one prompt completing for five minutes and writes a sample every thirty seconds — tokens a second since the last sample, with the card's temperature, clock and power read from the kernel's hardware-monitor files beside it — so a card that heats and throttles shows in the rows; the 2B held between 112.7 and 115.3 tokens a second across ten samples while the card sat at 75 to 85 °C and its power fell from 142 to 104 W (B-530, D55, D11)](#212-f212-sustained-generation-keeps-one-prompt-completing-for-five-minutes-and-writes-a-sample-every-thirty-seconds-tokens-a-second-since-the-last-sample-with-the-cards-temperature-clock-and-power-read-from-the-kernels-hardware-monitor-files-beside-it-so-a-card-that-heats-and-throttles-shows-in-the-rows-the-2b-held-between-1127-and-1153-tokens-a-second-across-ten-samples-while-the-card-sat-at-75-to-85-c-and-its-power-fell-from-142-to-104-w-b-530-d55-d11) |
 | 213 | [F213 — Energy per token is the card's power read every twenty milliseconds through a two-thousand-token prompt read and a 384-token generation, summed by the trapezoid rule into microjoules and divided by the tokens, with the idle draw watched first and the figure above idle beside the whole; the 2B spent 15.4 mJ a prompt token and 767 mJ a produced token, 2.7 and 369 mJ above a 51.8 W idle (B-531, D55, D11, B-189)](#213-f213-energy-per-token-is-the-cards-power-read-every-twenty-milliseconds-through-a-two-thousand-token-prompt-read-and-a-384-token-generation-summed-by-the-trapezoid-rule-into-microjoules-and-divided-by-the-tokens-with-the-idle-draw-watched-first-and-the-figure-above-idle-beside-the-whole-the-2b-spent-154-mj-a-prompt-token-and-767-mj-a-produced-token-27-and-369-mj-above-a-518-w-idle-b-531-d55-d11-b-189) |
+| 214 | [F214 — Streaming jitter streams one long generation and notes the moment each piece arrives: every gap a row, the first piece's delay, the longest stall and the token it fell at, and how many gaps ran past twice, five and ten times the typical; the 2B sent 512 pieces at a typical 8.3 ms with the longest 11.9 ms and no gap past twice the typical (B-532, D55, D16)](#214-f214-streaming-jitter-streams-one-long-generation-and-notes-the-moment-each-piece-arrives-every-gap-a-row-the-first-pieces-delay-the-longest-stall-and-the-token-it-fell-at-and-how-many-gaps-ran-past-twice-five-and-ten-times-the-typical-the-2b-sent-512-pieces-at-a-typical-83-ms-with-the-longest-119-ms-and-no-gap-past-twice-the-typical-b-532-d55-d16) |
+| 215 | [F215 — The draft head's gain starts the same file twice, with and without the draft head it declares, generates from one prompt three times each way and compares the first outputs token for token; a file that declares none measures nothing and says so, which is what the 2B did (B-533, D55, B-456)](#215-f215-the-draft-heads-gain-starts-the-same-file-twice-with-and-without-the-draft-head-it-declares-generates-from-one-prompt-three-times-each-way-and-compares-the-first-outputs-token-for-token-a-file-that-declares-none-measures-nothing-and-says-so-which-is-what-the-2b-did-b-533-d55-b-456) |
+| 216 | [F216 — The cache's precision starts the engine with its key-value cache at sixteen, eight and four bits and generates from one prompt of a thousand tokens under each: tokens a second, resident and card bytes, and where the output parts from the sixteen-bit run; the 2B ran at 111, 108 and 114 tokens a second on 2.6, 2.4 and 2.3 GB of card, the eight-bit run parting at token 35 and the four-bit at token 0 (B-534, D55, B-491)](#216-f216-the-caches-precision-starts-the-engine-with-its-key-value-cache-at-sixteen-eight-and-four-bits-and-generates-from-one-prompt-of-a-thousand-tokens-under-each-tokens-a-second-resident-and-card-bytes-and-where-the-output-parts-from-the-sixteen-bit-run-the-2b-ran-at-111-108-and-114-tokens-a-second-on-26-24-and-23-gb-of-card-the-eight-bit-run-parting-at-token-35-and-the-four-bit-at-token-0-b-534-d55-b-491) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9636,6 +9639,62 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 216 · F216 — The cache's precision starts the engine with its key-value cache at sixteen, eight and four bits and generates from one prompt of a thousand tokens under each: tokens a second, resident and card bytes, and where the output parts from the sixteen-bit run; the 2B ran at 111, 108 and 114 tokens a second on 2.6, 2.4 and 2.3 GB of card, the eight-bit run parting at token 35 and the four-bit at token 0 (B-534, D55, B-491)
+
+**Fitting a window costs something.** A quantized cache is the usual
+way to hold a longer window on a card, and it changes the arithmetic
+every token is drawn from. The engine takes the type its cache holds
+keys and values in; a server is started with each of `f16`, `q8_0`
+and `q4_0` — the last two under the fused attention path, which a
+quantized value cache needs — and generates 384 tokens, greedy, after
+a prompt of about a thousand. Each precision is a row set: `bits`,
+`prompt_tokens`, `produced`, `ns`, `per_second`, `resident` and
+`card_used` bytes, and for the quantized ones `identical` and
+`divergence_at` against the sixteen-bit output.
+
+**The 2B.** 111, 108 and 114 tokens a second; 2.6, 2.4 and 2.3 GB on
+the card. The eight-bit cache parted from the sixteen-bit output at
+token 35; the four-bit at token 0 — its first token differed. On a
+window this short the memory saved is a tenth; on a long one it is
+the difference between fitting and not, and these rows say what that
+fit costs in the words that come out.
+
+## 215 · F215 — The draft head's gain starts the same file twice, with and without the draft head it declares, generates from one prompt three times each way and compares the first outputs token for token; a file that declares none measures nothing and says so, which is what the 2B did (B-533, D55, B-456)
+
+**Two servers, one file.** A file that carries a draft head carries a
+promise of speed, and the engine uses it only when told. Where the
+file declares one, this starts a server without it and a server with
+it, generates 384 tokens from one prompt three times each way, greedy,
+and writes each generation's tokens a second as a row under its
+`draft_head` dimension; the first generation each way is compared
+token for token, and where they part is a row. Where the file
+declares none there is nothing to start with or without, and the
+measurement says so rather than starting two servers the same way and
+calling the difference a gain.
+
+**The 2B** declares no draft head, so the record holds the sentence
+and no rows. The measurement waits for a file that does; the rows it
+will write are named here so that the reader knows what to look for.
+
+## 214 · F214 — Streaming jitter streams one long generation and notes the moment each piece arrives: every gap a row, the first piece's delay, the longest stall and the token it fell at, and how many gaps ran past twice, five and ten times the typical; the 2B sent 512 pieces at a typical 8.3 ms with the longest 11.9 ms and no gap past twice the typical (B-532, D55, D16)
+
+**A mean hides a stall.** Tokens a second is one figure over a whole
+generation, and a reader watching the text arrive feels the longest
+gap, not the average one. The served path already hands each piece
+of a streamed answer to its caller as it comes; this notes the moment
+of each and makes every gap between one piece and the next a row —
+`ns` and the token it ended at — with the delay before the first
+piece, the whole, the typical gap (the median), the shortest and the
+longest beside them, and counts of the gaps past twice, five and ten
+times the typical.
+
+**The 2B.** One generation of 512 tokens in 512 pieces, the first
+after 31.7 ms and the whole in 4.35 s; the typical gap 8.3 ms, the
+shortest 7.7 ms, the longest 11.9 ms at token 485; no gap past twice
+the typical. 1032 rows. A card that shared its time, or a model whose
+draft head misses, would show here as gaps a person could point to by
+token.
+
 ## 213 · F213 — Energy per token is the card's power read every twenty milliseconds through a two-thousand-token prompt read and a 384-token generation, summed by the trapezoid rule into microjoules and divided by the tokens, with the idle draw watched first and the figure above idle beside the whole; the 2B spent 15.4 mJ a prompt token and 767 mJ a produced token, 2.7 and 369 mJ above a 51.8 W idle (B-531, D55, D11, B-189)
 
 **The other cost of speed.** A card that runs faster by drawing more
@@ -13621,6 +13680,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 159 — gaps, the draft head, the cache
+
+F214: streaming jitter (B-532). F215: the draft head's gain (B-533).
+F216: the cache's precision (B-534).
 
 ### Version 158 — depth, time and energy
 
