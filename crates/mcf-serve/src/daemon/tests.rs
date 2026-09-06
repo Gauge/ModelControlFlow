@@ -1264,3 +1264,21 @@ fn what_the_hub_answered_is_kept_for_a_day() {
         "a refusal was kept as if it were an answer"
     );
 }
+
+/// A run's body kept by the daemon carries when it was recorded, so that
+/// a surface can say when a diagnostic last ran (D53, B-507).
+#[test]
+fn a_kept_run_body_is_dated() {
+    let at = mcf_core::time::Timestamp::now();
+    let dated = super::dated(Value::map([("readings", Value::List(Vec::new()))]), at);
+    assert_eq!(dated.get("at"), Some(&Value::text(at.to_string())));
+    assert!(
+        dated.get("readings").is_some(),
+        "the body is otherwise as it was"
+    );
+    assert_eq!(
+        super::dated(Value::Null, at),
+        Value::Null,
+        "only a map is dated"
+    );
+}

@@ -540,6 +540,23 @@ impl Page {
     }
 }
 
+/// One probe's or measurement's last finding on a model: the lines the
+/// daemon wrote for it — or the record's one sentence, where the finding
+/// is from before this window opened — with when it was taken and on
+/// what engine (D53).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Finding {
+    /// The probe's or measurement's name, as the daemon lists it.
+    pub name: String,
+    /// When it was taken, as the record wrote it; `None` where the record
+    /// did not say.
+    pub at: Option<String>,
+    /// The engine it was taken through, where the record said.
+    pub engine: Option<String>,
+    /// What it found, a line each.
+    pub lines: Vec<String>,
+}
+
 /// One model, as this window needs it.
 ///
 /// Every field that can be absent is an `Option`, and nothing is defaulted to
@@ -571,17 +588,24 @@ pub struct Model {
     /// The last measurement taken of it, whole, as the daemon keeps it: the
     /// readings and what was read off them, for the Statistics tab.
     pub measured_body: Option<Value>,
+    /// When the last measurement was taken, as the record wrote it (D53).
+    pub measured_at: Option<String>,
     /// What the last cross-check said, sentence by sentence.
     pub cross_checked: Vec<String>,
+    /// When it was taken (D53).
+    pub cross_checked_at: Option<String>,
     /// Whether a prompt report has been taken of it.
     pub prompt_reported: bool,
+    /// When the last one was (D53).
+    pub prompt_reported_at: Option<String>,
     /// The addressing a probe applied, by provenance, where one was.
     pub applied_addressing: Option<String>,
     /// The budget a probe applied, by provenance, where one was.
     pub applied_budget: Option<String>,
-    /// What the probes last found on it, by probe: the name and the lines
-    /// the daemon wrote for it (B-478).
-    pub probed: Vec<(String, Vec<String>)>,
+    /// What the probes and the measurements last found on it, one entry
+    /// a method: the lines the daemon wrote for it, when and through what
+    /// (B-478, D52, D53).
+    pub probed: Vec<Finding>,
     /// The hub repository it came from, where its provenance names one: a
     /// model is a repository with its quantizations, and this is which
     /// (D51, B-486).
@@ -792,16 +816,21 @@ fn repository_of(held: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// What the record holds of the probes, one sentence a probe (B-483).
-fn probed_of(held: &Value) -> Vec<(String, Vec<String>)> {
+/// What the record holds of the probes and the measurements, one
+/// sentence each, with when and through what (B-483, D53).
+fn probed_of(held: &Value) -> Vec<Finding> {
     held.get("probed")
         .and_then(Value::as_list)
         .unwrap_or(&[])
         .iter()
         .filter_map(|found| {
-            let method = found.get("method")?.as_text()?.to_owned();
-            let said = found.get("said")?.as_text()?.to_owned();
-            Some((method, vec![said]))
+            let text = |key: &str| found.get(key).and_then(Value::as_text).map(str::to_owned);
+            Some(Finding {
+                name: text("method")?,
+                at: text("at"),
+                engine: text("engine"),
+                lines: vec![text("said")?],
+            })
         })
         .collect()
 }
@@ -874,9 +903,12 @@ fn model_from(held: &Value) -> Model {
             .and_then(|resolved| resolved.get("device_free_bytes"))
             .and_then(Value::as_integer)
             .and_then(|number| u64::try_from(number).ok()),
+        measured_at: at_in(results.0.as_ref()),
         measured_body: results.0,
         cross_checked: results.1,
+        cross_checked_at: results.3,
         prompt_reported: results.2,
+        prompt_reported_at: results.4,
         applied_addressing: held
             .get("configured")
             .and_then(|applied| applied.get("addressing"))
@@ -908,10 +940,26 @@ fn model_from(held: &Value) -> Model {
     }
 }
 
-/// What the daemon keeps of a model's runs, for the Statistics tab: the last
-/// measurement whole, what the cross-check said, and whether a prompt
-/// report was taken.
-fn results_of(runs: Option<&Value>) -> (Option<Value>, Vec<String>, bool) {
+/// When a run's body says it was recorded, where the daemon dated it (D53).
+fn at_in(body: Option<&Value>) -> Option<String> {
+    body.and_then(|body| body.get("at"))
+        .and_then(Value::as_text)
+        .map(str::to_owned)
+}
+
+/// What the daemon keeps of a model's runs, for the Statistics tab and the
+/// diagnostics list: the last measurement whole, what the cross-check
+/// said, whether a prompt report was taken, and when the last two were
+/// (D53).
+fn results_of(
+    runs: Option<&Value>,
+) -> (
+    Option<Value>,
+    Vec<String>,
+    bool,
+    Option<String>,
+    Option<String>,
+) {
     let measured = runs
         .and_then(|runs| runs.get("measured"))
         .filter(|held| !matches!(held, Value::Null))
@@ -930,7 +978,14 @@ fn results_of(runs: Option<&Value>) -> (Option<Value>, Vec<String>, bool) {
     let prompt_reported = runs
         .and_then(|runs| runs.get("prompt_reported"))
         .is_some_and(|held| !matches!(held, Value::Null));
-    (measured, cross_checked, prompt_reported)
+    let at_of = |key: &str| at_in(runs.and_then(|runs| runs.get(key)));
+    (
+        measured,
+        cross_checked,
+        prompt_reported,
+        at_of("cross_checked"),
+        at_of("prompt_reported"),
+    )
 }
 
 /// Milliseconds a token, as tokens a second.
@@ -1160,8 +1215,10 @@ pub enum Region {
     Page,
     /// A hub repository's page, or a pending file's.
     Hub,
-    /// The Diagnostics page.
+    /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
     Diagnostics,
+    /// The Diagnostics page's list of every diagnostic (D53).
+    Checks,
     /// The Server page.
     Server,
     /// The prompt page's report.
@@ -1198,7 +1255,7 @@ impl Default for Splits {
         Self {
             side: 168.0,
             list: 250.0,
-            diagnostics: 540.0,
+            diagnostics: 300.0,
         }
     }
 }
@@ -1227,7 +1284,7 @@ impl Splits {
                 self.list = (to - self.side - PAGE_PAD).clamp(180.0, 520.0);
             }
             Splitter::Diagnostics => {
-                self.diagnostics = (to - self.side - PAGE_PAD).clamp(320.0, 900.0);
+                self.diagnostics = (to - self.side - PAGE_PAD).clamp(220.0, 520.0);
             }
         }
     }
@@ -1499,6 +1556,164 @@ impl Card {
     }
 }
 
+/// One diagnostic MCF can take of a model: a row of the Diagnostics
+/// page's list, and the whole of it when chosen (D53).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Diagnostic {
+    /// The depth ladder.
+    Throughput,
+    /// MCF's own engine reading the provisioned one's tokens.
+    CrossCheck,
+    /// What each part of a prompt does to the answer.
+    Prompt,
+    /// Two models on one question, at the command line.
+    Comparison,
+    /// One probe, by its place in the daemon's list.
+    Probe(usize),
+    /// One measurement, by its place in the daemon's list.
+    Measure(usize),
+}
+
+/// What each probe answers, in one line, in the daemon's order.
+const PROBE_ANSWERS: [&str; 9] = [
+    "How the model is addressed: which form of its template ends its turn",
+    "How much of the declared context the engine accepts",
+    "Whether the model ends its own turn, and how long its turns run",
+    "Whether a well-formed tool call comes out when one is asked for",
+    "Whether the shape asked for comes out as JSON, with the fields asked",
+    "How many tokens go before the answer, inside the markers the file declares",
+    "What a sentence costs in tokens, language by language",
+    "Whether a vector comes out, its width, and whether it comes out the same twice",
+    "Whether a picture reaches the model at all",
+];
+
+/// What each measurement answers, in one line, in the daemon's order.
+const MEASURE_ANSWERS: [&str; 14] = [
+    "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
+    "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
+    "What a conversation pays for its history every turn: a kept prefix against the prompt read again",
+    "The engine's resident bytes at each window against what MCF predicted from the header",
+    "Aggregate and per-request tokens a second at one, two, four and eight requests at once",
+    "The first token with the file evicted from the page cache, against the same with it there",
+    "Agreement with the repository's most precise file here, position by position, and the bits spent",
+    "The log-likelihood of a fixed text, per byte so vocabularies compare",
+    "Whether the same prompt, seed and greedy draw produce the same tokens, and where they part",
+    "Whether text survives being read and spelled back, and whether two tokenizers count it the same",
+    "Whether a number planted in a long prompt comes back, by depth and by placement",
+    "Where a long generation begins to repeat itself",
+    "Valid JSON, tokens and time with and without a grammar constraint",
+    "Tokens and prefill time a picture adds, at three sides",
+];
+
+impl Diagnostic {
+    /// Every diagnostic, in the order the list shows them.
+    #[must_use]
+    pub fn all() -> Vec<Self> {
+        Self::families()
+            .into_iter()
+            .flat_map(|(_, _, members)| members)
+            .collect()
+    }
+
+    /// The list's families: each with its heading, the card whose Run
+    /// runs every one of it where there is such a run, and its members.
+    #[must_use]
+    pub fn families() -> Vec<(&'static str, Option<Card>, Vec<Self>)> {
+        let probes = (0..mcf_serve::probes::run::PROBES.len())
+            .map(Self::Probe)
+            .collect();
+        let family = |at: usize, card: Card| {
+            let members = mcf_serve::examine::FAMILIES
+                .get(at)
+                .map_or(&[][..], |(_, members)| members);
+            let mut found = Vec::new();
+            for name in members {
+                if let Some(place) = mcf_serve::examine::MEASURES
+                    .iter()
+                    .position(|held| held == name)
+                {
+                    found.push(Self::Measure(place));
+                }
+            }
+            (card.name(), Some(card), found)
+        };
+        vec![
+            (
+                "Runs",
+                None,
+                vec![
+                    Self::Throughput,
+                    Self::CrossCheck,
+                    Self::Prompt,
+                    Self::Comparison,
+                ],
+            ),
+            ("Probes", Some(Card::Capabilities), probes),
+            family(0, Card::Performance),
+            family(1, Card::Fidelity),
+            family(2, Card::Behaviour),
+        ]
+    }
+
+    /// The diagnostic's name, as the daemon and the record know it.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Throughput => "Throughput",
+            Self::CrossCheck => "Cross-check",
+            Self::Prompt => "Prompt analysis",
+            Self::Comparison => "Comparison",
+            Self::Probe(at) => mcf_serve::probes::run::PROBES
+                .get(at)
+                .copied()
+                .unwrap_or("?"),
+            Self::Measure(at) => mcf_serve::examine::MEASURES.get(at).copied().unwrap_or("?"),
+        }
+    }
+
+    /// What it answers, in one line.
+    #[must_use]
+    pub fn answers(self) -> &'static str {
+        match self {
+            Self::Throughput => Card::Throughput.answers(),
+            Self::CrossCheck => Card::CrossCheck.answers(),
+            Self::Prompt => Card::Prompt.answers(),
+            Self::Comparison => Card::Comparison.answers(),
+            Self::Probe(at) => PROBE_ANSWERS.get(at).copied().unwrap_or(""),
+            Self::Measure(at) => MEASURE_ANSWERS.get(at).copied().unwrap_or(""),
+        }
+    }
+
+    /// The run it belongs to.
+    #[must_use]
+    pub fn card(self) -> Card {
+        match self {
+            Self::Throughput => Card::Throughput,
+            Self::CrossCheck => Card::CrossCheck,
+            Self::Prompt => Card::Prompt,
+            Self::Comparison => Card::Comparison,
+            Self::Probe(_) => Card::Capabilities,
+            Self::Measure(at) => {
+                let name = mcf_serve::examine::MEASURES.get(at).copied().unwrap_or("");
+                [Card::Performance, Card::Fidelity, Card::Behaviour]
+                    .into_iter()
+                    .find(|card| card.measures().contains(&name))
+                    .unwrap_or(Card::Performance)
+            }
+        }
+    }
+
+    /// The method the record keeps its finding under, where it is a probe
+    /// or a measurement.
+    #[must_use]
+    pub fn method(self) -> Option<&'static str> {
+        match self {
+            Self::Probe(_) | Self::Measure(_) => Some(self.name()),
+            _ => None,
+        }
+    }
+}
+
 /// Which tab of the model page is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
@@ -1648,13 +1863,13 @@ pub enum Act {
     DownloadThen(std::boxed::Box<Act>),
     /// Open the page of one repository the hub listed, by its place.
     PickHub(usize),
-    /// Turn one probe on or off on the capabilities card.
-    ToggleProbe(usize),
     /// Flip whether the probes apply what they find.
     ApplyProbes,
-    /// Turn one measurement on or off on its card, by its place in the
-    /// daemon's list (D52).
-    ToggleMeasure(usize),
+    /// Choose one diagnostic of the list, to show it whole (D53).
+    Show(Diagnostic),
+    /// Run one diagnostic from its own pane: a probe or a measurement on
+    /// its own, or the run it is (D53).
+    RunOne(Diagnostic),
     /// Read a run's figures where they are kept: the model's Statistics tab.
     SeeStatistics,
     /// Cut the run that is going short.
@@ -1903,17 +2118,10 @@ pub struct Desk {
     pub said: String,
     /// The tests offered on the diagnostics screen.
     pub tests: Vec<Test>,
-    /// Which probes the capabilities card runs, one flag a probe in the
-    /// order the daemon lists them; all of them to begin with (B-478).
-    pub probes_wanted: Vec<bool>,
     /// Whether the probes apply what they find, which is an act (D43).
     pub probes_apply: bool,
-    /// Which measurements the three cards run, one flag a measurement in
-    /// the order the daemon lists them; all of them to begin with (D52).
-    pub measures_wanted: Vec<bool>,
-    /// Which card started the examination under way or just finished, so
-    /// that its Done line is on the card that ran it.
-    pub examining_card: Option<Card>,
+    /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
+    pub diagnostic: Diagnostic,
     /// What MCF can build, and which of it is here.
     pub components: Vec<Component>,
     /// What the chosen model would be hosted under, and what MCF advised.
@@ -2043,9 +2251,7 @@ impl Desk {
             doing: Doing::Nothing,
             said: String::new(),
             tests: tests(),
-            probes_wanted: vec![true; mcf_serve::probes::run::PROBES.len()],
-            measures_wanted: vec![true; mcf_serve::examine::MEASURES.len()],
-            examining_card: None,
+            diagnostic: Diagnostic::Throughput,
             probes_apply: false,
             components: Vec::new(),
             settings: None,
@@ -2454,9 +2660,12 @@ impl Desk {
             Act::PickOffered(at) => self.pick_offered(at),
             Act::DownloadThen(then) => self.download_then(*then),
             Act::PickHub(at) => self.pick_hub(at),
-            Act::ToggleProbe(at) => flip(&mut self.probes_wanted, at),
             Act::ApplyProbes => self.probes_apply = !self.probes_apply,
-            Act::ToggleMeasure(at) => flip(&mut self.measures_wanted, at),
+            Act::Show(diagnostic) => {
+                self.diagnostic = diagnostic;
+                let _was = self.scrolls.insert(Region::Diagnostics, 0.0);
+            }
+            Act::RunOne(diagnostic) => self.run_one(diagnostic),
             Act::SeeStatistics => {
                 self.page = Page::Models;
                 self.tab = Tab::Statistics;
@@ -3029,6 +3238,30 @@ impl Desk {
         let Some(at) = self.chosen else {
             return;
         };
+        self.run_card_on(at, card);
+    }
+
+    /// Runs one diagnostic on the chosen model: a probe or a measurement
+    /// on its own, else the run it is (D53).
+    pub fn run_one(&mut self, diagnostic: Diagnostic) {
+        let Some(at) = self.chosen else {
+            return;
+        };
+        self.diagnostic = diagnostic;
+        match diagnostic {
+            Diagnostic::Probe(_) => {
+                self.page = Page::Diagnostics;
+                self.probe_only(at, vec![diagnostic.name().to_owned()]);
+            }
+            Diagnostic::Measure(_) => {
+                self.page = Page::Diagnostics;
+                self.examine_only(at, vec![diagnostic.name().to_owned()]);
+            }
+            other => self.run_card_on(at, other.card()),
+        }
+    }
+
+    fn run_card_on(&mut self, at: usize, card: Card) {
         match card {
             Card::Throughput => {
                 self.page = Page::Diagnostics;
@@ -3435,30 +3668,17 @@ impl Desk {
         });
     }
 
-    /// The probes named for the run: none where every one is ticked, which
-    /// is every one; the ticked ones otherwise.
-    #[must_use]
-    pub fn probes_only(&self) -> Vec<String> {
-        if self.probes_wanted.iter().all(|wanted| *wanted) {
-            return Vec::new();
-        }
-        mcf_serve::probes::run::PROBES
-            .iter()
-            .zip(&self.probes_wanted)
-            .filter(|(_, wanted)| **wanted)
-            .map(|(name, _)| (*name).to_owned())
-            .collect()
+    /// Runs every probe on the chosen model — the same request `mcf probe`
+    /// sends (B-478, A22).
+    pub fn probe(&mut self, at: usize) {
+        self.probe_only(at, Vec::new());
     }
 
-    /// Runs the probes ticked on the chosen model — the same request
-    /// `mcf probe` sends (B-478, A22).
-    pub fn probe(&mut self, at: usize) {
+    /// Runs the probes named on the chosen model; none named is every one.
+    pub fn probe_only(&mut self, at: usize, only: Vec<String>) {
         let Some(held) = self.models.get(at) else {
             return;
         };
-        if self.probes_wanted.iter().all(|wanted| !*wanted) {
-            return;
-        }
         self.chosen = Some(at);
         self.doing = Doing::Probing(job::Job::start(
             &self.socket,
@@ -3467,42 +3687,32 @@ impl Desk {
                 engine: None,
                 apply: self.probes_apply,
                 up_to: None,
-                only: self.probes_only(),
+                only,
             },
             format!("probing {}", held.name),
         ));
     }
 
-    /// The measurements a card runs, by name: the card's own that are
-    /// ticked (D52).
-    #[must_use]
-    pub fn measures_only(&self, card: Card) -> Vec<String> {
-        card.measures()
-            .iter()
-            .filter(|name| {
-                mcf_serve::examine::MEASURES
-                    .iter()
-                    .position(|held| held == *name)
-                    .and_then(|at| self.measures_wanted.get(at))
-                    .copied()
-                    .unwrap_or(false)
-            })
-            .map(|name| (*name).to_owned())
-            .collect()
-    }
-
-    /// Runs a card's measurements ticked on the chosen model — the same
-    /// request `mcf examine` sends (D52, A22).
+    /// Runs a family's measurements on the chosen model — the same request
+    /// `mcf examine` sends (D52, A22).
     pub fn examine(&mut self, at: usize, card: Card) {
-        let Some(held) = self.models.get(at) else {
-            return;
-        };
-        let only = self.measures_only(card);
+        let only = card
+            .measures()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<String>>();
         if only.is_empty() {
             return;
         }
+        self.examine_only(at, only);
+    }
+
+    /// Runs the measurements named on the chosen model.
+    pub fn examine_only(&mut self, at: usize, only: Vec<String>) {
+        let Some(held) = self.models.get(at) else {
+            return;
+        };
         self.chosen = Some(at);
-        self.examining_card = Some(card);
         self.doing = Doing::Examining(job::Job::start(
             &self.socket,
             Request::Examine {
@@ -3514,6 +3724,73 @@ impl Desk {
         ));
     }
 
+    /// The diagnostic running now, where one is: which row the list marks
+    /// and which pane shows a Stop (D53).
+    #[must_use]
+    pub fn running_diagnostic(&self) -> Option<Diagnostic> {
+        let step_name = |job: &job::Job| {
+            job.latest()
+                .and_then(|answer| answer.get("step"))
+                .and_then(|step| step.get("name"))
+                .and_then(Value::as_text)
+                .map(str::to_owned)
+        };
+        match &self.doing {
+            Doing::Measuring(job) if !job.finished => Some(Diagnostic::Throughput),
+            Doing::CrossChecking(job) if !job.finished => Some(Diagnostic::CrossCheck),
+            Doing::Reporting(job) if !job.finished => Some(Diagnostic::Prompt),
+            Doing::Probing(job) if !job.finished => {
+                let name = step_name(job)?;
+                mcf_serve::probes::run::PROBES
+                    .iter()
+                    .position(|held| *held == name)
+                    .map(Diagnostic::Probe)
+            }
+            Doing::Examining(job) if !job.finished => {
+                let name = step_name(job)?;
+                mcf_serve::examine::MEASURES
+                    .iter()
+                    .position(|held| *held == name)
+                    .map(Diagnostic::Measure)
+            }
+            _ => None,
+        }
+    }
+
+    /// The last finding of a probe or a measurement on the chosen model.
+    #[must_use]
+    pub fn finding_of(&self, diagnostic: Diagnostic) -> Option<&Finding> {
+        let method = diagnostic.method()?;
+        let held = self.chosen.and_then(|at| self.models.get(at))?;
+        held.probed.iter().find(|finding| finding.name == method)
+    }
+
+    /// When a diagnostic last ran on the chosen model, as the record wrote
+    /// it, and through what where the record said (D53).
+    #[must_use]
+    pub fn last_run(&self, diagnostic: Diagnostic) -> Option<(String, Option<String>)> {
+        let held = self.chosen.and_then(|at| self.models.get(at))?;
+        match diagnostic {
+            Diagnostic::Throughput => {
+                let engine = held
+                    .measured_body
+                    .as_ref()
+                    .and_then(|body| body.get("conditions"))
+                    .and_then(|conditions| conditions.get("engine_ran"))
+                    .and_then(Value::as_text)
+                    .map(str::to_owned);
+                held.measured_at.clone().map(|at| (at, engine))
+            }
+            Diagnostic::CrossCheck => held.cross_checked_at.clone().map(|at| (at, None)),
+            Diagnostic::Prompt => held.prompt_reported_at.clone().map(|at| (at, None)),
+            Diagnostic::Comparison => None,
+            Diagnostic::Probe(_) | Diagnostic::Measure(_) => {
+                let finding = self.finding_of(diagnostic)?;
+                finding.at.clone().map(|at| (at, finding.engine.clone()))
+            }
+        }
+    }
+
     /// Keeps what a finished examination found on the model it ran on,
     /// beside the probes' findings: a measurement taken again replaces
     /// its last reading, and one not taken keeps it (D52).
@@ -3523,12 +3800,7 @@ impl Desk {
         };
         let found = findings_of(job);
         if let Some(held) = self.chosen.and_then(|at| self.models.get_mut(at)) {
-            for (name, lines) in found {
-                match held.probed.iter_mut().find(|(had, _)| *had == name) {
-                    Some(entry) => entry.1 = lines,
-                    None => held.probed.push((name, lines)),
-                }
-            }
+            keep_findings(&mut held.probed, found);
         }
     }
 
@@ -3540,7 +3812,7 @@ impl Desk {
         };
         let found = findings_of(job);
         if let Some(held) = self.chosen.and_then(|at| self.models.get_mut(at)) {
-            held.probed = found;
+            keep_findings(&mut held.probed, found);
         }
         self.read_settings();
     }
@@ -4276,16 +4548,21 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     }
 }
 
-/// Turns one flag of a row over, where there is one at that place.
-fn flip(flags: &mut [bool], at: usize) {
-    if let Some(flag) = flags.get_mut(at) {
-        *flag = !*flag;
+/// Findings just taken join the ones held: a method taken again replaces
+/// its last finding, and one not taken keeps it (D52, D53).
+fn keep_findings(held: &mut Vec<Finding>, found: Vec<Finding>) {
+    for finding in found {
+        match held.iter_mut().find(|had| had.name == finding.name) {
+            Some(entry) => *entry = finding,
+            None => held.push(finding),
+        }
     }
 }
 
 /// What a stepped run said, by step: each step's name with the lines the
-/// daemon wrote for it, the steps with none left out.
-fn findings_of(job: &job::Job) -> Vec<(String, Vec<String>)> {
+/// daemon wrote for it, taken now, the steps with none left out.
+fn findings_of(job: &job::Job) -> Vec<Finding> {
+    let now = mcf_core::time::Timestamp::now().to_string();
     job.answers
         .iter()
         .filter_map(|answer| {
@@ -4297,9 +4574,22 @@ fn findings_of(job: &job::Job) -> Vec<(String, Vec<String>)> {
                 .filter_map(Value::as_text)
                 .map(str::to_owned)
                 .collect();
-            (!lines.is_empty()).then_some((name, lines))
+            (!lines.is_empty()).then_some(Finding {
+                name,
+                at: Some(now.clone()),
+                engine: None,
+                lines,
+            })
         })
         .collect()
+}
+
+/// A record's time as a person reads it: the day and the minute, without
+/// the nanoseconds and the offset the record keeps (D53).
+#[must_use]
+pub fn when_said(at: &str) -> String {
+    at.get(..16)
+        .map_or_else(|| at.to_owned(), |head| head.replace('T', " "))
 }
 
 impl Desk {

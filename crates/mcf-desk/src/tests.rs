@@ -1519,24 +1519,37 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
     );
 }
 
-/// The capabilities card asks for the probes ticked: every one is no list,
-/// one unticked is the eight named, and Apply is a switch (B-478, D43).
+/// The diagnostics are one list: every probe and measurement a row of
+/// its own beside the runs, each named as the daemon names it; a probe's
+/// finding is kept with when it was taken; and the row running now is
+/// the one the daemon's step names (D53).
 #[test]
-fn the_capabilities_card_asks_for_the_probes_ticked() {
+fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
+    use crate::Diagnostic;
+    let all = Diagnostic::all();
+    assert_eq!(all.len(), 4 + 9 + 14, "{all:?}");
+    let names: std::collections::BTreeSet<&str> = all.iter().map(|held| held.name()).collect();
+    assert_eq!(names.len(), all.len(), "two rows share a name");
+    assert_eq!(Diagnostic::Probe(2).name(), "stop-conditions");
+    assert_eq!(Diagnostic::Measure(0).name(), "offload-curve");
+    assert_eq!(Diagnostic::Probe(2).card(), crate::Card::Capabilities);
+    assert_eq!(Diagnostic::Measure(0).card(), crate::Card::Performance);
+    assert_eq!(Diagnostic::Measure(6).card(), crate::Card::Fidelity);
+    assert!(!Diagnostic::Measure(6).answers().is_empty());
+    assert_eq!(Diagnostic::Throughput.method(), None);
+    let families = Diagnostic::families();
+    assert_eq!(families.len(), 5);
+    assert_eq!(families[1].1, Some(crate::Card::Capabilities));
+
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    assert!(
-        desk.probes_only().is_empty(),
-        "every probe ticked is every probe"
-    );
-    desk.act(crate::Act::ToggleProbe(1));
-    let only = desk.probes_only();
-    assert_eq!(only.len(), mcf_serve::probes::run::PROBES.len() - 1);
-    assert!(!only.iter().any(|name| name == "context"));
-    assert!(only.iter().any(|name| name == "chat-template"));
+    assert_eq!(desk.diagnostic, Diagnostic::Throughput);
     assert!(!desk.probes_apply);
     desk.act(crate::Act::ApplyProbes);
     assert!(desk.probes_apply);
-    // A probe run keeps what it found on the model it ran on.
+    desk.act(crate::Act::Show(Diagnostic::Probe(2)));
+    assert_eq!(desk.diagnostic, Diagnostic::Probe(2));
+
+    // A probe run keeps what it found on the model it ran on, with when.
     desk.models = vec![Model::default()];
     desk.chosen = Some(0);
     let step = mcf_record::json::Value::map([
@@ -1563,45 +1576,79 @@ fn the_capabilities_card_asks_for_the_probes_ticked() {
             ]),
         ],
     );
-    job.finished = true;
+    job.finished = false;
     desk.doing = crate::Doing::Probing(job);
+    assert_eq!(
+        desk.running_diagnostic(),
+        Some(Diagnostic::Probe(2)),
+        "the row running is the one the step names"
+    );
+    if let crate::Doing::Probing(job) = &mut desk.doing {
+        job.finished = true;
+    }
+    assert_eq!(desk.running_diagnostic(), None);
     desk.keep_the_probes();
     let probed = &desk.models[0].probed;
     assert_eq!(probed.len(), 1, "{probed:?}");
-    assert_eq!(probed[0].0, "stop-conditions");
-    assert_eq!(probed[0].1.len(), 2);
+    assert_eq!(probed[0].name, "stop-conditions");
+    assert_eq!(probed[0].lines.len(), 2);
+    assert!(probed[0].at.is_some(), "a finding just taken says when");
+    let (when, _) = desk
+        .last_run(Diagnostic::Probe(2))
+        .unwrap_or_else(|| panic!("the row does not say when it last ran"));
+    assert_eq!(crate::when_said(&when).len(), 16);
+    assert_eq!(desk.last_run(Diagnostic::Probe(0)), None);
+    assert_eq!(
+        crate::when_said("2026-09-05T15:41:12.123456789Z (local offset +00:00)"),
+        "2026-09-05 15:41"
+    );
 }
 
-/// A measurement card asks for its own measurements ticked, and what a
-/// finished examination found joins the model's findings, a measurement
-/// taken again replacing its last reading (D52).
+/// A finding's columns, lined up with spaces for a terminal, are parted
+/// by a dot for a face that collapses them (D53).
 #[test]
-fn a_measurement_card_asks_for_its_measurements_ticked() {
-    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    let fidelity = desk.measures_only(crate::Card::Fidelity);
-    assert_eq!(fidelity.len(), 4, "{fidelity:?}");
-    assert!(fidelity.iter().any(|name| name == "determinism"));
-    assert!(
-        !fidelity.iter().any(|name| name == "cold-start"),
-        "a card asks for another family's measurement"
+fn a_findings_columns_are_parted_for_the_page() {
+    assert_eq!(
+        crate::view::columns_said("  batch    64      405.3 ms       2525 tokens a second"),
+        "batch · 64 · 405.3 ms · 2525 tokens a second"
     );
+    assert_eq!(
+        crate::view::columns_said("one line, one space"),
+        "one line, one space"
+    );
+}
+
+/// A family's Run all runs every measurement of it, a row's Run runs
+/// that one, and what a finished examination found joins the model's
+/// findings, a measurement taken again replacing its last reading (D52,
+/// D53).
+#[test]
+fn a_family_runs_whole_and_a_row_runs_one() {
+    use crate::Diagnostic;
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    assert_eq!(crate::Card::Performance.measures().len(), 6);
+    assert!(crate::Card::Throughput.measures().is_empty());
+    desk.models = vec![Model {
+        probed: vec![crate::Finding {
+            name: "determinism".to_owned(),
+            at: Some("2026-09-01T10:00:00.000000000Z (local offset +00:00)".to_owned()),
+            engine: Some("provisioned llama.cpp".to_owned()),
+            lines: vec!["old".to_owned()],
+        }],
+        ..Model::default()
+    }];
+    desk.chosen = Some(0);
     let place = mcf_serve::examine::MEASURES
         .iter()
         .position(|name| *name == "determinism")
         .unwrap_or_else(|| panic!("determinism is not a measurement"));
-    desk.act(crate::Act::ToggleMeasure(place));
-    let fewer = desk.measures_only(crate::Card::Fidelity);
-    assert_eq!(fewer.len(), 3);
-    assert!(!fewer.iter().any(|name| name == "determinism"));
-    assert!(
-        crate::Card::Performance.measures().len() == 6
-            && crate::Card::Throughput.measures().is_empty()
+    assert_eq!(
+        desk.last_run(Diagnostic::Measure(place)),
+        Some((
+            "2026-09-01T10:00:00.000000000Z (local offset +00:00)".to_owned(),
+            Some("provisioned llama.cpp".to_owned())
+        ))
     );
-    desk.models = vec![Model {
-        probed: vec![("determinism".to_owned(), vec!["old".to_owned()])],
-        ..Model::default()
-    }];
-    desk.chosen = Some(0);
     let step = |name: &str| {
         mcf_record::json::Value::map([
             ("name", mcf_record::json::Value::text(name)),
@@ -1634,18 +1681,26 @@ fn a_measurement_card_asks_for_its_measurements_ticked() {
     );
     job.finished = true;
     desk.doing = crate::Doing::Examining(job);
-    desk.examining_card = Some(crate::Card::Fidelity);
     desk.keep_the_examination();
     let probed = &desk.models[0].probed;
     assert_eq!(probed.len(), 2, "{probed:?}");
-    assert_eq!(probed[0].1, vec!["  5 of 5 run(s) identical".to_owned()]);
-    assert_eq!(probed[1].0, "bits-per-byte");
+    assert_eq!(
+        probed[0].lines,
+        vec!["  5 of 5 run(s) identical".to_owned()]
+    );
+    assert_eq!(probed[1].name, "bits-per-byte");
     desk.act(crate::Act::Run(crate::Card::Behaviour));
     assert!(
         matches!(desk.doing, crate::Doing::Examining(_)),
-        "the behaviour card did not start an examination"
+        "the family's Run all did not start an examination"
     );
-    assert_eq!(desk.examining_card, Some(crate::Card::Behaviour));
+    desk.act(crate::Act::RunOne(Diagnostic::Measure(place)));
+    assert!(matches!(desk.doing, crate::Doing::Examining(_)));
+    assert_eq!(desk.diagnostic, Diagnostic::Measure(place));
+    desk.act(crate::Act::RunOne(Diagnostic::Probe(0)));
+    assert!(matches!(desk.doing, crate::Doing::Probing(_)));
+    desk.act(crate::Act::RunOne(Diagnostic::CrossCheck));
+    assert!(matches!(desk.doing, crate::Doing::CrossChecking(_)));
 }
 
 /// The settings a model was last held under come back with one press, and

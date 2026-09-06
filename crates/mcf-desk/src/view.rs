@@ -1140,10 +1140,11 @@ fn statistic_sections(held: &Model) -> Vec<(&'static str, Vec<String>, bool)> {
 /// What the probes found, one line a probe: its name and the first line
 /// that says what it observed, leaving out what it asks and decides and
 /// the conditions it ran under, which are on the record.
-fn probed_said(probed: &[(String, Vec<String>)]) -> Vec<String> {
+fn probed_said(probed: &[crate::Finding]) -> Vec<String> {
     probed
         .iter()
-        .map(|(name, lines)| {
+        .map(|found| {
+            let (name, lines) = (&found.name, &found.lines);
             let finding = lines.iter().map(|line| line.trim()).find(|line| {
                 !line.is_empty()
                     && line != name
@@ -2679,13 +2680,15 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     )
 }
 
-/// The Diagnostics page's content, from the top of its region.
+/// The Diagnostics page: the model it runs on, the list of every
+/// diagnostic down the left with when each last ran, and the one chosen
+/// shown whole to the right (D53).
 fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
     let mut menu: Option<(Picker, Box)> = None;
 
-    // The model every card runs on, first.
+    // The model every diagnostic runs on, first.
     let chosen_model = desk.pending.as_ref().map_or_else(
         || {
             desk.chosen
@@ -2717,48 +2720,40 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
     }
     let top = area.y + 44.0;
 
-    // Two columns: the throughput run, which has the most to set and to
-    // show, on the left; the four others stacked on the right.
-    let left_w = desk.splits.diagnostics.min(area.w - 300.0).max(300.0);
-    let left = Box::new(area.x, top, left_w, area.bottom() - top);
-    // The boundary between the two columns is dragged (B-490).
+    // The list down the left, the boundary dragged (B-490), the chosen
+    // diagnostic whole to the right.
+    let list_w = desk.splits.diagnostics.min(area.w - 300.0).max(200.0);
+    let list = Box::new(area.x, top, list_w, area.bottom() - top);
+    spaced(paint, list.x, list.y, "diagnostics", ink.faint);
+    let rows = Box::new(list.x - 6.0, list.y + 22.0, list.w + 6.0, list.h - 22.0);
+    let picked = scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Checks,
+        rows,
+        |paint, mouse, inner| diagnostic_rows(paint, desk, mouse, inner),
+    );
+    act = picked.or(act);
     if let Some(to) = ui::splitter(
         paint,
         mouse,
-        Box::new(left.right() + 4.0, top, 16.0, area.bottom() - top),
+        Box::new(list.right() + 4.0, top, 16.0, area.bottom() - top),
         true,
         desk.grabbed == Some(Splitter::Diagnostics),
     ) {
         act = Some(Act::Split(Splitter::Diagnostics, whole(to)));
     }
-    let right = Box::new(
-        left.right() + 24.0,
+    let pane = Box::new(
+        list.right() + 24.0,
         top,
-        (area.w - left_w - 24.0).max(280.0),
+        (area.right() - list.right() - 24.0).max(280.0),
         area.bottom() - top,
     );
-    let (pressed, opened) = throughput_card(paint, desk, mouse, left);
+    let (pressed, opened) = diagnostic_pane(paint, desk, mouse, pane);
     act = pressed.or(act);
     if let Some(opened) = opened {
         menu = Some(opened);
-    }
-    let mut y = right.y;
-    // The three measurement families after the prompt analysis: the
-    // column is taller than a window and scrolls (B-490), and what a
-    // person reaches for most stays above the fold.
-    for card in [
-        Card::CrossCheck,
-        Card::Capabilities,
-        Card::Prompt,
-        Card::Performance,
-        Card::Fidelity,
-        Card::Behaviour,
-        Card::Comparison,
-    ] {
-        let (pressed, below) =
-            small_card(paint, desk, mouse, Box::new(right.x, y, right.w, 0.0), card);
-        act = pressed.or(act);
-        y = below + 12.0;
     }
     if let Some((picker, at)) = menu
         && let Some(picked) = open_menu(paint, desk, mouse, picker, at)
@@ -2768,28 +2763,421 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
     act
 }
 
+/// The list's rows from the top of its region: each family under its
+/// heading with a Run all where the family is one run, one row a
+/// diagnostic (D53).
+fn diagnostic_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let x = area.x + 6.0;
+    let w = area.w - 12.0;
+    let mut y = area.y + 6.0;
+    let running_now = desk.running_diagnostic();
+    let a_run = a_run_is_going(desk);
+    for (heading, card, members) in crate::Diagnostic::families() {
+        spaced(paint, x, y + 5.0, heading, ink.faint);
+        if let Some(card) = card {
+            let button = Box::new(x + w - 78.0, y - 3.0, 70.0, 26.0);
+            let kind = if a_run { Kind::Quiet } else { Kind::Ordinary };
+            if ui::button(paint, mouse, button, "Run all", kind) && !a_run {
+                act = Some(download_then(desk, Act::Run(card)));
+            }
+        }
+        y += 30.0;
+        for diagnostic in members {
+            let row = Box::new(x, y, w, 40.0);
+            if let Some(pressed) = diagnostic_row(paint, desk, mouse, diagnostic, row, running_now)
+            {
+                act = Some(pressed);
+            }
+            y += 42.0;
+        }
+        y += 10.0;
+    }
+    act
+}
+
+/// One row of the list: the diagnostic's name, and beneath it when it
+/// last ran on this model and through what, *never run*, or that it is
+/// running now and which step it is on (D53).
+fn diagnostic_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    diagnostic: crate::Diagnostic,
+    at: Box,
+    running_now: Option<crate::Diagnostic>,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let where_ = Box::new(at.x - 6.0, at.y - 4.0, at.w, 40.0);
+    let chosen = desk.diagnostic == diagnostic;
+    if chosen {
+        paint.panel(where_, 6.0, ink.accent_soft, 255);
+    } else if mouse.over(where_) {
+        paint.panel(where_, 6.0, ink.line, 110);
+    }
+    let running = running_now == Some(diagnostic);
+    let name = paint.elide(diagnostic.name(), Weight::Regular, size::BODY, at.w - 110.0);
+    paint.say_at(
+        at.x,
+        at.y,
+        &name,
+        if chosen {
+            Weight::Bold
+        } else {
+            Weight::Regular
+        },
+        size::BODY,
+        if chosen { ink.accent } else { ink.ink },
+    );
+    let last = desk.last_run(diagnostic);
+    let (state, colour) = if running {
+        ("running".to_owned(), ink.accent)
+    } else {
+        match &last {
+            Some((when, _)) => (crate::when_said(when), ink.faint),
+            None => ("never run".to_owned(), ink.faint),
+        }
+    };
+    paint.say_right(
+        at.x + at.w - 14.0,
+        at.y,
+        &state,
+        Weight::Regular,
+        size::SMALL,
+        colour,
+    );
+    let under = if running {
+        desk.doing
+            .job()
+            .and_then(crate::job::Job::latest)
+            .and_then(|answer| match diagnostic {
+                crate::Diagnostic::Probe(_) => probe_step_said(answer),
+                crate::Diagnostic::Measure(_) => measure_step_said(answer),
+                _ => None,
+            })
+            .or_else(|| desk.under_way())
+            .unwrap_or_else(|| "running".to_owned())
+    } else {
+        match &last {
+            Some((_, Some(engine))) => format!("last run through {engine}"),
+            Some((_, None)) => "last run on this model".to_owned(),
+            None => match diagnostic {
+                crate::Diagnostic::Comparison => "at the command line".to_owned(),
+                _ => "never run on this model".to_owned(),
+            },
+        }
+    };
+    let under = paint.elide(&under, Weight::Regular, size::SMALL, at.w - 14.0);
+    paint.say_at(
+        at.x,
+        at.y + 18.0,
+        &under,
+        Weight::Regular,
+        size::SMALL,
+        if running { ink.accent } else { ink.faint },
+    );
+    mouse.clicked(where_).then_some(Act::Show(diagnostic))
+}
+
+/// The chosen diagnostic, whole, in its own scrolled region: the ladder's
+/// card as it was, a run's card with its last finding under it, or a
+/// probe's or measurement's own pane (D53). Returns what was pressed and
+/// a menu to draw over everything, where one is open.
+fn diagnostic_pane(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+) -> (Option<Act>, Option<(Picker, Box)>) {
+    let mut menu = None;
+    let act = scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Diagnostics,
+        area,
+        |paint, mouse, inner| match desk.diagnostic {
+            crate::Diagnostic::Throughput => {
+                let (act, opened) = throughput_card(paint, desk, mouse, inner);
+                menu = opened;
+                act
+            }
+            crate::Diagnostic::CrossCheck
+            | crate::Diagnostic::Prompt
+            | crate::Diagnostic::Comparison => run_pane(paint, desk, mouse, inner),
+            crate::Diagnostic::Probe(_) | crate::Diagnostic::Measure(_) => {
+                one_pane(paint, desk, mouse, inner, desk.diagnostic)
+            }
+        },
+    );
+    (act, menu)
+}
+
+/// A run's pane: its card as it was, and under it what its last run
+/// said and when (D53).
+fn run_pane(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let card = desk.diagnostic.card();
+    let (act, below) = small_card(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, area.y, area.w, 0.0),
+        card,
+    );
+    let held = desk.chosen.and_then(|at| desk.models.get(at));
+    let mut y = below + 18.0;
+    match desk.diagnostic {
+        crate::Diagnostic::CrossCheck => {
+            spaced(paint, area.x, y, "last cross-check", ink.faint);
+            y += 24.0;
+            match held {
+                Some(held) if !held.cross_checked.is_empty() => {
+                    if let Some(at) = &held.cross_checked_at {
+                        paint.say_at(
+                            area.x,
+                            y,
+                            &format!("taken {}", crate::when_said(at)),
+                            Weight::Regular,
+                            size::SMALL,
+                            ink.faint,
+                        );
+                        y += 20.0;
+                    }
+                    for line in &held.cross_checked {
+                        for wrapped in paint.wrap(line, Weight::Regular, size::BODY, area.w) {
+                            paint.say_at(area.x, y, &wrapped, Weight::Regular, size::BODY, ink.ink);
+                            y += 20.0;
+                        }
+                        y += 4.0;
+                    }
+                }
+                _ => paint.say_at(
+                    area.x,
+                    y,
+                    "never run on this model",
+                    Weight::Regular,
+                    size::BODY,
+                    ink.faint,
+                ),
+            }
+        }
+        crate::Diagnostic::Prompt => {
+            let said = match held.and_then(|held| held.prompt_reported_at.as_ref()) {
+                Some(at) => format!("last report taken {}", crate::when_said(at)),
+                None => "no report taken of this model yet".to_owned(),
+            };
+            paint.say_at(area.x, y, &said, Weight::Regular, size::SMALL, ink.faint);
+        }
+        _ => {}
+    }
+    act
+}
+
+/// A probe's or a measurement's pane: what it answers, Apply for a
+/// probe, Run with the step while it goes, and under the card its last
+/// finding with when it was taken and through what (D53).
+fn one_pane(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    diagnostic: crate::Diagnostic,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let inner_x = area.x + PAD;
+    let inner_w = area.w - 2.0 * PAD;
+    let is_probe = matches!(diagnostic, crate::Diagnostic::Probe(_));
+    let running_one = desk.running_diagnostic() == Some(diagnostic);
+    let done = is_done_one(desk, diagnostic);
+    let height = head_height_of(paint, diagnostic.answers(), area.w)
+        + if is_probe { 30.0 } else { 0.0 }
+        + 44.0
+        + if done { 30.0 } else { 0.0 }
+        + 12.0;
+    let frame = Box::new(area.x, area.y, area.w, height);
+    let mut y = card_head_named(paint, frame, diagnostic.name(), diagnostic.answers());
+    let mut act = None;
+    if is_probe {
+        if tick_box(
+            paint,
+            mouse,
+            (inner_x, y),
+            "Apply findings",
+            desk.probes_apply,
+        ) {
+            act = Some(Act::ApplyProbes);
+        }
+        y += 30.0;
+    }
+    let running = a_run_is_going(desk);
+    let (pressed, button) = ui::fitted(
+        paint,
+        mouse,
+        (inner_x, y),
+        run_label(desk, running_one),
+        if running && !running_one {
+            Kind::Quiet
+        } else {
+            Kind::Primary
+        },
+    );
+    if pressed && running_one {
+        act = Some(Act::Stop);
+    } else if pressed && !running {
+        act = Some(download_then(desk, Act::RunOne(diagnostic)));
+    }
+    if running_one {
+        let step = desk
+            .doing
+            .job()
+            .and_then(crate::job::Job::latest)
+            .and_then(|answer| {
+                if is_probe {
+                    probe_step_said(answer)
+                } else {
+                    measure_step_said(answer)
+                }
+            })
+            .unwrap_or_else(|| "starting".to_owned());
+        let shown = paint.elide(
+            &step,
+            Weight::Regular,
+            size::SMALL,
+            inner_w - button.w - 12.0,
+        );
+        paint.say_at(
+            button.right() + 12.0,
+            y + 8.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.accent,
+        );
+    }
+    y += 44.0;
+    if done {
+        paint.say_at(
+            inner_x,
+            y + 8.0,
+            "Done — the finding is below, and on the model's Statistics tab",
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+    }
+    finding_rows(paint, desk, area, frame.bottom() + 18.0, diagnostic);
+    act
+}
+
+/// A probe's or measurement's last finding on the chosen model, under
+/// its card: when it was taken and through what, then the lines (D53).
+fn finding_rows(
+    paint: &mut Painter,
+    desk: &Desk,
+    area: Box,
+    mut y: f32,
+    diagnostic: crate::Diagnostic,
+) {
+    let ink = paint.ink;
+    spaced(paint, area.x, y, "last finding", ink.faint);
+    y += 24.0;
+    let Some(finding) = desk.finding_of(diagnostic) else {
+        paint.say_at(
+            area.x,
+            y,
+            "never run on this model",
+            Weight::Regular,
+            size::BODY,
+            ink.faint,
+        );
+        return;
+    };
+    let taken = match (&finding.at, &finding.engine) {
+        (Some(at), Some(engine)) => format!("taken {} through {engine}", crate::when_said(at)),
+        (Some(at), None) => format!("taken {}", crate::when_said(at)),
+        (None, _) => "taken, the record did not say when".to_owned(),
+    };
+    paint.say_at(area.x, y, &taken, Weight::Regular, size::SMALL, ink.faint);
+    y += 22.0;
+    for line in &finding.lines {
+        let line = line.trim_end();
+        if line.trim().is_empty() {
+            y += 8.0;
+            continue;
+        }
+        let line = columns_said(line);
+        for wrapped in paint.wrap(&line, Weight::Regular, size::BODY, area.w) {
+            paint.say_at(area.x, y, &wrapped, Weight::Regular, size::BODY, ink.ink);
+            y += 20.0;
+        }
+    }
+}
+
+/// A line the daemon aligned into columns with runs of spaces, as a
+/// proportional face can show it: the columns parted by a dot, since the
+/// spaces that lined them up on a terminal collapse here.
+pub(crate) fn columns_said(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut spaces = 0_usize;
+    for letter in line.trim().chars() {
+        if letter == ' ' {
+            spaces += 1;
+            continue;
+        }
+        if spaces >= 2 {
+            out.push_str(" · ");
+        } else if spaces == 1 {
+            out.push(' ');
+        }
+        spaces = 0;
+        out.push(letter);
+    }
+    out
+}
+
+/// Whether a probe's or measurement's own run has finished with a
+/// finding for it (D53).
+fn is_done_one(desk: &Desk, diagnostic: crate::Diagnostic) -> bool {
+    let ((crate::Diagnostic::Probe(_), Doing::Probing(job))
+    | (crate::Diagnostic::Measure(_), Doing::Examining(job))) = (diagnostic, &desk.doing)
+    else {
+        return false;
+    };
+    job.finished
+        && job.refused.is_none()
+        && job.answers.iter().any(|answer| {
+            answer
+                .get("step")
+                .and_then(|step| step.get("name"))
+                .and_then(Value::as_text)
+                == Some(diagnostic.name())
+        })
+}
+
 /// A card's frame: the panel, its name and what it answers. Returns where
 /// the card's own rows begin.
 fn card_head(paint: &mut Painter, at: Box, card: Card) -> f32 {
+    card_head_named(paint, at, card.name(), card.answers())
+}
+
+/// A card's frame by name: the panel, the name and what it answers.
+fn card_head_named(paint: &mut Painter, at: Box, name: &str, answers: &str) -> f32 {
     let ink = paint.ink;
     paint.panel(at, 10.0, ink.card, 255);
     paint.edge(at, 10.0, ink.line, ink.card);
     paint.say_at(
         at.x + PAD,
         at.y + 12.0,
-        card.name(),
+        name,
         Weight::Bold,
         size::BODY,
         ink.ink,
     );
     let mut y = at.y + 31.0;
     for line in paint
-        .wrap(
-            card.answers(),
-            Weight::Regular,
-            size::SMALL,
-            at.w - 2.0 * PAD,
-        )
+        .wrap(answers, Weight::Regular, size::SMALL, at.w - 2.0 * PAD)
         .iter()
         .take(2)
     {
@@ -2802,8 +3190,13 @@ fn card_head(paint: &mut Painter, at: Box, card: Card) -> f32 {
 /// How tall a card's head is: its name and what it answers, wrapped to two
 /// lines at most.
 fn head_height(paint: &mut Painter, card: Card, w: f32) -> f32 {
+    head_height_of(paint, card.answers(), w)
+}
+
+/// The same, by what the head says.
+fn head_height_of(paint: &mut Painter, answers: &str, w: f32) -> f32 {
     let lines = paint
-        .wrap(card.answers(), Weight::Regular, size::SMALL, w - 2.0 * PAD)
+        .wrap(answers, Weight::Regular, size::SMALL, w - 2.0 * PAD)
         .len()
         .clamp(1, 2);
     #[allow(clippy::cast_precision_loss, reason = "one or two lines")]
@@ -2999,7 +3392,7 @@ fn is_done(desk: &Desk, card: Card) -> bool {
         | (Card::CrossCheck, Doing::CrossChecking(job))
         | (Card::Capabilities, Doing::Probing(job)) => job.finished && job.refused.is_none(),
         (Card::Performance | Card::Fidelity | Card::Behaviour, Doing::Examining(job)) => {
-            desk.examining_card == Some(card) && job.finished && job.refused.is_none()
+            job.finished && job.refused.is_none()
         }
         _ => false,
     }
@@ -3098,207 +3491,20 @@ fn small_card(
                 act = Some(Act::Go(Page::Prompt));
             }
         }
-        Card::Capabilities => {
-            act = capabilities_rows(paint, desk, mouse, (inner_x, y), inner_w);
-        }
-        Card::Performance | Card::Fidelity | Card::Behaviour => {
-            act = measure_rows(paint, desk, mouse, (inner_x, y), inner_w, card);
-        }
         Card::Comparison => {
             if let Some(pressed) = command_rows(paint, mouse, (inner_x, y), inner_w, card, &model) {
                 act = Some(pressed);
             }
         }
-        Card::Throughput => {}
+        // The probes and the measurements are rows of the list, each shown
+        // whole from its own pane (D53); the ladder has its own card.
+        Card::Throughput
+        | Card::Capabilities
+        | Card::Performance
+        | Card::Fidelity
+        | Card::Behaviour => {}
     }
     (act, frame.bottom())
-}
-
-/// How many rows the probe checkboxes take, two to a row.
-fn probe_rows() -> f32 {
-    #[allow(clippy::cast_precision_loss, reason = "a count of nine probes")]
-    let rows = mcf_serve::probes::run::PROBES.len().div_ceil(2) as f32;
-    rows
-}
-
-/// The capabilities card's rows: one checkbox a probe, the Apply switch,
-/// Run with its step and a Stop while the probes go, and where the
-/// findings went once they have (B-478, D50).
-fn capabilities_rows(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    (x, mut y): (f32, f32),
-    wide: f32,
-) -> Option<Act> {
-    let ink = paint.ink;
-    let mut act = None;
-    let column = wide / 2.0;
-    for (at, name) in mcf_serve::probes::run::PROBES.iter().enumerate() {
-        #[allow(
-            clippy::cast_precision_loss,
-            clippy::integer_division,
-            reason = "a column of two and a row of five: the quotient is the row"
-        )]
-        let (col, row) = ((at % 2) as f32, (at / 2) as f32);
-        let (bx, by) = (x + col * column, y + row * 20.0);
-        let wanted = desk.probes_wanted.get(at).copied().unwrap_or(false);
-        if tick_box(paint, mouse, (bx, by), name, wanted) {
-            act = Some(Act::ToggleProbe(at));
-        }
-    }
-    y += probe_rows() * 20.0 + 8.0;
-    if tick_box(paint, mouse, (x, y), "Apply findings", desk.probes_apply) {
-        act = Some(Act::ApplyProbes);
-    }
-    y += 30.0;
-    let probing = matches!(&desk.doing, Doing::Probing(job) if !job.finished);
-    let running = a_run_is_going(desk);
-    let none_ticked = desk.probes_wanted.iter().all(|wanted| !*wanted);
-    let (pressed, button) = ui::fitted(
-        paint,
-        mouse,
-        (x, y),
-        run_label(desk, probing),
-        if (running && !probing) || none_ticked {
-            Kind::Quiet
-        } else {
-            Kind::Primary
-        },
-    );
-    if pressed && probing {
-        act = Some(Act::Stop);
-    } else if pressed && !running && !none_ticked {
-        act = Some(download_then(desk, Act::Run(Card::Capabilities)));
-    }
-    if let Doing::Probing(job) = &desk.doing
-        && !job.finished
-    {
-        let step = job
-            .latest()
-            .and_then(probe_step_said)
-            .unwrap_or_else(|| "starting".to_owned());
-        let shown = paint.elide(&step, Weight::Regular, size::SMALL, wide - button.w - 12.0);
-        paint.say_at(
-            button.right() + 12.0,
-            y + 8.0,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.accent,
-        );
-    } else if none_ticked {
-        paint.say_at(
-            button.right() + 12.0,
-            y + 8.0,
-            "nothing ticked runs",
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-    }
-    y += 44.0;
-    if let Some(pressed) = done_line(paint, desk, mouse, (x, y), Card::Capabilities) {
-        act = Some(pressed);
-    }
-    act
-}
-
-/// How many rows a card's measurement checkboxes take, two to a row.
-fn measure_rows_of(card: Card) -> f32 {
-    #[allow(clippy::cast_precision_loss, reason = "a count of a few measurements")]
-    let rows = card.measures().len().div_ceil(2) as f32;
-    rows
-}
-
-/// A measurement card's rows: one checkbox a measurement, Run with its
-/// step and a Stop while the run goes, and where the findings went once
-/// they have (D52).
-fn measure_rows(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    (x, mut y): (f32, f32),
-    wide: f32,
-    card: Card,
-) -> Option<Act> {
-    let ink = paint.ink;
-    let mut act = None;
-    let column = wide / 2.0;
-    let place_of = |name: &str| {
-        mcf_serve::examine::MEASURES
-            .iter()
-            .position(|held| *held == name)
-    };
-    for (at, name) in card.measures().iter().enumerate() {
-        #[allow(
-            clippy::cast_precision_loss,
-            clippy::integer_division,
-            reason = "a column of two and a row of a few: the quotient is the row"
-        )]
-        let (col, row) = ((at % 2) as f32, (at / 2) as f32);
-        let (bx, by) = (x + col * column, y + row * 20.0);
-        let Some(place) = place_of(name) else {
-            continue;
-        };
-        let wanted = desk.measures_wanted.get(place).copied().unwrap_or(false);
-        if tick_box(paint, mouse, (bx, by), name, wanted) {
-            act = Some(Act::ToggleMeasure(place));
-        }
-    }
-    y += measure_rows_of(card) * 20.0 + 8.0;
-    let examining = matches!(&desk.doing, Doing::Examining(job) if !job.finished)
-        && desk.examining_card == Some(card);
-    let running = a_run_is_going(desk);
-    let none_ticked = desk.measures_only(card).is_empty();
-    let (pressed, button) = ui::fitted(
-        paint,
-        mouse,
-        (x, y),
-        run_label(desk, examining),
-        if (running && !examining) || none_ticked {
-            Kind::Quiet
-        } else {
-            Kind::Primary
-        },
-    );
-    if pressed && examining {
-        act = Some(Act::Stop);
-    } else if pressed && !running && !none_ticked {
-        act = Some(download_then(desk, Act::Run(card)));
-    }
-    if let Doing::Examining(job) = &desk.doing
-        && !job.finished
-        && desk.examining_card == Some(card)
-    {
-        let step = job
-            .latest()
-            .and_then(measure_step_said)
-            .unwrap_or_else(|| "starting".to_owned());
-        let shown = paint.elide(&step, Weight::Regular, size::SMALL, wide - button.w - 12.0);
-        paint.say_at(
-            button.right() + 12.0,
-            y + 8.0,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.accent,
-        );
-    } else if none_ticked {
-        paint.say_at(
-            button.right() + 12.0,
-            y + 8.0,
-            "nothing ticked runs",
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-    }
-    y += 44.0;
-    if let Some(pressed) = done_line(paint, desk, mouse, (x, y), card) {
-        act = Some(pressed);
-    }
-    act
 }
 
 /// A step the daemon announced for the measurements, as one line:
@@ -3368,14 +3574,6 @@ fn small_card_height(
             44.0 + progress + done + 12.0
         }
         Card::Prompt => 34.0 + 16.0,
-        Card::Capabilities => {
-            let done = if is_done(desk, card) { 34.0 } else { 0.0 };
-            probe_rows() * 20.0 + 8.0 + 30.0 + 44.0 + done + 12.0
-        }
-        Card::Performance | Card::Fidelity | Card::Behaviour => {
-            let done = if is_done(desk, card) { 34.0 } else { 0.0 };
-            measure_rows_of(card) * 20.0 + 8.0 + 44.0 + done + 12.0
-        }
         Card::Comparison => {
             let command = card.command(model).map_or(0.0, |command| {
                 #[allow(clippy::cast_precision_loss, reason = "a line count")]
@@ -3386,7 +3584,11 @@ fn small_card_height(
             });
             20.0 + command + 40.0 + 12.0
         }
-        Card::Throughput => 0.0,
+        Card::Throughput
+        | Card::Capabilities
+        | Card::Performance
+        | Card::Fidelity
+        | Card::Behaviour => 0.0,
     }
 }
 

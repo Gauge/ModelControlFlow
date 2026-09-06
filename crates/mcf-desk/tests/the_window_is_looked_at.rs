@@ -41,6 +41,9 @@ fn four_models() -> Desk {
             measured_body: None,
             cross_checked: Vec::new(),
             prompt_reported: false,
+            measured_at: None,
+            cross_checked_at: None,
+            prompt_reported_at: None,
             applied_addressing: None,
             applied_budget: None,
             probed: Vec::new(),
@@ -68,6 +71,9 @@ fn four_models() -> Desk {
             measured_body: None,
             cross_checked: Vec::new(),
             prompt_reported: false,
+            measured_at: None,
+            cross_checked_at: None,
+            prompt_reported_at: None,
             applied_addressing: None,
             applied_budget: None,
             probed: Vec::new(),
@@ -471,42 +477,66 @@ fn the_filters_open_from_the_library() {
     );
 }
 
-/// Every run has a card with its own Run: the ladder, the cross-check and
-/// the prompt analysis each start from the Diagnostics page, and nothing
-/// there toggles a row (D50, B-477).
+/// Every diagnostic is a row of one list and starts from its own pane:
+/// the ladder's Run is on the page as it opens, a probe's row is chosen
+/// from the list and its pane runs that probe, a family's heading runs
+/// every one of it, and a measurement far down the list is reached by
+/// scrolling it (D53, B-490).
 #[test]
-fn every_run_starts_from_its_own_card() {
+fn every_diagnostic_is_a_row_and_runs_from_its_pane() {
+    use mcf_desk::Diagnostic;
     let mut desk = four_models();
     desk.page = Page::Diagnostics;
     desk.chosen = Some(0);
-    for wanted in [
-        mcf_desk::Act::Run(mcf_desk::Card::Throughput),
-        mcf_desk::Act::Run(mcf_desk::Card::CrossCheck),
-        mcf_desk::Act::Run(mcf_desk::Card::Capabilities),
-        mcf_desk::Act::Go(Page::Prompt),
-    ] {
-        assert!(
-            act_somewhere(&desk, &wanted),
-            "nothing on Diagnostics starts {wanted:?}"
-        );
-    }
-    // The three measurement families are further down the column, which
-    // scrolls (D52, B-490); each is ticked and run on its own card.
-    let place = mcf_serve::examine::MEASURES
-        .iter()
-        .position(|name| *name == "cold-start")
-        .unwrap_or(0);
-    for wanted in [
-        mcf_desk::Act::Run(mcf_desk::Card::Performance),
-        mcf_desk::Act::Run(mcf_desk::Card::Fidelity),
-        mcf_desk::Act::Run(mcf_desk::Card::Behaviour),
-        mcf_desk::Act::ToggleMeasure(place),
-    ] {
-        assert!(
-            act_on_diagnostics(&mut desk, &wanted, 500.0),
-            "nothing on Diagnostics, scrolled, starts {wanted:?}"
-        );
-    }
+    assert!(
+        act_within(
+            &desk,
+            &mcf_desk::Act::Run(mcf_desk::Card::Throughput),
+            (60.0, 500.0)
+        ),
+        "the ladder's Run is not on the page as it opens"
+    );
+    assert!(
+        act_within(
+            &desk,
+            &mcf_desk::Act::Show(Diagnostic::Probe(0)),
+            (60.0, 700.0)
+        ),
+        "the first probe's row is not in the list"
+    );
+    assert!(
+        act_within(
+            &desk,
+            &mcf_desk::Act::Run(mcf_desk::Card::Capabilities),
+            (60.0, 400.0)
+        ),
+        "the probes' heading has no Run all"
+    );
+    desk.act(mcf_desk::Act::Show(Diagnostic::Probe(2)));
+    assert!(
+        act_within(
+            &desk,
+            &mcf_desk::Act::RunOne(Diagnostic::Probe(2)),
+            (60.0, 400.0)
+        ),
+        "the chosen probe's pane has no Run"
+    );
+    desk.act(mcf_desk::Act::Show(Diagnostic::Prompt));
+    assert!(
+        act_within(&desk, &mcf_desk::Act::Go(Page::Prompt), (60.0, 400.0)),
+        "the prompt analysis pane does not open the page"
+    );
+    // The last measurement's row is far down the list, which scrolls.
+    let last = mcf_serve::examine::MEASURES.len() - 1;
+    let _was = desk.scrolls.insert(mcf_desk::Region::Checks, 900.0);
+    assert!(
+        act_within(
+            &desk,
+            &mcf_desk::Act::Show(Diagnostic::Measure(last)),
+            (60.0, 750.0)
+        ),
+        "the last measurement's row is not reached by scrolling the list"
+    );
 }
 
 /// The cross-check row is a run of its own: it carries a checkbox, and its
@@ -520,6 +550,8 @@ fn the_cross_check_row_runs_from_the_window() {
     let mut desk = four_models();
     desk.page = Page::Diagnostics;
     desk.chosen = Some(0);
+    // The cross-check's own pane, chosen from the list (D53).
+    desk.diagnostic = mcf_desk::Diagnostic::CrossCheck;
     let last = Value::map([
         ("cross_checked", Value::text("a-model")),
         (
@@ -931,18 +963,6 @@ fn act_somewhere(desk: &Desk, wanted: &mcf_desk::Act) -> bool {
     act_within(desk, wanted, (0.0, 750.0))
 }
 
-/// The same on the Diagnostics page, scrolled as a person would scroll
-/// it: a column taller than the window is reached by its bar (B-490),
-/// and a sweep that could not scroll would report a card unreachable
-/// when what was unreachable was the sweep. Leaves the page where it was.
-fn act_on_diagnostics(desk: &mut Desk, wanted: &mcf_desk::Act, offset: f32) -> bool {
-    let was = desk.scrolled(mcf_desk::Region::Diagnostics);
-    let _replaced = desk.scrolls.insert(mcf_desk::Region::Diagnostics, offset);
-    let found = act_within(desk, wanted, (0.0, 750.0));
-    let _restored = desk.scrolls.insert(mcf_desk::Region::Diagnostics, was);
-    found
-}
-
 /// The same, over a band of the window.
 ///
 /// Bounded because a sweep of the whole window is thousands of renders, and a
@@ -1001,6 +1021,13 @@ fn the_prompt_analysis_is_reachable_from_diagnostics() {
     let mut desk = four_models();
     desk.page = Page::Diagnostics;
     desk.chosen = Some(0);
+    // Its row is in the list as the page opens, and its pane opens the
+    // analysis (D53).
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::Show(mcf_desk::Diagnostic::Prompt)),
+        "the prompt analysis has no row on Diagnostics"
+    );
+    desk.act(mcf_desk::Act::Show(mcf_desk::Diagnostic::Prompt));
     assert!(
         act_somewhere(&desk, &mcf_desk::Act::Go(Page::Prompt)),
         "nothing on Diagnostics leads to the prompt analysis"
@@ -2485,13 +2512,7 @@ fn every_page_is_drawn_for_review() {
     let _ = drawn(&desk, DAY, "review-diagnostics");
     desk.doing = mcf_desk::Doing::Measuring(a_ladder_under_way());
     let _ = drawn(&desk, NIGHT, "review-diagnostics-running");
-    desk.doing = mcf_desk::Doing::Probing(a_probe_run_under_way());
-    let _ = drawn(&desk, DAY, "review-diagnostics-probing");
-    desk.doing = mcf_desk::Doing::Examining(an_examination_under_way());
-    desk.examining_card = Some(mcf_desk::Card::Performance);
-    let _ = drawn(&desk, NIGHT, "review-diagnostics-examining");
-    desk.doing = mcf_desk::Doing::Nothing;
-    desk.examining_card = None;
+    review_the_diagnostics(&mut desk);
 
     review_the_library(&recommended);
 
@@ -2664,6 +2685,34 @@ fn a_probe_run_under_way() -> mcf_desk::job::Job {
     );
     going.finished = false;
     going
+}
+
+/// The Diagnostics list with a probe running, its row marked and its pane
+/// showing the step; then a measurement running, with a finding from an
+/// earlier run under its card (D53).
+fn review_the_diagnostics(desk: &mut Desk) {
+    desk.doing = mcf_desk::Doing::Probing(a_probe_run_under_way());
+    desk.diagnostic = mcf_desk::Diagnostic::Probe(2);
+    let _ = drawn(desk, DAY, "review-diagnostics-probing");
+    desk.doing = mcf_desk::Doing::Examining(an_examination_under_way());
+    desk.diagnostic = mcf_desk::Diagnostic::Measure(1);
+    if let Some(held) = desk.models.get_mut(0) {
+        held.probed.push(mcf_desk::Finding {
+            name: "prefill-saturation".to_owned(),
+            at: Some("2026-09-05T15:31:04.000000000Z (local offset +00:00)".to_owned()),
+            engine: Some("provisioned llama.cpp-vulkan @a1b2c3d4e5f6".to_owned()),
+            lines: vec![
+                "  a prompt of 1024 identifiers read 3 times at each batch, the median kept"
+                    .to_owned(),
+                "  batch    64      405.3 ms       2525 tokens a second".to_owned(),
+                "  batch   256      254.6 ms       4021 tokens a second".to_owned(),
+                "  fastest at batch 256; batch 256 is within a tenth of it".to_owned(),
+            ],
+        });
+    }
+    let _ = drawn(desk, NIGHT, "review-diagnostics-examining");
+    desk.doing = mcf_desk::Doing::Nothing;
+    desk.diagnostic = mcf_desk::Diagnostic::Throughput;
 }
 
 /// The measurements two in: the daemon has announced the second.
