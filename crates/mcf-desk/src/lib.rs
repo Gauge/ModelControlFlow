@@ -1588,7 +1588,7 @@ const PROBE_ANSWERS: [&str; 9] = [
 ];
 
 /// What each measurement answers, in one line, in the daemon's order.
-const MEASURE_ANSWERS: [&str; 20] = [
+const MEASURE_ANSWERS: [&str; 23] = [
     "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
     "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
     "What a conversation pays for its history every turn: a kept prefix against the prompt read again",
@@ -1609,6 +1609,9 @@ const MEASURE_ANSWERS: [&str; 20] = [
     "Exactly so many words, no digits, capitals only, a list of a stated length, a stated ending: each a parser's check",
     "One question put six ways, greedy: how many answers agree, how many are right",
     "The same arithmetic and reading tasks in six languages, the same exact match",
+    "Four prices planted through a long prompt, asked to list, to order and to sum, at each depth",
+    "Tokens a second every thirty seconds over five minutes, with the card's temperature, clock and power beside each sample",
+    "Microjoules a produced token and a prompt token, from the card's power summed over the time, with the idle draw beside them",
 ];
 
 impl Diagnostic {

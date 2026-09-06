@@ -35,23 +35,26 @@ pub mod cold;
 pub mod concurrency;
 pub mod degeneration;
 pub mod determinism;
+pub mod energy;
 pub mod extraction;
 pub mod fidelity;
 pub mod grammar;
 pub mod image;
 pub mod instructions;
 pub mod memory;
+pub mod multifact;
 pub mod multilingual;
 pub mod offload;
 pub mod paraphrase;
 pub mod prefill;
 pub mod prefix;
 pub mod retrieval;
+pub mod sustained;
 pub mod tokenizer;
 pub mod tooluse;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 20] = [
+pub const MEASURES: [&str; 23] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -72,6 +75,9 @@ pub const MEASURES: [&str; 20] = [
     instructions::NAME,
     paraphrase::NAME,
     multilingual::NAME,
+    multifact::NAME,
+    sustained::NAME,
+    energy::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -110,6 +116,9 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             instructions::NAME,
             paraphrase::NAME,
             multilingual::NAME,
+            multifact::NAME,
+            sustained::NAME,
+            energy::NAME,
         ],
     ),
 ];
@@ -323,6 +332,9 @@ pub fn run(
             instructions::NAME => instructions::measure(site),
             paraphrase::NAME => paraphrase::measure(site),
             multilingual::NAME => multilingual::measure(site),
+            multifact::NAME => multifact::measure(site),
+            sustained::NAME => sustained::measure(site),
+            energy::NAME => energy::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -500,6 +512,30 @@ pub fn recorded_said(body: &Value) -> Option<String> {
             figure("asked").unwrap_or(0),
             multilingual::LANGUAGES.len()
         ),
+        multifact::NAME => format!(
+            "over {} depth(s): every price listed in {}, the order right in {}, the sum right in {}",
+            figure("depths").unwrap_or(0),
+            figure("listed_all").unwrap_or(0),
+            figure("ordered").unwrap_or(0),
+            figure("summed").unwrap_or(0)
+        ),
+        sustained::NAME => format!(
+            "{} sample(s) over {} s; slowest {} and fastest {} tokens/s",
+            figure("samples").unwrap_or(0),
+            figure("duration_s").unwrap_or(0),
+            milli_said(u64::try_from(figure("slowest_milli").unwrap_or(0)).unwrap_or(0)),
+            milli_said(u64::try_from(figure("fastest_milli").unwrap_or(0)).unwrap_or(0))
+        ),
+        energy::NAME => format!(
+            "{} mJ a produced token, {} mJ a prompt token; idle {} W",
+            milli_said(u64::try_from(figure("generate_uj_per_token").unwrap_or(0)).unwrap_or(0)),
+            milli_said(u64::try_from(figure("read_uj_per_token").unwrap_or(0)).unwrap_or(0)),
+            milli_said(
+                u64::try_from(figure("idle_uw").unwrap_or(0))
+                    .unwrap_or(0)
+                    .saturating_div(1000)
+            )
+        ),
         extraction::NAME => format!(
             "{} of {} field(s) exact over {} trial(s); JSON parsed in {}",
             figure("fields_right").unwrap_or(0),
@@ -588,6 +624,13 @@ pub(crate) fn per_second(tokens: u64, ns: u64) -> u64 {
     )]
     let rate = u128::from(tokens) * 1_000_000_000 / u128::from(ns);
     u64::try_from(rate).unwrap_or(u64::MAX)
+}
+
+/// A rate in thousandths as a figure to one place, without a float.
+pub(crate) fn milli_said(milli: u64) -> String {
+    #[expect(clippy::integer_division, reason = "thousandths to whole and tenths")]
+    let (whole, tenths) = (milli / 1000, (milli % 1000) / 100);
+    format!("{whole}.{tenths}")
 }
 
 /// The median of some samples, sorting them on the way; `None` of none.

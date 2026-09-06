@@ -568,6 +568,75 @@ pub fn card_memory_used_under(drm: &Path) -> Option<u64> {
     total
 }
 
+/// What a card's sensors say at one moment: its temperature in
+/// thousandths of a degree, its clock in hertz and its power in
+/// microwatts, each where the driver publishes it (B-530, B-531).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CardSensors {
+    /// Temperature, in millidegrees Celsius.
+    pub temperature_millic: Option<i64>,
+    /// The graphics clock, in hertz.
+    pub clock_hz: Option<i64>,
+    /// Power draw, in microwatts.
+    pub power_uw: Option<i64>,
+}
+
+impl CardSensors {
+    /// Whether any sensor answered.
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.temperature_millic.is_some() || self.clock_hz.is_some() || self.power_uw.is_some()
+    }
+}
+
+/// The first card's sensors, read from the kernel's hardware-monitor
+/// files under the card's device.
+#[must_use]
+pub fn card_sensors() -> CardSensors {
+    card_sensors_under(Path::new("/sys/class/drm"))
+}
+
+/// The same, over the directory it reads. The files are the ones the
+/// `amdgpu` and `nouveau` drivers publish; a card whose driver publishes
+/// none answers with nothing, which the reader says rather than guesses.
+#[must_use]
+pub fn card_sensors_under(drm: &Path) -> CardSensors {
+    let Ok(entries) = std::fs::read_dir(drm) else {
+        return CardSensors::default();
+    };
+    let mut cards: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("card") && !name.contains('-')
+        })
+        .map(|entry| entry.path())
+        .collect();
+    cards.sort();
+    for card in cards {
+        let Ok(monitors) = std::fs::read_dir(card.join("device").join("hwmon")) else {
+            continue;
+        };
+        for monitor in monitors.flatten() {
+            let read = |file: &str| {
+                std::fs::read_to_string(monitor.path().join(file))
+                    .ok()
+                    .and_then(|text| text.trim().parse::<i64>().ok())
+            };
+            let sensors = CardSensors {
+                temperature_millic: read("temp1_input"),
+                clock_hz: read("freq1_input"),
+                power_uw: read("power1_average").or_else(|| read("power1_input")),
+            };
+            if sensors.any() {
+                return sensors;
+            }
+        }
+    }
+    CardSensors::default()
+}
+
 /// The component this machine's card wants, where it has one and an engine
 /// for it is not already provisioned.
 #[must_use]

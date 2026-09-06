@@ -637,3 +637,34 @@ fn a_card_is_driven_through_what_the_system_installed_for_it() {
     );
     let _cleared = std::fs::remove_dir_all(&root);
 }
+
+/// The card's sensors are read from the kernel's hardware-monitor files
+/// under the first card, in the units the kernel writes them; a card
+/// with no such files answers with nothing rather than nought (B-530).
+#[test]
+fn a_cards_sensors_are_read_from_its_hardware_monitor() {
+    let root = std::env::temp_dir().join(format!("mcf-sensors-{}", std::process::id()));
+    let monitor = root
+        .join("card0")
+        .join("device")
+        .join("hwmon")
+        .join("hwmon3");
+    std::fs::create_dir_all(&monitor).unwrap();
+    std::fs::create_dir_all(root.join("card0-DP-1")).unwrap();
+    std::fs::write(monitor.join("temp1_input"), "50000\n").unwrap();
+    std::fs::write(monitor.join("freq1_input"), "625000000\n").unwrap();
+    std::fs::write(monitor.join("power1_average"), "68011000\n").unwrap();
+    let sensors = card_sensors_under(&root);
+    assert_eq!(
+        sensors,
+        CardSensors {
+            temperature_millic: Some(50_000),
+            clock_hz: Some(625_000_000),
+            power_uw: Some(68_011_000),
+        }
+    );
+    assert!(sensors.any());
+    let _gone = std::fs::remove_dir_all(&root);
+    assert_eq!(card_sensors_under(&root), CardSensors::default());
+    assert!(!CardSensors::default().any());
+}

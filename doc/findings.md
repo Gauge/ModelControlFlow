@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 157 |
+| **Version** | 158 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -179,6 +179,9 @@ forward as one.
 | 208 | [F208 — Countable instructions are eight asks with one to three constraints a program can check — exactly so many words, no digits, capitals only, so many lines each numbered or dashed, a stated closing phrase, so many sentences — one row a constraint a trial; the 2B held every constraint in 12 of 24 trials, never the twelve-word count or the closing phrase, and always the numbered and dashed lists (B-526, D55, A19)](#208-f208-countable-instructions-are-eight-asks-with-one-to-three-constraints-a-program-can-check-exactly-so-many-words-no-digits-capitals-only-so-many-lines-each-numbered-or-dashed-a-stated-closing-phrase-so-many-sentences-one-row-a-constraint-a-trial-the-2b-held-every-constraint-in-12-of-24-trials-never-the-twelve-word-count-or-the-closing-phrase-and-always-the-numbered-and-dashed-lists-b-526-d55-a19) |
 | 209 | [F209 — Paraphrase consistency is six questions with a whole-number answer put six ways each, greedy, the answer read by one rule — the reply's only number, else the one after its last equals sign, else its last — with the numbers counted and the answer's presence beside it; the 2B agreed with itself in 32 of 36 and was right in 32, the disagreements landing on the leap year, the percentage and the spiders (B-527, D55, A19)](#209-f209-paraphrase-consistency-is-six-questions-with-a-whole-number-answer-put-six-ways-each-greedy-the-answer-read-by-one-rule-the-replys-only-number-else-the-one-after-its-last-equals-sign-else-its-last-with-the-numbers-counted-and-the-answers-presence-beside-it-the-2b-agreed-with-itself-in-32-of-36-and-was-right-in-32-the-disagreements-landing-on-the-leap-year-the-percentage-and-the-spiders-b-527-d55-a19) |
 | 210 | [F210 — Multilingual exact answers are six arithmetic and reading tasks put in English, French, German, Spanish, Italian and Portuguese with the same whole-number answer and the same reading rule, one row a task a language and a count a language; the 2B was right in 35 of 36, the one miss an Italian reply that divided instead of multiplying (B-528, D55, B-057)](#210-f210-multilingual-exact-answers-are-six-arithmetic-and-reading-tasks-put-in-english-french-german-spanish-italian-and-portuguese-with-the-same-whole-number-answer-and-the-same-reading-rule-one-row-a-task-a-language-and-a-count-a-language-the-2b-was-right-in-35-of-36-the-one-miss-an-italian-reply-that-divided-instead-of-multiplying-b-528-d55-b-057) |
+| 211 | [F211 — Multi-fact retrieval plants four prices for four named items through the filler at each depth and asks three things of the prompt — list every price, give the items in the order they came, total them — each read by a parser: the values found, the names in their order, the one number given as the sum; the 2B listed and summed rightly at every depth and lost the order at 16k (B-529, D55, B-497)](#211-f211-multi-fact-retrieval-plants-four-prices-for-four-named-items-through-the-filler-at-each-depth-and-asks-three-things-of-the-prompt-list-every-price-give-the-items-in-the-order-they-came-total-them-each-read-by-a-parser-the-values-found-the-names-in-their-order-the-one-number-given-as-the-sum-the-2b-listed-and-summed-rightly-at-every-depth-and-lost-the-order-at-16k-b-529-d55-b-497) |
+| 212 | [F212 — Sustained generation keeps one prompt completing for five minutes and writes a sample every thirty seconds — tokens a second since the last sample, with the card's temperature, clock and power read from the kernel's hardware-monitor files beside it — so a card that heats and throttles shows in the rows; the 2B held between 112.7 and 115.3 tokens a second across ten samples while the card sat at 75 to 85 °C and its power fell from 142 to 104 W (B-530, D55, D11)](#212-f212-sustained-generation-keeps-one-prompt-completing-for-five-minutes-and-writes-a-sample-every-thirty-seconds-tokens-a-second-since-the-last-sample-with-the-cards-temperature-clock-and-power-read-from-the-kernels-hardware-monitor-files-beside-it-so-a-card-that-heats-and-throttles-shows-in-the-rows-the-2b-held-between-1127-and-1153-tokens-a-second-across-ten-samples-while-the-card-sat-at-75-to-85-c-and-its-power-fell-from-142-to-104-w-b-530-d55-d11) |
+| 213 | [F213 — Energy per token is the card's power read every twenty milliseconds through a two-thousand-token prompt read and a 384-token generation, summed by the trapezoid rule into microjoules and divided by the tokens, with the idle draw watched first and the figure above idle beside the whole; the 2B spent 15.4 mJ a prompt token and 767 mJ a produced token, 2.7 and 369 mJ above a 51.8 W idle (B-531, D55, D11, B-189)](#213-f213-energy-per-token-is-the-cards-power-read-every-twenty-milliseconds-through-a-two-thousand-token-prompt-read-and-a-384-token-generation-summed-by-the-trapezoid-rule-into-microjoules-and-divided-by-the-tokens-with-the-idle-draw-watched-first-and-the-figure-above-idle-beside-the-whole-the-2b-spent-154-mj-a-prompt-token-and-767-mj-a-produced-token-27-and-369-mj-above-a-518-w-idle-b-531-d55-d11-b-189) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9633,6 +9636,84 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 213 · F213 — Energy per token is the card's power read every twenty milliseconds through a two-thousand-token prompt read and a 384-token generation, summed by the trapezoid rule into microjoules and divided by the tokens, with the idle draw watched first and the figure above idle beside the whole; the 2B spent 15.4 mJ a prompt token and 767 mJ a produced token, 2.7 and 369 mJ above a 51.8 W idle (B-531, D55, D11, B-189)
+
+**The other cost of speed.** A card that runs faster by drawing more
+is not cheaper, and no measurement said what a token costs in energy.
+Where the driver publishes the card's power, a sampler thread reads it
+every twenty milliseconds while the engine works; the samples are
+summed by the trapezoid rule into microjoules and divided by the
+tokens. Three phases: the card idle with the model loaded for two
+seconds, a prompt of 2048 filler tokens read with one token produced,
+and a generation of 384 tokens from a short prompt. Beside each
+figure is the same figure above idle — the energy the work added to
+what the card drew doing nothing — since the idle draw is the
+machine's and the difference is the model's. A card that publishes
+no power reading measures nothing here and says why.
+
+**The rows.** Under `energy`, the idle phase has `power` and
+`samples`; the read and generate phases have `energy`, `ns`, `tokens`,
+`produced`, `per_token`, `per_token_above_idle` and `samples`, all in
+microjoules, nanoseconds and counts.
+
+**The 2B.** Idle at 51.8 W. Reading 2048 prompt tokens cost 15.4 mJ a
+token, 2.7 above idle, at 63 W; producing 384 tokens cost 767 mJ a
+token, 369 above idle, at 100 W. A produced token cost fifty times a
+prompt token on this card, which is the ratio a person weighing long
+prompts against long answers wants.
+
+## 212 · F212 — Sustained generation keeps one prompt completing for five minutes and writes a sample every thirty seconds — tokens a second since the last sample, with the card's temperature, clock and power read from the kernel's hardware-monitor files beside it — so a card that heats and throttles shows in the rows; the 2B held between 112.7 and 115.3 tokens a second across ten samples while the card sat at 75 to 85 °C and its power fell from 142 to 104 W (B-530, D55, D11)
+
+**Speed at minute four.** A throughput figure is taken in the seconds
+after a load, on a cool card at its highest clock. This keeps the
+model generating from one prompt, completion after completion of 256
+tokens, for five minutes, and every thirty seconds writes down the
+tokens produced since the last sample over the time that passed —
+thousandths of a token a second, as an integer — beside what the card's
+sensors said at that moment. The sensors are read from the files the
+`amdgpu` driver publishes under the card's device: temperature in
+millidegrees, clock in hertz, power in microwatts. A card whose driver
+publishes none has samples without those columns, and the run says so.
+
+**The rows.** Under `sustained`, each sample has `elapsed_ms`,
+`tokens`, `period_ns`, `per_second_milli`, and `temperature`, `clock`
+and `power` where read; the record keeps the slowest and fastest
+samples as fields.
+
+**The 2B.** Ten samples over 301 seconds; tokens a second between
+112.7 and 115.3, which is no throttling; the card between 75 and 85
+°C and its clock between 2794 and 2820 MHz throughout, while its power
+fell from 142 W in the first half-minute to 104 W in the last, the
+window suite running on the processor beside it. The first reader of
+these rows has what a benchmark figure leaves out: the temperature and
+the clock the figure was taken at.
+
+## 211 · F211 — Multi-fact retrieval plants four prices for four named items through the filler at each depth and asks three things of the prompt — list every price, give the items in the order they came, total them — each read by a parser: the values found, the names in their order, the one number given as the sum; the 2B listed and summed rightly at every depth and lost the order at 16k (B-529, D55, B-497)
+
+**More than one needle.** Retrieval by depth asks for one planted
+number back. A person who hands a model a long document asks for
+several things and asks for them together: everything of a kind, the
+order they came in, a total. Four prices for four named items — made
+fresh each run so nothing is remembered — are planted at fifteen,
+forty, sixty-five and ninety hundredths of the filler; at each depth
+the model is asked to list every price, to name the items in the
+order mentioned, and to total the prices. The list is read by how
+many planted values appear in it; the order by where the four names
+fall in the reply; the sum by the paraphrase measurement's reading
+rule against the true total.
+
+**The rows.** Under `multi-fact-retrieval`, each depth and ask has
+`prompt_tokens` and `produced`; the list ask has `found` of `facts`
+and `listed_all`; the order ask `named` and `ordered`; the sum ask
+`answer` and `summed`. Nine completions a run, with the deepest
+prompt as long as the window allows.
+
+**The 2B.** Every price listed and the total right at all three
+depths; the order right at one and four thousand tokens and wrong at
+sixteen thousand, where the four names came back but not as planted.
+That the list and the sum survive a depth the order does not is the
+kind of row a person chooses by.
+
 ## 210 · F210 — Multilingual exact answers are six arithmetic and reading tasks put in English, French, German, Spanish, Italian and Portuguese with the same whole-number answer and the same reading rule, one row a task a language and a count a language; the 2B was right in 35 of 36, the one miss an Italian reply that divided instead of multiplying (B-528, D55, B-057)
 
 **The same task, six wordings, six languages.** Three sums, a
@@ -13540,6 +13621,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 158 — depth, time and energy
+
+F211: multi-fact retrieval (B-529). F212: sustained generation with the
+card's sensors (B-530). F213: energy per token (B-531).
 
 ### Version 157 — instructions, paraphrase, languages
 
