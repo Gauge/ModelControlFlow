@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 156 |
+| **Version** | 157 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -176,6 +176,9 @@ forward as one.
 | 205 | [F205 — The coding suite runs in JavaScript and in Rust as well as Python: the same twenty tasks, each language's cases in its own literals compared in its own canonical text, each answer run in the language's own pinned image under the Python one's confinement, and a `language` dimension on every coding row; a Rust answer records whether it compiled, an `export` or a written `main` is stripped the way a fence is, and on the 2B Python held every case in 24 attempts of 60, JavaScript in 16 and Rust in 9 with 33 that did not compile (B-523, D55, B-025)](#205-f205-the-coding-suite-runs-in-javascript-and-in-rust-as-well-as-python-the-same-twenty-tasks-each-languages-cases-in-its-own-literals-compared-in-its-own-canonical-text-each-answer-run-in-the-languages-own-pinned-image-under-the-python-ones-confinement-and-a-language-dimension-on-every-coding-row-a-rust-answer-records-whether-it-compiled-an-export-or-a-written-main-is-stripped-the-way-a-fence-is-and-on-the-2b-python-held-every-case-in-24-attempts-of-60-javascript-in-16-and-rust-in-9-with-33-that-did-not-compile-b-523-d55-b-025) |
 | 206 | [F206 — Test writing is five stated functions the model writes tests for, each suite run against a correct implementation and three broken ones in the container: tests passing on the good one and broken ones caught are separate rows, a suite is read as plain test functions, parametrized ones or a unittest class, and `mcf eval` takes `--only` for one suite; the 2B wrote suites that caught every bug on two tasks, and ran past a thousand-token budget on four of ten attempts (B-524, D55, B-518)](#206-f206-test-writing-is-five-stated-functions-the-model-writes-tests-for-each-suite-run-against-a-correct-implementation-and-three-broken-ones-in-the-container-tests-passing-on-the-good-one-and-broken-ones-caught-are-separate-rows-a-suite-is-read-as-plain-test-functions-parametrized-ones-or-a-unittest-class-and-mcf-eval-takes-only-for-one-suite-the-2b-wrote-suites-that-caught-every-bug-on-two-tasks-and-ran-past-a-thousand-token-budget-on-four-of-ten-attempts-b-524-d55-b-518) |
 | 207 | [F207 — Structured extraction is five fixed texts — an invoice line, a meeting note, a shipping note, a job listing, a weather line — pulled into JSON with the keys and forms stated, read by a parser and compared field by field exactly, one row a field a trial; the 2B parsed in every trial and had 90 of 99 fields exact, missing the same three in every trial: an order code, a day-first date and a title's case (B-525, D55, A19)](#207-f207-structured-extraction-is-five-fixed-texts-an-invoice-line-a-meeting-note-a-shipping-note-a-job-listing-a-weather-line-pulled-into-json-with-the-keys-and-forms-stated-read-by-a-parser-and-compared-field-by-field-exactly-one-row-a-field-a-trial-the-2b-parsed-in-every-trial-and-had-90-of-99-fields-exact-missing-the-same-three-in-every-trial-an-order-code-a-day-first-date-and-a-titles-case-b-525-d55-a19) |
+| 208 | [F208 — Countable instructions are eight asks with one to three constraints a program can check — exactly so many words, no digits, capitals only, so many lines each numbered or dashed, a stated closing phrase, so many sentences — one row a constraint a trial; the 2B held every constraint in 12 of 24 trials, never the twelve-word count or the closing phrase, and always the numbered and dashed lists (B-526, D55, A19)](#208-f208-countable-instructions-are-eight-asks-with-one-to-three-constraints-a-program-can-check-exactly-so-many-words-no-digits-capitals-only-so-many-lines-each-numbered-or-dashed-a-stated-closing-phrase-so-many-sentences-one-row-a-constraint-a-trial-the-2b-held-every-constraint-in-12-of-24-trials-never-the-twelve-word-count-or-the-closing-phrase-and-always-the-numbered-and-dashed-lists-b-526-d55-a19) |
+| 209 | [F209 — Paraphrase consistency is six questions with a whole-number answer put six ways each, greedy, the answer read by one rule — the reply's only number, else the one after its last equals sign, else its last — with the numbers counted and the answer's presence beside it; the 2B agreed with itself in 32 of 36 and was right in 32, the disagreements landing on the leap year, the percentage and the spiders (B-527, D55, A19)](#209-f209-paraphrase-consistency-is-six-questions-with-a-whole-number-answer-put-six-ways-each-greedy-the-answer-read-by-one-rule-the-replys-only-number-else-the-one-after-its-last-equals-sign-else-its-last-with-the-numbers-counted-and-the-answers-presence-beside-it-the-2b-agreed-with-itself-in-32-of-36-and-was-right-in-32-the-disagreements-landing-on-the-leap-year-the-percentage-and-the-spiders-b-527-d55-a19) |
+| 210 | [F210 — Multilingual exact answers are six arithmetic and reading tasks put in English, French, German, Spanish, Italian and Portuguese with the same whole-number answer and the same reading rule, one row a task a language and a count a language; the 2B was right in 35 of 36, the one miss an Italian reply that divided instead of multiplying (B-528, D55, B-057)](#210-f210-multilingual-exact-answers-are-six-arithmetic-and-reading-tasks-put-in-english-french-german-spanish-italian-and-portuguese-with-the-same-whole-number-answer-and-the-same-reading-rule-one-row-a-task-a-language-and-a-count-a-language-the-2b-was-right-in-35-of-36-the-one-miss-an-italian-reply-that-divided-instead-of-multiplying-b-528-d55-b-057) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9630,6 +9633,83 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 210 · F210 — Multilingual exact answers are six arithmetic and reading tasks put in English, French, German, Spanish, Italian and Portuguese with the same whole-number answer and the same reading rule, one row a task a language and a count a language; the 2B was right in 35 of 36, the one miss an Italian reply that divided instead of multiplying (B-528, D55, B-057)
+
+**The same task, six wordings, six languages.** Three sums, a
+platform number to find in a sentence, an age five years younger, and
+apples left in a box, each written in six languages by hand with the
+same figures, each reply asked for the number only and read by the
+paraphrase measurement's rule. Every task has a whole-number answer,
+so no language needs its own reader and no translation is judged.
+
+**The rows.** Under `multilingual`, each task in each language is
+`read`, `answer`, `right`, `numbers`, `stated`, `tokens` and `ns`,
+and each language has a `right` count over the tasks. The run's
+record keeps the count a language as a field, so the recorded
+sentence says it by language.
+
+**The 2B.** Thirty-six replies, 258 rows; 35 right. English, French,
+German, Spanish and Portuguese six of six; Italian five, the miss a
+reply to seventeen times twenty-three that gave a long decimal —
+seventeen divided by twenty-three — where the others multiplied.
+Under the first-number reading the same run had read as 17 of 36,
+with restated figures read as answers; the rule change is the
+paraphrase finding's, and this one inherits it.
+
+## 209 · F209 — Paraphrase consistency is six questions with a whole-number answer put six ways each, greedy, the answer read by one rule — the reply's only number, else the one after its last equals sign, else its last — with the numbers counted and the answer's presence beside it; the 2B agreed with itself in 32 of 36 and was right in 32, the disagreements landing on the leap year, the percentage and the spiders (B-527, D55, A19)
+
+**Wording as a variable.** A model that answers a question one way
+and its paraphrase another is a model whose answers depend on
+wording. Six questions, each with one whole-number answer, are put
+six ways — a question, an inversion, an imperative, a conditional, a
+request, a fragment — and every reply is asked for the number only.
+Greedy throughout, so what varies is the phrasing.
+
+**Reading a number out of a reply.** The first whole number in a
+reply is the wrong one whenever the model restates the question —
+*17 × 23 = 391* reads as 17 — and the last is wrong whenever it
+restates it afterwards. The rule is: the reply's only number where it
+has one; the number after its last `=` where it works the answer out;
+else its last number. Beside the reading, `numbers` counts how many
+the reply held, since a reply told to answer with the number only and
+holding three has already said something else, and `stated` says
+whether the right answer appears anywhere in it. Under the first rule
+the 2B read as 20 of 36 right; under this one 32, and the rows say
+which replies held several numbers.
+
+**The rows.** Under `paraphrase`, each phrasing is `read`, `answer`,
+`right`, `numbers`, `stated`, `tokens` and `ns`; each question is
+`agree` — the size of the largest camp among its six answers —
+`right` and `phrasings`.
+
+**The 2B.** Thirty-six replies, 270 rows. Six of six agreed and were
+right on the minutes, the hexagon and the quarter hour; the leap year
+drew 1,365 and 292 from two phrasings; fifteen per cent of two hundred
+came back 150 once; four spiders had sixteen legs once. Agreement and
+rightness were the same count, 32, which says the disagreements were
+wrong answers rather than a consistent wrong one.
+
+## 208 · F208 — Countable instructions are eight asks with one to three constraints a program can check — exactly so many words, no digits, capitals only, so many lines each numbered or dashed, a stated closing phrase, so many sentences — one row a constraint a trial; the 2B held every constraint in 12 of 24 trials, never the twelve-word count or the closing phrase, and always the numbered and dashed lists (B-526, D55, A19)
+
+**What a program can check.** Whether a model does as it is told is
+otherwise an opinion; these eight instructions are the ones a parser
+settles. Words are counted after splitting on whitespace; digits are
+looked for; a lowercase letter fails capitals-only; non-empty lines
+are counted and their first characters read; the trimmed answer is
+compared with the closing phrase; sentences are counted by their
+terminators. Each ask carries one to three of those, and each is a
+row — `held`, with the ask, the trial and the constraint's name — so
+that a model that keeps to a length and loses the ending reads as
+such. Three trials an ask, the first greedy and the rest drawn.
+
+**The 2B.** Twenty-four trials, 186 rows. Every constraint held in
+twelve. The numbered list of three and the dashed list of four held
+in every trial, as did one sentence without digits; the twelve-word
+description never came to twelve words and the closing phrase was
+never the last thing said; capitals held in the five-word ask but
+not in the sentence about rain. The `words` row beside each trial
+says how many it did write.
+
 ## 207 · F207 — Structured extraction is five fixed texts — an invoice line, a meeting note, a shipping note, a job listing, a weather line — pulled into JSON with the keys and forms stated, read by a parser and compared field by field exactly, one row a field a trial; the 2B parsed in every trial and had 90 of 99 fields exact, missing the same three in every trial: an order code, a day-first date and a title's case (B-525, D55, A19)
 
 **The right JSON, not just JSON.** The grammar measurement asks whether
@@ -13460,6 +13540,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 157 — instructions, paraphrase, languages
+
+F208: countable instructions (B-526). F209: paraphrase consistency and
+the rule a number is read by (B-527). F210: multilingual exact answers
+(B-528).
 
 ### Version 156 — structured extraction
 

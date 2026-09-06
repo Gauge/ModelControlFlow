@@ -39,8 +39,11 @@ pub mod extraction;
 pub mod fidelity;
 pub mod grammar;
 pub mod image;
+pub mod instructions;
 pub mod memory;
+pub mod multilingual;
 pub mod offload;
+pub mod paraphrase;
 pub mod prefill;
 pub mod prefix;
 pub mod retrieval;
@@ -48,7 +51,7 @@ pub mod tokenizer;
 pub mod tooluse;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 17] = [
+pub const MEASURES: [&str; 20] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -66,6 +69,9 @@ pub const MEASURES: [&str; 17] = [
     tooluse::NAME,
     agent::NAME,
     extraction::NAME,
+    instructions::NAME,
+    paraphrase::NAME,
+    multilingual::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -101,6 +107,9 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             tooluse::NAME,
             agent::NAME,
             extraction::NAME,
+            instructions::NAME,
+            paraphrase::NAME,
+            multilingual::NAME,
         ],
     ),
 ];
@@ -311,6 +320,9 @@ pub fn run(
             tooluse::NAME => tooluse::measure(site),
             agent::NAME => agent::measure(site),
             extraction::NAME => extraction::measure(site),
+            instructions::NAME => instructions::measure(site),
+            paraphrase::NAME => paraphrase::measure(site),
+            multilingual::NAME => multilingual::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -468,6 +480,25 @@ pub fn recorded_said(body: &Value) -> Option<String> {
             figure("completed").unwrap_or(0),
             figure("asked").unwrap_or(0),
             figure("result_carried").unwrap_or(0)
+        ),
+        instructions::NAME => format!(
+            "every constraint held in {} of {} trial(s); {} of {} constraint(s) held",
+            figure("all_held").unwrap_or(0),
+            figure("trials").unwrap_or(0),
+            figure("constraints_held").unwrap_or(0),
+            figure("constraints_asked").unwrap_or(0)
+        ),
+        paraphrase::NAME => format!(
+            "{} of {} answer(s) right; {} agree with their question's most common answer",
+            figure("right").unwrap_or(0),
+            figure("asked").unwrap_or(0),
+            figure("agree").unwrap_or(0)
+        ),
+        multilingual::NAME => format!(
+            "{} of {} right across {} language(s)",
+            figure("right").unwrap_or(0),
+            figure("asked").unwrap_or(0),
+            multilingual::LANGUAGES.len()
         ),
         extraction::NAME => format!(
             "{} of {} field(s) exact over {} trial(s); JSON parsed in {}",

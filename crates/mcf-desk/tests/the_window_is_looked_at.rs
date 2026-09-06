@@ -526,15 +526,26 @@ fn every_diagnostic_is_a_row_and_runs_from_its_pane() {
         act_within(&desk, &mcf_desk::Act::Go(Page::Prompt), (60.0, 400.0)),
         "the prompt analysis pane does not open the page"
     );
-    // The last measurement's row is far down the list, which scrolls.
+    // The last measurement's row is far down the list, which scrolls: at
+    // some offset it is in view, whatever the list has grown to.
     let last = mcf_serve::examine::MEASURES.len() - 1;
-    let _was = desk.scrolls.insert(mcf_desk::Region::Checks, 900.0);
+    let reached = [900.0, 1200.0, 1500.0, 1800.0, 2100.0]
+        .into_iter()
+        .any(|offset| {
+            let _was = desk.scrolls.insert(mcf_desk::Region::Checks, offset);
+            let mut y = 60.0;
+            while y < 750.0 {
+                if pressed_at(&desk, (260.0, y)).as_ref()
+                    == Some(&mcf_desk::Act::Show(Diagnostic::Measure(last)))
+                {
+                    return true;
+                }
+                y += 10.0;
+            }
+            false
+        });
     assert!(
-        act_within(
-            &desk,
-            &mcf_desk::Act::Show(Diagnostic::Measure(last)),
-            (60.0, 750.0)
-        ),
+        reached,
         "the last measurement's row is not reached by scrolling the list"
     );
 }

@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 293 |
+| **Version** | 294 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 377 build items (269 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 53 open).** Every item cites
+decided, 23 resolved) and 377 build items (272 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 50 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -361,9 +361,9 @@ first and importance second.
 | B-523 | The coding suite in a second and a third language, in the same container images, per-language rows | D55, DEC-062, B-518, B-025 | Every task has rows in each language, and a language the container cannot run says so | done. F205: JavaScript and Rust in their own pinned images, a `language` dimension on every coding row, `compiled` for Rust; on the 2B 24, 16 and 9 whole of 60 |
 | B-524 | Test writing: the model writes tests for a stated function, run against a correct and a deliberately broken implementation — passes on the good, catches on the broken | D55, DEC-062, B-518 | Rows for both counts, task by task | done. F206: five functions, three broken implementations each, `pass_on_good` and `caught` rows; `mcf eval --only <suite>` |
 | B-525 | Structured extraction: fixed texts with dates, amounts, names and lists pulled into JSON, checked field by field by exact match | D55, DEC-062, A19 | One row a field a trial | done. F207: five texts, seventeenth measurement, `right` and `present` a field; the 2B 90 of 99 |
-| B-526 | Countable instructions: exactly N words, no digits, uppercase only, a list of a stated length, a stated closing phrase — each a parser's check | D55, DEC-062, A19 | One row a constraint a trial | open |
-| B-527 | Paraphrase consistency: one question with an exact answer in six phrasings — how many answers agree | D55, DEC-062, A19 | Rows per phrasing, the agreement count beside them | open |
-| B-528 | Multilingual exact answers: the same arithmetic and extraction tasks in six languages, the same exact match | D55, DEC-062, B-057 | Rows per language per task | open |
+| B-526 | Countable instructions: exactly N words, no digits, uppercase only, a list of a stated length, a stated closing phrase — each a parser's check | D55, DEC-062, A19 | One row a constraint a trial | done. F208: eight asks, eighteenth measurement; the 2B held every constraint in 12 of 24 |
+| B-527 | Paraphrase consistency: one question with an exact answer in six phrasings — how many answers agree | D55, DEC-062, A19 | Rows per phrasing, the agreement count beside them | done. F209: six questions six ways, nineteenth measurement; the 2B 32 of 36 agree and right |
+| B-528 | Multilingual exact answers: the same arithmetic and extraction tasks in six languages, the same exact match | D55, DEC-062, B-057 | Rows per language per task | done. F210: six tasks in six languages, twentieth measurement; the 2B 35 of 36 |
 | B-529 | Multi-fact retrieval: several planted facts to list, order and sum at depth — found, ordered rightly, summed rightly | D55, DEC-062, B-497 | Rows per depth per ask | open |
 | B-530 | Sustained generation: tokens a second sampled every thirty seconds over five minutes with card temperature and clock beside them | D55, DEC-062, D11 | Rows per sample | open |
 | B-531 | Energy per token: card and package power during a pinned generation where the hardware publishes it — joules a token, joules a prompt token | D55, DEC-062, D11, B-189 | Rows where power is read, could not tell where it is not | open |
@@ -556,6 +556,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 294 — instructions, paraphrase, languages
+
+B-526, B-527 and B-528 done (F208, F209, F210).
 
 ### Version 293 — structured extraction
 
