@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 286 |
+| **Version** | 288 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**416 items: 61 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 11
-decided, 23 resolved) and 355 build items (263 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 37 open).** Every item cites
+**439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
+decided, 23 resolved) and 377 build items (264 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 58 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -89,6 +89,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-059 | What is measured about a model beyond the ladder, the cross-check, the prompt report and the probes, given that the choices a person makes — quantization, layers, batch, window — had no figure behind them | §X, §3.18, D42, D50 | D52, B-491, B-492, B-493, B-494, B-495, B-496, B-497, B-498, B-499, B-500, B-501, B-502, B-503, B-504 | M4 | **decided** — D52: fourteen measurements answered by a count or a clock, in three families as one daemon-carried run and three cards |
 | DEC-060 | How the Diagnostics page is arranged, given that eight cards overflowed a window and nothing said when a diagnostic last ran | §V, §3.15, D50, D52 | D53, B-505, B-506, B-507, B-508, B-509, B-510 | M4 | **decided** — D53: one list of every diagnostic with when it last ran, the one chosen shown whole |
 | DEC-061 | What a diagnostic writes down, given that each wrote a shape of its own with prose beside it and a person comparing two models had no table | §XIV, §3.4, D16, D20, D42, D52 | D54, B-511, B-512, B-513, B-514, B-515, B-516, B-517, B-518, B-519 | M4 | **decided** — D54: readings in one schema, every sentence derived, the rows what a person compares models by; the work first — code that runs, tools called rightly |
+| DEC-062 | Which diagnostics come next and in what order, given that the two suites stop short of the agent question and the cost side of speed | §IX, §3.9, D54 | D55, B-520 to B-541 | M4 | **decided** — D55: twenty-two, the agent questions first |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
 | DEC-044 | How a user declares a workflow — a named list, a weighting across laboratories, inference from their own traffic, or from an imported configuration | §7.44 | **§6.36, B41** | M7 | open |
@@ -354,6 +355,28 @@ first and importance second.
 | B-517 | Tool-use suite: a fixed set of tasks each offering one to three tools and asking one thing, the expected call — tool and arguments, or no call — checked by exact match on the normalized arguments; a second turn feeds the call's result back and checks the answer carries it; every trial a row of called, right tool, arguments matched, keys matched, result carried, tokens and time | D54, DEC-061, B-053, A19, §IX | A run on the 2B gives one row a trial with those figures, and two models are set side by side by them | done. F200: eight tasks, three trials each, the tools through the model's own template; the 2B right in 21 of 21 and carrying the result in 18 |
 | B-518 | Coding readings: `mcf eval` writes every attempt as a row — task, attempt, wrote, ran, cases held of cases, tokens, time — under the readings schema, and its task set grows past twelve with tasks that read input, handle errors and edit code, each checked by execution | D54, DEC-061, B-110, B-025, §IX | Every attempt is a row in the record; a second model's rows compare with the first's task by task | done. F201: every attempt a row from the command line, twenty tasks; the 2B's sixty attempts as 387 rows |
 | B-519 | Coding is a row of the Diagnostics list with its readings shown like the rest, run from the window through the command line's container, and the list says when it last ran | D54, DEC-061, D53, B-025 | The row runs the laboratory, marks itself running, and shows its readings when done | open |
+| B-520 | Multi-step tool use: chains of two to four calls where each argument comes from the last result, parallel calls in one turn, and an error result the model must react to — steps completed, right order, recovery after an error, every step a row | D55, DEC-062, B-517, A19 | A run gives one row a step; a model that stops after the first call reads as such | done. F202: five tasks over several turns, every step a row; the 2B completed eight of ten chains and never recovered from the error |
+| B-521 | Repair after feedback: every failed coding attempt handed back with its case output for a second attempt — fixed on the second try, tokens spent, a row each | D55, DEC-062, B-518, A19 | The rows separate a model that fixes from one that repeats | open |
+| B-522 | Edit tasks: a whole file given, a change asked, hidden tests run on the result, and the parts not asked about compared byte for byte | D55, DEC-062, B-518 | Rows for tests held and for bytes changed outside the ask | open |
+| B-523 | The coding suite in a second and a third language, in the same container images, per-language rows | D55, DEC-062, B-518, B-025 | Every task has rows in each language, and a language the container cannot run says so | open |
+| B-524 | Test writing: the model writes tests for a stated function, run against a correct and a deliberately broken implementation — passes on the good, catches on the broken | D55, DEC-062, B-518 | Rows for both counts, task by task | open |
+| B-525 | Structured extraction: fixed texts with dates, amounts, names and lists pulled into JSON, checked field by field by exact match | D55, DEC-062, A19 | One row a field a trial | open |
+| B-526 | Countable instructions: exactly N words, no digits, uppercase only, a list of a stated length, a stated closing phrase — each a parser's check | D55, DEC-062, A19 | One row a constraint a trial | open |
+| B-527 | Paraphrase consistency: one question with an exact answer in six phrasings — how many answers agree | D55, DEC-062, A19 | Rows per phrasing, the agreement count beside them | open |
+| B-528 | Multilingual exact answers: the same arithmetic and extraction tasks in six languages, the same exact match | D55, DEC-062, B-057 | Rows per language per task | open |
+| B-529 | Multi-fact retrieval: several planted facts to list, order and sum at depth — found, ordered rightly, summed rightly | D55, DEC-062, B-497 | Rows per depth per ask | open |
+| B-530 | Sustained generation: tokens a second sampled every thirty seconds over five minutes with card temperature and clock beside them | D55, DEC-062, D11 | Rows per sample | open |
+| B-531 | Energy per token: card and package power during a pinned generation where the hardware publishes it — joules a token, joules a prompt token | D55, DEC-062, D11, B-189 | Rows where power is read, could not tell where it is not | open |
+| B-532 | Streaming jitter: every inter-token gap in a long generation, the longest stall and the distribution | D55, DEC-062, D16 | One row a gap | open |
+| B-533 | The draft head's gain: the same generation with and without the model's own draft head — tokens a second, and agreement of the output | D55, DEC-062, B-456 | Two rows a depth, and the agreement | open |
+| B-534 | The cache's precision: speed and fidelity against the reference with the cache at 16, 8 and 4 bits | D55, DEC-062, B-491 | Rows per precision | open |
+| B-535 | Soak: two hundred requests through the hosted server — failures, latency by hundred, resident bytes at start and end | D55, DEC-062, B-232 | One row a request, plus the two resident readings | open |
+| B-536 | Stop latency: time from a stop to the engine idle, at several depths | D55, DEC-062, B-459 | Rows per depth | open |
+| B-537 | Fidelity over length: rank agreement against the reference at 100, 500 and 1,000 tokens deep | D55, DEC-062, B-491 | Rows per depth | open |
+| B-538 | Every quantization of a repository in one run: the fidelity measurement over every file here, with size and speed beside each | D55, DEC-062, B-491, D51 | One table a repository | open |
+| B-539 | Schema variety under a grammar: nested objects, arrays, enums and optional fields | D55, DEC-062, B-504 | Rows per schema per trial | open |
+| B-540 | Temperature sensitivity: distinct answers to an exact question at five temperatures | D55, DEC-062, A19 | Rows per temperature | open |
+| B-541 | Vocabulary coverage: byte-fallback and unknown-token rate over a mixed corpus | D55, DEC-062, B-502 | Rows per text | open |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
 | B-439 | The prompt page is a readings table: a row a reading with its choice, its condition and what it costs in generations, and the served condition strings are labels a cell wide | B-438, B-429, B-434, B-435, B-436, A19, A22, B60, §3.4, §3.15 | Above the report the window used to explain each control in a sentence — what the temperature does, what the extras cost, what the run would spend. Under B-438 the report below became figures and labels while the controls above stayed prose. The controls become a table with the same discipline: a row a reading (unit, removed, control, alone, prefixes, seeds), the choice in the row (the buttons or the field), the condition as short labels joined by a middle dot, the generations the row costs on the right, and a total row that adds the one as-written draw; a reading not asked for shows its cost faint. The served `unit_chosen_by`, `addressed_as` and `sampler` strings are cut to the same register so the console's condition lines and the window's read alike (B-072) | **done** — `Readings` in the desk draws the table; the temperature field's condition names an empty field as "at 0 the seed changes nothing · no house value" (B60) and a bad entry as what it should be, with Analyse waiting (§3.15); the served strings are `chosen` / `text: blank lines` / `text: no blank line`, `one user turn · whole prompt · system turn: none, not probed` and `greedy · temperature 0 · seed held · as written, every removal, the control` |
 | B-438 | The prompt report is figures and short labels: the run's conditions a line each, a table a reading with the same columns on both surfaces, and no paragraph a person has to read to find a number | B-429, B-434, B-435, B-436, B-072, A7, A19, A22, §3.4, §3.15 | Every figure sits under a label of a word or two; the conditions (unit, addressing, prompt length, cap, what the generations were spent on, the floor and how it was drawn, whether the floor leaves the rows readable, where it is kept) come first, a line each; the removed, floors, alone and prefixes readings are tables with the same cells — moved, a bar, first-token rank, opening kept — so a figure means one thing everywhere; a rank or an opening that was not read is a dash, not a zero (A7); the cell text is made once and shared by both surfaces (B-072); the answer keeps its own page under the tables | **done** — `mcf_desk::held_mark` and `open_mark` make the rank and opening cells for both the console and the window. The console prints the conditions as `label  value` lines, then REMOVED, FLOORS, ALONE, PREFIXES tables with `#`, `moved`, a ten-cell bar, `1st`, `open` and the part's text, a SEEDS line, a TOKENS table of the ranks the model did not expect, PARTS and the answer; a reading not asked for is one line naming its flag and its cost. The window draws the same: the conditions as label/value lines, the tables with pressable rows that still show their answers, the token reading beside the tables where the window is wide enough, and the answer under it all |
@@ -533,6 +556,15 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 288 — multi-step tool use
+
+B-520 done (F202).
+
+### Version 287 — the diagnostics to come
+
+DEC-062 decided by D55 on the operator's instruction; B-520 to B-541
+opened, one a diagnostic, in the order they are built.
 
 ### Version 286 — coding as rows
 

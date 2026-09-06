@@ -36,7 +36,7 @@ pub const NAME: &str = "tool-use";
 pub const TRIALS: usize = 3;
 
 /// The temperature the drawn trials use, in thousandths.
-const TEMPERATURE: u32 = 700;
+pub(crate) const TEMPERATURE: u32 = 700;
 
 /// How many tokens a call may take.
 const CALL_BUDGET: usize = 200;
@@ -46,11 +46,11 @@ const ANSWER_BUDGET: usize = 160;
 
 /// One tool as it is declared to the model.
 #[derive(Debug, Clone, Copy)]
-struct Tool {
-    name: &'static str,
-    description: &'static str,
+pub(crate) struct Tool {
+    pub(crate) name: &'static str,
+    pub(crate) description: &'static str,
     /// Each parameter: its name, its JSON type, and whether it is required.
-    parameters: &'static [(&'static str, &'static str, bool)],
+    pub(crate) parameters: &'static [(&'static str, &'static str, bool)],
 }
 
 /// What a task expects of the model.
@@ -70,7 +70,7 @@ enum Expect {
 
 /// An expected argument.
 #[derive(Debug, Clone, Copy)]
-enum Arg {
+pub(crate) enum Arg {
     /// Text, compared trimmed and case aside.
     Text(&'static str),
     /// Text with every space removed before comparing: an expression.
@@ -88,7 +88,7 @@ struct Task {
     expects: Expect,
 }
 
-const WEATHER: Tool = Tool {
+pub(crate) const WEATHER: Tool = Tool {
     name: "get_weather",
     description: "Look up the current weather in a city.",
     parameters: &[("city", "string", true)],
@@ -218,7 +218,7 @@ const TASKS: [Task; 8] = [
 ];
 
 /// A tool as the engine's template takes it.
-fn tool_value(tool: &Tool) -> Value {
+pub(crate) fn tool_value(tool: &Tool) -> Value {
     let properties: Vec<(String, Value)> = tool
         .parameters
         .iter()
@@ -262,6 +262,35 @@ pub(crate) struct Call {
     pub(crate) name: String,
     /// Its arguments, as the model wrote them.
     pub(crate) arguments: BTreeMap<String, Value>,
+}
+
+/// Every call in what the model said, in order, in either form a
+/// template writes: the calls a turn made at once (B-520).
+pub(crate) fn calls_in(said: &str) -> Vec<Call> {
+    let mut found = Vec::new();
+    let mut rest = said
+        .rfind("</think>")
+        .and_then(|at| said.get(at + "</think>".len()..))
+        .unwrap_or(said);
+    while let Some(call) = call_in(rest) {
+        // Past this call: the function block's close or the object's end,
+        // whichever the call was read from.
+        let past = if let Some(at) = rest.find("</function>") {
+            at + "</function>".len()
+        } else if let Some(object) = crate::probes::tools::first_object(rest) {
+            rest.find(&object)
+                .map_or(rest.len(), |at| at + object.len())
+        } else {
+            rest.len()
+        };
+        found.push(call);
+        let Some(after) = rest.get(past..) else { break };
+        if after.is_empty() || past == 0 {
+            break;
+        }
+        rest = after;
+    }
+    found
 }
 
 /// The first call in what the model said, in either form a template
@@ -334,7 +363,7 @@ fn function_block(said: &str) -> Option<Call> {
 }
 
 /// Whether one argument the model gave matches the one expected.
-fn argument_matches(given: &Value, expected: Arg) -> bool {
+pub(crate) fn argument_matches(given: &Value, expected: Arg) -> bool {
     match expected {
         Arg::Text(want) => given
             .as_text()
@@ -666,7 +695,7 @@ fn second_turn(user: Value, tool: &str, call: &Call, result: &str) -> Value {
 
 /// A rendered prompt as the engine reads it: its markers as markers, its
 /// beginning as the model's convention.
-fn as_read(engine: &Served, rendered: &str) -> Result<Vec<usize>, String> {
+pub(crate) fn as_read(engine: &Served, rendered: &str) -> Result<Vec<usize>, String> {
     engine
         .tokenize(rendered, true, true)
         .map(|tokens| tokens.into_iter().map(|token| token.id).collect())

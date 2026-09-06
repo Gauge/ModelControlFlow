@@ -28,6 +28,7 @@ use crate::adapters::ProvisionedLlama;
 use crate::probes::run::Step;
 use crate::served::{Served, Startup, Waiting};
 
+pub mod agent;
 pub mod bits;
 pub mod cold;
 pub mod concurrency;
@@ -45,7 +46,7 @@ pub mod tokenizer;
 pub mod tooluse;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 15] = [
+pub const MEASURES: [&str; 16] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -61,6 +62,7 @@ pub const MEASURES: [&str; 15] = [
     grammar::NAME,
     image::NAME,
     tooluse::NAME,
+    agent::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -94,6 +96,7 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             grammar::NAME,
             image::NAME,
             tooluse::NAME,
+            agent::NAME,
         ],
     ),
 ];
@@ -302,6 +305,7 @@ pub fn run(
             grammar::NAME => grammar::measure(site),
             image::NAME => image::measure(site),
             tooluse::NAME => tooluse::measure(site),
+            agent::NAME => agent::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -365,6 +369,10 @@ pub fn record_rows(
 /// One measurement's recorded finding as a sentence, from the fields the
 /// record keeps of it, read back the way a probe's is (B-483).
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm a measurement, each a sentence read off the record's fields"
+)]
 pub fn recorded_said(body: &Value) -> Option<String> {
     let text = |key: &str| body.get(key).and_then(Value::as_text);
     let figure = |key: &str| body.get(key).and_then(Value::as_integer);
@@ -449,6 +457,12 @@ pub fn recorded_said(body: &Value) -> Option<String> {
             "{} side(s) measured; {} token(s) an image at the largest",
             figure("measured").unwrap_or(0),
             figure("largest_tokens").unwrap_or(0)
+        ),
+        agent::NAME => format!(
+            "completed the chain in {} of {}, carried every result in {}",
+            figure("completed").unwrap_or(0),
+            figure("asked").unwrap_or(0),
+            figure("result_carried").unwrap_or(0)
         ),
         tooluse::NAME => format!(
             "right tool in {} of {} call(s), arguments matched in {}, result carried in {}, held back in {}",

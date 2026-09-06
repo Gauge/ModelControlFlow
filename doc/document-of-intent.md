@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 56 |
+| **Version** | 57 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -5069,6 +5069,38 @@ first: writing code that runs, and calling tools rightly — each a
 suite of tasks checked by execution or exact match, each attempt a
 row. Then everything else MCF can count or time.
 
+### D55 — The diagnostics to come, in the order they are built *(on the operator's instruction)*
+
+**Twenty-two further diagnostics, each a count, a clock or an
+execution, each a run of rows in the readings schema, built in the
+order a person choosing a model for their work needs them: the agent
+questions first, then the rest of coding, then cost, then fidelity and
+behaviour.**
+
+**Work.** Multi-step tool use — chains where each argument comes from
+the last result, parallel calls in one turn, and an error result the
+model must react to. Repair after feedback: a failed coding attempt
+handed back with its case output for a second try. Edit tasks: a whole
+file, a change asked, hidden tests run, the untouched parts compared
+byte for byte. The coding suite in a second and third language. Test
+writing, checked against a correct and a broken implementation.
+Structured extraction, field by field by exact match. Countable
+instructions. Paraphrase consistency. Multilingual exact answers.
+Multi-fact retrieval at depth.
+
+**Serving and cost.** Sustained generation with temperature and clock
+beside it. Energy per token where the hardware publishes power.
+Streaming jitter. The draft head's gain. The cache's precision.
+A soak of two hundred requests. Stop latency.
+
+**Fidelity and behaviour.** Fidelity over length. Every quantization
+of a repository in one table. Schema variety under a grammar.
+Temperature sensitivity. Vocabulary coverage.
+
+**What is left where it is.** Refusal rates need a judgement about
+what should have been answered, and prose quality needs a rater; both
+stay with the laboratories that grade (§XIII).
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -5098,6 +5130,11 @@ row. Then everything else MCF can count or time.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 57 — the diagnostics to come
+
+D55 written on the operator's instruction: twenty-two further
+diagnostics in the order they are built.
 
 ### Version 56 — readings
 

@@ -203,6 +203,11 @@ fn a_call_is_read_in_either_form_and_judged_exactly() {
         Some(&Value::text("1234 * 5678"))
     );
     assert_eq!(call_in("The weather is fine today."), None);
+    let two = super::tooluse::calls_in(
+        "<tool_call>{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}</tool_call>\n<tool_call>{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Tokyo\"}}</tool_call>",
+    );
+    assert_eq!(two.len(), 2, "{two:?}");
+    assert_eq!(two[1].arguments.get("city"), Some(&Value::text("Tokyo")));
     let thought =
         call_in("<think>I could call it.</think>{\"name\": \"get_time\", \"arguments\": {}}")
             .expect("the answer after the thought reads");
