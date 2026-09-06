@@ -52,12 +52,14 @@ pub mod paraphrase;
 pub mod prefill;
 pub mod prefix;
 pub mod retrieval;
+pub mod soak;
+pub mod stoplatency;
 pub mod sustained;
 pub mod tokenizer;
 pub mod tooluse;
 
 /// Every measurement the run can make, in the order it makes them.
-pub const MEASURES: [&str; 26] = [
+pub const MEASURES: [&str; 28] = [
     offload::NAME,
     prefill::NAME,
     prefix::NAME,
@@ -84,6 +86,8 @@ pub const MEASURES: [&str; 26] = [
     jitter::NAME,
     drafthead::NAME,
     cache::NAME,
+    soak::NAME,
+    stoplatency::NAME,
 ];
 
 /// The three families the window shows as cards, each with its
@@ -128,6 +132,8 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
             jitter::NAME,
             drafthead::NAME,
             cache::NAME,
+            soak::NAME,
+            stoplatency::NAME,
         ],
     ),
 ];
@@ -347,6 +353,8 @@ pub fn run(
             jitter::NAME => jitter::measure(site),
             drafthead::NAME => drafthead::measure(site),
             cache::NAME => cache::measure(site),
+            soak::NAME => soak::measure(site),
+            stoplatency::NAME => stoplatency::measure(site),
             _ => Found::could_not_tell("MCF has no measurement of this name"),
         };
         let mut lines = vec![name.to_owned()];
@@ -579,6 +587,18 @@ pub fn recorded_said(body: &Value) -> Option<String> {
                     || "identical".to_owned(),
                     |at| format!("parts at token {at}")
                 )
+        ),
+        soak::NAME => format!(
+            "{} of {} request(s) failed; resident {} at the start and {} at the end",
+            figure("failed").unwrap_or(0),
+            figure("requests").unwrap_or(0),
+            gigabytes(u64::try_from(figure("resident_start").unwrap_or(0)).unwrap_or(0)),
+            gigabytes(u64::try_from(figure("resident_end").unwrap_or(0)).unwrap_or(0))
+        ),
+        stoplatency::NAME => format!(
+            "stopped at {} depth(s); a one-token probe on the idle engine takes {} ms",
+            figure("depths").unwrap_or(0),
+            as_ms(u64::try_from(figure("idle_probe_ns").unwrap_or(0)).unwrap_or(0))
         ),
         extraction::NAME => format!(
             "{} of {} field(s) exact over {} trial(s); JSON parsed in {}",

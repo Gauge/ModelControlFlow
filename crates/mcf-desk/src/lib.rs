@@ -1588,7 +1588,7 @@ const PROBE_ANSWERS: [&str; 9] = [
 ];
 
 /// What each measurement answers, in one line, in the daemon's order.
-const MEASURE_ANSWERS: [&str; 26] = [
+const MEASURE_ANSWERS: [&str; 28] = [
     "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
     "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
     "What a conversation pays for its history every turn: a kept prefix against the prompt read again",
@@ -1615,6 +1615,8 @@ const MEASURE_ANSWERS: [&str; 26] = [
     "Every gap between one streamed piece and the next in a long generation, the longest stall and where it fell",
     "The same generation with and without the file's own draft head: tokens a second each way, and whether the outputs agree",
     "The key-value cache at 16, 8 and 4 bits: tokens a second, resident bytes, and where the output parts from the 16-bit run",
+    "Two hundred requests through one server: which failed, what each took by hundred, resident bytes at the start and the end",
+    "From a stop being raised to the engine idle again, at several depths of prompt in flight",
 ];
 
 impl Diagnostic {

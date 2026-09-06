@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 296 |
+| **Version** | 297 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 377 build items (278 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 44 open).** Every item cites
+decided, 23 resolved) and 377 build items (280 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 42 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -370,8 +370,8 @@ first and importance second.
 | B-532 | Streaming jitter: every inter-token gap in a long generation, the longest stall and the distribution | D55, DEC-062, D16 | One row a gap | done. F214: every gap a row, the longest and where it fell, twenty-fourth measurement |
 | B-533 | The draft head's gain: the same generation with and without the model's own draft head — tokens a second, and agreement of the output | D55, DEC-062, B-456 | Two rows a depth, and the agreement | done. F215: with and without the declared draft head, twenty-fifth measurement; a file without one says so |
 | B-534 | The cache's precision: speed and fidelity against the reference with the cache at 16, 8 and 4 bits | D55, DEC-062, B-491 | Rows per precision | done. F216: the cache at 16, 8 and 4 bits with card bytes and where the output parts, twenty-sixth measurement |
-| B-535 | Soak: two hundred requests through the hosted server — failures, latency by hundred, resident bytes at start and end | D55, DEC-062, B-232 | One row a request, plus the two resident readings | open |
-| B-536 | Stop latency: time from a stop to the engine idle, at several depths | D55, DEC-062, B-459 | Rows per depth | open |
+| B-535 | Soak: two hundred requests through the hosted server — failures, latency by hundred, resident bytes at start and end | D55, DEC-062, B-232 | One row a request, plus the two resident readings | done. F217: two hundred requests each a row, by hundred, twenty-seventh measurement |
+| B-536 | Stop latency: time from a stop to the engine idle, at several depths | D55, DEC-062, B-459 | Rows per depth | done. F218: closed and idle clocks at three depths, twenty-eighth measurement; the stop waits for the prompt read |
 | B-537 | Fidelity over length: rank agreement against the reference at 100, 500 and 1,000 tokens deep | D55, DEC-062, B-491 | Rows per depth | open |
 | B-538 | Every quantization of a repository in one run: the fidelity measurement over every file here, with size and speed beside each | D55, DEC-062, B-491, D51 | One table a repository | open |
 | B-539 | Schema variety under a grammar: nested objects, arrays, enums and optional fields | D55, DEC-062, B-504 | Rows per schema per trial | open |
@@ -556,6 +556,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 297 — soak and stop
+
+B-535 and B-536 done (F217, F218).
 
 ### Version 296 — gaps, the draft head, the cache
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 159 |
+| **Version** | 160 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -185,6 +185,8 @@ forward as one.
 | 214 | [F214 — Streaming jitter streams one long generation and notes the moment each piece arrives: every gap a row, the first piece's delay, the longest stall and the token it fell at, and how many gaps ran past twice, five and ten times the typical; the 2B sent 512 pieces at a typical 8.3 ms with the longest 11.9 ms and no gap past twice the typical (B-532, D55, D16)](#214-f214-streaming-jitter-streams-one-long-generation-and-notes-the-moment-each-piece-arrives-every-gap-a-row-the-first-pieces-delay-the-longest-stall-and-the-token-it-fell-at-and-how-many-gaps-ran-past-twice-five-and-ten-times-the-typical-the-2b-sent-512-pieces-at-a-typical-83-ms-with-the-longest-119-ms-and-no-gap-past-twice-the-typical-b-532-d55-d16) |
 | 215 | [F215 — The draft head's gain starts the same file twice, with and without the draft head it declares, generates from one prompt three times each way and compares the first outputs token for token; a file that declares none measures nothing and says so, which is what the 2B did (B-533, D55, B-456)](#215-f215-the-draft-heads-gain-starts-the-same-file-twice-with-and-without-the-draft-head-it-declares-generates-from-one-prompt-three-times-each-way-and-compares-the-first-outputs-token-for-token-a-file-that-declares-none-measures-nothing-and-says-so-which-is-what-the-2b-did-b-533-d55-b-456) |
 | 216 | [F216 — The cache's precision starts the engine with its key-value cache at sixteen, eight and four bits and generates from one prompt of a thousand tokens under each: tokens a second, resident and card bytes, and where the output parts from the sixteen-bit run; the 2B ran at 111, 108 and 114 tokens a second on 2.6, 2.4 and 2.3 GB of card, the eight-bit run parting at token 35 and the four-bit at token 0 (B-534, D55, B-491)](#216-f216-the-caches-precision-starts-the-engine-with-its-key-value-cache-at-sixteen-eight-and-four-bits-and-generates-from-one-prompt-of-a-thousand-tokens-under-each-tokens-a-second-resident-and-card-bytes-and-where-the-output-parts-from-the-sixteen-bit-run-the-2b-ran-at-111-108-and-114-tokens-a-second-on-26-24-and-23-gb-of-card-the-eight-bit-run-parting-at-token-35-and-the-four-bit-at-token-0-b-534-d55-b-491) |
+| 217 | [F217 — Soak sends two hundred short requests through one server one after another, every request a row with its own clock and whether it was answered, the typical, fastest and slowest by hundred, and the server's resident bytes at the start and the end; the 2B answered all two hundred, typically in 167 ms in the first hundred and 159 in the second, slowest at request 27 (B-535, D55, B-232)](#217-f217-soak-sends-two-hundred-short-requests-through-one-server-one-after-another-every-request-a-row-with-its-own-clock-and-whether-it-was-answered-the-typical-fastest-and-slowest-by-hundred-and-the-servers-resident-bytes-at-the-start-and-the-end-the-2b-answered-all-two-hundred-typically-in-167-ms-in-the-first-hundred-and-159-in-the-second-slowest-at-request-27-b-535-d55-b-232) |
+| 218 | [F218 — Stop latency starts a generation under a stop flag at three depths of prompt, raises the flag after a second and a half, and runs two clocks: to the request coming back closed, and to a one-token probe answered afterwards net of what that probe takes on an idle engine; on the 2B the request closed within 3 ms at every depth, and the engine was idle 2 ms later at 512 tokens, 24 ms at 4,096 and 1.5 s at 16,384, where the stop landed inside the prompt read (B-536, D55, B-459)](#218-f218-stop-latency-starts-a-generation-under-a-stop-flag-at-three-depths-of-prompt-raises-the-flag-after-a-second-and-a-half-and-runs-two-clocks-to-the-request-coming-back-closed-and-to-a-one-token-probe-answered-afterwards-net-of-what-that-probe-takes-on-an-idle-engine-on-the-2b-the-request-closed-within-3-ms-at-every-depth-and-the-engine-was-idle-2-ms-later-at-512-tokens-24-ms-at-4096-and-15-s-at-16384-where-the-stop-landed-inside-the-prompt-read-b-536-d55-b-459) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
 | 200 | [F200 — Tool use is a suite of eight tasks read by a parser: each declares one to three tools through the model's own template and asks one thing, the call is judged by exact match on the tool and the arguments in the types the tool declared, one task offers nothing that fits, and a second turn feeds the tool's result back and reads the answer for it; every trial is a row, and the 2B called the right tool with the right arguments in 21 of 21, held back 3 of 3, and carried the result in 18 (B-517, D54, A19)](#200--f200--tool-use-is-a-suite-of-eight-tasks-read-by-a-parser-each-declares-one-to-three-tools-through-the-models-own-template-and-asks-one-thing-the-call-is-judged-by-exact-match-on-the-tool-and-the-arguments-in-the-types-the-tool-declared-one-task-offers-nothing-that-fits-and-a-second-turn-feeds-the-tools-result-back-and-reads-the-answer-for-it-every-trial-is-a-row-and-the-2b-called-the-right-tool-with-the-right-arguments-in-21-of-21-held-back-3-of-3-and-carried-the-result-in-18-b-517-d54-a19) |
 | 199 | [F199 — Readings: every diagnostic writes one row a figure — dims, metric, value, unit — into a record entry of its run, the ladder every pair and the cross-check every rank, the daemon indexes them by model and answers them by method newest first, `mcf data` writes them as a comma-separated table or JSON lines, and the Diagnostics pane shows the newest run's rows as a table under the finding; on the 2B a run of three measurements wrote 61 rows and they read back and exported as written (D54, B-511, B-512, B-515, B-516, D16, A6)](#199--f199--readings-every-diagnostic-writes-one-row-a-figure--dims-metric-value-unit--into-a-record-entry-of-its-run-the-ladder-every-pair-and-the-cross-check-every-rank-the-daemon-indexes-them-by-model-and-answers-them-by-method-newest-first-mcf-data-writes-them-as-a-comma-separated-table-or-json-lines-and-the-diagnostics-pane-shows-the-newest-runs-rows-as-a-table-under-the-finding-on-the-2b-a-run-of-three-measurements-wrote-61-rows-and-they-read-back-and-exported-as-written-d54-b-511-b-512-b-515-b-516-d16-a6) |
@@ -9639,6 +9641,43 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 218 · F218 — Stop latency starts a generation under a stop flag at three depths of prompt, raises the flag after a second and a half, and runs two clocks: to the request coming back closed, and to a one-token probe answered afterwards net of what that probe takes on an idle engine; on the 2B the request closed within 3 ms at every depth, and the engine was idle 2 ms later at 512 tokens, 24 ms at 4,096 and 1.5 s at 16,384, where the stop landed inside the prompt read (B-536, D55, B-459)
+
+**What a person pressing Stop waits for.** A request the daemon
+abandons is closed at the engine, which takes the closed connection
+as a cancellation; how long the engine takes to notice is the wait a
+person feels, and the daemon's own request path already carries the
+flag that closes a request. A generation is started under that flag
+in a thread at each depth of filler — 512, 4,096 and 16,384 tokens —
+the flag is raised after 1.5 s, and two clocks run from that moment:
+until the request returns closed, and until a one-token probe on the
+same engine is answered, less what that probe takes on an idle
+engine. Each depth is a row set: `prompt_tokens`, `produced_before_
+stop`, `closed_ns`, `idle_ns`, `idle_net_ns`, `probe_after_ns`.
+
+**The 2B.** The request closed within 0.5, 1.4 and 2.7 ms of the
+flag. The engine was idle 2 ms after the stop at 512 tokens and 24 ms
+at 4,096; at 16,384 it was 1.5 s, because at a second and a half the
+engine was still reading the prompt, and a batch being read is not
+interrupted until it is done. The wait after Stop is the prompt's
+size, not the answer's, and these rows say so by depth.
+
+## 217 · F217 — Soak sends two hundred short requests through one server one after another, every request a row with its own clock and whether it was answered, the typical, fastest and slowest by hundred, and the server's resident bytes at the start and the end; the 2B answered all two hundred, typically in 167 ms in the first hundred and 159 in the second, slowest at request 27 (B-535, D55, B-232)
+
+**A server that answers all evening.** One request says a server
+answers; two hundred say whether it keeps answering, whether it slows,
+and whether it grows. Four short prompts in turn, up to 32 tokens
+each, greedy with the request's index as the seed; each request is a
+row — `ns`, `ok`, `produced` — and the server's resident bytes are
+read before the first and after the last. The report says the typical,
+fastest and slowest by hundred, so a second hundred slower than the
+first is on the page.
+
+**The 2B.** Two hundred answered, none failed, 3,692 tokens in all;
+typically 167 ms in the first hundred and 159 in the second, the
+fastest 84 ms and the slowest 266 ms at request 27; resident bytes the
+same at both ends. 602 rows.
+
 ## 216 · F216 — The cache's precision starts the engine with its key-value cache at sixteen, eight and four bits and generates from one prompt of a thousand tokens under each: tokens a second, resident and card bytes, and where the output parts from the sixteen-bit run; the 2B ran at 111, 108 and 114 tokens a second on 2.6, 2.4 and 2.3 GB of card, the eight-bit run parting at token 35 and the four-bit at token 0 (B-534, D55, B-491)
 
 **Fitting a window costs something.** A quantized cache is the usual
@@ -13680,6 +13719,10 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 160 — soak and stop
+
+F217: soak (B-535). F218: stop latency (B-536).
 
 ### Version 159 — gaps, the draft head, the cache
 
