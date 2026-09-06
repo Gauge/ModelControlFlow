@@ -641,6 +641,7 @@ fn run_in_container(podman: &Path, scratch: &Path, task: &Task, written: &str) -
         }
     };
     let said = String::from_utf8_lossy(&spoke.stdout);
+    let _kept = std::fs::write(scratch.join("answer.out"), said.as_bytes());
     let held: Vec<&str> = said
         .lines()
         .filter(|line| matches!(*line, "ok" | "no"))
@@ -661,6 +662,55 @@ fn run_in_container(podman: &Path, scratch: &Path, task: &Task, written: &str) -
         passed: held.iter().filter(|line| **line == "ok").count(),
         of: task.cases.len(),
     }
+}
+
+/// Which cases held, in the task's order, from the checker's lines; empty
+/// where the program did not reach every case.
+fn cases_held(podman: &Path, scratch: &Path, task: &Task, written: &str) -> (Ran, Vec<bool>) {
+    let ran = run_in_container(podman, scratch, task, written);
+    let held = match &ran {
+        Ran::Checked { .. } => {
+            // Read again from the program's own output kept beside the
+            // answer: the runner reports the count, and the repair needs
+            // to know which.
+            let said = std::fs::read_to_string(scratch.join("answer.out")).unwrap_or_default();
+            said.lines()
+                .filter(|line| matches!(*line, "ok" | "no"))
+                .map(|line| line == "ok")
+                .collect()
+        }
+        Ran::Refused { .. } => Vec::new(),
+    };
+    (ran, held)
+}
+
+/// The feedback a failed attempt is handed back with: the cases that did
+/// not hold, each with what the call should return, or that the answer
+/// did not run to the end of the checks (B-521).
+fn feedback(task: &Task, written: &str, ran: &Ran, held: &[bool]) -> String {
+    let mut out = format!(
+        "{}\n\nYou answered:\n```python\n{written}\n```\n",
+        task.asks
+    );
+    match ran {
+        Ran::Checked { .. } => {
+            out.push_str("That answer is wrong:\n");
+            for (case, ok) in task.cases.iter().zip(held) {
+                if !ok {
+                    use std::fmt::Write as _;
+                    let _wrote = writeln!(out, "- {} should return {}", case.call, case.expects);
+                }
+            }
+        }
+        Ran::Refused { .. } => {
+            out.push_str(
+                "That answer did not run to the end of the checks: it raised, did not parse, or \
+                 did not define the function.\n",
+            );
+        }
+    }
+    out.push_str("Reply with only the corrected function.");
+    out
 }
 
 /// Where podman is, or the refusal that says why there is none.
@@ -748,27 +798,132 @@ pub(crate) fn eval(named: &str) -> Response {
     // Every attempt a row: what it wrote, whether it ran, the cases held,
     // and what the asking and the running took (D54, B-518).
     let mut rows: Vec<mcf_serve::examine::Reading> = Vec::new();
+    // And every failed attempt handed back with what did not hold, for a
+    // second try: whether it was repaired is its own row (B-521).
+    let mut repairs: Vec<mcf_serve::examine::Reading> = Vec::new();
+    let mut second_tries: std::collections::BTreeMap<(String, usize), String> =
+        std::collections::BTreeMap::new();
+    let (mut failed, mut repaired) = (0_usize, 0_usize);
     for task in TASKS {
-        let mut timings: Vec<(u64, usize)> = Vec::new();
+        let mut timings: Vec<(u64, usize, String)> = Vec::new();
+        let mut cases: Vec<Vec<bool>> = Vec::new();
         let mut ask = |task: &Task| {
             let began = std::time::Instant::now();
             let spoken =
                 mcf_serve::probes::spoken(&socket, Path::new(named), task.asks, None, 400, None);
             let took = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
             let written = (!spoken.text.trim().is_empty()).then(|| code_in(&spoken.text));
-            timings.push((took, written.as_ref().map_or(0, String::len)));
+            timings.push((
+                took,
+                written.as_ref().map_or(0, String::len),
+                written.clone().unwrap_or_default(),
+            ));
             written
         };
-        let mut run =
-            |task: &Task, written: &str| run_in_container(&podman, &scratch, task, written);
+        let mut run = |task: &Task, written: &str| {
+            let (ran, which) = cases_held(&podman, &scratch, task, written);
+            cases.push(which);
+            ran
+        };
         let trials = measure(task, ATTEMPTS, &mut ask, &mut run);
         for (attempt, ran) in trials.attempts.iter().enumerate() {
-            let (ask_ns, code_bytes) = timings.get(attempt).copied().unwrap_or((0, 0));
+            let (ask_ns, code_bytes, written) =
+                timings
+                    .get(attempt)
+                    .cloned()
+                    .unwrap_or((0, 0, String::new()));
             rows.extend(attempt_rows(task.name, attempt, ran, ask_ns, code_bytes));
+            let whole = matches!(ran, Ran::Checked { passed, of } if passed == of);
+            if whole || written.is_empty() {
+                continue;
+            }
+            failed = failed.saturating_add(1);
+            let which = cases.get(attempt).cloned().unwrap_or_default();
+            let again = feedback(task, &written, ran, &which);
+            let began = std::time::Instant::now();
+            let spoken =
+                mcf_serve::probes::spoken(&socket, Path::new(named), &again, None, 400, None);
+            let took = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            let fixed = code_in(&spoken.text);
+            let second = run_in_container(&podman, &scratch, task, &fixed);
+            let fixed_whole = matches!(second, Ran::Checked { passed, of } if passed == of);
+            if fixed_whole {
+                repaired = repaired.saturating_add(1);
+            }
+            second_tries.insert(
+                (task.name.to_owned(), attempt),
+                match &second {
+                    Ran::Checked { passed, of } => {
+                        format!("handed back what did not hold; second try: {passed} of {of} held")
+                    }
+                    Ran::Refused { because, .. } => {
+                        format!("handed back what did not hold; second try did not run — {because}")
+                    }
+                },
+            );
+            let dims = [
+                ("task", Value::text(task.name)),
+                (
+                    "attempt",
+                    Value::Integer(i64::try_from(attempt).unwrap_or(i64::MAX)),
+                ),
+            ];
+            repairs.push(mcf_serve::examine::Reading::new(
+                &dims,
+                "repaired",
+                i64::from(fixed_whole),
+                "bool",
+            ));
+            if let Ran::Checked { passed, of } = second {
+                repairs.push(mcf_serve::examine::Reading::new(
+                    &dims,
+                    "cases_held",
+                    i64::try_from(passed).unwrap_or(i64::MAX),
+                    "count",
+                ));
+                repairs.push(mcf_serve::examine::Reading::new(
+                    &dims,
+                    "cases",
+                    i64::try_from(of).unwrap_or(i64::MAX),
+                    "count",
+                ));
+            }
+            repairs.push(mcf_serve::examine::Reading::new(
+                &dims,
+                "ran",
+                i64::from(matches!(second, Ran::Checked { .. })),
+                "bool",
+            ));
+            repairs.push(mcf_serve::examine::Reading::new(
+                &dims,
+                "ask_ns",
+                i64::try_from(took).unwrap_or(i64::MAX),
+                "ns",
+            ));
         }
         held.push(trials);
     }
     let _gone = std::fs::remove_dir_all(&scratch);
+    let repairs_recorded = if repairs.is_empty() {
+        None
+    } else {
+        Some(mcf_serve::examine::record_rows(
+            Path::new(named),
+            "coding-repair",
+            "through the daemon, run in a container",
+            vec![
+                (
+                    "failed",
+                    Value::Integer(i64::try_from(failed).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "repaired",
+                    Value::Integer(i64::try_from(repaired).unwrap_or(i64::MAX)),
+                ),
+            ],
+            &repairs,
+        ))
+    };
     let recorded = mcf_serve::examine::record_rows(
         Path::new(named),
         "coding",
@@ -808,6 +963,9 @@ pub(crate) fn eval(named: &str) -> Response {
                     format!("      attempt {}: did not run — {because}", at + 1)
                 }
             });
+            if let Some(said) = second_tries.get(&(trials.task.to_owned(), at)) {
+                lines.push(format!("        {said}"));
+            }
         }
         lines.push(String::new());
     }
@@ -832,6 +990,15 @@ pub(crate) fn eval(named: &str) -> Response {
         ),
         Err(why) => format!("  READINGS NOT RECORDED: {why}"),
     });
+    lines.push(format!(
+        "  repaired on a second try, handed back what did not hold: {repaired} of {failed} \
+         failed attempt(s){}",
+        match repairs_recorded {
+            Some(Ok(_)) => format!(" — {} reading(s) under coding-repair", repairs.len()),
+            Some(Err(why)) => format!(" — READINGS NOT RECORDED: {why}"),
+            None => String::new(),
+        }
+    ));
     Response {
         text: lines.join("\n"),
         served: true,
@@ -889,4 +1056,61 @@ fn attempt_rows(
         }
     }
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Case, Ran, Task, feedback};
+
+    const TASK: Task = Task {
+        name: "double",
+        function: "double",
+        asks: "Write double(n).",
+        cases: &[
+            Case {
+                call: "double(2)",
+                expects: "4",
+            },
+            Case {
+                call: "double(3)",
+                expects: "6",
+            },
+        ],
+    };
+
+    #[test]
+    fn a_failed_case_is_handed_back_with_what_it_should_return() {
+        let said = feedback(
+            &TASK,
+            "def double(n):\n    return n + n + 1",
+            &Ran::Checked { passed: 1, of: 2 },
+            &[true, false],
+        );
+        assert!(said.contains("Write double(n)."), "{said}");
+        assert!(said.contains("return n + n + 1"), "{said}");
+        assert!(said.contains("- double(3) should return 6"), "{said}");
+        assert!(!said.contains("double(2) should"), "{said}");
+        assert!(
+            said.ends_with("Reply with only the corrected function."),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn an_answer_that_did_not_run_is_told_so() {
+        let said = feedback(
+            &TASK,
+            "def double(n)\n    return",
+            &Ran::Refused {
+                because: "syntax".to_owned(),
+                wrote_something: true,
+            },
+            &[],
+        );
+        assert!(
+            said.contains("did not run to the end of the checks"),
+            "{said}"
+        );
+        assert!(!said.contains("should return"), "{said}");
+    }
 }

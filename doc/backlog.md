@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 288 |
+| **Version** | 289 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **439 items: 62 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 12
-decided, 23 resolved) and 377 build items (264 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 58 open).** Every item cites
+decided, 23 resolved) and 377 build items (265 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 57 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -356,7 +356,7 @@ first and importance second.
 | B-518 | Coding readings: `mcf eval` writes every attempt as a row — task, attempt, wrote, ran, cases held of cases, tokens, time — under the readings schema, and its task set grows past twelve with tasks that read input, handle errors and edit code, each checked by execution | D54, DEC-061, B-110, B-025, §IX | Every attempt is a row in the record; a second model's rows compare with the first's task by task | done. F201: every attempt a row from the command line, twenty tasks; the 2B's sixty attempts as 387 rows |
 | B-519 | Coding is a row of the Diagnostics list with its readings shown like the rest, run from the window through the command line's container, and the list says when it last ran | D54, DEC-061, D53, B-025 | The row runs the laboratory, marks itself running, and shows its readings when done | open |
 | B-520 | Multi-step tool use: chains of two to four calls where each argument comes from the last result, parallel calls in one turn, and an error result the model must react to — steps completed, right order, recovery after an error, every step a row | D55, DEC-062, B-517, A19 | A run gives one row a step; a model that stops after the first call reads as such | done. F202: five tasks over several turns, every step a row; the 2B completed eight of ten chains and never recovered from the error |
-| B-521 | Repair after feedback: every failed coding attempt handed back with its case output for a second attempt — fixed on the second try, tokens spent, a row each | D55, DEC-062, B-518, A19 | The rows separate a model that fixes from one that repeats | open |
+| B-521 | Repair after feedback: every failed coding attempt handed back with its case output for a second attempt — fixed on the second try, tokens spent, a row each | D55, DEC-062, B-518, A19 | The rows separate a model that fixes from one that repeats | done. F203: handed back with the cases that did not hold, the second try a row under `coding-repair`; on the 2B one of 36 repaired |
 | B-522 | Edit tasks: a whole file given, a change asked, hidden tests run on the result, and the parts not asked about compared byte for byte | D55, DEC-062, B-518 | Rows for tests held and for bytes changed outside the ask | open |
 | B-523 | The coding suite in a second and a third language, in the same container images, per-language rows | D55, DEC-062, B-518, B-025 | Every task has rows in each language, and a language the container cannot run says so | open |
 | B-524 | Test writing: the model writes tests for a stated function, run against a correct and a deliberately broken implementation — passes on the good, catches on the broken | D55, DEC-062, B-518 | Rows for both counts, task by task | open |
@@ -556,6 +556,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 289 — repair after feedback
+
+B-521 done (F203).
 
 ### Version 288 — multi-step tool use
 
