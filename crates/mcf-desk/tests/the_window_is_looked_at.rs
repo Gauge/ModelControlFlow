@@ -2537,6 +2537,22 @@ fn review_small_windows() {
     let _ = drawn_sized(&desk, DAY, "review-small-scrolled", small);
     desk.page = Page::Diagnostics;
     let _ = drawn_sized(&desk, NIGHT, "review-small-diagnostics", small);
+    // Any size: a small window and a large one, the same pages laid out
+    // for each, nothing cut and nothing left in a fixed-width island
+    // (B-510).
+    for (name, size) in [("tiny", (700, 500)), ("wide", (2200, 1300))] {
+        for (page, tab, called) in [
+            (Page::Diagnostics, mcf_desk::Tab::Configure, "diagnostics"),
+            (Page::Models, mcf_desk::Tab::Configure, "configure"),
+            (Page::Models, mcf_desk::Tab::Statistics, "statistics"),
+            (Page::Hosting, mcf_desk::Tab::Configure, "server"),
+            (Page::Monitor, mcf_desk::Tab::Configure, "system"),
+        ] {
+            desk.page = page;
+            desk.tab = tab;
+            let _ = drawn_sized(&desk, DAY, &format!("review-{name}-{called}"), size);
+        }
+    }
 }
 
 /// A repository's files as the daemon lists them, for the hub page.

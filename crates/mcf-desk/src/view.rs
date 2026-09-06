@@ -199,6 +199,17 @@ struct Column {
     right: bool,
 }
 
+/// The width a table's columns were laid out for; a wider table spreads
+/// them in proportion, so a wide window is used and not left empty at
+/// the right (B-510). A narrower one keeps them where they are, since
+/// the figures need their room, and the page scrolls.
+const TABLE_DESIGNED_FOR: f32 = 700.0;
+
+/// Where a column's edge falls in a table of this width.
+fn column_edge(area: Box, at: f32) -> f32 {
+    area.x + at * (area.w / TABLE_DESIGNED_FOR).max(1.0)
+}
+
 /// Draws a table's heading row and returns the row below it.
 fn heads(paint: &mut Painter, area: Box, first: &str, columns: &[Column]) -> f32 {
     let ink = paint.ink;
@@ -208,13 +219,19 @@ fn heads(paint: &mut Painter, area: Box, first: &str, columns: &[Column]) -> f32
             let wide = spaced_width(paint, column.head);
             spaced(
                 paint,
-                area.x + column.at - wide,
+                column_edge(area, column.at) - wide,
                 area.y,
                 column.head,
                 ink.faint,
             );
         } else {
-            spaced(paint, area.x + column.at, area.y, column.head, ink.faint);
+            spaced(
+                paint,
+                column_edge(area, column.at),
+                area.y,
+                column.head,
+                ink.faint,
+            );
         }
     }
     let under = area.y + 17.0;
@@ -225,7 +242,9 @@ fn heads(paint: &mut Painter, area: Box, first: &str, columns: &[Column]) -> f32
 /// One row of a table.
 fn row(paint: &mut Painter, area: Box, y: f32, first: &str, cells: &[(&Column, String)]) {
     let ink = paint.ink;
-    let room = cells.first().map_or(area.w, |(column, _)| column.at - 14.0);
+    let room = cells.first().map_or(area.w, |(column, _)| {
+        column_edge(area, column.at) - area.x - 14.0
+    });
     let shortened = paint.elide(first, Weight::Regular, size::BODY, room);
     paint.say_at(
         area.x,
@@ -243,24 +262,11 @@ fn row(paint: &mut Painter, area: Box, y: f32, first: &str, cells: &[(&Column, S
         } else {
             ink.ink
         };
+        let at = column_edge(area, column.at);
         if column.right {
-            paint.say_right(
-                area.x + column.at,
-                y,
-                value,
-                Weight::Bold,
-                size::BODY,
-                colour,
-            );
+            paint.say_right(at, y, value, Weight::Bold, size::BODY, colour);
         } else {
-            paint.say_at(
-                area.x + column.at,
-                y,
-                value,
-                Weight::Bold,
-                size::BODY,
-                colour,
-            );
+            paint.say_at(at, y, value, Weight::Bold, size::BODY, colour);
         }
     }
 }
@@ -366,7 +372,7 @@ fn monitor(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 /// The System page's content, from the top of its region.
 fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let wide = area.w.min(940.0);
+    let wide = area.w;
 
     // The machine's own figures, then its engines; what is held is on
     // Running (D49).
@@ -646,7 +652,8 @@ fn storage_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
 /// through, the detail is what you read.
 fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let list = desk.splits.list;
+    // The list gives way before the page does in a narrow window (B-510).
+    let list = desk.splits.list.min((area.w - 300.0).max(150.0));
     let right = area.x + list + 40.0;
     let mut act = None;
     let actions_at = area.bottom() - 200.0;
@@ -752,7 +759,7 @@ fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         ink.faint,
     );
     let mut y = area.y + 70.0;
-    let column = area.x + 190.0;
+    let column = area.x + label_column_of(area.w, 190.0);
     paint.say_at(
         area.x,
         y,
@@ -765,7 +772,7 @@ fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         .quantizations()
         .get(desk.quantization_at().unwrap_or(usize::MAX))
         .map_or_else(|| pending.file.clone(), quant_label);
-    let box_of = Box::new(column, y - 6.0, (area.w - 190.0).min(360.0), 28.0);
+    let box_of = Box::new(column, y - 6.0, (area.w - 190.0).max(120.0), 28.0);
     let open = desk.open == Some(Picker::Quantization);
     if ui::picker(paint, mouse, box_of, &now, open) {
         act = Some(Act::Open(Picker::Quantization));
@@ -821,7 +828,7 @@ fn pending_actions(
         paint.say_at(area.x, y, &job.what, Weight::Bold, size::BODY, ink.ink);
         ui::progress(
             paint,
-            Box::new(area.x, y + 24.0, area.w.min(520.0), 8.0),
+            Box::new(area.x, y + 24.0, area.w, 8.0),
             crate::job::fraction(job),
         );
         paint.say_at(
@@ -892,7 +899,7 @@ fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
             paint.say_at(area.x, y, &job.what, Weight::Bold, size::BODY, ink.ink);
             ui::progress(
                 paint,
-                Box::new(area.x, y + 24.0, area.w.min(520.0), 8.0),
+                Box::new(area.x, y + 24.0, area.w, 8.0),
                 crate::job::fraction(job),
             );
             paint.say_at(
@@ -924,7 +931,7 @@ fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
         (None, Some(why)) => {
             let mut at = y;
             for line in paint
-                .wrap(why, Weight::Regular, size::BODY, area.w.min(600.0))
+                .wrap(why, Weight::Regular, size::BODY, area.w)
                 .iter()
                 .take(3)
             {
@@ -941,7 +948,7 @@ fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
 fn no_settings(paint: &mut Painter, desk: &Desk, area: Box, why: &str) {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "settings", ink.faint);
-    let lines = paint.wrap(why, Weight::Regular, size::SMALL, area.w.min(430.0));
+    let lines = paint.wrap(why, Weight::Regular, size::SMALL, area.w);
     let mut y = area.y + 24.0;
     for line in lines.iter().take(3) {
         paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.warn);
@@ -956,7 +963,7 @@ fn no_settings(paint: &mut Painter, desk: &Desk, area: Box, why: &str) {
              then holds the model on it."
         );
         for line in paint
-            .wrap(&said, Weight::Regular, size::SMALL, area.w.min(430.0))
+            .wrap(&said, Weight::Regular, size::SMALL, area.w)
             .iter()
             .take(3)
         {
@@ -1041,7 +1048,11 @@ fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
     let left = Box::new(
         area.x,
         area.y,
-        if stacked { area.w } else { area.w.min(400.0) },
+        if stacked {
+            area.w
+        } else {
+            (area.w * 0.45).max(300.0)
+        },
         area.h,
     );
     let after = detail(paint, left, held);
@@ -1321,8 +1332,8 @@ fn configure_tab(
             .filter(|setting| setting.value != setting.recommended)
             .map(|setting| setting.recommended.clone())
     };
-    let column = area.x + 190.0;
-    let control = (area.w - 190.0).min(360.0);
+    let column = area.x + label_column_of(area.w, 190.0);
+    let control = (area.w - 190.0).max(120.0);
     let mut act = None;
     let mut hovered: Option<&'static str> = None;
     let mut menu: Option<(Picker, Box)> = None;
@@ -2532,8 +2543,9 @@ fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
 
     let said = |paint: &mut Painter, y: f32, name: &str, value: &str, colour: Rgb| {
         paint.say_at(area.x, y, name, Weight::Regular, size::BODY, ink.quiet);
-        let shown = paint.elide(value, Weight::Bold, size::BODY, area.w - 200.0);
-        paint.say_at(area.x + 190.0, y, &shown, Weight::Bold, size::BODY, colour);
+        let column = label_column_of(area.w, 190.0);
+        let shown = paint.elide(value, Weight::Bold, size::BODY, area.w - column - 10.0);
+        paint.say_at(area.x + column, y, &shown, Weight::Bold, size::BODY, colour);
     };
 
     for (name, value) in [
@@ -2601,7 +2613,7 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     let mut y = area.y;
     // What has been measured, which for most models is nothing — and the
     // console says so in this many words, so this does too (A7, A9).
-    let wide = area.w.min(430.0);
+    let wide = area.w;
     let speed = Column {
         head: "speed",
         at: wide,
@@ -2654,7 +2666,7 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
         );
         y = crate::chart::falloff(
             paint,
-            Box::new(area.x, y + 20.0, area.w.min(430.0), 72.0),
+            Box::new(area.x, y + 20.0, area.w, 72.0),
             &held.ladder,
         );
     }
@@ -2710,7 +2722,12 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
         size::BODY,
         ink.quiet,
     );
-    let box_of = Box::new(area.x + 110.0, area.y - 6.0, 420.0, 28.0);
+    let box_of = Box::new(
+        area.x + 110.0,
+        area.y - 6.0,
+        (area.w - 110.0).max(160.0),
+        28.0,
+    );
     let open = desk.open == Some(Picker::Model);
     if ui::picker(paint, mouse, box_of, &chosen_model, open) {
         act = Some(Act::Open(Picker::Model));
@@ -2722,10 +2739,27 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
 
     // The list down the left, the boundary dragged (B-490), the chosen
     // diagnostic whole to the right.
-    let list_w = desk.splits.diagnostics.min(area.w - 300.0).max(200.0);
+    let list_w = desk.splits.diagnostics.min((area.w - 260.0).max(160.0));
     let list = Box::new(area.x, top, list_w, area.bottom() - top);
     spaced(paint, list.x, list.y, "diagnostics", ink.faint);
-    let rows = Box::new(list.x - 6.0, list.y + 22.0, list.w + 6.0, list.h - 22.0);
+    // Every diagnostic in turn, from one press (B-508).
+    let a_run = a_run_is_going(desk);
+    let run_all = Box::new(list.right() - 78.0, list.y - 7.0, 72.0, 26.0);
+    let kind = if a_run { Kind::Quiet } else { Kind::Primary };
+    if ui::button(paint, mouse, run_all, "Run all", kind) && !a_run {
+        act = Some(download_then(desk, Act::RunAll));
+    }
+    // The strip under the list: what runs, how far, how long, Stop (B-509).
+    let strip = Box::new(list.x, list.bottom() - STRIP, list.w, STRIP);
+    if let Some(pressed) = progress_strip(paint, desk, mouse, strip) {
+        act = Some(pressed);
+    }
+    let rows = Box::new(
+        list.x - 6.0,
+        list.y + 22.0,
+        list.w + 6.0,
+        (list.h - 22.0 - STRIP - 8.0).max(40.0),
+    );
     let picked = scrolled(
         paint,
         mouse,
@@ -2747,7 +2781,7 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
     let pane = Box::new(
         list.right() + 24.0,
         top,
-        (area.right() - list.right() - 24.0).max(280.0),
+        (area.right() - list.right() - 24.0).max(120.0),
         area.bottom() - top,
     );
     let (pressed, opened) = diagnostic_pane(paint, desk, mouse, pane);
@@ -2761,6 +2795,64 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
         act = Some(picked);
     }
     act
+}
+
+/// How tall the strip under the list is.
+const STRIP: f32 = 74.0;
+
+/// The strip under the list: which diagnostic is running and, while a
+/// Run all goes, which run of how many; a bar that is the run's own
+/// progress where its stream says, or the sequence's; the elapsed time;
+/// and a Stop. *Nothing running* otherwise, so the list keeps its shape
+/// (B-509, A7).
+fn progress_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Option<Act> {
+    let ink = paint.ink;
+    paint.rule((at.x, at.y), (at.right(), at.y), ink.line, 255);
+    let running = desk.running_diagnostic();
+    let job = desk.doing.job().filter(|job| !job.finished);
+    let (Some(job), Some(running)) = (job, running.or_else(|| job.map(|_| desk.diagnostic))) else {
+        paint.say_at(
+            at.x,
+            at.y + 14.0,
+            "nothing running",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return None;
+    };
+    let what = match desk.sequence_place() {
+        Some((place, of)) => format!("run {place} of {of} · {}", running.name()),
+        None => running.name().to_owned(),
+    };
+    let shown = paint.elide(&what, Weight::Bold, size::SMALL, at.w - 96.0);
+    paint.say_at(
+        at.x,
+        at.y + 12.0,
+        &shown,
+        Weight::Bold,
+        size::SMALL,
+        ink.ink,
+    );
+    let elapsed = clock(job.ran());
+    paint.say_right(
+        at.right() - 8.0,
+        at.y + 12.0,
+        &elapsed,
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    let bar = Box::new(at.x, at.y + 34.0, at.w - 86.0, 8.0);
+    // A run whose stream does not say how far it is draws the bar without
+    // a fill, which is honest about what is known (A7).
+    ui::progress(
+        paint,
+        bar,
+        desk.sequence_fraction().or_else(|| desk.run_fraction()),
+    );
+    let stop = Box::new(at.right() - 74.0, at.y + 26.0, 66.0, 26.0);
+    ui::button(paint, mouse, stop, "Stop", Kind::Primary).then_some(Act::Stop)
 }
 
 /// The list's rows from the top of its region: each family under its
@@ -3261,7 +3353,13 @@ fn throughput_card(
         ),
     ] {
         paint.say_at(inner.x, y, label, Weight::Regular, size::BODY, ink.quiet);
-        let box_of = Box::new(inner.x + 150.0, y - 6.0, (inner.w - 150.0).min(360.0), 28.0);
+        let column = label_column(inner.w);
+        let box_of = Box::new(
+            inner.x + column,
+            y - 6.0,
+            (inner.w - column).max(60.0),
+            28.0,
+        );
         let open = desk.open == Some(picker);
         if ui::picker(paint, mouse, box_of, &value, open) {
             act = Some(Act::Open(picker));
@@ -3288,14 +3386,15 @@ fn throughput_card(
     // Choosing a window implies every power of two below it, so the depths
     // are stated rather than offered as a second set of choices.
     paint.say_at(inner.x, y, "Depths", Weight::Regular, size::BODY, ink.quiet);
+    let column = label_column(inner.w);
     let depths = paint.elide(
         &desk.ladder_line(),
         Weight::Regular,
         size::BODY,
-        inner.w - 150.0,
+        inner.w - column,
     );
     paint.say_at(
-        inner.x + 150.0,
+        inner.x + column,
         y,
         &depths,
         Weight::Regular,
@@ -3304,7 +3403,7 @@ fn throughput_card(
     );
     y += 34.0;
 
-    let (pressed, below) = throughput_buttons(paint, desk, mouse, (inner.x, y), running);
+    let (pressed, below) = throughput_buttons(paint, desk, mouse, (inner.x, y), inner.w, running);
     act = pressed.or(act);
     y = below;
     readings(
@@ -3315,6 +3414,17 @@ fn throughput_card(
     (act, menu)
 }
 
+/// How wide a card's label column is: a hundred and fifty points where
+/// there is room, and a share of a narrow card otherwise (B-510).
+fn label_column(inner_w: f32) -> f32 {
+    label_column_of(inner_w, 150.0)
+}
+
+/// The same, with the width the labels want where there is room.
+fn label_column_of(inner_w: f32, most: f32) -> f32 {
+    (inner_w * 0.4).min(most).max(70.0)
+}
+
 /// Quick run and Run, each with its cost; Stop while the ladder climbs; and
 /// where the figures went once it has. Returns where the readings begin.
 fn throughput_buttons(
@@ -3322,15 +3432,20 @@ fn throughput_buttons(
     desk: &Desk,
     mouse: &Mouse,
     (x, y): (f32, f32),
+    wide: f32,
     running: bool,
 ) -> (Option<Act>, f32) {
     let ink = paint.ink;
     let mut act = None;
-    let (quick_w, full_w) = if desk.pending.is_some() {
+    let (quick_w, full_w): (f32, f32) = if desk.pending.is_some() {
         (170.0, 160.0)
     } else {
         (130.0, 110.0)
     };
+    // Two buttons and a Stop share a narrow card rather than run off it
+    // (B-510).
+    let room = ((wide - 28.0) / 3.0).max(60.0);
+    let (quick_w, full_w) = (quick_w.min(room), full_w.min(room));
     let quick = Box::new(x, y, quick_w, 34.0);
     let full = Box::new(quick.right() + 14.0, y, full_w, 34.0);
     let kind = |primary: bool| {
@@ -3367,9 +3482,16 @@ fn throughput_buttons(
     }
     for (button, quick_one) in [(quick, true), (full, false)] {
         let (low, high) = desk.estimate(quick_one);
+        // The caption fits its button, however narrow the card (B-510).
+        let caption = paint.elide(
+            &span(low, high),
+            Weight::Regular,
+            size::SMALL,
+            button.w + 10.0,
+        );
         paint.say_centred(
             Box::new(button.x, button.bottom(), button.w, 20.0),
-            &span(low, high),
+            &caption,
             Weight::Regular,
             size::SMALL,
             ink.faint,
@@ -3657,8 +3779,9 @@ fn placement_rows(paint: &mut Painter, desk: &Desk, x: f32, mut y: f32, wide: f3
             || ("not resolved".to_owned(), ink.faint),
             |value| (value, ink.ink),
         );
-        let shown = paint.elide(&said, Weight::Regular, size::BODY, wide - 190.0);
-        paint.say_at(x + 190.0, y, &shown, Weight::Regular, size::BODY, colour);
+        let column = label_column_of(wide, 190.0);
+        let shown = paint.elide(&said, Weight::Regular, size::BODY, wide - column);
+        paint.say_at(x + column, y, &shown, Weight::Regular, size::BODY, colour);
         y += 26.0;
     }
     y + 8.0
@@ -3923,7 +4046,8 @@ fn one_reading(paint: &mut Painter, answer: &Value, x: f32, mut y: f32, wide: f3
     } else {
         (UNKNOWN.to_owned(), ink.faint)
     };
-    paint.say_at(x + 190.0, y, &said, Weight::Bold, size::BODY, colour);
+    let column = label_column_of(wide, 190.0);
+    paint.say_at(x + column, y, &said, Weight::Bold, size::BODY, colour);
     // A figure from one pair of three says so beside itself, quietly,
     // so it does not wear the look of one from three (A7, F174).
     let note = mcf_tui::screens::diagnostics::pairs_note(reading);
@@ -3933,10 +4057,10 @@ fn one_reading(paint: &mut Painter, answer: &Value, x: f32, mut y: f32, wide: f3
             &note,
             Weight::Regular,
             size::SMALL,
-            (wide - 190.0 - after - 8.0).max(40.0),
+            (wide - column - after - 8.0).max(40.0),
         );
         paint.say_at(
-            x + 190.0 + after + 8.0,
+            x + column + after + 8.0,
             y + 1.0,
             &shown,
             Weight::Regular,
@@ -4064,7 +4188,7 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     y += 30.0;
 
     let mut act = None;
-    let field = Box::new(area.x, y, (area.w - 130.0).min(520.0), 32.0);
+    let field = Box::new(area.x, y, (area.w - 130.0).max(160.0), 32.0);
     let _clicked = ui::field(
         paint,
         mouse,
@@ -4095,7 +4219,7 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
             y += 24.0;
             ui::progress(
                 paint,
-                Box::new(area.x, y, area.w.min(520.0), 8.0),
+                Box::new(area.x, y, area.w, 8.0),
                 crate::job::fraction(job),
             );
             y += 22.0;
@@ -4116,7 +4240,7 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     };
     if let Some(why) = &job.refused {
         for line in paint
-            .wrap(why, Weight::Regular, size::BODY, area.w.min(560.0))
+            .wrap(why, Weight::Regular, size::BODY, area.w)
             .iter()
             .take(3)
         {
@@ -4154,7 +4278,7 @@ fn searched(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Opt
         .and_then(Value::as_list)
         .map(<[Value]>::to_vec)
         .unwrap_or_default();
-    let wide = area.w.min(640.0);
+    let wide = area.w;
     let mut y = area.y;
     if listed.is_empty() {
         paint.say_at(
@@ -4228,7 +4352,7 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
         .get("files")
         .and_then(Value::as_list)
         .map(<[Value]>::to_vec)?;
-    let wide = area.w.min(640.0);
+    let wide = area.w;
     let mut y = area.y;
     paint.say_at(area.x, y, &repository, Weight::Bold, size::HEAD, ink.ink);
     y += 30.0;
@@ -4455,7 +4579,7 @@ fn ask_box(
     held: &Model,
 ) -> (Option<Act>, f32) {
     let mut act = None;
-    let field = Box::new(at.x, at.y, (at.w - 120.0).min(640.0), 32.0);
+    let field = Box::new(at.x, at.y, (at.w - 120.0).max(160.0), 32.0);
     if ui::field(
         paint,
         mouse,
@@ -4502,12 +4626,8 @@ fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     else {
         return at.y;
     };
-    let y = use_tiles(paint, in_use, Box::new(at.x, at.y, at.w.min(900.0), 0.0));
-    let y = rate_line(
-        paint,
-        &desk.rates,
-        Box::new(at.x, y + 8.0, at.w.min(900.0), 48.0),
-    );
+    let y = use_tiles(paint, in_use, Box::new(at.x, at.y, at.w, 0.0));
+    let y = rate_line(paint, &desk.rates, Box::new(at.x, y + 8.0, at.w, 48.0));
     y + 16.0
 }
 
@@ -4793,7 +4913,7 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
                 mouse,
                 hosting,
                 None,
-                Box::new(area.x, y, area.w.min(640.0), 0.0),
+                Box::new(area.x, y, area.w, 0.0),
             );
             act = pressed;
         }
@@ -4801,12 +4921,7 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     };
     // What is held, or how the hold is going, or why it is not: the one
     // place for it, before anything can be asked (A2, A7).
-    let (held_act, after) = held_block(
-        paint,
-        desk,
-        mouse,
-        Box::new(area.x, y, area.w.min(640.0), 0.0),
-    );
+    let (held_act, after) = held_block(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0));
     act = held_act.or(act);
     y = after;
     let (asked, after) = ask_box(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0), held);
@@ -4817,7 +4932,7 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         && let Some(why) = &job.refused
     {
         for line in paint
-            .wrap(why, Weight::Regular, size::BODY, area.w.min(640.0))
+            .wrap(why, Weight::Regular, size::BODY, area.w)
             .iter()
             .take(3)
         {
@@ -4852,11 +4967,11 @@ fn what_it_said(paint: &mut Painter, desk: &Desk, area: Box) {
     let ink = paint.ink;
     let mut y = area.y;
     for said in what_it_ran_under(desk) {
-        let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w.min(640.0));
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w);
         paint.say_at(area.x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
         y += 16.0;
     }
-    let panel = Box::new(area.x, y, area.w.min(640.0), (area.bottom() - y).max(60.0));
+    let panel = Box::new(area.x, y, area.w, (area.bottom() - y).max(60.0));
     ui::card(paint, panel, false);
     let lines = paint.wrap(&desk.said, Weight::Regular, size::BODY, panel.w - 32.0);
     let mut at = panel.y + 14.0;
@@ -4976,7 +5091,7 @@ fn a_report_or_why_not<'a>(
         );
         ui::progress(
             paint,
-            Box::new(area.x, at + 42.0, area.w.min(520.0), 8.0),
+            Box::new(area.x, at + 42.0, area.w, 8.0),
             job.latest().and_then(step_fraction),
         );
         paint.say_at(
@@ -4992,7 +5107,7 @@ fn a_report_or_why_not<'a>(
     let job = desk.doing.job()?;
     if let Some(why) = &job.refused {
         for line in paint
-            .wrap(why, Weight::Regular, size::BODY, area.w.min(600.0))
+            .wrap(why, Weight::Regular, size::BODY, area.w)
             .iter()
             .take(3)
         {
@@ -5078,7 +5193,7 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         (area.x, cleared_button.bottom() + 12.0),
         // As wide as the document above it: four unit buttons and a
         // condition beside them need the room (B-443).
-        area.w.min(960.0),
+        area.w,
     );
     if chosen.is_some() {
         act = chosen;
@@ -5114,7 +5229,7 @@ fn prompt_report(
     at: f32,
 ) -> Option<Act> {
     let found = a_report_or_why_not(paint, desk, area, at)?;
-    let wide = area.w.min(820.0);
+    let wide = area.w;
     let mut y = report_conditions(paint, (area.x, at + 10.0), wide, found);
     y = expected_table(paint, (area.x, y), wide, found);
     let (after, mut act) = removed_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0), found);
@@ -6648,9 +6763,9 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     } else {
         said
     };
-    let title = paint.elide(&title, Weight::Regular, size::SMALL, area.w.min(820.0));
+    let title = paint.elide(&title, Weight::Regular, size::SMALL, area.w);
     spaced(paint, area.x, area.y, &title, ink.faint);
-    let room = area.w.min(820.0);
+    let room = area.w;
     // **Wrapped line by line, so the answer keeps its shape.** `wrap` breaks on
     // width and treats a newline as a space, which turns a function into one
     // run-on line — and an answer is code as often as it is prose. Each of the
@@ -6719,7 +6834,7 @@ fn the_document(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (
     } else {
         (area.h * 0.24).clamp(110.0, 220.0)
     };
-    let field = Box::new(area.x, area.y + 52.0, area.w.min(960.0), height);
+    let field = Box::new(area.x, area.y + 52.0, area.w, height);
     if ui::area(
         paint,
         mouse,
@@ -7159,7 +7274,7 @@ fn components(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
 
     let mut act = None;
     let mut y = area.y + 58.0;
-    let wide = area.w.min(920.0);
+    let wide = area.w;
     for component in &desk.components {
         let tall = 86.0;
         let card = Box::new(area.x, y, wide, tall);
@@ -7528,7 +7643,7 @@ fn not_counted(paint: &mut Painter, desk: &Desk, area: Box, top: f32) {
         .clone()
         .unwrap_or_else(|| "Nothing has been asked yet.".to_owned());
     let mut y = top;
-    for line in paint.wrap(&why, Weight::Regular, size::BODY, area.w.min(720.0)) {
+    for line in paint.wrap(&why, Weight::Regular, size::BODY, area.w) {
         paint.say_at(area.x, y, &line, Weight::Regular, size::BODY, ink.bad);
         y += 20.0;
     }

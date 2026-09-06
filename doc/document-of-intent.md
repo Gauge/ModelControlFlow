@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 54 |
+| **Version** | 55 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -5006,6 +5006,19 @@ did already; the ladder's, the cross-check's and the prompt report's
 now travel beside their bodies from the record, so that a surface can
 say when rather than only that.
 
+**Run all, and the strip under the list** *(added on the operator's
+instruction)*. Above the list, a Run all that takes every diagnostic in
+turn — the ladder, the cross-check, every probe, every measurement —
+one run after another, stopping where one is refused or stopped. Under
+the list, a strip that says what is running and how far it has got: a
+bar, the elapsed time, and a Stop; while a Run all goes, the bar is the
+whole of it and the strip names which run this is of how many.
+
+**Room.** Every page fills the window it is given: a control, a bar, a
+field, a tile or a table takes the width of its pane rather than a
+width chosen for one window, and what does not fit scrolls. A window
+of any size shows the same pages, laid out for that size.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -5035,6 +5048,12 @@ say when rather than only that.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 55 — run all, a strip, and room
+
+D53 extended on the operator's instruction: a Run all over every
+diagnostic, a progress strip under the list, and pages that fill any
+window.
 
 ### Version 54 — one list of diagnostics
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 146 |
+| **Version** | 147 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 198 | [F198 — Run all, the strip, and room: one press above the Diagnostics list takes the six runs in turn, the next starting as the last finishes well and none after one refused or stopped; a strip under the list names the run, bars its own progress or the sequence's, counts the seconds and offers Stop; and every page fills the window it is given — controls, bars, fields and tiles take their pane's width, tables spread their columns, lists give way before panes in a narrow window, and a card's label column shares a narrow card (D53, B-508 to B-510, A7)](#198--f198--run-all-the-strip-and-room-one-press-above-the-diagnostics-list-takes-the-six-runs-in-turn-the-next-starting-as-the-last-finishes-well-and-none-after-one-refused-or-stopped-a-strip-under-the-list-names-the-run-bars-its-own-progress-or-the-sequences-counts-the-seconds-and-offers-stop-and-every-page-fills-the-window-it-is-given--controls-bars-fields-and-tiles-take-their-panes-width-tables-spread-their-columns-lists-give-way-before-panes-in-a-narrow-window-and-a-cards-label-column-shares-a-narrow-card-d53-b-508-to-b-510-a7) |
 | 197 | [F197 — Diagnostics is one list: twenty-seven rows under five headings, each saying when it last ran on this model and through what, never run, or that it is running and which step it is on, with a Run all on each family; the one chosen shows its whole — what it answers, its controls, its Run and Stop with the step, and its last finding with when it was taken — and the daemon dates a ladder, a cross-check and a prompt report so the list can say when (D53, B-505 to B-507, A7)](#197--f197--diagnostics-is-one-list-twenty-seven-rows-under-five-headings-each-saying-when-it-last-ran-on-this-model-and-through-what-never-run-or-that-it-is-running-and-which-step-it-is-on-with-a-run-all-on-each-family-the-one-chosen-shows-its-whole--what-it-answers-its-controls-its-run-and-stop-with-the-step-and-its-last-finding-with-when-it-was-taken--and-the-daemon-dates-a-ladder-a-cross-check-and-a-prompt-report-so-the-list-can-say-when-d53-b-505-to-b-507-a7) |
 | 196 | [F196 — Fourteen measurements, one run: `mcf examine` and three Diagnostics cards take the offload curve, prefill saturation, prefix reuse, memory as predicted, concurrency, cold start, quantization fidelity, bits per byte, determinism, the tokenizer round trip, retrieval by depth, degeneration, grammar cost and image cost on one model, each a count or a clock, each recorded under its method; on the 2B reference model the first run found a timing read through the watcher's glance, a window opened for the whole trained context, and a first request after a start that stands alone (D52, B-491 to B-504, A7)](#196--f196--fourteen-measurements-one-run-mcf-examine-and-three-diagnostics-cards-take-the-offload-curve-prefill-saturation-prefix-reuse-memory-as-predicted-concurrency-cold-start-quantization-fidelity-bits-per-byte-determinism-the-tokenizer-round-trip-retrieval-by-depth-degeneration-grammar-cost-and-image-cost-on-one-model-each-a-count-or-a-clock-each-recorded-under-its-method-on-the-2b-reference-model-the-first-run-found-a-timing-read-through-the-watchers-glance-a-window-opened-for-the-whole-trained-context-and-a-first-request-after-a-start-that-stands-alone-d52-b-491-to-b-504-a7) |
 | 195 | [F195 — A splitter dragged moved a few points and dropped: the drag was judged by whether the press began inside the band, and the band moves with the line, so once the line was further from the press than the band is wide the drag ended and each press shifted the line by about the band's width; a splitter taken hold of now follows the pointer until the button is let go (B-490, A7)](#195--f195--a-splitter-dragged-moved-a-few-points-and-dropped-the-drag-was-judged-by-whether-the-press-began-inside-the-band-and-the-band-moves-with-the-line-so-once-the-line-was-further-from-the-press-than-the-band-is-wide-the-drag-ended-and-each-press-shifted-the-line-by-about-the-bands-width-a-splitter-taken-hold-of-now-follows-the-pointer-until-the-button-is-let-go-b-490-a7) |
@@ -9620,6 +9621,45 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 198 · F198 — Run all, the strip, and room: one press above the Diagnostics list takes the six runs in turn, the next starting as the last finishes well and none after one refused or stopped; a strip under the list names the run, bars its own progress or the sequence's, counts the seconds and offers Stop; and every page fills the window it is given — controls, bars, fields and tiles take their pane's width, tables spread their columns, lists give way before panes in a narrow window, and a card's label column shares a narrow card (D53, B-508 to B-510, A7)
+
+The operator asked for a Run all over every diagnostic, a progress
+indicator under the list with a bar, the elapsed time and a Stop, and
+for the window to lay out cleanly at any size.
+
+**Run all.** A press above the list queues the six runs — the ladder,
+the cross-check, every probe, the three measurement families — and
+starts the first; each frame that finds the run going finished well
+starts the next, and one refused or stopped ends the sequence where it
+is, the refusal left on its pane. The prompt analysis needs a prompt
+and the comparison runs at the command line, so neither is in it. Stop
+empties the queue as well as stopping the run.
+
+**The strip.** Under the list, a strip that keeps its place whether or
+not anything runs: *nothing running*, or the running diagnostic's name
+— *run 2 of 6 · Cross-check* while a Run all goes — a bar, the seconds
+since the run was asked for, and Stop. The bar is what the run's stream
+says: a step of how many for the probes and the measurements, counted
+once the step's lines have landed; a rung of how many for the ladder;
+the cross-check's two halves; and for a Run all the runs done plus the
+one going's own share over how many there were. A run whose stream does
+not say draws the bar's trough alone (A7).
+
+**Room.** The review renders now include a window of 700 by 500 and one
+of 2,200 by 1,300 for five pages. What they showed: eighteen widths
+capped for one window — pickers at 360 and 420, fields at 520 and 640,
+bars at 520, tiles at 900, the prompt document at 960 — left a wide
+window with islands in the left third; the Diagnostics pane and the
+Models pane were pushed past a narrow window's edge by their minimums;
+the ladder card's three buttons and its 150-point label column ran off
+a narrow card; and the System page's tables kept their columns at the
+points chosen for 700 and left the rest empty. Every capped width now
+takes its pane; a list gives way before its pane in a narrow window; a
+card's label column is a share of a narrow card; the buttons share the
+card and their captions fit them; and a table wider than it was laid
+out for spreads its columns in proportion, keeping them where they
+are when narrower, where the page scrolls.
+
 ## 197 · F197 — Diagnostics is one list: twenty-seven rows under five headings, each saying when it last ran on this model and through what, never run, or that it is running and which step it is on, with a Run all on each family; the one chosen shows its whole — what it answers, its controls, its Run and Stop with the step, and its last finding with when it was taken — and the daemon dates a ladder, a cross-check and a prompt report so the list can say when (D53, B-505 to B-507, A7)
 
 The operator asked for the Diagnostics page to be a list: every
@@ -13095,6 +13135,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 147 — run all, a strip, and room
+
+F198: Run all over every diagnostic, a progress strip under the list,
+and pages that fill any window (B-508 to B-510).
 
 ### Version 146 — one list of diagnostics
 

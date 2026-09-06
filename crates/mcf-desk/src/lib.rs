@@ -1870,6 +1870,8 @@ pub enum Act {
     /// Run one diagnostic from its own pane: a probe or a measurement on
     /// its own, or the run it is (D53).
     RunOne(Diagnostic),
+    /// Run every diagnostic in turn (B-508).
+    RunAll,
     /// Read a run's figures where they are kept: the model's Statistics tab.
     SeeStatistics,
     /// Cut the run that is going short.
@@ -2122,6 +2124,12 @@ pub struct Desk {
     pub probes_apply: bool,
     /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
     pub diagnostic: Diagnostic,
+    /// The runs still to start after the one going, where a Run all is
+    /// under way; and how many the whole sequence had (B-508).
+    pub queued: std::collections::VecDeque<Card>,
+    /// How many runs the Run all under way began with, for the strip's
+    /// *run 2 of 6*; nought where no Run all is going.
+    pub queued_of: usize,
     /// What MCF can build, and which of it is here.
     pub components: Vec<Component>,
     /// What the chosen model would be hosted under, and what MCF advised.
@@ -2252,6 +2260,8 @@ impl Desk {
             said: String::new(),
             tests: tests(),
             diagnostic: Diagnostic::Throughput,
+            queued: std::collections::VecDeque::new(),
+            queued_of: 0,
             probes_apply: false,
             components: Vec::new(),
             settings: None,
@@ -2477,7 +2487,10 @@ impl Desk {
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => job.drain(),
         };
+        // A run that finished without a last word — or one whose end was
+        // heard a frame ago — still hands on to the next queued run (B-508).
         if !heard {
+            self.start_the_next_queued();
             return false;
         }
         // A generation arrives a token at a time, so the text is built as it
@@ -2532,6 +2545,7 @@ impl Desk {
         {
             self.keep_the_examination();
         }
+        self.start_the_next_queued();
         if let Doing::Listing(job) = &self.doing
             && job.finished
         {
@@ -2666,6 +2680,7 @@ impl Desk {
                 let _was = self.scrolls.insert(Region::Diagnostics, 0.0);
             }
             Act::RunOne(diagnostic) => self.run_one(diagnostic),
+            Act::RunAll => self.run_all(),
             Act::SeeStatistics => {
                 self.page = Page::Models;
                 self.tab = Tab::Statistics;
@@ -3259,6 +3274,125 @@ impl Desk {
             }
             other => self.run_card_on(at, other.card()),
         }
+    }
+
+    /// Runs every diagnostic in turn: the ladder, the cross-check, every
+    /// probe, every measurement — the next starting as the last finishes,
+    /// the whole stopping where one is refused or stopped (B-508).
+    pub fn run_all(&mut self) {
+        if self.chosen.is_none() || self.doing.busy() {
+            return;
+        }
+        self.queued = Self::EVERY_RUN.iter().copied().collect();
+        self.queued_of = self.queued.len();
+        self.start_the_next_queued();
+    }
+
+    /// The runs a Run all takes, in order. The prompt analysis needs a
+    /// prompt and the comparison runs at the command line, so neither is
+    /// in it.
+    pub const EVERY_RUN: [Card; 6] = [
+        Card::Throughput,
+        Card::CrossCheck,
+        Card::Capabilities,
+        Card::Performance,
+        Card::Fidelity,
+        Card::Behaviour,
+    ];
+
+    /// Starts the next queued run where the one going has finished well;
+    /// a run refused or stopped ends the sequence, and says so by leaving
+    /// the refusal where it is (A7).
+    fn start_the_next_queued(&mut self) {
+        if self.queued.is_empty() {
+            return;
+        }
+        if let Some(job) = self.doing.job() {
+            if !job.finished {
+                return;
+            }
+            if job.refused.is_some() {
+                self.queued.clear();
+                self.queued_of = 0;
+                return;
+            }
+        }
+        let (Some(at), Some(card)) = (self.chosen, self.queued.pop_front()) else {
+            self.queued.clear();
+            self.queued_of = 0;
+            return;
+        };
+        self.run_card_on(at, card);
+        if self.queued.is_empty() && !self.doing.busy() {
+            self.queued_of = 0;
+        }
+    }
+
+    /// How far the run going has got, as a fraction, where its stream
+    /// says: a step of how many for the probes and the measurements, a
+    /// rung of how many for the ladder, the cross-check's two halves.
+    /// `None` where nothing is running or the run does not say (B-509).
+    #[must_use]
+    pub fn run_fraction(&self) -> Option<f32> {
+        let job = self.doing.job().filter(|job| !job.finished)?;
+        let latest = job.latest();
+        let of_step = || {
+            let step = latest?.get("step")?;
+            let count = step.get("count").and_then(Value::as_integer)?;
+            let of = step.get("of").and_then(Value::as_integer)?;
+            let lines = latest?
+                .get("lines")
+                .and_then(Value::as_list)
+                .is_some_and(|lines| !lines.is_empty());
+            let done = if lines { count } else { count - 1 };
+            fraction_of(done.max(0), of)
+        };
+        match &self.doing {
+            Doing::Probing(_) | Doing::Examining(_) => of_step(),
+            Doing::Measuring(_) => {
+                let so_far = latest?.get("so_far").and_then(Value::as_integer);
+                let of = latest?.get("of").and_then(Value::as_integer);
+                match (so_far, of) {
+                    (Some(so_far), Some(of)) => fraction_of(so_far, of),
+                    _ => Some(0.0),
+                }
+            }
+            Doing::CrossChecking(job) => Some(if job.answers.len() >= 2 { 0.5 } else { 0.05 }),
+            // A prompt report's stream does not say how far it is.
+            _ => None,
+        }
+    }
+
+    /// The whole sequence's fraction while a Run all goes: the runs done
+    /// and the one going's own fraction over how many there were (B-509).
+    #[must_use]
+    pub fn sequence_fraction(&self) -> Option<f32> {
+        if self.queued_of == 0 {
+            return None;
+        }
+        let going = usize::from(self.doing.busy());
+        let done = self
+            .queued_of
+            .saturating_sub(self.queued.len())
+            .saturating_sub(going);
+        let own = self.run_fraction().unwrap_or(0.0);
+        #[expect(clippy::cast_precision_loss, reason = "a count of six runs")]
+        let whole = (done as f32 + own) / self.queued_of as f32;
+        Some(whole.clamp(0.0, 1.0))
+    }
+
+    /// Which run of how many the Run all is on, where one is going.
+    #[must_use]
+    pub fn sequence_place(&self) -> Option<(usize, usize)> {
+        if self.queued_of == 0 {
+            return None;
+        }
+        let going = usize::from(self.doing.busy());
+        let done = self
+            .queued_of
+            .saturating_sub(self.queued.len())
+            .saturating_sub(going);
+        Some((done.saturating_add(going).max(1), self.queued_of))
     }
 
     fn run_card_on(&mut self, at: usize, card: Card) {
@@ -4009,6 +4143,8 @@ impl Desk {
     /// asks no further generation, and what was heard stays on the page
     /// (A7, B-479).
     pub fn stop_run(&mut self) {
+        self.queued.clear();
+        self.queued_of = 0;
         match &mut self.doing {
             Doing::Measuring(job)
             | Doing::CrossChecking(job)
@@ -4546,6 +4682,16 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         // Nothing to do until something happens.
         std::thread::sleep(std::time::Duration::from_millis(16));
     }
+}
+
+/// A count over a count as a fraction between nought and one; `None` of
+/// nothing.
+fn fraction_of(done: i64, of: i64) -> Option<f32> {
+    if of <= 0 {
+        return None;
+    }
+    #[expect(clippy::cast_precision_loss, reason = "counts of a few steps")]
+    Some((done as f32 / of as f32).clamp(0.0, 1.0))
 }
 
 /// Findings just taken join the ones held: a method taken again replaces

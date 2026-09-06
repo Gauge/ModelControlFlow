@@ -1604,6 +1604,86 @@ fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     );
 }
 
+/// Run all takes every run in turn: the ladder first, the next as the
+/// last finishes well, and none after one refused; the strip's fraction
+/// is the run's own or the sequence's, and Stop empties the queue
+/// (B-508, B-509).
+#[test]
+fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.models = vec![Model::default()];
+    desk.chosen = Some(0);
+    assert_eq!(desk.run_fraction(), None, "nothing running has no fraction");
+    desk.act(crate::Act::RunAll);
+    assert!(
+        matches!(desk.doing, crate::Doing::Measuring(_)),
+        "a Run all does not begin with the ladder"
+    );
+    assert_eq!(desk.queued.len(), Desk::EVERY_RUN.len() - 1);
+    assert_eq!(desk.sequence_place(), Some((1, Desk::EVERY_RUN.len())));
+    // The ladder two rungs of four in: its own fraction, and the whole's.
+    let mut going = crate::job::Job::already(
+        "measuring".to_owned(),
+        vec![mcf_record::json::Value::map([
+            ("so_far", mcf_record::json::Value::Integer(2)),
+            ("of", mcf_record::json::Value::Integer(4)),
+        ])],
+    );
+    going.finished = false;
+    desk.doing = crate::Doing::Measuring(going);
+    assert!((desk.run_fraction().unwrap_or(0.0) - 0.5).abs() < 0.01);
+    let whole = desk.sequence_fraction().unwrap_or(0.0);
+    assert!((whole - 0.5 / 6.0).abs() < 0.01, "{whole}");
+    // It finishes well: the next run starts.
+    if let crate::Doing::Measuring(job) = &mut desk.doing {
+        job.finished = true;
+    }
+    desk.hear();
+    assert!(
+        matches!(desk.doing, crate::Doing::CrossChecking(_)),
+        "the cross-check did not follow the ladder"
+    );
+    assert_eq!(desk.sequence_place(), Some((2, Desk::EVERY_RUN.len())));
+    // A probe run's fraction is its step of how many, the step counted
+    // once its lines have landed.
+    let step = |count: i64, lines: usize| {
+        mcf_record::json::Value::map([
+            (
+                "step",
+                mcf_record::json::Value::map([
+                    ("name", mcf_record::json::Value::text("context")),
+                    ("count", mcf_record::json::Value::Integer(count)),
+                    ("of", mcf_record::json::Value::Integer(9)),
+                ]),
+            ),
+            (
+                "lines",
+                mcf_record::json::Value::List(vec![mcf_record::json::Value::text("said"); lines]),
+            ),
+        ])
+    };
+    let mut probing = crate::job::Job::already("probing".to_owned(), vec![step(2, 0)]);
+    probing.finished = false;
+    desk.doing = crate::Doing::Probing(probing);
+    assert!((desk.run_fraction().unwrap_or(0.0) - 1.0 / 9.0).abs() < 0.01);
+    let mut probing = crate::job::Job::already("probing".to_owned(), vec![step(2, 1)]);
+    probing.finished = false;
+    desk.doing = crate::Doing::Probing(probing);
+    assert!((desk.run_fraction().unwrap_or(0.0) - 2.0 / 9.0).abs() < 0.01);
+    // Refused: the sequence ends where it is.
+    if let crate::Doing::Probing(job) = &mut desk.doing {
+        job.finished = true;
+        job.refused = Some("no".to_owned());
+    }
+    desk.hear();
+    assert!(desk.queued.is_empty(), "a refusal did not end the sequence");
+    assert_eq!(desk.sequence_place(), None);
+    // Stop empties the queue too.
+    desk.act(crate::Act::RunAll);
+    desk.act(crate::Act::Stop);
+    assert!(desk.queued.is_empty());
+}
+
 /// A finding's columns, lined up with spaces for a terminal, are parted
 /// by a dot for a face that collapses them (D53).
 #[test]
