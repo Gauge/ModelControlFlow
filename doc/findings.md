@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 248 | [F248 — A run that did not reach the end of the cases is handed back with what the program said on its way out: the harnesses keep the program's error stream beside the compiler's, told apart by whether `compiled` was printed, the host reads the same bounded twelve lines back into the correction — a traceback, a panic, a thrown error — a run that said nothing is told it may have run past the deadline, and a row counts the lines (B-566, B-565, B-025)](#248-f248-a-run-that-did-not-reach-the-end-of-the-cases-is-handed-back-with-what-the-program-said-on-its-way-out-the-harnesses-keep-the-programs-error-stream-beside-the-compilers-told-apart-by-whether-compiled-was-printed-the-host-reads-the-same-bounded-twelve-lines-back-into-the-correction-a-traceback-a-panic-a-thrown-error-a-run-that-said-nothing-is-told-it-may-have-run-past-the-deadline-and-a-row-counts-the-lines-b-566-b-565-b-025) |
 | 247 | [F247 — A compile failure is handed back with the compiler's first lines: the Rust and Go harnesses send the compiler's complaint to the container's error stream and the program's own nowhere, the host reads at most twelve lines of two hundred characters back into the correction, and a row counts them (B-565, B-563, B-025)](#247-f247-a-compile-failure-is-handed-back-with-the-compilers-first-lines-the-rust-and-go-harnesses-send-the-compilers-complaint-to-the-containers-error-stream-and-the-programs-own-nowhere-the-host-reads-at-most-twelve-lines-of-two-hundred-characters-back-into-the-correction-and-a-row-counts-them-b-565-b-563-b-025) |
 | 246 | [F246 — What a run will use is said before it runs: `mcf eval` prints the engine and device MCF resolves for the model, the window, the answer budget, the retries, the languages, the tier and the seed before the first ask and keeps them in the report, the Challenges pane shows the same under its Run button with two fields — the retries and the window — that become the command line's own flags, `--window` opens every attempt in the window the person set, and every attempt's row carries the window it ran in (B-564, D56, DEC-063)](#246-f246-what-a-run-will-use-is-said-before-it-runs-mcf-eval-prints-the-engine-and-device-mcf-resolves-for-the-model-the-window-the-answer-budget-the-retries-the-languages-the-tier-and-the-seed-before-the-first-ask-and-keeps-them-in-the-report-the-challenges-pane-shows-the-same-under-its-run-button-with-two-fields-the-retries-and-the-window-that-become-the-command-lines-own-flags-window-opens-every-attempt-in-the-window-the-person-set-and-every-attempts-row-carries-the-window-it-ran-in-b-564-d56-dec-063) |
 | 245 | [F245 — Coding is a catalogue: forty-four challenges from easy to expert, each a statement in words with language-neutral cases, run in Python, JavaScript, Rust and Go through one harness each, up to ten attempts with every failed one handed back with the cases that did not hold and what came back, and rows for the attempt it was solved at, the corrections, the tokens and the time; the Go toolchain builds its standard library afresh in the sealed image and ran out of processes at sixty-four until held to one package at a time, and a reference solution in the container caught one wrong expected value in the catalogue (B-563, D56, DEC-063)](#245-f245-coding-is-a-catalogue-forty-four-challenges-from-easy-to-expert-each-a-statement-in-words-with-language-neutral-cases-run-in-python-javascript-rust-and-go-through-one-harness-each-up-to-ten-attempts-with-every-failed-one-handed-back-with-the-cases-that-did-not-hold-and-what-came-back-and-rows-for-the-attempt-it-was-solved-at-the-corrections-the-tokens-and-the-time-the-go-toolchain-builds-its-standard-library-afresh-in-the-sealed-image-and-ran-out-of-processes-at-sixty-four-until-held-to-one-package-at-a-time-and-a-reference-solution-in-the-container-caught-one-wrong-expected-value-in-the-catalogue-b-563-d56-dec-063) |
@@ -9670,6 +9671,37 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 248 · F248 — A run that did not reach the end of the cases is handed back with what the program said on its way out: the harnesses keep the program's error stream beside the compiler's, told apart by whether `compiled` was printed, the host reads the same bounded twelve lines back into the correction — a traceback, a panic, a thrown error — a run that said nothing is told it may have run past the deadline, and a row counts the lines (B-566, B-565, B-025)
+
+**What was missing.** F247 handed the compiler's complaint back and
+left the program's own where it was: a Python answer that raised
+outside a case, a Go answer that panicked, a JavaScript answer that
+threw at the top level, all came back as *did not run to the end of
+the checks* and no more.
+
+**What is handed back now.** The Rust and Go harnesses no longer drop
+the program's error stream; the compiler's and the program's share it
+and are told apart by whether `compiled` was printed, since a build
+that succeeds says nothing there. Python and JavaScript already left
+theirs on the stream. Where the harness did not reach every case, the
+host keeps the first twelve non-empty lines, cut at two hundred
+characters — the same bound as the compiler's — and the next attempt
+is asked with *That answer did not run to the end of the checks. It
+said:* and those lines in a fence. A run that said nothing is told it
+may have run past the deadline, since the container's `timeout` kills
+without a word. Every such attempt has a `runtime_lines` row beside
+its `ran 0`; the text itself never reaches the record (B-025). A case
+that raised inside the harness's own guard is still a `no` line with
+the exception's name, as before.
+
+**Seen.** On the easy tier of the 2B no attempt failed this way — every answer that compiled ran to the end, since the harnesses guard each case and the 2B's mistakes were wrong answers, not raised ones — so the rows of three runs (664, 867 and 278) hold no `runtime_lines` row. The path is proven in the container instead: an answer that raises on its way in is run through the Python harness as an ignored test, the harness reports no case, and the bounded reading of the error stream names *ValueError: boom on the way in*. A model that writes code that raises will meet it; the 2B did not.
+
+**What is not done.** The two streams share one bound of twelve lines;
+a traceback longer than that loses its last frames, which for Python
+are the ones that name the error. Reading the stream from the end
+where the language puts the error last is a refinement worth its own
+row if the rows show it mattering.
+
 ## 247 · F247 — A compile failure is handed back with the compiler's first lines: the Rust and Go harnesses send the compiler's complaint to the container's error stream and the program's own nowhere, the host reads at most twelve lines of two hundred characters back into the correction, and a row counts them (B-565, B-563, B-025)
 
 **What was missing.** The harness's alphabet is `ok`, `no`, `compiled`
@@ -14434,6 +14466,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 171 — what the program said on its way out
+
+F248: a run that did not reach the end is handed back with its own
+error stream, bounded (B-566).
 
 ### Version 170 — the compiler's complaint handed back
 

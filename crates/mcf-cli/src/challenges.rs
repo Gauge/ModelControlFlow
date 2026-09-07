@@ -29,13 +29,16 @@ const BUDGET: usize = 1400;
 /// holds an answer and its correction.
 const SMALLEST_WINDOW: u64 = 4096;
 
-/// How many of the compiler's lines are handed back with a failed
-/// compile, and how wide each may be: enough to name the error and the
-/// line, bounded so that a wall of complaint is not the next prompt.
+/// How many of the compiler's lines — or the program's own, where it did
+/// not run to the end — are handed back, and how wide each may be: enough
+/// to name the error and the line, bounded so that a wall of complaint is
+/// not the next prompt (B-565, B-566).
 const COMPILER_LINES: usize = 12;
 const COMPILER_WIDTH: usize = 200;
 
-/// The compiler's first lines, bounded, from the container's error stream.
+/// The first lines of the container's error stream, bounded: the
+/// compiler's where it did not compile, the program's — a traceback, a
+/// panic, a thrown error — where it did not run to the end.
 #[must_use]
 pub(crate) fn compiler_said(heard: &str) -> String {
     heard
@@ -68,8 +71,8 @@ pub(crate) const GO: Language = Language {
         "sh",
         "-c",
         "export GOCACHE=/tmp/gocache GOPATH=/tmp/gopath HOME=/tmp GOMAXPROCS=2 GOFLAGS=-p=1; cd \
-         /tmp && if go build -o /tmp/answer /work/answer.go; then echo compiled; /tmp/answer \
-         2>/dev/null; else echo notcompiled; fi",
+         /tmp && if go build -o /tmp/answer /work/answer.go; then echo compiled; /tmp/answer; \
+         else echo notcompiled; fi",
     ],
     present: &["go", "version"],
     tasks: &[],
@@ -611,6 +614,10 @@ pub(crate) struct Attempt {
     /// The compiler's first lines where the answer did not compile;
     /// empty otherwise (B-565).
     pub compiler: String,
+    /// The program's own first lines where it did not run to the end of
+    /// the cases — a traceback, a panic, a thrown error, nothing on a
+    /// deadline; empty otherwise (B-566).
+    pub runtime: String,
     /// The code, kept for the next attempt's feedback.
     pub code: String,
 }
@@ -671,7 +678,18 @@ pub(crate) fn feedback(language: &Language, challenge: &Challenge, last: &Attemp
             );
         }
     } else if !last.ran {
-        out.push_str("That answer did not run to the end of the checks.\n");
+        if last.runtime.is_empty() {
+            out.push_str(
+                "That answer did not run to the end of the checks, and said nothing on the way \
+                 out: it may have run past the deadline.\n",
+            );
+        } else {
+            let _wrote = writeln!(
+                out,
+                "That answer did not run to the end of the checks. It said:\n```\n{}\n```",
+                last.runtime
+            );
+        }
     } else {
         out.push_str("That answer is wrong:\n");
         for ((held, got), case) in last.cases.iter().zip(challenge.cases) {
@@ -752,6 +770,7 @@ pub(crate) fn attempt_all(
         let code = crate::eval::code_in(&spoken.text);
         let builds = matches!(language.name, "rust" | "go");
         let mut complaint = String::new();
+        let mut on_the_way_out = String::new();
         let (compiled, ran, cases) = if code.trim().is_empty() {
             (None, false, Vec::new())
         } else {
@@ -760,11 +779,11 @@ pub(crate) fn attempt_all(
                 crate::languages::run_program_heard(podman, scratch, language, &program)
                     .unwrap_or_default();
             let read = read_harness(&said, challenge.cases.len(), builds);
-            complaint = if read.0 == Some(false) {
-                compiler_said(&heard)
-            } else {
-                String::new()
-            };
+            if read.0 == Some(false) {
+                complaint = compiler_said(&heard);
+            } else if !read.1 {
+                on_the_way_out = compiler_said(&heard);
+            }
             read
         };
         let attempt = Attempt {
@@ -776,6 +795,7 @@ pub(crate) fn attempt_all(
             ask_ns,
             window: spoken.window_ran,
             compiler: complaint,
+            runtime: on_the_way_out,
             code,
         };
         let solved = attempt.whole();
@@ -862,6 +882,13 @@ pub(crate) fn rows_of(challenge: &Challenge, language: &str, attempts: &[Attempt
                 &dims,
                 "compiler_lines",
                 whole(attempt.compiler.lines().count()),
+                "count",
+            ));
+        } else if attempt.wrote && !attempt.ran {
+            rows.push(Reading::new(
+                &dims,
+                "runtime_lines",
+                whole(attempt.runtime.lines().count()),
                 "count",
             ));
         }
@@ -1202,6 +1229,7 @@ mod tests {
             ask_ns: 1,
             window: None,
             compiler: said.clone(),
+            runtime: String::new(),
             code: "fn merge() {}".to_owned(),
         };
         let rust = super::language_named("rust").unwrap();
@@ -1221,6 +1249,89 @@ mod tests {
             .find(|row| row.metric == "compiler_lines")
             .map(|row| row.value);
         assert_eq!(count, Some(12));
+    }
+
+    /// A run that did not reach the end is handed back with what the
+    /// program said on its way out — a traceback — and a row counts the
+    /// lines; one that said nothing is told it may have run past the
+    /// deadline (B-566).
+    #[test]
+    fn a_run_that_did_not_reach_the_end_is_handed_back_with_what_it_said() {
+        let merge = CHALLENGES
+            .iter()
+            .find(|c| c.name == "merge-sorted")
+            .unwrap();
+        let python = super::language_named("python").unwrap();
+        let traceback = "Traceback (most recent call last):\n  File \"/work/answer.py\", line 9, in \
+                         <module>\n    __say(json.dumps(merge([1, 3], [2])))\nTypeError: 'int' object is not \
+                         iterable";
+        let last = Attempt {
+            wrote: true,
+            compiled: None,
+            ran: false,
+            cases: vec![(true, String::new())],
+            tokens: 40,
+            ask_ns: 1,
+            window: None,
+            compiler: String::new(),
+            runtime: super::compiler_said(traceback),
+            code: "def merge(a, b): return 1".to_owned(),
+        };
+        let fed = feedback(python, merge, &last);
+        assert!(
+            fed.contains("did not run to the end of the checks. It said:"),
+            "{fed}"
+        );
+        assert!(
+            fed.contains("TypeError: 'int' object is not iterable"),
+            "{fed}"
+        );
+        let rows = super::rows_of(merge, "python", std::slice::from_ref(&last));
+        let count = rows
+            .iter()
+            .find(|row| row.metric == "runtime_lines")
+            .map(|row| row.value);
+        assert_eq!(count, Some(4));
+        let quiet = Attempt {
+            runtime: String::new(),
+            ..last
+        };
+        let fed = feedback(python, merge, &quiet);
+        assert!(fed.contains("run past the deadline"), "{fed}");
+    }
+
+    /// An answer that raises outside the cases, run through the Python
+    /// harness in its container: the harness reports no case, the error
+    /// stream carries the traceback, and the bounded reading names the
+    /// exception. Needs podman.
+    #[test]
+    #[ignore = "needs podman and the pinned image; run with --ignored"]
+    fn a_traceback_reaches_the_correction() {
+        let merge = CHALLENGES
+            .iter()
+            .find(|c| c.name == "merge-sorted")
+            .unwrap();
+        let python = super::language_named("python").unwrap();
+        let program = super::checker(
+            python,
+            merge,
+            "def merge(a, b):\n    return sorted(a + b)\n\nraise ValueError('boom on the way in')\n",
+        );
+        let podman = std::path::Path::new("/usr/bin/podman");
+        let scratch = std::env::temp_dir().join(format!("mcf-traceback-{}", std::process::id()));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let (said, heard) =
+            crate::languages::run_program_heard(podman, &scratch, python, &program).unwrap();
+        let _gone = std::fs::remove_dir_all(&scratch);
+        let (_, ran, cases) = read_harness(&said, merge.cases.len(), false);
+        assert!(!ran, "{said}");
+        assert!(cases.is_empty(), "{said}");
+        let on_the_way_out = super::compiler_said(&heard);
+        assert!(
+            on_the_way_out.contains("ValueError: boom on the way in"),
+            "{heard}"
+        );
+        assert!(on_the_way_out.lines().count() <= 12);
     }
 
     #[test]
@@ -1279,6 +1390,7 @@ mod tests {
             ask_ns: 1,
             window: None,
             compiler: String::new(),
+            runtime: String::new(),
             code: "def merge(a, b): return a".to_owned(),
         };
         let said = feedback(&crate::languages::LANGUAGES[0], merge, &last);

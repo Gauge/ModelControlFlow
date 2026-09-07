@@ -63,12 +63,12 @@ pub(crate) const LANGUAGES: &[Language] = &[
             "40",
             "sh",
             "-c",
-            // The compiler's complaint goes to the error stream, where the
-            // host reads its first lines back for the model to correct; the
-            // program's own error stream is dropped, so the two never mix
-            // (B-565).
+            // The compiler's complaint and the program's own go to the error
+            // stream, where the host reads their first lines back for the
+            // model to correct; which of the two spoke is told by whether
+            // `compiled` was printed (B-565, B-566).
             "if rustc --edition 2021 -A warnings -o /tmp/answer /work/answer.rs; then echo \
-             compiled; /tmp/answer 2>/dev/null; else echo notcompiled; fi",
+             compiled; /tmp/answer; else echo notcompiled; fi",
         ],
         present: &["rustc", "--version"],
         tasks: RUST,
