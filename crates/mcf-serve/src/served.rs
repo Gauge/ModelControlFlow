@@ -167,14 +167,59 @@ pub fn metrics_on(port: u16) -> Option<String> {
 /// it is doing is read off it the same way a hosted one's is (B-573).
 #[must_use]
 pub fn metrics_via(reach: &Reach) -> Option<String> {
+    page_via(reach, "/metrics")
+}
+
+/// One page the engine publishes, read the way the server is reached.
+fn page_via(reach: &Reach, path: &str) -> Option<String> {
     let said = match reach {
         // A keyed server refuses its counters to a reader without the key,
         // the same as any other request (B-580).
-        Reach::Port { port, key } => got_on_with(*port, key.as_deref(), "/metrics")?,
-        Reach::Socket(socket) => got_via(socket, "/metrics")?,
+        Reach::Port { port, key } => got_on_with(*port, key.as_deref(), path)?,
+        Reach::Socket(socket) => got_via(socket, path)?,
     };
     let (_, body) = said.split_once("\r\n\r\n")?;
     Some(body.to_owned())
+}
+
+/// How many tokens the engine has produced for the requests it is
+/// answering *now*, summed over its slots.
+///
+/// **The engine's totals stand still while it answers** (B-591). Its
+/// `tokens_predicted_total` counter is added to when a request finishes,
+/// and its `predicted_tokens_seconds` gauge is a bucket that reads nought
+/// while a request runs, spikes once for the scrape after it ends, and is
+/// emptied by whoever reads it. A slot's own count moves token by token,
+/// so a live rate is read from the totals plus this (F273).
+///
+/// `Some(0)` where the engine answered and nothing is being answered;
+/// `None` where its slots could not be read, which is not nought.
+#[must_use]
+pub fn tokens_in_flight(reach: &Reach) -> Option<u64> {
+    let answer = page_via(reach, "/slots")?;
+    let Ok(Value::List(slots)) = json::parse(&answer) else {
+        return None;
+    };
+    Some(
+        slots
+            .iter()
+            .filter(|slot| {
+                slot.get("is_processing")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .filter_map(|slot| {
+                slot.get("next_token")
+                    .and_then(|next| match next {
+                        Value::List(items) => items.first(),
+                        other => Some(other),
+                    })
+                    .and_then(|next| next.get("n_decoded"))
+                    .and_then(Value::as_integer)
+                    .and_then(|held| u64::try_from(held).ok())
+            })
+            .fold(0, u64::saturating_add),
+    )
 }
 
 /// One GET over the engine's socket, bounded as [`got_on`] is.

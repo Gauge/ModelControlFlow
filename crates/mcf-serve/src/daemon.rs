@@ -1241,8 +1241,13 @@ fn counters(metrics: &str) -> Vec<(&'static str, Value)> {
         let key = match name.trim_start_matches("llamacpp:") {
             "prompt_tokens_total" => "prompted_tokens",
             "tokens_predicted_total" => "generated_tokens",
-            "prompt_tokens_seconds" => "prompt_tokens_per_second",
-            "predicted_tokens_seconds" => "generated_tokens_per_second",
+            // The engine's own rate gauges, under names that say whose they
+            // are: each is a bucket emptied by whoever reads it, nought
+            // while a request runs and a spike on the scrape after it ends,
+            // so it is not the rate now and MCF measures that itself
+            // (B-591, F273).
+            "prompt_tokens_seconds" => "engine_said_prompt_tokens_per_second",
+            "predicted_tokens_seconds" => "engine_said_tokens_per_second",
             "kv_cache_usage_ratio" => "cache_used_ratio",
             "kv_cache_tokens" => "cache_tokens",
             "requests_processing" => "requests_processing",
@@ -1255,14 +1260,146 @@ fn counters(metrics: &str) -> Vec<(&'static str, Value)> {
     fields
 }
 
-fn in_use(held: &Holding) -> Value {
+/// What was read from one engine's counters last, so that the next
+/// reading can be a rate (B-591).
+struct Counted {
+    /// When they were read, by MCF's own monotonic clock.
+    at: Instant<Monotonic>,
+    /// Tokens produced by then: the finished requests' total and what the
+    /// slots had produced of the one in hand.
+    generated: u64,
+    /// Tokens of prompt read by then.
+    prompted: u64,
+}
+
+/// Where an engine answers, as one line, to tell two of them apart.
+fn where_it_answers(reach: &crate::served::Reach) -> String {
+    match reach {
+        crate::served::Reach::Socket(socket) => socket.display().to_string(),
+        crate::served::Reach::Port { port, .. } => format!("port {port}"),
+    }
+}
+
+/// The last reading of each engine's counters, by where it answers.
+static COUNTED: std::sync::Mutex<std::collections::BTreeMap<String, Counted>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// The longest gap between two readings that still makes a rate: past this
+/// the interval says more about when somebody last looked than about the
+/// engine, and MCF says nothing rather than a number about the wrong thing
+/// (A7).
+const RATE_OVER_AT_MOST_NS: u64 = 30 * 1_000_000_000;
+
+/// One engine's counters, and the rates MCF measures over them.
+///
+/// **The rate is MCF's own arithmetic, and named as such.** The engine's
+/// gauges cannot answer *how fast is it generating now*: they are emptied
+/// by whoever reads them and stand at nought for the whole of a request
+/// (F273). What can be counted is how many tokens the engine has produced,
+/// which is its finished total plus what its slots have produced of the
+/// request in hand — and the difference between two readings of that, over
+/// the seconds between them, is a rate measured under stated conditions
+/// (A6). The interval goes out beside it. The engine's own gauges go out
+/// too, unchanged, under their own names (A1).
+fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
     let mut fields: Vec<(&'static str, Value)> = Vec::new();
     // Read the way the server is reached, key and all: a keyed hold refused
     // its counters to a reader without the key, and the page showed a
     // served model doing nothing (B-580).
-    if let Some(metrics) = crate::served::metrics_via(held.served.reach()) {
-        fields.extend(counters(&metrics));
+    let Some(metrics) = crate::served::metrics_via(reach) else {
+        return fields;
+    };
+    fields.extend(counters(&metrics));
+    let whole = |key: &str| -> Option<u64> {
+        fields
+            .iter()
+            .find(|(name, _)| *name == key)
+            .and_then(|(_, value)| match value.as_text()?.trim().parse::<f64>() {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a count the engine wrote as a float"
+                )]
+                Ok(held) if held >= 0.0 => Some(held as u64),
+                _ => None,
+            })
+    };
+    let in_flight = crate::served::tokens_in_flight(reach);
+    let generated =
+        whole("generated_tokens").map(|finished| finished.saturating_add(in_flight.unwrap_or(0)));
+    let prompted = whole("prompted_tokens");
+    if let Some(generated) = generated {
+        fields.push(("generated_tokens_live", as_whole(generated)));
     }
+    let now = SystemClock.now();
+    let (Some(generated), Some(prompted)) = (generated, prompted) else {
+        return fields;
+    };
+    let mut counted = COUNTED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let before = counted.insert(
+        where_it_answers(reach),
+        Counted {
+            at: now,
+            generated,
+            prompted,
+        },
+    );
+    // Only what is being watched is kept: an engine nobody has asked after
+    // for a while is dropped rather than remembered forever.
+    counted
+        .retain(|_, held| now.saturating_duration_since(held.at).as_nanos() < RATE_OVER_AT_MOST_NS);
+    drop(counted);
+    let Some(before) = before else {
+        // One reading is no rate, and A7 forbids the plausible nought.
+        return fields;
+    };
+    let over = now.saturating_duration_since(before.at).as_nanos();
+    if over == 0 || over > RATE_OVER_AT_MOST_NS {
+        return fields;
+    }
+    // In whole thousandths throughout: a rate is tokens over nanoseconds,
+    // and the answer carries the digits rather than a float nobody can
+    // order (A6, D5). Tokens times a million million is inside a `u64` for
+    // any count an engine will reach, and the multiplication saturates
+    // rather than wrapping.
+    let rate = |now: u64, then: u64| {
+        let tokens = now.saturating_sub(then);
+        thousandths_of(tokens.saturating_mul(1_000_000_000_000), over)
+    };
+    fields.push((
+        "generated_tokens_per_second",
+        rate(generated, before.generated),
+    ));
+    fields.push(("prompt_tokens_per_second", rate(prompted, before.prompted)));
+    fields.push(("rate_over_seconds", thousandths_of(over, 1_000_000)));
+    fields
+}
+
+/// A quantity in thousandths, as a decimal to three places: `held` over
+/// `over` is the number of thousandths.
+///
+/// A rate in tokens a second is the tokens times a million million over the
+/// nanoseconds between two readings; an interval in seconds is its
+/// nanoseconds over a million. Integer throughout, because a number the
+/// record carries has to be one a reader can order (A6).
+fn thousandths_of(held: u64, over: u64) -> Value {
+    #[expect(
+        clippy::integer_division,
+        reason = "whole thousandths; what is discarded is under a thousandth"
+    )]
+    let thousandths = held / over.max(1);
+    #[expect(
+        clippy::integer_division,
+        reason = "the whole number, and the thousandths after it"
+    )]
+    let (whole, part) = (thousandths / 1_000, thousandths % 1_000);
+    Value::text(format!("{whole}.{part:03}"))
+}
+
+fn in_use(held: &Holding) -> Value {
+    let mut fields: Vec<(&'static str, Value)> = use_figures(held.served.reach());
     fields.push((
         "resident_bytes",
         held.served.resident_bytes().map_or(Value::Null, as_whole),
@@ -6572,10 +6709,7 @@ impl Daemon {
         let Some(testing) = testing else {
             return Value::Null;
         };
-        let mut fields: Vec<(&'static str, Value)> = Vec::new();
-        if let Some(metrics) = crate::served::metrics_via(&testing.reach) {
-            fields.extend(counters(&metrics));
-        }
+        let mut fields: Vec<(&'static str, Value)> = use_figures(&testing.reach);
         fields.push((
             "resident_bytes",
             crate::adapters::resident_of(testing.child).map_or(Value::Null, as_whole),

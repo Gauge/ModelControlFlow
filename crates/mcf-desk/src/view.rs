@@ -5251,7 +5251,12 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
     let tiles: Vec<(&str, Option<String>)> = vec![
         ("Gen tok/s", rate(in_use.generated_per_second)),
         ("Prompt tok/s", rate(in_use.prompted_per_second)),
-        ("Tokens out", count(in_use.generated)),
+        // What it has produced, the answer in hand counted: the engine's
+        // own total stands still until a request ends (B-591).
+        (
+            "Tokens out",
+            count(in_use.generated_live.or(in_use.generated)),
+        ),
         ("Tokens in", count(in_use.prompted)),
         (
             "KV cache",
@@ -5359,10 +5364,18 @@ fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: B
     let plot = Box::new(at.x, at.y + 16.0, at.w, at.h - 16.0);
     paint.edge(plot, 6.0, ink.line, ink.card);
     if peak <= 0.0 {
+        // Nothing has been produced while this page has been open, which is
+        // not the same as nothing having been read: the readings are there
+        // and every one of them was nought.
+        let said = if rates.is_empty() {
+            "waiting for a reading"
+        } else {
+            "nothing generated while this page has been open"
+        };
         paint.say_at(
             plot.x + 12.0,
             plot.y + 8.0,
-            "no generation yet",
+            said,
             Weight::Regular,
             size::SMALL,
             ink.faint,

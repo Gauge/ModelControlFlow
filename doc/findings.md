@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 273 | [F273 — The rate bar was flat because the engine's rate gauge is a bucket: nought for the whole of a request, one spike after it, emptied by whoever reads it; MCF now counts the tokens itself and the bar moves (B-591, A6, A12)](#273-f273-the-rate-bar-was-flat-because-the-engines-rate-gauge-is-a-bucket-nought-for-the-whole-of-a-request-one-spike-after-it-emptied-by-whoever-reads-it-mcf-now-counts-the-tokens-itself-and-the-bar-moves-b-591-a6-a12) |
 | 272 | [F272 — A model published in parts is one acquisition, and a part's file name finds its repository: the ninety-gigabyte set the operator could not find, fetched in order with the whole said, and the hub's search shortened a segment at a time (B-590, F138, A7)](#272-f272-a-model-published-in-parts-is-one-acquisition-and-a-parts-file-name-finds-its-repository-the-ninety-gigabyte-set-the-operator-could-not-find-fetched-in-order-with-the-whole-said-and-the-hubs-search-shortened-a-segment-at-a-time-b-590-f138-a7) |
 | 271 | [F271 — The ladder's pair was measuring a quarter-second tick in MCF's own path: the watcher beside every request slept in a 250 ms read and the answer waited for it; woken, and with the pair on a prefix a warm run paid for, the 2B reads 8.4 to 10.3 ms a token with spreads under a millisecond, and the engine's own clock agrees (B-428, B-589, F155, A12)](#271-f271-the-ladders-pair-was-measuring-a-quarter-second-tick-in-mcfs-own-path-the-watcher-beside-every-request-slept-in-a-250-ms-read-and-the-answer-waited-for-it-woken-and-with-the-pair-on-a-prefix-a-warm-run-paid-for-the-2b-reads-84-to-103-ms-a-token-with-spreads-under-a-millisecond-and-the-engines-own-clock-agrees-b-428-b-589-f155-a12) |
 | 270 | [F270 — Seven thousand entries and not one failure: every refusal the daemon answered went to the client and nowhere else, and now every unserved answer is a failure row with what was asked beside it (B-588, B-074, A2)](#270-f270-seven-thousand-entries-and-not-one-failure-every-refusal-the-daemon-answered-went-to-the-client-and-nowhere-else-and-now-every-unserved-answer-is-a-failure-row-with-what-was-asked-beside-it-b-588-b-074-a2) |
@@ -15557,7 +15558,71 @@ check ran out; the partial second part is kept for the next attempt to
 resume. The whole is ninety gigabytes, which on this connection is
 about an hour.
 
+## 273 · F273 — The rate bar was flat because the engine's rate gauge is a bucket: nought for the whole of a request, one spike after it, emptied by whoever reads it; MCF now counts the tokens itself and the bar moves (B-591, A6, A12)
+
+**What the operator saw.** The window's *gen tok/s · last 2 min* bar
+never moved, and `mcf hosted` on a model that had produced 4,486
+tokens said *tokens/s 0 generating now*.
+
+**What was measured.** The 2B hosted on a scratch daemon, every metric
+the engine publishes read once a second while a six-hundred-token
+generation ran:
+
+| second | `predicted_tokens_seconds` | `tokens_predicted_total` | `n_decode_total` |
+|---|---|---|---|
+| 1 | 0 | 0 | 149 |
+| 2 | 0 | 0 | 299 |
+| 3 | 0 | 0 | 447 |
+| 4 | 0 | 0 | 593 |
+| 5 | 148.639 | 600 | 600 |
+| 6 | 0 | 600 | 600 |
+
+Three things at once. The rate gauge is nought for the whole of a
+request; it reports once, on the first scrape after the request ends;
+and it is a bucket that whoever reads it empties, so two readers each
+see part of the truth and a reader who polls sees nought between
+requests. The token total is no better: it is added to when a request
+finishes, so it stands still through the answer and jumps at the end.
+MCF was passing the gauge through as *the rate now*, which it never
+was.
+
+**What MCF can count.** The engine's slots publish what the answer in
+hand has produced, token by token — that is what the ladder's progress
+already reads. So the tokens produced *now* is the finished total plus
+what the slots hold, which moves as it generates; and the difference
+between two readings of it, over the seconds between them, is a rate
+measured under conditions MCF states. The interval goes out beside the
+figure, because a rate over one second and a rate over a minute are
+different claims (A6). One reading is no rate at all, and the first
+says nothing rather than nought (A7). The engine's own gauges are
+still passed on, under names that say whose they are (A1).
+
+**What it does now.** The same generation, watched through the
+daemon's own answer:
+
+| second | MCF's tokens a second | over | tokens produced | the engine's gauge |
+|---|---|---|---|---|
+| 1 | 0.000 | 1.002 | 0 | 0 |
+| 2 | 141.514 | 1.003 | 142 | 0 |
+| 3 | 142.613 | 1.003 | 285 | 0 |
+| 4 | 140.595 | 1.003 | 426 | 0 |
+| 5 | 139.650 | 1.003 | 566 | 0 |
+| 6 | 33.903 | 1.003 | 600 | 141.604 |
+
+The sixth second is the one the generation ended a third of the way
+into, and the engine's own gauge published 141.604 for the run it had
+just finished — within a token and a half a second of what MCF
+measured while it ran, which is the independent source A12 asks for.
+The window's bar has a reading a second to draw, and the tile that
+says *tokens out* counts the answer in hand rather than standing still
+until it lands.
+
 ## Changelog
+
+### Version 195 — the generation rate is measured
+
+F273: the engine's gauge is a bucket; MCF counts the tokens and states
+the interval (B-591).
 
 ### Version 194 — a model in parts is one model
 

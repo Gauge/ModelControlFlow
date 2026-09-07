@@ -141,8 +141,16 @@ pub struct Use {
     pub generated: Option<u64>,
     /// Tokens of prompt it has read since it came up.
     pub prompted: Option<u64>,
-    /// Its predicting rate now, tokens a second.
+    /// Tokens it has produced, counting the request it is answering now:
+    /// the total moves only when a request finishes, and this moves as it
+    /// generates (B-591).
+    pub generated_live: Option<u64>,
+    /// Its predicting rate, measured by MCF over the seconds between two
+    /// readings of the count above (B-591). `None` on the first reading,
+    /// which is no rate at all.
     pub generated_per_second: Option<f32>,
+    /// How long the rates above were measured over, in seconds.
+    pub rate_over_seconds: Option<f32>,
     /// Its prompt-reading rate now, tokens a second.
     pub prompted_per_second: Option<f32>,
     /// How much of its cache is in use, nought to one.
@@ -193,7 +201,9 @@ impl Use {
         Self {
             generated: count("generated_tokens"),
             prompted: count("prompted_tokens"),
+            generated_live: count("generated_tokens_live"),
             generated_per_second: rate("generated_tokens_per_second"),
+            rate_over_seconds: rate("rate_over_seconds"),
             prompted_per_second: rate("prompt_tokens_per_second"),
             cache_used: rate("cache_used_ratio"),
             processing: count("requests_processing"),

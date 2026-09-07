@@ -491,7 +491,17 @@ fn in_use_lines(body: &Value) -> Vec<String> {
         ));
     }
     if let Some(rate) = figure("generated_tokens_per_second") {
-        lines.push(format!("  tokens/s       {rate} generating now"));
+        // The interval beside the rate: it is measured between two readings
+        // of the engine's counters, and how far apart they were is a
+        // condition of the figure (B-591, A6).
+        let over = figure("rate_over_seconds")
+            .map_or_else(String::new, |seconds| format!(" over the last {seconds} s"));
+        lines.push(format!("  tokens/s       {rate} generating{over}"));
+    }
+    if let Some(live) = figure("generated_tokens_live") {
+        lines.push(format!(
+            "                 {live} tokens produced, counting the answer in hand"
+        ));
     }
     if let (Some(processing), Some(queued)) =
         (figure("requests_processing"), figure("requests_queued"))

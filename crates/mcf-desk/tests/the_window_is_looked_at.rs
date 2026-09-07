@@ -2623,6 +2623,8 @@ fn every_page_is_drawn_for_review() {
         in_use: mcf_desk::Use {
             generated: Some(41_200),
             prompted: Some(388_000),
+            generated_live: Some(41_247),
+            rate_over_seconds: Some(1.0),
             generated_per_second: Some(74.2),
             prompted_per_second: Some(1_910.0),
             cache_used: Some(0.31),
@@ -3244,6 +3246,8 @@ fn an_engine_in_use(path: &str) -> mcf_desk::Hosted {
         in_use: Some(mcf_desk::Use {
             generated: Some(41_320),
             prompted: Some(12_004),
+            generated_live: Some(41_402),
+            rate_over_seconds: Some(1.0),
             generated_per_second: Some(151.7),
             prompted_per_second: Some(2_310.0),
             cache_used: None,
