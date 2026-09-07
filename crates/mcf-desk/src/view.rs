@@ -3202,7 +3202,12 @@ fn eval_pane(
     }
     let _ = below;
     if let Some(run) = desk.readings_of(diagnostic) {
-        readings_table(paint, Box::new(area.x, y + 14.0, area.w, 0.0), run);
+        readings_table(
+            paint,
+            Box::new(area.x, y + 14.0, area.w, 0.0),
+            run,
+            a_run_is_going(desk),
+        );
     }
     act
 }
@@ -3409,7 +3414,12 @@ fn finding_rows(
     // The rows under the sentences: every figure the run read, raw, in
     // one table — what a person compares models by (D54, B-516).
     if let Some(run) = desk.readings_of(diagnostic) {
-        readings_table(paint, Box::new(area.x, y + 14.0, area.w, 0.0), run);
+        readings_table(
+            paint,
+            Box::new(area.x, y + 14.0, area.w, 0.0),
+            run,
+            a_run_is_going(desk),
+        );
     }
 }
 
@@ -3420,7 +3430,8 @@ const ROWS_SHOWN: usize = 60;
 
 /// A run's readings as a table: the dimensions as columns, then the
 /// metric, the value and its unit, one row a reading (D54, B-516).
-fn readings_table(paint: &mut Painter, area: Box, run: &Value) {
+#[allow(clippy::too_many_lines, reason = "one table, its lines in order")]
+fn readings_table(paint: &mut Painter, area: Box, run: &Value, going: bool) {
     let ink = paint.ink;
     let rows = mcf_record::readings::rows_of(run);
     if rows.is_empty() {
@@ -3478,6 +3489,17 @@ fn readings_table(paint: &mut Painter, area: Box, run: &Value) {
             area.w,
         );
         paint.say_at(area.x, y, &said, Weight::Regular, size::SMALL, ink.faint);
+        y += 20.0;
+    }
+    // A run recorded a part at a time says how it ended, or that it has
+    // not: under way while its suite runs, cut off otherwise (B-570).
+    if mcf_record::readings::in_parts(run) {
+        let ended = match mcf_record::readings::ended_of(run) {
+            Some(ended) => ended,
+            None if going => format!("under way: {} row(s) so far", rows.len()),
+            None => format!("cut off after {} row(s): the run did not close", rows.len()),
+        };
+        paint.say_at(area.x, y, &ended, Weight::Regular, size::SMALL, ink.faint);
         y += 20.0;
     }
     let mut x = area.x;

@@ -2657,7 +2657,9 @@ impl Desk {
     }
 
     /// Takes whatever a running job has said. Returns whether anything had.
+    #[allow(clippy::too_many_lines, reason = "one arm a kind of job, each named")]
     pub fn hear(&mut self) -> bool {
+        let before = self.doing.job().map_or(0, |job| job.answers.len());
         let heard = match &mut self.doing {
             Doing::Nothing => false,
             Doing::Listing(job)
@@ -2677,6 +2679,20 @@ impl Desk {
         if !heard {
             self.start_the_next_queued();
             return false;
+        }
+        // A suite's rows land in the record as each result is known, so the
+        // readings are read again each time one arrives and the table grows
+        // while the run goes (B-570).
+        if let Doing::Evaluating(job) = &self.doing
+            && job
+                .answers
+                .get(before..)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|answer| answer.get("line").and_then(Value::as_text))
+                .any(|line| line.starts_with("result: "))
+        {
+            self.fetch_readings();
         }
         // A generation arrives a token at a time, so the text is built as it
         // comes rather than waiting for the end — which is the difference

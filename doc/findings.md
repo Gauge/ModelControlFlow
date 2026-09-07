@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 253 | [F253 — A run's rows land as they are taken: the catalogue opens its run in the record with its conditions before the first ask, records each challenge-language pair the moment it is known as a part of that run, and closes the run with how it ended; parts read back as one run, a run killed between parts keeps every row it earned and reads as cut off, and the window's table grows while the suite runs (B-570, B-569, D54)](#253-f253-a-runs-rows-land-as-they-are-taken-the-catalogue-opens-its-run-in-the-record-with-its-conditions-before-the-first-ask-records-each-challenge-language-pair-the-moment-it-is-known-as-a-part-of-that-run-and-closes-the-run-with-how-it-ended-parts-read-back-as-one-run-a-run-killed-between-parts-keeps-every-row-it-earned-and-reads-as-cut-off-and-the-windows-table-grows-while-the-suite-runs-b-570-b-569-d54) |
 | 252 | [F252 — The catalogue is four rows, one a tier, and a running suite shows its results as they come: `mcf eval` writes `result:` lines the moment each challenge and each language is known and records a tier's run under its own method, the window lists Challenges: easy, medium, hard and expert with a Languages field beside Retries and Window, and the pane lists the results so far under Run while the suite runs and after it finishes (B-569, B-563, D56)](#252-f252-the-catalogue-is-four-rows-one-a-tier-and-a-running-suite-shows-its-results-as-they-come-mcf-eval-writes-result-lines-the-moment-each-challenge-and-each-language-is-known-and-records-a-tiers-run-under-its-own-method-the-window-lists-challenges-easy-medium-hard-and-expert-with-a-languages-field-beside-retries-and-window-and-the-pane-lists-the-results-so-far-under-run-while-the-suite-runs-and-after-it-finishes-b-569-b-563-d56) |
 | 251 | [F251 — The window suite ran twenty-three minutes and now runs under a minute: one test swept the whole screen for the Exit entry at three thousand frames a page, every press found its control by rendering a frame a probe, every frame walked the font directories and baked every glyph afresh, and the painter was unoptimised; the menu has one layout a test presses directly, a frame records the controls it asked the mouse about and a test presses those, the font is found once and its atlases shared, and the desk crate is optimised in the dev profile (B-568, B-011)](#251-f251-the-window-suite-ran-twenty-three-minutes-and-now-runs-under-a-minute-one-test-swept-the-whole-screen-for-the-exit-entry-at-three-thousand-frames-a-page-every-press-found-its-control-by-rendering-a-frame-a-probe-every-frame-walked-the-font-directories-and-baked-every-glyph-afresh-and-the-painter-was-unoptimised-the-menu-has-one-layout-a-test-presses-directly-a-frame-records-the-controls-it-asked-the-mouse-about-and-a-test-presses-those-the-font-is-found-once-and-its-atlases-shared-and-the-desk-crate-is-optimised-in-the-dev-profile-b-568-b-011) |
 | 250 | [F250 — The older coding and languages suites are retired: their twenty tasks are all in the catalogue by another name, so `mcf eval` runs four suites — challenges, editing, tests, queries — the window lists four rows, and two thousand lines of tasks, checkers and a second correction loop are gone; the readings they wrote stay under `coding` and `coding-repair` and `mcf data` still writes them (B-567, B-563, D56)](#250-f250-the-older-coding-and-languages-suites-are-retired-their-twenty-tasks-are-all-in-the-catalogue-by-another-name-so-mcf-eval-runs-four-suites-challenges-editing-tests-queries-the-window-lists-four-rows-and-two-thousand-lines-of-tasks-checkers-and-a-second-correction-loop-are-gone-the-readings-they-wrote-stay-under-coding-and-coding-repair-and-mcf-data-still-writes-them-b-567-b-563-d56) |
@@ -9675,6 +9676,48 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 253 · F253 — A run's rows land as they are taken: the catalogue opens its run in the record with its conditions before the first ask, records each challenge-language pair the moment it is known as a part of that run, and closes the run with how it ended; parts read back as one run, a run killed between parts keeps every row it earned and reads as cut off, and the window's table grows while the suite runs (B-570, B-569, D54)
+
+**What the operator feared, and was right to.** A run of readings was
+one record entry, built in memory and written when the run finished.
+A coding tier stopped at challenge forty of fifty-six wrote nothing;
+Stop in the window kills the process outright. The measurements were
+already safe between steps, since each step records its own entry;
+the coding suites and the ladder were not.
+
+**A run in parts.** A run can now be recorded a part at a time. Its
+first part carries the conditions and no rows and is written before
+the first ask; each unit's rows are a part of their own, written the
+moment they are known; the last part says how the run ended —
+*finished*, or *stopped after …*. Every part is a readings entry like
+any other, with the run it belongs to and its place in it, so the
+journal stays what it is: append-only, hash-chained, never rewritten.
+Reading merges the parts of a run into one: the first's conditions and
+time, every part's rows in order, the engine of the last part that
+named one, and the end from the part that said it. A run whose parts
+never said how it ended has no end — under way, or cut off, which the
+record cannot tell and the reader can: the window says *under way: N
+rows so far* while the suite runs and *cut off after N rows* otherwise.
+`mcf data` and the window's table read the merged run and know nothing
+of parts.
+
+**The catalogue lands as it goes.** Each tier's run opens before its
+first ask and lands each challenge-language pair as it finishes; the
+report's last line says how many rows were recorded as they were
+taken and that the run closed. The window reads the readings again
+each time a result line arrives, so the table under the pane grows
+while the run goes, and the *so far* lines above it are the same
+results in words.
+
+**Seen.** The easy tier in Python and Go with three attempts on the 2B, killed with SIGKILL forty-five seconds in: eleven result lines had gone out, and the record held 102 rows for the five pairs finished — merge-sorted and balanced-brackets in both languages, run-length in Python — under `challenges-easy`, with no end, which the window reads as *cut off after 102 rows*. The same tier finished in Python alone: 224 rows for fourteen challenges, read back by the new daemon as one run, where the older daemon lists the same entries as fourteen runs of sixteen rows — which is why a window and a daemon must be of the same build. The operator's own run of the whole catalogue on Qwen3-Coder-Next, four hours and more under the build before this one, was killed by mistake during this work while its rows were still in memory, and nothing of it is in the record: the very loss this change ends.
+
+**What is not done.** The ladder still records at its end; a rung a
+part is the same change on the daemon side and is next. Stop still
+kills the process between parts, so the run reads as cut off rather
+than stopped; a Stop that finishes the attempt in hand and closes the
+run with *stopped after k of n*, and a Resume that skips the pairs a
+cut-off or stopped run already has, are B-571.
+
 ## 252 · F252 — The catalogue is four rows, one a tier, and a running suite shows its results as they come: `mcf eval` writes `result:` lines the moment each challenge and each language is known and records a tier's run under its own method, the window lists Challenges: easy, medium, hard and expert with a Languages field beside Retries and Window, and the pane lists the results so far under Run while the suite runs and after it finishes (B-569, B-563, D56)
 
 **What the operator saw.** One Challenges row ran for two hundred and
@@ -14644,6 +14687,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 176 — rows land as they are taken
+
+F253: a run recorded a part at a time, the catalogue landing each pair
+as it finishes, and a killed run keeping its rows (B-570).
 
 ### Version 175 — a row a tier, results as they come
 

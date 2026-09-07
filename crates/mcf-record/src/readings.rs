@@ -116,6 +116,104 @@ pub fn run_body(
     ])
 }
 
+/// One part of a run recorded as it was taken: the same body as a whole
+/// run's, with the run it belongs to, its place in that run, and — on the
+/// last part — how the run ended. A run written this way has its rows in
+/// the record the moment they were taken, so a run stopped, or killed,
+/// keeps every row it earned (B-570).
+#[must_use]
+#[allow(clippy::too_many_arguments, reason = "one part's fields, each named")]
+pub fn part_body(
+    model: &str,
+    method: &str,
+    engine: &str,
+    conditions: Vec<(&str, Value)>,
+    rows: &[Reading],
+    run: &str,
+    part: u64,
+    ended: Option<&str>,
+) -> Value {
+    let mut body = run_body(model, method, engine, conditions, rows);
+    if let Value::Map(fields) = &mut body {
+        let _run = fields.insert("run".to_owned(), Value::text(run.to_owned()));
+        let _part = fields.insert(
+            "part".to_owned(),
+            Value::Integer(i64::try_from(part).unwrap_or(i64::MAX)),
+        );
+        if let Some(ended) = ended {
+            let _ended = fields.insert("ended".to_owned(), Value::text(ended.to_owned()));
+        }
+    }
+    body
+}
+
+/// Whole runs from bodies in the order they were recorded: a body with no
+/// `run` is a whole run as it is; bodies sharing a `run` become one run
+/// in the first's place, with the first's conditions and everything else
+/// it carried, the rows of every part in the order recorded, the engine
+/// of the last part that named one, and `ended` from the part that said
+/// how it ended. A run whose parts never said how it ended has no
+/// `ended`: it is under way, or it was cut off — which is the reader's
+/// to tell, since the record cannot.
+#[must_use]
+pub fn merged(bodies: Vec<Value>) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    let mut place: BTreeMap<String, usize> = BTreeMap::new();
+    for body in bodies {
+        let Some(run) = body.get("run").and_then(Value::as_text).map(str::to_owned) else {
+            out.push(body);
+            continue;
+        };
+        if let Some(at) = place.get(&run).copied() {
+            let more = rows_of(&body);
+            let engine = body
+                .get("engine")
+                .and_then(Value::as_text)
+                .map(str::to_owned);
+            let ended = body
+                .get("ended")
+                .and_then(Value::as_text)
+                .map(str::to_owned);
+            if let Some(Value::Map(fields)) = out.get_mut(at) {
+                if let Some(Value::List(rows)) = fields.get_mut("rows") {
+                    rows.extend(more.iter().map(Reading::to_value));
+                }
+                if let Some(engine) = engine.filter(|held| !held.is_empty()) {
+                    let _engine = fields.insert("engine".to_owned(), Value::text(engine));
+                }
+                if let Some(ended) = ended {
+                    let _ended = fields.insert("ended".to_owned(), Value::text(ended));
+                }
+                let _parts = fields.remove("part");
+            }
+            continue;
+        }
+        let _at = place.insert(run, out.len());
+        let mut first = body;
+        if let Value::Map(fields) = &mut first {
+            let _part = fields.remove("part");
+        }
+        out.push(first);
+    }
+    out
+}
+
+/// How a run recorded a part at a time ended, where its last part said:
+/// `finished`, or `stopped after …`; `None` where no part said, which is
+/// a run under way or one cut off.
+#[must_use]
+pub fn ended_of(body: &Value) -> Option<String> {
+    body.get("ended")
+        .and_then(Value::as_text)
+        .map(str::to_owned)
+}
+
+/// Whether a body was recorded a part at a time.
+#[must_use]
+pub fn in_parts(body: &Value) -> bool {
+    body.get("run").and_then(Value::as_text).is_some()
+}
+
 /// The rows of a run's body, read back; empty where it holds none.
 #[must_use]
 pub fn rows_of(body: &Value) -> Vec<Reading> {
@@ -157,8 +255,106 @@ pub fn csv_cell(text: &str) -> String {
 mod tests {
     #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
-    use super::{Reading, csv_cell, dims_of, rows_of, run_body};
+    use super::{
+        Reading, csv_cell, dims_of, ended_of, in_parts, merged, part_body, rows_of, run_body,
+    };
     use crate::json::Value;
+
+    /// Parts recorded as they were taken read back as one run with every
+    /// row, the last part's engine and how it ended; a run cut off before
+    /// its last part has its rows and no end; a whole run is untouched.
+    #[test]
+    fn parts_recorded_as_taken_read_back_as_one_run() {
+        let row = |n: i64| {
+            Reading::new(
+                &[("attempt", Value::Integer(n))],
+                "tokens",
+                n * 10,
+                "tokens",
+            )
+        };
+        let conditions = || vec![("retries", Value::Integer(3))];
+        let whole = run_body("m", "editing", "e", conditions(), &[row(9)]);
+        let opened = part_body("m", "challenges-easy", "", conditions(), &[], "r1", 0, None);
+        let first = part_body(
+            "m",
+            "challenges-easy",
+            "llama",
+            vec![],
+            &[row(1)],
+            "r1",
+            1,
+            None,
+        );
+        let second = part_body(
+            "m",
+            "challenges-easy",
+            "llama",
+            vec![],
+            &[row(2)],
+            "r1",
+            2,
+            None,
+        );
+        let closed = part_body(
+            "m",
+            "challenges-easy",
+            "llama",
+            vec![],
+            &[],
+            "r1",
+            3,
+            Some("finished"),
+        );
+        let cut = part_body("m", "challenges-hard", "", conditions(), &[], "r2", 0, None);
+        let cut_row = part_body(
+            "m",
+            "challenges-hard",
+            "llama",
+            vec![],
+            &[row(5)],
+            "r2",
+            1,
+            None,
+        );
+        let runs = merged(vec![
+            whole.clone(),
+            opened,
+            first,
+            second,
+            closed,
+            cut,
+            cut_row,
+        ]);
+        assert_eq!(runs.len(), 3, "{runs:?}");
+        assert_eq!(runs[0], whole, "a whole run is as it was");
+        assert!(!in_parts(&whole));
+        let easy = &runs[1];
+        assert!(in_parts(easy));
+        assert_eq!(
+            easy.get("method").and_then(Value::as_text),
+            Some("challenges-easy")
+        );
+        assert_eq!(
+            easy.get("engine").and_then(Value::as_text),
+            Some("llama"),
+            "the last engine named"
+        );
+        assert_eq!(
+            easy.get("conditions").and_then(|c| c.get("retries")),
+            Some(&Value::Integer(3)),
+            "the opening part's conditions"
+        );
+        assert_eq!(
+            rows_of(easy).iter().map(|r| r.value).collect::<Vec<_>>(),
+            vec![10, 20]
+        );
+        assert_eq!(ended_of(easy).as_deref(), Some("finished"));
+        assert!(easy.get("part").is_none());
+        let hard = &runs[2];
+        assert_eq!(rows_of(hard).len(), 1);
+        assert_eq!(ended_of(hard), None, "no part said how it ended");
+    }
 
     /// A reading round-trips through the record's shape, dimensions and all.
     #[test]

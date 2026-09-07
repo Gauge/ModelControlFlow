@@ -2082,7 +2082,10 @@ fn all_readings(
             .or_default()
             .push(dated(entry.body().clone(), entry.recorded_at()));
     }
+    // A run recorded a part at a time reads back whole, then newest first.
     for runs in found.values_mut() {
+        let parts = std::mem::take(runs);
+        *runs = mcf_record::readings::merged(parts);
         runs.reverse();
     }
     found

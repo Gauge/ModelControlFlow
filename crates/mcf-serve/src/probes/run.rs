@@ -713,6 +713,52 @@ pub(crate) fn record_readings(
     Ok(path)
 }
 
+/// Records one part of a run as it is taken: the same entry as a whole
+/// run's, with the run it belongs to and its place in it, so that a run
+/// stopped or killed keeps every row it earned (B-570).
+///
+/// # Errors
+///
+/// Nowhere to record, or the record could not be written.
+#[allow(clippy::too_many_arguments, reason = "one part's fields, each named")]
+pub(crate) fn record_part(
+    model: &Path,
+    method: &str,
+    engine: &str,
+    conditions: Vec<(&str, mcf_record::json::Value)>,
+    rows: &[mcf_record::readings::Reading],
+    run: &str,
+    part: u64,
+    ended: Option<&str>,
+) -> Result<std::path::PathBuf, mcf_core::Failure> {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return Err(mcf_core::Failure::new(
+            mcf_core::failure::Category::RecordUnwritable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-serve::probes::run"),
+            "there is nowhere to record the readings",
+        ));
+    };
+    let body = mcf_record::readings::part_body(
+        &model.display().to_string(),
+        method,
+        engine,
+        conditions,
+        rows,
+        run,
+        part,
+        ended,
+    );
+    let mut journal = mcf_record::journal::Journal::open(&path)?;
+    journal.append(&mcf_record::journal::Entry::new(
+        mcf_record::journal::EntryKind::Readings,
+        mcf_core::time::Timestamp::now(),
+        body,
+    ))?;
+    Ok(path)
+}
+
 /// Writes a probe's rows beside its finding, and says so in a line
 /// (D54, B-513).
 fn rows_recorded(

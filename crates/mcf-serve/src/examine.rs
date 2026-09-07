@@ -550,6 +550,112 @@ pub fn record_rows(
     crate::probes::run::record_readings(model, method, engine, conditions, rows)
 }
 
+/// A run recorded a part at a time: opened with its conditions before
+/// the first row is taken, each unit's rows landed as they are, and
+/// closed with how it ended. A run killed between lands keeps every row
+/// landed and reads back with no end (B-570).
+#[derive(Debug)]
+pub struct Landing {
+    model: PathBuf,
+    method: String,
+    engine: String,
+    run: String,
+    part: u64,
+    rows: usize,
+}
+
+impl Landing {
+    /// Opens a run: writes its conditions as its first part, with no rows.
+    ///
+    /// # Errors
+    ///
+    /// Nowhere to record, or the record could not be written.
+    pub fn open(
+        model: &Path,
+        method: &str,
+        conditions: Vec<(&str, Value)>,
+    ) -> Result<Self, mcf_core::Failure> {
+        let run = format!(
+            "{method}-{}-{}",
+            mcf_core::time::Timestamp::now(),
+            std::process::id()
+        );
+        let _wrote =
+            crate::probes::run::record_part(model, method, "", conditions, &[], &run, 0, None)?;
+        Ok(Self {
+            model: model.to_path_buf(),
+            method: method.to_owned(),
+            engine: String::new(),
+            run,
+            part: 0,
+            rows: 0,
+        })
+    }
+
+    /// Lands one unit's rows, naming the engine where it is known by now.
+    ///
+    /// # Errors
+    ///
+    /// The record could not be written.
+    pub fn land(
+        &mut self,
+        engine: Option<&str>,
+        rows: &[Reading],
+    ) -> Result<(), mcf_core::Failure> {
+        if let Some(engine) = engine {
+            engine.clone_into(&mut self.engine);
+        }
+        if rows.is_empty() {
+            return Ok(());
+        }
+        self.part = self.part.saturating_add(1);
+        let _wrote = crate::probes::run::record_part(
+            &self.model,
+            &self.method,
+            &self.engine,
+            Vec::new(),
+            rows,
+            &self.run,
+            self.part,
+            None,
+        )?;
+        self.rows = self.rows.saturating_add(rows.len());
+        Ok(())
+    }
+
+    /// Closes the run with how it ended: `finished`, or `stopped after …`.
+    ///
+    /// # Errors
+    ///
+    /// The record could not be written.
+    pub fn close(&mut self, ended: &str) -> Result<usize, mcf_core::Failure> {
+        self.part = self.part.saturating_add(1);
+        let _wrote = crate::probes::run::record_part(
+            &self.model,
+            &self.method,
+            &self.engine,
+            Vec::new(),
+            &[],
+            &self.run,
+            self.part,
+            Some(ended),
+        )?;
+        Ok(self.rows)
+    }
+
+    /// How many rows have landed so far.
+    #[must_use]
+    pub const fn landed(&self) -> usize {
+        self.rows
+    }
+
+    /// The method the run is recorded under.
+    #[must_use]
+    pub fn method(&self) -> &str {
+        &self.method
+    }
+}
+
 /// One measurement's recorded finding as a sentence, from the fields the
 /// record keeps of it, read back the way a probe's is (B-483).
 #[must_use]

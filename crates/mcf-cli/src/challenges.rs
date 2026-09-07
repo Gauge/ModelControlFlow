@@ -1013,7 +1013,9 @@ pub(crate) fn run(
     retries: usize,
     only_tier: Option<Tier>,
     window: Option<u64>,
+    landing: Option<&mut mcf_serve::examine::Landing>,
 ) -> (Vec<String>, Vec<Reading>, Option<String>) {
+    let mut landing = landing;
     let challenges: Vec<&Challenge> = crate::catalogue::CHALLENGES
         .iter()
         .filter(|challenge| only_tier.is_none_or(|tier| challenge.tier == tier))
@@ -1076,7 +1078,15 @@ pub(crate) fn run(
                 window,
                 &mut engine_ran,
             );
-            rows.extend(rows_of(challenge, language.name, &attempts));
+            let pair = rows_of(challenge, language.name, &attempts);
+            // Landed the moment they are known, so that a run stopped or
+            // killed keeps them (B-570).
+            if let Some(landing) = landing.as_deref_mut()
+                && let Err(why) = landing.land(engine_ran.as_deref(), &pair)
+            {
+                crate::eval::result(&format!("    ROWS NOT RECORDED: {why}"));
+            }
+            rows.extend(pair);
             crate::eval::result(&format!("    {}", said_of(language.name, &attempts)));
             done = done.saturating_add(1);
         }

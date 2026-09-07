@@ -377,6 +377,26 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     }
     // The catalogue: every challenge in every language named, with its
     // retries, the rows under their own method (B-563, D56).
+    // One tier's run is its own method — `challenges-easy` — so that each
+    // tier has its own rows and its own last-run time; a run of every tier
+    // stays under `challenges` (B-569).
+    let challenges_method = plan.tier.map_or_else(
+        || "challenges".to_owned(),
+        |tier| format!("challenges-{}", tier.name()),
+    );
+    // The catalogue's rows land as they are taken: the run is opened with
+    // its conditions before the first ask, each pair's rows are recorded
+    // the moment they are known, and the run is closed with how it ended
+    // — so a run stopped, or killed, keeps every row it earned (B-570).
+    let mut landing = wants("challenges")
+        .then(|| {
+            mcf_serve::examine::Landing::open(
+                Path::new(named),
+                &challenges_method,
+                plan.conditions(),
+            )
+        })
+        .transpose();
     let (challenge_lines, challenge_rows, challenge_engine) = if wants("challenges") {
         // Said before the run, on the output stream where the progress
         // goes, so that a person watching knows what it runs under (B-564).
@@ -393,6 +413,7 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
             plan.retries,
             plan.tier,
             plan.window,
+            landing.as_mut().ok().and_then(Option::as_mut),
         );
         said.splice(
             0..0,
@@ -406,22 +427,14 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
         engine_ran = challenge_engine;
     }
     let engine_said = said_of(&engine_ran);
-    // One tier's run is its own method — `challenges-easy` — so that each
-    // tier has its own rows and its own last-run time; a run of every tier
-    // stays under `challenges` (B-569).
-    let challenges_method = plan.tier.map_or_else(
-        || "challenges".to_owned(),
-        |tier| format!("challenges-{}", tier.name()),
-    );
-    let challenges_recorded = wants("challenges").then(|| {
-        mcf_serve::examine::record_rows(
-            Path::new(named),
-            &challenges_method,
-            &engine_said,
-            plan.conditions(),
-            &challenge_rows,
-        )
-    });
+    let challenges_recorded: Option<Result<usize, String>> = match landing {
+        Ok(Some(mut landing)) => {
+            let _named = landing.land(Some(&engine_said), &[]);
+            Some(landing.close("finished").map_err(|why| why.to_string()))
+        }
+        Ok(None) => None,
+        Err(why) => Some(Err(why.to_string())),
+    };
     let queries_recorded = wants("queries").then(|| {
         mcf_serve::examine::record_rows(
             Path::new(named),
@@ -514,14 +527,14 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     lines.extend(challenge_lines);
     if let Some(recorded) = challenges_recorded {
         lines.push(match recorded {
-            Ok(_) => format!(
-                "  {} reading(s) recorded under {challenges_method}; `mcf data {named} --method \
-                 {challenges_method}` writes them",
-                challenge_rows.len()
+            Ok(landed) => format!(
+                "  {landed} reading(s) recorded under {challenges_method} as they were taken, and \
+                 the run closed; `mcf data {named} --method {challenges_method}` writes them"
             ),
-            Err(why) => format!("  CHALLENGE READINGS NOT RECORDED: {why}"),
+            Err(why) => format!("  CHALLENGE READINGS NOT CLOSED: {why}"),
         });
     }
+    let _kept = challenge_rows;
     Response {
         text: lines.join("\n"),
         served: true,
