@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 47 |
+| **Version** | 48 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -129,6 +129,22 @@ order to compile. A release build sets it:
 
 ```
 $ MCF_BUILD_COMMIT=$(git rev-parse HEAD) cargo build --locked --release
+```
+
+**Installing it.** `scripts/install.sh` puts the release binary at
+`~/.local/bin/mcf`, and beside it the launcher and icon that put the window in
+the desktop's application search under *Model Control Flow* — the same
+launcher and icon the Flatpak carries (B-448), with the installed binary as
+what it runs. It refuses when there is no release binary rather than building
+one, because what is installed is meant to be the release artifact this document describes.
+`--prefix` puts everything under another directory.
+
+```
+$ scripts/install.sh
+installed MCF 0.1.0-m0  (revision 74ca562…, rustc 1.98.0, target x86_64-unknown-linux-gnu, profile release)
+  binary    /home/gauge/.local/bin/mcf
+  launcher  /home/gauge/.local/share/applications/io.github.gauge.ModelControlFlow.desktop
+  icon      /home/gauge/.local/share/icons/hicolor/scalable/apps/io.github.gauge.ModelControlFlow.svg
 ```
 
 **The release profile is part of what is measured.** It aborts on panic, keeps
@@ -1046,6 +1062,10 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 48 — installing
+
+`scripts/install.sh`: the binary, the launcher and the icon (B-585, F265).
 
 ### Version 47 — the fourth `unsafe` opt-out
 

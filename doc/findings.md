@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 265 | [F265 — The first official build installed a binary and nothing a desktop could find: the launcher and icon were in the Flatpak packaging only, and `scripts/install.sh` now installs all three (B-585, B-583, B-448)](#265-f265-the-first-official-build-installed-a-binary-and-nothing-a-desktop-could-find-the-launcher-and-icon-were-in-the-flatpak-packaging-only-and-scriptsinstallsh-now-installs-all-three-b-585-b-583-b-448) |
 | 264 | [F264 — No sentence a person reads cites a document: the sixty remaining were rewritten to say the thing, the check that counted them now refuses any, and the window is inside its scope (B-403, F130, A23)](#264-f264-no-sentence-a-person-reads-cites-a-document-the-sixty-remaining-were-rewritten-to-say-the-thing-the-check-that-counted-them-now-refuses-any-and-the-window-is-inside-its-scope-b-403-f130-a23) |
 | 263 | [F263 — A termination signal stops the daemon the way `mcf stop` does: the handler writes one byte, a thread sends the request, and on the 2B the hold was let go in writing and the server was gone in a third of a second (B-584, A27, B-071)](#263-f263-a-termination-signal-stops-the-daemon-the-way-mcf-stop-does-the-handler-writes-one-byte-a-thread-sends-the-request-and-on-the-2b-the-hold-was-let-go-in-writing-and-the-server-was-gone-in-a-third-of-a-second-b-584-a27-b-071) |
 | 262 | [F262 — An engine server whose daemon is gone is found and stopped by the next daemon: the sweep at start, tested against a real orphan, and one 2B server with ten stale sockets cleared with it (B-574, A27, B-561)](#262-f262-an-engine-server-whose-daemon-is-gone-is-found-and-stopped-by-the-next-daemon-the-sweep-at-start-tested-against-a-real-orphan-and-one-2b-server-with-ten-stale-sockets-cleared-with-it-b-574-a27-b-561) |
@@ -15216,7 +15217,37 @@ needs the shape told from the name, which is a separate change; the
 sentences are listed here so that the debt is a number rather than a
 suspicion.
 
+## 265 · F265 — The first official build installed a binary and nothing a desktop could find: the launcher and icon were in the Flatpak packaging only, and `scripts/install.sh` now installs all three (B-585, B-583, B-448)
+
+**What the operator found.** Searching the desktop for the program
+found nothing. F261's install had put one binary at `~/.local/bin/mcf`,
+which a terminal finds and a desktop's application search does not:
+that search reads launchers, and the only launcher in the tree was the
+Flatpak's, installed nowhere because the Flatpak was never installed
+here (B-448 built it as a trial artifact). *Installed* had meant *on
+the path*, and to a person at a desktop that is not what it means.
+
+**What was done.** The Flatpak's launcher and icon were installed for
+this user by hand first — with the installed binary as what the
+launcher runs, by its whole path, since a desktop's launcher does not
+read the shell's path — and the desktop found *Model Control Flow* at
+once. Then `scripts/install.sh`, so that the next build does the same:
+the release binary, the launcher and the icon under `~/.local`, the
+desktop's caches refreshed where the tools for that are present, and a
+refusal when there is no release binary, because what is installed is
+meant to be the release artifact the build document describes rather than whatever a
+debug build produced. The window started from the launcher starts the
+daemon itself when none is up, which `mcf desk` already did.
+
+**What is not settled.** Whether MCF is distributed as a binary and a
+launcher, as the Flatpak, or as both is DEC-032, still open; this
+script is for the machine the tree is on.
+
 ## Changelog
+
+### Version 187 — installing puts the window where a person looks for it
+
+F265: the launcher and icon installed with the binary (B-585).
 
 ### Version 186 — no sentence a person reads cites a document
 
