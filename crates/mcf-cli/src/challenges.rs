@@ -29,6 +29,24 @@ const BUDGET: usize = 1400;
 /// holds an answer and its correction.
 const SMALLEST_WINDOW: u64 = 4096;
 
+/// How many of the compiler's lines are handed back with a failed
+/// compile, and how wide each may be: enough to name the error and the
+/// line, bounded so that a wall of complaint is not the next prompt.
+const COMPILER_LINES: usize = 12;
+const COMPILER_WIDTH: usize = 200;
+
+/// The compiler's first lines, bounded, from the container's error stream.
+#[must_use]
+pub(crate) fn compiler_said(heard: &str) -> String {
+    heard
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(COMPILER_LINES)
+        .map(|line| line.chars().take(COMPILER_WIDTH).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The languages the catalogue runs in, by the name `--languages` takes.
 pub(crate) const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 
@@ -50,8 +68,8 @@ pub(crate) const GO: Language = Language {
         "sh",
         "-c",
         "export GOCACHE=/tmp/gocache GOPATH=/tmp/gopath HOME=/tmp GOMAXPROCS=2 GOFLAGS=-p=1; cd \
-         /tmp && if go build -o /tmp/answer /work/answer.go 2>/dev/null; then echo compiled; \
-         /tmp/answer; else echo notcompiled; fi",
+         /tmp && if go build -o /tmp/answer /work/answer.go; then echo compiled; /tmp/answer \
+         2>/dev/null; else echo notcompiled; fi",
     ],
     present: &["go", "version"],
     tasks: &[],
@@ -590,6 +608,9 @@ pub(crate) struct Attempt {
     pub ask_ns: u64,
     /// The window the turn ran in, where the account said.
     pub window: Option<u64>,
+    /// The compiler's first lines where the answer did not compile;
+    /// empty otherwise (B-565).
+    pub compiler: String,
     /// The code, kept for the next attempt's feedback.
     pub code: String,
 }
@@ -640,7 +661,15 @@ pub(crate) fn feedback(language: &Language, challenge: &Challenge, last: &Attemp
         last.code
     );
     if last.compiled == Some(false) {
-        out.push_str("That answer did not compile.\n");
+        if last.compiler.is_empty() {
+            out.push_str("That answer did not compile.\n");
+        } else {
+            let _wrote = writeln!(
+                out,
+                "That answer did not compile. The compiler said:\n```\n{}\n```",
+                last.compiler
+            );
+        }
     } else if !last.ran {
         out.push_str("That answer did not run to the end of the checks.\n");
     } else {
@@ -722,13 +751,21 @@ pub(crate) fn attempt_all(
         };
         let code = crate::eval::code_in(&spoken.text);
         let builds = matches!(language.name, "rust" | "go");
+        let mut complaint = String::new();
         let (compiled, ran, cases) = if code.trim().is_empty() {
             (None, false, Vec::new())
         } else {
             let program = checker(language, challenge, &code);
-            let said = crate::languages::run_program(podman, scratch, language, &program)
-                .unwrap_or_default();
-            read_harness(&said, challenge.cases.len(), builds)
+            let (said, heard) =
+                crate::languages::run_program_heard(podman, scratch, language, &program)
+                    .unwrap_or_default();
+            let read = read_harness(&said, challenge.cases.len(), builds);
+            complaint = if read.0 == Some(false) {
+                compiler_said(&heard)
+            } else {
+                String::new()
+            };
+            read
         };
         let attempt = Attempt {
             wrote: !code.trim().is_empty(),
@@ -738,6 +775,7 @@ pub(crate) fn attempt_all(
             tokens,
             ask_ns,
             window: spoken.window_ran,
+            compiler: complaint,
             code,
         };
         let solved = attempt.whole();
@@ -817,6 +855,14 @@ pub(crate) fn rows_of(challenge: &Challenge, language: &str, attempts: &[Attempt
                 "window",
                 i64::try_from(window).unwrap_or(i64::MAX),
                 "tokens",
+            ));
+        }
+        if attempt.compiled == Some(false) {
+            rows.push(Reading::new(
+                &dims,
+                "compiler_lines",
+                whole(attempt.compiler.lines().count()),
+                "count",
             ));
         }
     }
@@ -1124,6 +1170,59 @@ mod tests {
         assert!(why.contains("at least one"), "{why}");
     }
 
+    /// A compile failure is handed back with the compiler's first lines,
+    /// bounded, and a row counts them (B-565).
+    #[test]
+    fn a_compile_failure_is_handed_back_with_what_the_compiler_said() {
+        let merge = CHALLENGES
+            .iter()
+            .find(|c| c.name == "merge-sorted")
+            .unwrap();
+        let heard = (0..30)
+            .map(|at| {
+                format!(
+                    "error[E0308]: mismatched types on line {at} {}",
+                    "x".repeat(400)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let said = super::compiler_said(&heard);
+        assert_eq!(said.lines().count(), 12, "twelve lines at most");
+        assert!(
+            said.lines().all(|line| line.chars().count() <= 200),
+            "each bounded"
+        );
+        let last = Attempt {
+            wrote: true,
+            compiled: Some(false),
+            ran: false,
+            cases: Vec::new(),
+            tokens: 40,
+            ask_ns: 1,
+            window: None,
+            compiler: said.clone(),
+            code: "fn merge() {}".to_owned(),
+        };
+        let rust = super::language_named("rust").unwrap();
+        let fed = feedback(rust, merge, &last);
+        assert!(fed.contains("The compiler said:"), "{fed}");
+        assert!(
+            fed.contains("error[E0308]: mismatched types on line 0"),
+            "{fed}"
+        );
+        assert!(
+            !fed.contains("on line 12"),
+            "the thirteenth line is not handed back"
+        );
+        let rows = super::rows_of(merge, "rust", &[last]);
+        let count = rows
+            .iter()
+            .find(|row| row.metric == "compiler_lines")
+            .map(|row| row.value);
+        assert_eq!(count, Some(12));
+    }
+
     #[test]
     fn signatures_and_expectations_are_rendered_in_each_language() {
         let merge = CHALLENGES
@@ -1179,6 +1278,7 @@ mod tests {
             tokens: 10,
             ask_ns: 1,
             window: None,
+            compiler: String::new(),
             code: "def merge(a, b): return a".to_owned(),
         };
         let said = feedback(&crate::languages::LANGUAGES[0], merge, &last);

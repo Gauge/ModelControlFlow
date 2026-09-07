@@ -63,8 +63,12 @@ pub(crate) const LANGUAGES: &[Language] = &[
             "40",
             "sh",
             "-c",
-            "if rustc --edition 2021 -A warnings -o /tmp/answer /work/answer.rs 2>/dev/null; then \
-             echo compiled; /tmp/answer; else echo notcompiled; fi",
+            // The compiler's complaint goes to the error stream, where the
+            // host reads its first lines back for the model to correct; the
+            // program's own error stream is dropped, so the two never mix
+            // (B-565).
+            "if rustc --edition 2021 -A warnings -o /tmp/answer /work/answer.rs; then echo \
+             compiled; /tmp/answer 2>/dev/null; else echo notcompiled; fi",
         ],
         present: &["rustc", "--version"],
         tasks: RUST,
@@ -280,6 +284,18 @@ pub(crate) fn run_program(
     language: &Language,
     program: &str,
 ) -> Result<String, String> {
+    run_program_heard(podman, scratch, language, program).map(|(said, _)| said)
+}
+
+/// [`run_program`] with the container's error stream as well: what the
+/// compiler said where the language compiles, since the harness sends
+/// the program's own error stream nowhere (B-565).
+pub(crate) fn run_program_heard(
+    podman: &Path,
+    scratch: &Path,
+    language: &Language,
+    program: &str,
+) -> Result<(String, String), String> {
     if let Err(error) = std::fs::write(scratch.join(language.file), program) {
         return Err(format!("the answer could not be written down: {error}"));
     }
@@ -301,7 +317,10 @@ pub(crate) fn run_program(
         .args(language.command)
         .output();
     let spoke = spoke.map_err(|error| format!("the checker could not be started: {error}"))?;
-    Ok(String::from_utf8_lossy(&spoke.stdout).into_owned())
+    Ok((
+        String::from_utf8_lossy(&spoke.stdout).into_owned(),
+        String::from_utf8_lossy(&spoke.stderr).into_owned(),
+    ))
 }
 
 /// What a run of the languages came to: the lines said, the rows, a
