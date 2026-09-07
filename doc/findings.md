@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 261 | [F261 — The first official build of MCF, installed on this machine: the gating tier green, every scheduled tier run against the source it names, the release refusal cleared, the artifact built under the release profile with its revision set, and the one binary put on the path at `~/.local/bin/mcf` (B-583, B-185, D24, B-001)](#261-f261-the-first-official-build-of-mcf-installed-on-this-machine-the-gating-tier-green-every-scheduled-tier-run-against-the-source-it-names-the-release-refusal-cleared-the-artifact-built-under-the-release-profile-with-its-revision-set-and-the-one-binary-put-on-the-path-at-localbinmcf-b-583-b-185-d24-b-001) |
 | 260 | [F260 — One model runs at a time: the daemon refuses a run on a model other than the hosted one, and a hold while a run of another model goes, in one sentence naming both, before anything starts; a measurement of the hosted model lets the hold go for its run and hosts it again after under the settings it had; the Diagnostics page says the rule above the pane when the chosen model is not the hosted one (B-582, D57, F243)](#260-f260-one-model-runs-at-a-time-the-daemon-refuses-a-run-on-a-model-other-than-the-hosted-one-and-a-hold-while-a-run-of-another-model-goes-in-one-sentence-naming-both-before-anything-starts-a-measurement-of-the-hosted-model-lets-the-hold-go-for-its-run-and-hosts-it-again-after-under-the-settings-it-had-the-diagnostics-page-says-the-rule-above-the-pane-when-the-chosen-model-is-not-the-hosted-one-b-582-d57-f243) |
 | 259 | [F259 — Every useful figure of a served model has a tile of its own: the engine's twelve counters, the card's load, temperature, power and memory, and — while a run of the window's own goes — the run's energy, tokens, tokens a kilojoule and time, laid out in rows of five under the hosted model and under the model under test alike, each figure nobody read drawn as unmeasured rather than as nought (B-581, B-573, A7)](#259-f259-every-useful-figure-of-a-served-model-has-a-tile-of-its-own-the-engines-twelve-counters-the-cards-load-temperature-power-and-memory-and-while-a-run-of-the-windows-own-goes-the-runs-energy-tokens-tokens-a-kilojoule-and-time-laid-out-in-rows-of-five-under-the-hosted-model-and-under-the-model-under-test-alike-each-figure-nobody-read-drawn-as-unmeasured-rather-than-as-nought-b-581-b-573-a7) |
 | 258 | [F258 — A hold can be reachable from the network: a switch on the Configure tab and `--open on` at the command line bind the engine to every address this machine has instead of the loopback one, a hold open to the network is refused without an API key, and the Server page and the Hosted answer name the machine's own address on its route out beside the loopback one (B-577, B-480, A7)](#258-f258-a-hold-can-be-reachable-from-the-network-a-switch-on-the-configure-tab-and-open-on-at-the-command-line-bind-the-engine-to-every-address-this-machine-has-instead-of-the-loopback-one-a-hold-open-to-the-network-is-refused-without-an-api-key-and-the-server-page-and-the-hosted-answer-name-the-machines-own-address-on-its-route-out-beside-the-loopback-one-b-577-b-480-a7) |
@@ -9709,6 +9710,65 @@ a step but their rows land at the step's end; a soak's row every
 tenth request, as it is taken, is the daemon-side half of F253 and a
 row once the catalogue's has been used.
 
+## 261 · F261 — The first official build of MCF, installed on this machine: the gating tier green, every scheduled tier run against the source it names, the release refusal cleared, the artifact built under the release profile with its revision set, and the one binary put on the path at `~/.local/bin/mcf` (B-583, B-185, D24, B-001)
+
+**What the operator asked.** An official build, installed on this
+system. The build document says what that is: the release
+profile with the source revision set, and a release that refuses while
+any scheduled tier has not run against the source in the tree.
+
+**What the release path caught first.** The gating tier lints the
+whole workspace and builds every crate's documentation with warnings
+refused, and it found two things the crate-by-crate checks of this
+session had not: the five-gates check's new condition written in a
+shape clippy declines, and a doc comment in the turn module linking a
+private item. Both fixed and committed before anything was stamped.
+
+**What the mutation tier caught.** Two things, one after the other.
+First its own deadline: the control mutation, the one that must be
+caught for the run to mean anything, was judged killed only because
+the suite it ran under was cut off at a hundred and twenty seconds,
+while the suite takes about two hundred on this machine. A tier that
+reports its control killed because the clock ran out has proven
+nothing; the deadline was raised to nine hundred seconds with the
+reasoning written beside it, and the control was confirmed caught by
+the tests rather than the clock. Then, with the deadline honest, one
+of eighteen mutants survived: the time zone reader's lookup of the
+offset in force after transition *k* reads `offsets[k − 1]`, and the
+mutant that reads `offsets[k]` passed every test, because every test
+read the machine's own zone file and asserted only that an answer
+existed, not which. A test that builds a zone file of two transitions
+and three offsets now pins the answer in each span and on each
+boundary, and fails under the mutant. The tier refused the release at
+seventeen of eighteen, as its floor says it must; the build waited on
+the test.
+
+**The tiers.** Run in one detached pass, `scripts/ci.sh` with every
+scheduled tier asked for, on the source whose digest the stamps name.
+The gating tier took 222 seconds; the whole pass 4153. Fuzz, load, soak
+and performance stamped within ten minutes of each other; mutation
+stamped 57 minutes later at 18 killed of 18 scored. `scripts/check-tier-ages.sh
+--release` then said every scheduled tier had run against this source and
+exited clean, which is the condition the build document sets for a
+release.
+
+**The artifact.** `MCF_BUILD_COMMIT=$(git rev-parse HEAD) cargo build --locked
+--release`, 43 seconds on the warm target directory. The binary answers
+`mcf --version` with the milestone version, the revision it was built
+from (`74ca562`, the commit before this record), the compiler, the target triple and the release profile. It was
+put at `~/.local/bin/mcf` by `install -Dm755`, which the operator's
+profile already places on the path, and a fresh login shell resolves
+`mcf` there and reports the same revision. The tree's copy and the
+installed copy have the same digest.
+
+**What is not done.** The from-scratch check (B-183) and the
+reproducible-build check (B-001) are on the release list and were not
+run for this build; the statically linked artifact was not built. The
+Flatpak bundle (B-448) is a separate artifact for another machine and
+was not built. This is the first build installed rather than run from
+the tree, and the record of it is this finding; a release *number*
+beyond the milestone in the version is DEC-032's, still open.
+
 ## 260 · F260 — One model runs at a time: the daemon refuses a run on a model other than the hosted one, and a hold while a run of another model goes, in one sentence naming both, before anything starts; a measurement of the hosted model lets the hold go for its run and hosts it again after under the settings it had; the Diagnostics page says the rule above the pane when the chosen model is not the hosted one (B-582, D57, F243)
 
 **What the operator asked.** Complete control over what runs: one
@@ -15001,6 +15061,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 183 — the first official build
+
+F261: every tier run against this source, the release refusal
+cleared, the artifact installed (B-583).
 
 ### Version 182 — one model runs at a time
 
