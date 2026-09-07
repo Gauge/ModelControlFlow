@@ -65,10 +65,13 @@ command -v python3 >/dev/null 2>&1 || fail_cannot_check "python3 is not on PATH"
 command -v timeout >/dev/null 2>&1 || fail_cannot_check "timeout is not on PATH"
 
 # How long one mutant's suite run may take before it is judged to have hung.
-# The gating tiers take about five seconds; two minutes is forty times that,
-# which is the difference between a slow machine and a mutant that does not
-# terminate.
-readonly MUTANT_TIMEOUT=120
+# The whole suite takes about three and a half minutes on this machine — the
+# whole-system tests start real daemons and the window suite draws every page
+# — and the equivalent-mutant control was judged killed by a deadline written
+# when the tiers took five seconds (F261). Fifteen minutes is four times the
+# suite, which is the difference between a slow machine and a mutant that does
+# not terminate; a mutant that hangs still costs no more than that.
+readonly MUTANT_TIMEOUT=900
 readonly EXIT_TIMED_OUT=124
 
 # The catalogue: three parallel arrays, the way check-lints-bite.sh states its
