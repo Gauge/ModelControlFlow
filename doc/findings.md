@@ -212,6 +212,8 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 256 | [F256 — The model under test is shown as a hosted model is: the daemon answers Hosted with the server it holds for a run — the model, the engine, the window, and its counters read off its own socket — the Server page shows it under its own heading with the same tiles, and the window sums the card's power a second at a time while any run goes, saying what the run has cost in kilojoules, the tokens produced meanwhile and tokens a kilojoule (B-573, B-071, D24)](#256-f256-the-model-under-test-is-shown-as-a-hosted-model-is-the-daemon-answers-hosted-with-the-server-it-holds-for-a-run-the-model-the-engine-the-window-and-its-counters-read-off-its-own-socket-the-server-page-shows-it-under-its-own-heading-with-the-same-tiles-and-the-window-sums-the-cards-power-a-second-at-a-time-while-any-run-goes-saying-what-the-run-has-cost-in-kilojoules-the-tokens-produced-meanwhile-and-tokens-a-kilojoule-b-573-b-071-d24) |
+| 255 | [F255 — A run is watched attempt by attempt and says about how long is left: the catalogue writes a line an attempt on its stream — compiled or not, cases held, tokens, time — so a ten-attempt struggle is seen as it happens, and the strip under the list says about how long the run has left from its own pace once a twentieth is done and fifteen seconds have passed, said as an estimate (B-572, B-569, D56)](#255-f255-a-run-is-watched-attempt-by-attempt-and-says-about-how-long-is-left-the-catalogue-writes-a-line-an-attempt-on-its-stream-compiled-or-not-cases-held-tokens-time-so-a-ten-attempt-struggle-is-seen-as-it-happens-and-the-strip-under-the-list-says-about-how-long-the-run-has-left-from-its-own-pace-once-a-twentieth-is-done-and-fifteen-seconds-have-passed-said-as-an-estimate-b-572-b-569-d56) |
 | 254 | [F254 — Stop finishes the attempt in hand and closes the run; Resume goes on from what it has: a suite the window runs is asked to stop through its own input, records the pair it was on, closes its run as *stopped after k of n* and says so, a second press kills it; a row whose newest run stopped or was cut off offers Resume, which continues that run under the same conditions and skips the pairs it already has (B-571, B-570, B-569)](#254-f254-stop-finishes-the-attempt-in-hand-and-closes-the-run-resume-goes-on-from-what-it-has-a-suite-the-window-runs-is-asked-to-stop-through-its-own-input-records-the-pair-it-was-on-closes-its-run-as-stopped-after-k-of-n-and-says-so-a-second-press-kills-it-a-row-whose-newest-run-stopped-or-was-cut-off-offers-resume-which-continues-that-run-under-the-same-conditions-and-skips-the-pairs-it-already-has-b-571-b-570-b-569) |
 | 253 | [F253 — A run's rows land as they are taken: the catalogue opens its run in the record with its conditions before the first ask, records each challenge-language pair the moment it is known as a part of that run, and closes the run with how it ended; parts read back as one run, a run killed between parts keeps every row it earned and reads as cut off, and the window's table grows while the suite runs (B-570, B-569, D54)](#253-f253-a-runs-rows-land-as-they-are-taken-the-catalogue-opens-its-run-in-the-record-with-its-conditions-before-the-first-ask-records-each-challenge-language-pair-the-moment-it-is-known-as-a-part-of-that-run-and-closes-the-run-with-how-it-ended-parts-read-back-as-one-run-a-run-killed-between-parts-keeps-every-row-it-earned-and-reads-as-cut-off-and-the-windows-table-grows-while-the-suite-runs-b-570-b-569-d54) |
 | 252 | [F252 — The catalogue is four rows, one a tier, and a running suite shows its results as they come: `mcf eval` writes `result:` lines the moment each challenge and each language is known and records a tier's run under its own method, the window lists Challenges: easy, medium, hard and expert with a Languages field beside Retries and Window, and the pane lists the results so far under Run while the suite runs and after it finishes (B-569, B-563, D56)](#252-f252-the-catalogue-is-four-rows-one-a-tier-and-a-running-suite-shows-its-results-as-they-come-mcf-eval-writes-result-lines-the-moment-each-challenge-and-each-language-is-known-and-records-a-tiers-run-under-its-own-method-the-window-lists-challenges-easy-medium-hard-and-expert-with-a-languages-field-beside-retries-and-window-and-the-pane-lists-the-results-so-far-under-run-while-the-suite-runs-and-after-it-finishes-b-569-b-563-d56) |
@@ -9677,6 +9679,70 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 255 · F255 — A run is watched attempt by attempt and says about how long is left: the catalogue writes a line an attempt on its stream — compiled or not, cases held, tokens, time — so a ten-attempt struggle is seen as it happens, and the strip under the list says about how long the run has left from its own pace once a twentieth is done and fifteen seconds have passed, said as an estimate (B-572, B-569, D56)
+
+**What was thin.** A pair of a challenge and a language was one line
+when it ended, after up to ten attempts; and the strip said how long
+a run had gone and nothing of how long it had left.
+
+**A line an attempt.** The catalogue now writes, as each attempt
+ends, *attempt 3 of 10: did not compile · 0 of 5 held · 412 tokens ·
+9.1s* — whether it wrote nothing, did not compile, did not run to the
+end, or ran, the cases it held, the tokens and the time — under the
+language's line in the pane's *so far* and on the terminal. The
+language's own line still follows when the pair ends.
+
+**About how long is left.** The strip's clock gains *· about 12 min
+left* once the run is a twentieth done and fifteen seconds old: the
+time run scaled by what is left over what is done, from the run's own
+progress lines. It is an estimate from this run's pace and is said as
+one; a run whose stream does not say how far it is says nothing.
+
+**Seen.** The easy tier in Go with three attempts on the 2B: forty attempt lines on the stream, the first *attempt 1 of 3: ran · 3 of 3 held · 159 token(s) · 3.9s*; and where a second run held the daemon at the same time, *attempt 1 of 3: wrote nothing · 0 of 4 held · 0 token(s) · 0.2s* twice over — the line said at once what a pair's summary would have hidden, that the asks were being refused, not answered wrong. The estimate is the window's and the unit tests hold that it says nothing before a twentieth is done or fifteen seconds have passed; a run from the window shows it on the strip's clock.
+
+**What is not done.** The measurements report their progress within
+a step but their rows land at the step's end; a soak's row every
+tenth request, as it is taken, is the daemon-side half of F253 and a
+row once the catalogue's has been used.
+
+## 256 · F256 — The model under test is shown as a hosted model is: the daemon answers Hosted with the server it holds for a run — the model, the engine, the window, and its counters read off its own socket — the Server page shows it under its own heading with the same tiles, and the window sums the card's power a second at a time while any run goes, saying what the run has cost in kilojoules, the tokens produced meanwhile and tokens a kilojoule (B-573, B-071, D24)
+
+**What the operator asked.** That the model a diagnostic exercises
+show up like a hosted one, with the same figures — requests, tokens
+in and out, power — and anything else useful.
+
+**The server under test.** The daemon holds a server of its own for a
+run's asks, reached over a socket of its own; it answered no question
+about it. The Hosted answer now carries `under_test` beside whatever
+is hosted: the model, the engine and commit, the window it was opened
+at, and its counters — tokens prompted and predicted, the rates, the
+cache, requests in hand, resident memory — read off that socket the
+way a hosted server's are read off its port, on request and never on
+a timer. The Server page shows it first, under *under test*, with its
+name, engine and window, and the same ten tiles a hosted model gets.
+
+**What the run costs.** While any run goes, the window reads the
+machine and the model under test once a second whatever page shows,
+and sums the card's watts into millijoules a second at a time; with
+the model's generated tokens at the run's start and now, the page
+says *this run: 38 kJ over 6 min 24 s · 41,200 tokens produced ·
+1,072 tokens a kJ*. A card that reports no power is said as such
+rather than as nought; the sum starts afresh with every run. The
+figures are whole — millijoules, tokens — so no fraction reaches the
+window's state (D24).
+
+**Seen.** A Python tier on the 2B through a fresh daemon, asked *hosted* twenty-five seconds in: `under_test` carried the model, *provisioned llama.cpp @925e1179947e*, window 4,096, and off the server's own socket 1,578 tokens generated at 128 a second, 2,401 prompted at 3,064 a second, none processing, none queued, 447 MB resident. The Server page on a nested display during the same run showed *under test* above *Nothing is held*, the model's name, engine and window, and the ten tiles — 127.7 generated a second, 1,801 tokens out, 2,704 in, 0.5 GB — moving as the run went; the older daemon, without its counters published, answered the same question with the resident bytes alone, which is what turned `--metrics` on for the daemon's own server. The page drawn for review with a run of the window's own shows the cost line: *this run: 38 kJ over 6 min 24 s · 41,200 token(s) produced · 1,072 token(s) a kJ*.
+
+**What is not done.** The processor's package power is a counter
+this platform keeps root-only, so the cost is the card's alone and
+says so by name; a machine whose card reports no power has a duration
+and a token count and no energy. The model under test is the server
+the daemon holds for the coding suites' asks; a measurement starts a
+server of its own for each step and is not yet shown, and a run
+started at the command line rather than from the window has its
+counters on the page but no cost line, since the window sums only the
+runs it started.
+
 ## 254 · F254 — Stop finishes the attempt in hand and closes the run; Resume goes on from what it has: a suite the window runs is asked to stop through its own input, records the pair it was on, closes its run as *stopped after k of n* and says so, a second press kills it; a row whose newest run stopped or was cut off offers Resume, which continues that run under the same conditions and skips the pairs it already has (B-571, B-570, B-569)
 
 **What Stop was.** The window killed the suite's process outright,
@@ -14727,6 +14793,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 178 — watched attempt by attempt, and the model under test
+
+F255: a line an attempt and about how long is left (B-572). F256: the
+model under test shown as a hosted one, and what the run costs (B-573).
 
 ### Version 177 — stop finishes the attempt, resume goes on
 

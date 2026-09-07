@@ -797,6 +797,26 @@ pub(crate) fn attempt_all(
             code,
         };
         let solved = attempt.whole();
+        // Every attempt is a line on the stream as it ends, so a struggle of
+        // ten attempts is watched as it happens and not read at its end
+        // (B-572).
+        crate::eval::result(&format!(
+            "        attempt {} of {retries}: {} · {} of {} held · {} token(s) · {}",
+            attempts.len().saturating_add(1),
+            if !attempt.wrote {
+                "wrote nothing"
+            } else if attempt.compiled == Some(false) {
+                "did not compile"
+            } else if !attempt.ran {
+                "did not run to the end"
+            } else {
+                "ran"
+            },
+            attempt.held(),
+            challenge.cases.len(),
+            attempt.tokens,
+            took_said(attempt.ask_ns)
+        ));
         attempts.push(attempt);
         // A stop asked mid-pair ends the pair after this attempt: the rows
         // say how many attempts it had (B-571).

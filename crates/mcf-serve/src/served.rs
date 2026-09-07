@@ -155,6 +155,51 @@ pub fn metrics_on(port: u16) -> Option<String> {
     Some(body.to_owned())
 }
 
+/// The engine's own counters over whichever way it is reached: the
+/// daemon's own server for a run answers on a socket of its own, and what
+/// it is doing is read off it the same way a hosted one's is (B-573).
+#[must_use]
+pub fn metrics_via(reach: &Reach) -> Option<String> {
+    let said = match reach {
+        Reach::Port { port, .. } => got_on(*port, "/metrics")?,
+        Reach::Socket(socket) => got_via(socket, "/metrics")?,
+    };
+    let (_, body) = said.split_once("\r\n\r\n")?;
+    Some(body.to_owned())
+}
+
+/// One GET over the engine's socket, bounded as [`got_on`] is.
+fn got_via(socket: &Path, path: &str) -> Option<String> {
+    use std::io::{Read as _, Write as _};
+    let Ok(mut connection) = UnixStream::connect(socket) else {
+        return None;
+    };
+    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+    if write!(
+        connection,
+        "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    )
+    .and_then(|()| connection.flush())
+    .is_err()
+    {
+        return None;
+    }
+    let mut said = String::new();
+    let mut held = [0_u8; 4096];
+    while let Ok(read) = connection.read(&mut held) {
+        if read == 0 {
+            break;
+        }
+        said.push_str(&String::from_utf8_lossy(
+            held.get(..read).unwrap_or_default(),
+        ));
+        if said.len() > 65_536 {
+            break;
+        }
+    }
+    Some(said)
+}
+
 /// One GET on the engine's port, bounded: the status line and a short body.
 fn got_on(port: u16, path: &str) -> Option<String> {
     use std::io::{Read as _, Write as _};
@@ -908,6 +953,9 @@ impl Served {
             .arg(model)
             .arg("--host")
             .arg(&socket)
+            // Its counters published, so that the model under test can be
+            // watched the way a hosted one is (B-573).
+            .arg("--metrics")
             // **How large a window the engine holds open.** This was the
             // literal `0`, which llama.cpp reads as *the model's whole trained
             // context* — 262,144 tokens on a model MCF was planning against at
@@ -1077,6 +1125,24 @@ impl Served {
     #[must_use]
     pub fn peak_resident_bytes(&self) -> Option<u64> {
         crate::adapters::peak_resident_of(self.child.id())
+    }
+
+    /// The engine's own counters, where it publishes them (B-573).
+    #[must_use]
+    pub fn metrics(&self) -> Option<String> {
+        metrics_via(&self.reach)
+    }
+
+    /// Where the server answers.
+    #[must_use]
+    pub const fn reach(&self) -> &Reach {
+        &self.reach
+    }
+
+    /// The server's process, whose memory the kernel reports.
+    #[must_use]
+    pub fn child_id(&self) -> u32 {
+        self.child.id()
     }
 
     /// The memory the server holds resident now, in bytes — what stopping

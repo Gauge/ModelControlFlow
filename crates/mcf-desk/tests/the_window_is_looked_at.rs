@@ -2463,6 +2463,7 @@ fn the_ask_screen_carries_the_turn_and_the_picture() {
 /// `MCF_LOOK` names a directory — the review pass over the window that
 /// reads what it draws rather than asking a person to (D49).
 #[test]
+#[allow(clippy::too_many_lines, reason = "one page after another, each drawn")]
 fn every_page_is_drawn_for_review() {
     if std::env::var("MCF_LOOK").is_err() {
         return;
@@ -2547,6 +2548,34 @@ fn every_page_is_drawn_for_review() {
     }
     let _ = drawn(&desk, DAY, "review-server-running");
     let _ = drawn(&desk, NIGHT, "review-server-running-night");
+    // The same page while a run holds the model under test beside what is
+    // hosted: its counters as tiles and what the run has cost (B-573).
+    desk.under_test = Some(mcf_desk::UnderTest {
+        model: "/models/Assistant-2B-Instruct-Q4_K_M.gguf".to_owned(),
+        engine: "provisioned llama.cpp @925e1179947e".to_owned(),
+        window: Some(8192),
+        in_use: mcf_desk::Use {
+            generated: Some(41_200),
+            prompted: Some(388_000),
+            generated_per_second: Some(74.2),
+            prompted_per_second: Some(1_910.0),
+            cache_used: Some(0.31),
+            processing: Some(1),
+            queued: Some(0),
+            resident: Some(1_980_000_000),
+            card: None,
+            uptime_seconds: None,
+        },
+    });
+    desk.spent = mcf_desk::Spent {
+        millijoules: 38_400_000,
+        seconds: 384,
+        tokens_at_start: Some(0),
+        tokens_now: Some(41_200),
+    };
+    let _ = drawn(&desk, DAY, "review-server-under-test");
+    desk.under_test = None;
+    desk.spent = mcf_desk::Spent::default();
 
     // Diagnostics: the cards, and the throughput card with a run going.
     desk.page = Page::Diagnostics;

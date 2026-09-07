@@ -2188,6 +2188,93 @@ impl Doing {
     }
 }
 
+/// The server the daemon holds for a run — the model under test — shown
+/// the way a hosted one is (B-573).
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnderTest {
+    /// The model, by path.
+    pub model: String,
+    /// The engine it runs through.
+    pub engine: String,
+    /// The window it was opened at.
+    pub window: Option<u64>,
+    /// What it is doing, off its own counters.
+    pub in_use: Use,
+}
+
+impl UnderTest {
+    /// Read from the daemon's answer.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Self {
+        Self {
+            model: value
+                .get("model")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned(),
+            engine: value
+                .get("engine")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned(),
+            window: value
+                .get("window")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+            in_use: value.get("use").map(Use::from_value).unwrap_or_default(),
+        }
+    }
+
+    /// The model's file name, for a heading.
+    #[must_use]
+    pub fn name(&self) -> String {
+        std::path::Path::new(&self.model).file_stem().map_or_else(
+            || self.model.clone(),
+            |stem| stem.to_string_lossy().into_owned(),
+        )
+    }
+}
+
+/// What a run has cost so far: the card's power summed a second at a time
+/// while the run went, and the tokens the model under test produced in
+/// that time, so that a cost a token is a figure and not a feeling
+/// (B-573). Whole millijoules: no fraction reaches the record (D24).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Spent {
+    /// Millijoules summed from the card's watts, one second a sample.
+    pub millijoules: u64,
+    /// Seconds sampled.
+    pub seconds: u64,
+    /// The model under test's generated tokens when the run began, where
+    /// its counters were readable then.
+    pub tokens_at_start: Option<u64>,
+    /// Its generated tokens at the last sample.
+    pub tokens_now: Option<u64>,
+}
+
+impl Spent {
+    /// Tokens produced since the run began, where both ends were read.
+    #[must_use]
+    pub fn tokens(&self) -> Option<u64> {
+        Some(self.tokens_now?.saturating_sub(self.tokens_at_start?))
+    }
+
+    /// Tokens a kilojoule, whole, where both are known and energy is not
+    /// nought.
+    #[must_use]
+    #[expect(
+        clippy::integer_division,
+        reason = "whole tokens a kilojoule is the figure"
+    )]
+    pub fn tokens_per_kilojoule(&self) -> Option<u64> {
+        let tokens = self.tokens()?;
+        if self.millijoules == 0 {
+            return None;
+        }
+        Some(tokens.saturating_mul(1_000_000) / self.millijoules)
+    }
+}
+
 /// The window's state.
 #[derive(Debug)]
 pub struct Desk {
@@ -2361,6 +2448,10 @@ pub struct Desk {
     pub build_failed: Option<(String, String)>,
     /// What is being hosted: where it is reachable, and since when.
     pub hosted: Option<Hosted>,
+    /// The server the daemon holds for a run, where one is (B-573).
+    pub under_test: Option<UnderTest>,
+    /// What the run going has spent so far (B-573).
+    pub spent: Spent,
     /// What was last held, where nothing is: read from the daemon, which
     /// read it from the record, so it survives a restart of either (A1).
     pub last_hold: Option<LastHold>,
@@ -2460,6 +2551,8 @@ impl Desk {
             building: None,
             build_failed: None,
             hosted: None,
+            under_test: None,
+            spent: Spent::default(),
             last_hold: None,
             rates: std::collections::VecDeque::new(),
             host_refused: None,
@@ -3056,6 +3149,15 @@ impl Desk {
         // about what is hosted, and blanking the screen on it would report
         // MCF's own busyness as the model being gone.
         let answered = ask_within(&self.socket, &Request::Hosted, POLL).ok();
+        // The server the daemon holds for a run, beside whatever is hosted
+        // (B-573).
+        if let Some(answer) = answered.as_ref().filter(|answer| answer.served) {
+            self.under_test = answer
+                .body
+                .get("under_test")
+                .filter(|held| !matches!(held, Value::Null))
+                .map(UnderTest::from_value);
+        }
         let read =
             match ask_within(&self.socket, &Request::Hosted, POLL) {
                 Ok(answer) if answer.served => answer
@@ -3405,6 +3507,8 @@ impl Desk {
     /// rather than something the window waits on: a screen that froze for
     /// minutes is one a person cannot tell from a broken one (B-227).
     pub fn report_prompt(&mut self) {
+        // A new run: its cost is summed afresh (B-573).
+        self.tally_afresh();
         let taken = self.taken();
         if taken.text.is_empty() {
             return;
@@ -3450,6 +3554,8 @@ impl Desk {
 
     /// Times the chosen model.
     pub fn measure(&mut self, at: usize, deepest: u64) {
+        // A new run: its cost is summed afresh (B-573).
+        self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
         };
@@ -3607,6 +3713,28 @@ impl Desk {
             // A prompt report's stream does not say how far it is.
             _ => None,
         }
+    }
+
+    /// About how long the run going has left, in seconds, from its own
+    /// pace so far: the time it has run, scaled by what is left over what
+    /// is done. `None` until a twentieth is done and fifteen seconds have
+    /// passed, since a pace from less is a guess (A7, B-572).
+    #[must_use]
+    pub fn time_left(&self) -> Option<u64> {
+        let job = self.doing.job().filter(|job| !job.finished)?;
+        let fraction = self.run_fraction()?;
+        let elapsed = job.ran();
+        if fraction < 0.05 || elapsed < 15 {
+            return None;
+        }
+        #[expect(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "whole seconds of an estimate"
+        )]
+        let left = (elapsed as f32 * (1.0 - fraction) / fraction).round() as u64;
+        Some(left)
     }
 
     /// The whole sequence's fraction while a Run all goes: the runs done
@@ -4057,6 +4185,8 @@ impl Desk {
 
     /// Runs the probes named on the chosen model; none named is every one.
     pub fn probe_only(&mut self, at: usize, only: Vec<String>) {
+        // A new run: its cost is summed afresh (B-573).
+        self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
         };
@@ -4090,6 +4220,8 @@ impl Desk {
 
     /// Runs the measurements named on the chosen model.
     pub fn examine_only(&mut self, at: usize, only: Vec<String>) {
+        // A new run: its cost is summed afresh (B-573).
+        self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
         };
@@ -4146,6 +4278,8 @@ impl Desk {
     /// as a job (B-519). The record's readings and the model's summary are
     /// read again when it ends.
     fn evaluate(&mut self, at: usize, suite: Option<usize>) {
+        // A new run: its cost is summed afresh (B-573).
+        self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
         };
@@ -4219,6 +4353,43 @@ impl Desk {
             mcf_record::readings::in_parts(run)
                 && mcf_record::readings::ended_of(run).as_deref() != Some("finished")
         })
+    }
+
+    /// Adds one second of the card's power to what the run going has spent,
+    /// and reads the model under test's tokens, so that the Server page can
+    /// say what the run costs (B-573). Called once a second while a run
+    /// goes; nothing is added where the card reports no power.
+    pub fn tally(&mut self) {
+        if !self.doing.busy() {
+            return;
+        }
+        let watts: u64 = self
+            .reading
+            .cards
+            .iter()
+            .filter_map(|card| card.power)
+            .map(u64::from)
+            .sum();
+        if watts > 0 {
+            self.spent.millijoules = self
+                .spent
+                .millijoules
+                .saturating_add(watts.saturating_mul(1000));
+        }
+        self.spent.seconds = self.spent.seconds.saturating_add(1);
+        let tokens = self
+            .under_test
+            .as_ref()
+            .and_then(|under| under.in_use.generated);
+        if self.spent.tokens_at_start.is_none() {
+            self.spent.tokens_at_start = tokens;
+        }
+        self.spent.tokens_now = tokens;
+    }
+
+    /// Starts the run's tally afresh: the first second of a new run.
+    pub fn tally_afresh(&mut self) {
+        self.spent = Spent::default();
     }
 
     /// What a running or just-finished suite has said so far, a result a
@@ -4691,6 +4862,8 @@ impl Desk {
     /// Reads what the provisioned engine produces from the chosen model with
     /// MCF's own engine — the same request `mcf cross-check` sends (B-072).
     pub fn cross_check(&mut self, at: usize) {
+        // A new run: its cost is summed afresh (B-573).
+        self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
         };
@@ -5085,6 +5258,7 @@ impl Desk {
 ///
 /// What SDL said, that the window library is not provisioned, or that no font
 /// could be found on this computer.
+#[allow(clippy::too_many_lines, reason = "the one loop, each event named")]
 pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut paint = paint::Painter::open("MCF", 1180, 760, paint::NIGHT)?;
     if let Some(window) = paint.window() {
@@ -5192,7 +5366,11 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         // A second between readings, and only where they are shown — the same
         // rule the console follows, for the same reason: an idle window should
         // not be why a fan is running (B-071).
-        let due = matches!(desk.page, Page::Monitor | Page::Hosting)
+        // And once a second while a run goes, whatever page shows: the
+        // machine and the model under test, so that the run's cost is
+        // summed as it is spent (B-573).
+        let a_run = desk.doing.busy();
+        let due = (matches!(desk.page, Page::Monitor | Page::Hosting) || a_run)
             && last.elapsed() >= std::time::Duration::from_secs(1);
         if due {
             match desk.page {
@@ -5200,6 +5378,15 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                 // Running: what the held engine is doing, read off its own
                 // counters once a second while somebody is looking (B-071).
                 _ => desk.read_hosted(),
+            }
+            if a_run {
+                if desk.page != Page::Monitor {
+                    desk.sample();
+                }
+                if desk.page == Page::Monitor {
+                    desk.read_hosted();
+                }
+                desk.tally();
             }
             last = std::time::Instant::now();
             acted = true;

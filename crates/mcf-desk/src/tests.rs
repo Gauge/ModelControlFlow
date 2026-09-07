@@ -1746,6 +1746,92 @@ fn a_row_whose_run_did_not_finish_resumes_it() {
     );
 }
 
+/// A run's time left is its own pace scaled to what remains, and nothing
+/// until enough is done to have a pace (B-572).
+#[test]
+fn a_run_says_about_how_long_is_left_from_its_own_pace() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    let mut going = crate::job::Job::already(
+        "running the Challenges: easy suite on a-model".to_owned(),
+        vec![Value::map([(
+            "line",
+            Value::text("progress: 1/56 challenges · easy · python · x"),
+        )])],
+    );
+    going.finished = false;
+    desk.doing = crate::Doing::Evaluating(going);
+    assert_eq!(desk.time_left(), None, "a fifty-sixth done is not a pace");
+    if let crate::Doing::Evaluating(job) = &mut desk.doing {
+        job.answers.push(Value::map([(
+            "line",
+            Value::text("progress: 14/56 challenges · easy · go · y"),
+        )]));
+    }
+    // A quarter done, and the job only just started: no fifteen seconds yet.
+    assert_eq!(desk.time_left(), None);
+}
+
+/// The server a run holds is read off the daemon's answer as a hosted
+/// one is, and the run's cost is summed a second at a time from the
+/// card's watts and the model's tokens (B-573).
+#[test]
+fn the_model_under_test_is_read_and_its_cost_is_summed() {
+    let answer = Value::map([
+        ("model", Value::text("/m/Assistant-2B-Instruct-Q4_K_M.gguf")),
+        ("engine", Value::text("provisioned llama.cpp @925e")),
+        ("window", Value::Integer(8192)),
+        (
+            "use",
+            Value::map([
+                ("generated_tokens", Value::text("1500")),
+                ("prompted_tokens", Value::text("9000")),
+                ("requests_processing", Value::text("1")),
+            ]),
+        ),
+    ]);
+    let under = crate::UnderTest::from_value(&answer);
+    assert_eq!(under.name(), "Assistant-2B-Instruct-Q4_K_M");
+    assert_eq!(under.window, Some(8192));
+    assert_eq!(under.in_use.generated, Some(1500));
+    assert_eq!(under.in_use.prompted, Some(9000));
+
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.under_test = Some(under);
+    desk.reading.cards.push(mcf_tui::machine::Card {
+        name: "card0".to_owned(),
+        load: None,
+        temperature: None,
+        power: Some(100),
+        used: None,
+        total: None,
+    });
+    desk.tally();
+    assert_eq!(desk.spent.seconds, 0, "nothing running: nothing spent");
+    let mut going = crate::job::Job::already("running".to_owned(), Vec::new());
+    going.finished = false;
+    desk.doing = crate::Doing::Evaluating(going);
+    desk.tally();
+    desk.tally();
+    assert_eq!(desk.spent.seconds, 2);
+    assert_eq!(
+        desk.spent.millijoules, 200_000,
+        "a hundred watts for two seconds"
+    );
+    assert_eq!(desk.spent.tokens_at_start, Some(1500));
+    if let Some(under) = desk.under_test.as_mut() {
+        under.in_use.generated = Some(1900);
+    }
+    desk.tally();
+    assert_eq!(desk.spent.tokens(), Some(400));
+    assert_eq!(
+        desk.spent.tokens_per_kilojoule(),
+        Some(1333),
+        "four hundred tokens over three tenths of a kilojoule"
+    );
+    desk.tally_afresh();
+    assert_eq!(desk.spent, crate::Spent::default());
+}
+
 #[test]
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;

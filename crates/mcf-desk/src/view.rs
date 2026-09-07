@@ -2856,7 +2856,12 @@ fn progress_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> O
         size::SMALL,
         ink.ink,
     );
-    let elapsed = clock(job.ran());
+    // The time run, and about how long is left at this run's own pace,
+    // said as an estimate (B-572).
+    let elapsed = match desk.time_left() {
+        Some(left) => format!("{} · about {} left", clock(job.ran()), clock(left)),
+        None => clock(job.ran()),
+    };
     paint.say_right(
         at.right() - 8.0,
         at.y + 12.0,
@@ -5136,6 +5141,68 @@ fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     y + 16.0
 }
 
+/// The server the daemon holds for a run, as a hosted one is shown: its
+/// name, engine and window, its counters as tiles, and what the run has
+/// spent — the card's energy summed a second at a time, the tokens it
+/// produced meanwhile, and tokens a kilojoule (B-573). Nothing where no
+/// run holds a server; returns where the next block begins.
+#[expect(clippy::integer_division, reason = "whole kilojoules is the unit said")]
+fn under_test_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
+    let Some(under) = desk.under_test.as_ref() else {
+        return at.y;
+    };
+    let ink = paint.ink;
+    spaced(paint, at.x, at.y, "under test", ink.faint);
+    let heading = match under.window {
+        Some(window) => format!(
+            "{} · {} · window {}",
+            under.name(),
+            under.engine,
+            words::grouped(window)
+        ),
+        None => format!("{} · {}", under.name(), under.engine),
+    };
+    let shown = paint.elide(&heading, Weight::Bold, size::BODY, at.w);
+    paint.say_at(at.x, at.y + 24.0, &shown, Weight::Bold, size::BODY, ink.ink);
+    let mut y = use_tiles(paint, &under.in_use, Box::new(at.x, at.y + 50.0, at.w, 0.0));
+    let spent = desk.spent;
+    if spent.seconds > 0 {
+        let energy = format!(
+            "this run: {} kJ over {}",
+            words::grouped(spent.millijoules / 1_000_000),
+            clock(spent.seconds)
+        );
+        let tokens = match (spent.tokens(), spent.tokens_per_kilojoule()) {
+            (Some(tokens), Some(per)) => format!(
+                " · {} token(s) produced · {} token(s) a kJ",
+                words::grouped(tokens),
+                words::grouped(per)
+            ),
+            (Some(tokens), None) => format!(" · {} token(s) produced", words::grouped(tokens)),
+            _ => String::new(),
+        };
+        let said = if spent.millijoules == 0 {
+            format!(
+                "this run: the card reports no power, over {}{tokens}",
+                clock(spent.seconds)
+            )
+        } else {
+            format!("{energy}{tokens}")
+        };
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, at.w);
+        paint.say_at(
+            at.x,
+            y + 6.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        y += 24.0;
+    }
+    y + 22.0
+}
+
 /// What the held engine is doing, as tiles: a short label over a figure,
 /// two rows of five. A figure the engine did not publish is drawn as
 /// unmeasured, not as nought (A7).
@@ -5371,6 +5438,10 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 /// The Server page's content, from the top of its region.
 fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
+    // The model under test first, where a run holds one: what it is doing
+    // and what the run has cost, the way a hosted model is shown (B-573).
+    let top = under_test_block(paint, desk, Box::new(area.x, area.y, area.w, 0.0));
+    let area = Box::new(area.x, top, area.w, (area.h - (top - area.y)).max(0.0));
     // The held model first, whatever is chosen on Models; the chosen one
     // where nothing is held, because a question can still be asked of it
     // through MCF's own engine.
