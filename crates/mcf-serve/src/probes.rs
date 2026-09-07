@@ -826,6 +826,9 @@ pub struct Spoken {
     /// The engine the daemon ran it on, as the account names it, so that
     /// a reading taken through the daemon can say what answered (B-542).
     pub engine_ran: Option<String>,
+    /// The window the turn ran in, in tokens, as the account's conditions
+    /// say it (B-564).
+    pub window_ran: Option<u64>,
 }
 
 impl Spoken {
@@ -871,6 +874,34 @@ pub fn spoken(
     budget: usize,
     engine: Option<&str>,
 ) -> Spoken {
+    spoken_as(
+        socket,
+        model,
+        prompt,
+        pieces,
+        budget,
+        engine,
+        crate::declared::Started::default(),
+    )
+}
+
+/// [`spoken`] with what the engine is started with beyond the plain load
+/// — a window the asker named, a rope scaling — so that a suite can ask
+/// every turn in the window the person set (B-564).
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one ask's conditions, each named in the account"
+)]
+pub fn spoken_as(
+    socket: &Path,
+    model: &Path,
+    prompt: &str,
+    pieces: Option<&[Piece]>,
+    budget: usize,
+    engine: Option<&str>,
+    started: crate::declared::Started,
+) -> Spoken {
     use std::io::{BufRead as _, BufReader, Write as _};
 
     let Ok(mut connection) = std::os::unix::net::UnixStream::connect(socket) else {
@@ -892,7 +923,7 @@ pub fn spoken(
         pinned: false,
         turn: None,
         image: None,
-        started: crate::declared::Started::default(),
+        started,
     };
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
@@ -986,6 +1017,11 @@ pub fn spoken(
                         .and_then(|conditions| conditions.get("engine"))
                         .and_then(mcf_record::json::Value::as_text)
                         .map(str::to_owned),
+                    window_ran: account
+                        .get("conditions")
+                        .and_then(|conditions| conditions.get("window"))
+                        .and_then(mcf_record::json::Value::as_integer)
+                        .and_then(|window| u64::try_from(window).ok()),
                     text: account
                         .get("text")
                         .and_then(mcf_record::json::Value::as_text)
@@ -1011,6 +1047,7 @@ fn could_not_tell(because: impl Into<String>) -> Spoken {
         text: String::new(),
         answer: None,
         engine_ran: None,
+        window_ran: None,
     }
 }
 

@@ -3011,6 +3011,7 @@ fn diagnostic_pane(
 /// `eval` for the suite and reads it as it goes — or Stop while it runs,
 /// the command's last line meanwhile, when it last ran, and its readings
 /// (B-519, D54).
+#[allow(clippy::too_many_lines, reason = "one pane, its rows in order")]
 fn eval_pane(
     paint: &mut Painter,
     desk: &Desk,
@@ -3023,8 +3024,19 @@ fn eval_pane(
     let inner_w = area.w - 2.0 * PAD;
     let running_one = desk.running_diagnostic() == Some(diagnostic);
     let done = is_done_one(desk, diagnostic);
+    let under = if is_the_challenges_row(diagnostic) {
+        RUNS_UNDER_HEIGHT
+            + if desk.edit_refused.is_some() {
+                18.0
+            } else {
+                0.0
+            }
+    } else {
+        0.0
+    };
     let height = head_height_of(paint, diagnostic.answers(), area.w)
         + 44.0
+        + under
         + if done { 30.0 } else { 0.0 }
         + 12.0;
     let frame = Box::new(area.x, area.y, area.w, height);
@@ -3075,6 +3087,13 @@ fn eval_pane(
         );
     }
     let mut below = y + 44.0;
+    // What the catalogue will run under, and the two fields that set it
+    // (B-564): under the Run button, before the readings.
+    if is_the_challenges_row(diagnostic)
+        && let Some(pressed) = runs_under(paint, desk, mouse, inner_x, &mut below)
+    {
+        act = Some(pressed);
+    }
     if done {
         paint.say_at(
             inner_x,
@@ -3738,6 +3757,90 @@ fn throughput_buttons(
         below += 30.0;
     }
     (act, below + 12.0)
+}
+
+/// Whether the row is the catalogue's, whose pane takes the retries and
+/// the window (B-564).
+fn is_the_challenges_row(diagnostic: crate::Diagnostic) -> bool {
+    matches!(diagnostic, crate::Diagnostic::Eval(at)
+        if crate::SUITES.get(at).is_some_and(|(name, _, _)| *name == "challenges"))
+}
+
+/// What the Challenges pane's conditions and fields take, in height; a
+/// refusal of what was typed takes one line more.
+const RUNS_UNDER_HEIGHT: f32 = 18.0 * 3.0 + 34.0 * 2.0 + 8.0;
+
+/// What the catalogue will run under, said before Run is pressed: the
+/// engine and device MCF resolved for the model, the answer budget, and
+/// the two fields a person can set — the retries and the window (B-564,
+/// D56). The rest is the daemon's at the ask, and every row's record
+/// names it.
+fn runs_under(paint: &mut Painter, desk: &Desk, mouse: &Mouse, x: f32, y: &mut f32) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let model = desk.chosen.and_then(|at| desk.models.get(at));
+    let engine = match model {
+        Some(held) => match (&held.engine, &held.device) {
+            (Some(engine), Some(device)) => format!("{engine} on {device}"),
+            (Some(engine), None) => engine.clone(),
+            _ => "the daemon's choice; each row's record names it".to_owned(),
+        },
+        None => "the daemon's choice".to_owned(),
+    };
+    for line in [
+        format!("runs under: {engine}"),
+        "budget: 1,400 tokens an answer · seed 0 · every answer run in a container".to_owned(),
+        match desk.challenge_window {
+            Some(window) => format!("window: {window} tokens, every attempt"),
+            None => "window: sized to each turn unless set below".to_owned(),
+        },
+    ] {
+        paint.say_at(x, *y, &line, Weight::Regular, size::SMALL, ink.quiet);
+        *y += 18.0;
+    }
+    for (name, field, now, placeholder) in [
+        (
+            "Retries",
+            crate::Field::Retries,
+            desk.retries.to_string(),
+            "10",
+        ),
+        (
+            "Window",
+            crate::Field::Window,
+            desk.challenge_window
+                .map_or_else(String::new, |window| window.to_string()),
+            "sized to the turn",
+        ),
+    ] {
+        paint.say_at(x, *y, name, Weight::Regular, size::BODY, ink.quiet);
+        let focused = desk
+            .editing
+            .as_ref()
+            .is_some_and(|(editing, _)| *editing == field);
+        let text = if focused {
+            desk.being_typed().to_owned()
+        } else {
+            now
+        };
+        if ui::field(
+            paint,
+            mouse,
+            Box::new(x + 90.0, *y - 6.0, 160.0, 28.0),
+            &text,
+            placeholder,
+            focused,
+        ) {
+            act = Some(Act::Edit(field));
+        }
+        *y += 34.0;
+    }
+    if let Some(why) = &desk.edit_refused {
+        paint.say_at(x, *y, why, Weight::Regular, size::SMALL, ink.warn);
+        *y += 18.0;
+    }
+    *y += 8.0;
+    act
 }
 
 /// Whether this card's run has finished, with figures to read.

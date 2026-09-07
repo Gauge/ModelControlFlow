@@ -1564,7 +1564,7 @@ fn serving<'slot>(
             && held.prefix == llama.prefix
             && held.gpu_layers == gpu_layers
             && window_suits(held.window, window)
-            && held.started == started
+            && held.started.same_switches(&started)
     });
     if !reused {
         *slot = None;
@@ -1637,6 +1637,7 @@ fn window_for(sent: usize, limit: usize, context: u64) -> u64 {
 /// projects share (A27).
 #[allow(
     clippy::too_many_arguments,
+    clippy::too_many_lines,
     reason = "one request's conditions, each named in the account"
 )]
 fn through_served(
@@ -1681,7 +1682,13 @@ fn through_served(
         held,
     };
     let room = if shown.is_some() { PICTURE_ROOM } else { 0 };
-    let window = window_for(tokens.len().saturating_add(room), limit, context);
+    // The window the asker named, held to what the machine was said to
+    // hold; sized to the turn where nobody named one (B-564).
+    let window = match started.window {
+        Some(asked) if context == 0 => asked,
+        Some(asked) => asked.min(context),
+        None => window_for(tokens.len().saturating_add(room), limit, context),
+    };
     let (engine, reused) = slot.engine(&where_it_lives, window)?;
 
     let text = shown.map(|shown| shown.placed_by(engine)).transpose()?;

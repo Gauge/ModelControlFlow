@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 246 | [F246 — What a run will use is said before it runs: `mcf eval` prints the engine and device MCF resolves for the model, the window, the answer budget, the retries, the languages, the tier and the seed before the first ask and keeps them in the report, the Challenges pane shows the same under its Run button with two fields — the retries and the window — that become the command line's own flags, `--window` opens every attempt in the window the person set, and every attempt's row carries the window it ran in (B-564, D56, DEC-063)](#246-f246-what-a-run-will-use-is-said-before-it-runs-mcf-eval-prints-the-engine-and-device-mcf-resolves-for-the-model-the-window-the-answer-budget-the-retries-the-languages-the-tier-and-the-seed-before-the-first-ask-and-keeps-them-in-the-report-the-challenges-pane-shows-the-same-under-its-run-button-with-two-fields-the-retries-and-the-window-that-become-the-command-lines-own-flags-window-opens-every-attempt-in-the-window-the-person-set-and-every-attempts-row-carries-the-window-it-ran-in-b-564-d56-dec-063) |
 | 245 | [F245 — Coding is a catalogue: forty-four challenges from easy to expert, each a statement in words with language-neutral cases, run in Python, JavaScript, Rust and Go through one harness each, up to ten attempts with every failed one handed back with the cases that did not hold and what came back, and rows for the attempt it was solved at, the corrections, the tokens and the time; the Go toolchain builds its standard library afresh in the sealed image and ran out of processes at sixty-four until held to one package at a time, and a reference solution in the container caught one wrong expected value in the catalogue (B-563, D56, DEC-063)](#245-f245-coding-is-a-catalogue-forty-four-challenges-from-easy-to-expert-each-a-statement-in-words-with-language-neutral-cases-run-in-python-javascript-rust-and-go-through-one-harness-each-up-to-ten-attempts-with-every-failed-one-handed-back-with-the-cases-that-did-not-hold-and-what-came-back-and-rows-for-the-attempt-it-was-solved-at-the-corrections-the-tokens-and-the-time-the-go-toolchain-builds-its-standard-library-afresh-in-the-sealed-image-and-ran-out-of-processes-at-sixty-four-until-held-to-one-package-at-a-time-and-a-reference-solution-in-the-container-caught-one-wrong-expected-value-in-the-catalogue-b-563-d56-dec-063) |
 | 244 | [F244 — Every run now says how far it is within each step and names what it ran under: forty-four measurements report from their main loops, the daemon carries the progress on the run's connection, the command line shows it on one overwriting line and the window moves its bar by it, the five coding suites print progress lines as they go, and every run's record carries the engine, the window and the layers, shown under the readings (B-562, D56, DEC-063)](#244-f244-every-run-now-says-how-far-it-is-within-each-step-and-names-what-it-ran-under-forty-four-measurements-report-from-their-main-loops-the-daemon-carries-the-progress-on-the-runs-connection-the-command-line-shows-it-on-one-overwriting-line-and-the-window-moves-its-bar-by-it-the-five-coding-suites-print-progress-lines-as-they-go-and-every-runs-record-carries-the-engine-the-window-and-the-layers-shown-under-the-readings-b-562-d56-dec-063) |
 | 201 | [F201 — Coding is rows: `mcf eval` writes every attempt at every task as readings — whether it wrote, whether it ran, the cases held of the cases, the code's size and what the asking took — and its task set grows by four that parse input and refuse what does not parse, fix a function handed over broken, count words under a stated tie order and read Roman numerals; on the 2B, 20 tasks and 60 attempts wrote 387 rows, nine tasks held every case in every attempt and the four new ones split two and two (B-518, D54, B-110)](#201--f201--coding-is-rows-mcf-eval-writes-every-attempt-at-every-task-as-readings--whether-it-wrote-whether-it-ran-the-cases-held-of-the-cases-the-codes-size-and-what-the-asking-took--and-its-task-set-grows-by-four-that-parse-input-and-refuse-what-does-not-parse-fix-a-function-handed-over-broken-count-words-under-a-stated-tie-order-and-read-roman-numerals-on-the-2b-20-tasks-and-60-attempts-wrote-387-rows-nine-tasks-held-every-case-in-every-attempt-and-the-four-new-ones-split-two-and-two-b-518-d54-b-110) |
@@ -9668,6 +9669,54 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 246 · F246 — What a run will use is said before it runs: `mcf eval` prints the engine and device MCF resolves for the model, the window, the answer budget, the retries, the languages, the tier and the seed before the first ask and keeps them in the report, the Challenges pane shows the same under its Run button with two fields — the retries and the window — that become the command line's own flags, `--window` opens every attempt in the window the person set, and every attempt's row carries the window it ran in (B-564, D56, DEC-063)
+
+**What was missing.** A person pressing Run, or typing `mcf eval`,
+could not say what the run would use: the engine the daemon would
+pick, the window each ask would open, how many tokens an answer could
+take, how many tries a challenge got. The rows said afterwards; nothing
+said before. And the window was the daemon's to size, turn by turn,
+though a challenge and its corrections are a conversation that grows
+and the window is a condition of every attempt (D56).
+
+**What is said now.** Before the first ask, `mcf eval --only
+challenges` prints a block on the output stream — *the challenges run
+under* — with the engine and device MCF resolves for the model on this
+machine from the file's header (the same resolution `mcf explain`
+makes, without a daemon), the window (the tokens set, or *sized to
+each turn: twice the prompt and the budget, at least 4096, at most what
+the model and the machine hold*), the budget, the retries, the
+languages, the tier and the seed; the same block heads the report. The
+Challenges pane shows *runs under: engine on device*, the budget and
+the seed, and the window, under its Run button, with two fields:
+Retries, ten unless typed, and Window, empty for sized to the turn.
+What is typed is applied on Return; a window below 4096 is refused
+with the floor, a word is refused with the word, and the field stays
+as it was. Run passes them as `--retries` and `--window`, the command
+line's own flags, so what the window runs is what the console would.
+
+**The window as a condition.** `--window` travels in the request's
+declared start beside the draft head and the rope scaling; the daemon
+opens every ask in it, held to what the machine was said to hold, and
+a held server is kept where its window suits and its switches match —
+the window does not count as a switch, so a server opened for the
+turn is not replaced for it. The account's conditions already carried
+the window the turn ran in; the suite now reads it back and every
+attempt's row carries `window` in tokens beside its `ask_ns`.
+
+**Seen.** The easy tier on the 2B in Python with `--retries 2
+--window 8192`: the header said *engine llama.cpp-vulkan on Radeon
+8060S Graphics*, *window 8192 tokens, every attempt*, *retries 2
+attempt(s)*; the run wrote 278 rows, and every one of the twenty
+attempt rows carried `window 8192`. The pane drawn for review shows
+the block under Run with the two fields.
+
+**What is not done.** The temperature is the daemon's and the header
+says so rather than a number; a sampler the person sets is not a row
+here. The measurements and probes say their conditions in their
+records, not before they run; the same block for them is a row to
+open once the catalogue's has been used.
+
 ## 245 · F245 — Coding is a catalogue: forty-four challenges from easy to expert, each a statement in words with language-neutral cases, run in Python, JavaScript, Rust and Go through one harness each, up to ten attempts with every failed one handed back with the cases that did not hold and what came back, and rows for the attempt it was solved at, the corrections, the tokens and the time; the Go toolchain builds its standard library afresh in the sealed image and ran out of processes at sixty-four until held to one package at a time, and a reference solution in the container caught one wrong expected value in the catalogue (B-563, D56, DEC-063)
 
 **What was missing.** The coding suites were a list: twenty Python
@@ -14355,6 +14404,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 169 — what a run will use, said first
+
+F246: the configuration before the run, and the window as a flag and a
+row (B-564).
 
 ### Version 168 — coding is a catalogue
 

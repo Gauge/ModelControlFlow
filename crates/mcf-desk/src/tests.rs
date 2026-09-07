@@ -1523,6 +1523,60 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
 /// its own beside the runs, each named as the daemon names it; a probe's
 /// finding is kept with when it was taken; and the row running now is
 /// the one the daemon's step names (D53).
+/// The Challenges card's two fields are typed on the Diagnostics page and
+/// become the command line's own flags; a window below the floor is
+/// refused and the field stays as it was (B-564, D56).
+#[test]
+fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.page = Page::Diagnostics;
+    assert_eq!(
+        desk.eval_arguments("/m.gguf", Some(5)),
+        vec!["eval", "/m.gguf", "--only", "challenges"],
+        "ten attempts is the suite's own default and is not said"
+    );
+    desk.edit(crate::Field::Retries);
+    assert!(desk.takes_typing(), "the card's field takes the keys");
+    desk.typing().clear();
+    desk.typing().push('3');
+    desk.entered();
+    assert_eq!(desk.retries, 3);
+    desk.edit(crate::Field::Window);
+    desk.typing().clear();
+    desk.typing().push_str("1024");
+    desk.apply_edit();
+    assert_eq!(desk.challenge_window, None);
+    let why = desk.edit_refused.clone().unwrap_or_default();
+    assert!(why.contains("4096"), "the refusal names the floor: {why}");
+    desk.edit(crate::Field::Window);
+    desk.typing().clear();
+    desk.typing().push_str("8,192");
+    desk.apply_edit();
+    assert_eq!(desk.challenge_window, Some(8192));
+    assert!(desk.edit_refused.is_none());
+    assert_eq!(
+        desk.eval_arguments("/m.gguf", Some(5)),
+        vec![
+            "eval",
+            "/m.gguf",
+            "--only",
+            "challenges",
+            "--retries",
+            "3",
+            "--window",
+            "8192"
+        ]
+    );
+    desk.edit(crate::Field::Window);
+    desk.typing().clear();
+    desk.apply_edit();
+    assert_eq!(
+        desk.challenge_window, None,
+        "emptied is sized to the turn again"
+    );
+    assert!(!desk.takes_typing(), "nothing is being typed once applied");
+}
+
 #[test]
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;

@@ -563,6 +563,20 @@ pub(crate) fn quantizations(file: &Model) -> String {
 /// last of those is a thing MCF knows precisely and can put two numbers to.
 /// A7 is about saying what is not known, not about declining to say what is
 /// (F138).
+/// What MCF would resolve for a model here — the engine, the device and
+/// the largest window — from the file's header, without a daemon, so that
+/// a suite can say what it will run under before it runs (B-564).
+///
+/// # Errors
+///
+/// Why nothing resolves, in a sentence.
+pub(crate) fn choice_for(path: &Path) -> core::result::Result<mcf_serve::engines::Choice, String> {
+    let bytes = crate::bench::read_prefix(path)
+        .ok_or_else(|| "the file could not be read as a model".to_owned())?;
+    let file = gguf::parse(&bytes).map_err(|failure| failure.to_string())?;
+    resolved_here(path, &file)
+}
+
 fn resolved_here(
     path: &Path,
     file: &Model,

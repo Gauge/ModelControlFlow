@@ -1618,6 +1618,14 @@ pub const SUITES: [(&str, &str, &str); 6] = [
     ("challenges", "Challenges", "challenges"),
 ];
 
+/// How many attempts a challenge gets unless the person types otherwise:
+/// the command line's own default (D56).
+pub const RETRIES_DEFAULT: usize = 10;
+
+/// The smallest window the Challenges card takes, in tokens: the daemon's
+/// own floor.
+pub const SMALLEST_WINDOW: u64 = 4096;
+
 /// What each suite answers, in one line, in `SUITES` order.
 const SUITE_ANSWERS: [&str; 6] = [
     "Twenty Python tasks, three attempts each, run against hidden cases; every failed attempt handed back for a second try",
@@ -1878,6 +1886,12 @@ pub enum Field {
     ApiKey,
     /// The rope scaling's factor.
     RopeFactor,
+    /// How many attempts a challenge gets in a language, on the
+    /// Challenges card of the Diagnostics page (B-564).
+    Retries,
+    /// The window every challenge ask is made in, on the same card; empty
+    /// is sized to each turn.
+    Window,
 }
 
 /// A setting on the Configure tab that is a switch.
@@ -2305,6 +2319,12 @@ pub struct Desk {
     pub editing: Option<(Field, String)>,
     /// Why the last typed value was not taken.
     pub edit_refused: Option<String>,
+    /// How many attempts a challenge gets in a language, passed to the
+    /// suite as `--retries`; ten unless typed (D56, B-564).
+    pub retries: usize,
+    /// The window every challenge ask is made in, passed as `--window`;
+    /// sized to each turn where none is typed.
+    pub challenge_window: Option<u64>,
     /// What the chosen model's file declares that a hold may start.
     pub declared: Option<mcf_serve::declared::Declared>,
     /// The model to hold once the engine being built is there — the one Host
@@ -2371,6 +2391,8 @@ impl Desk {
             contents: Page::Anatomy,
             editing: None,
             edit_refused: None,
+            retries: RETRIES_DEFAULT,
+            challenge_window: None,
             declared: None,
             shown: None,
             scrolls: std::collections::BTreeMap::new(),
@@ -2435,7 +2457,7 @@ impl Desk {
         matches!(
             self.page,
             Page::Adding | Page::Hosting | Page::Prompt | Page::Models
-        ) || (self.page == Page::Host && self.editing.is_some())
+        ) || (matches!(self.page, Page::Host | Page::Diagnostics) && self.editing.is_some())
     }
 
     /// The longest a pasted value may be, on a screen whose field takes a
@@ -2502,7 +2524,9 @@ impl Desk {
     /// The field typing goes into: whichever of the prompt screen's fields
     /// has the caret, the one field every other screen has otherwise.
     pub fn typing(&mut self) -> &mut String {
-        if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_mut()) {
+        if let (Page::Models | Page::Host | Page::Diagnostics, Some((_, typed))) =
+            (self.page, self.editing.as_mut())
+        {
             return typed;
         }
         match (self.page, self.caret) {
@@ -2522,7 +2546,9 @@ impl Desk {
     /// The same field, to read.
     #[must_use]
     pub fn being_typed(&self) -> &str {
-        if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_ref()) {
+        if let (Page::Models | Page::Host | Page::Diagnostics, Some((_, typed))) =
+            (self.page, self.editing.as_ref())
+        {
             return typed;
         }
         match (self.page, self.caret) {
@@ -2597,7 +2623,7 @@ impl Desk {
                     self.search_hub();
                 }
             }
-            Page::Host => self.apply_edit(),
+            Page::Host | Page::Diagnostics => self.apply_edit(),
             Page::Adding => self.look_up(),
             Page::Prompt => self.report_prompt(),
             Page::Hosting => {
@@ -4071,13 +4097,7 @@ impl Desk {
             return;
         };
         let mut command = std::process::Command::new(own);
-        command.arg("eval").arg(&held.path);
-        if let Some(name) = suite
-            .and_then(|at| SUITES.get(at))
-            .map(|(name, _, _)| *name)
-        {
-            command.arg("--only").arg(name);
-        }
+        command.args(self.eval_arguments(&held.path, suite));
         let what = match suite.and_then(|at| SUITES.get(at)) {
             Some((_, name, _)) => format!("running the {name} suite on {}", held.name),
             None => format!("running every coding suite on {}", held.name),
@@ -4086,6 +4106,31 @@ impl Desk {
         self.evaluating = suite;
         self.evaluation_kept = false;
         self.doing = Doing::Evaluating(job::Job::spawned(command, what));
+    }
+
+    /// The arguments `mcf eval` is run with: the model, the suite where
+    /// one row was pressed, and the retries and the window the Challenges
+    /// card holds — the command line's own flags, so that what the window
+    /// runs is what the console would (B-564).
+    #[must_use]
+    pub fn eval_arguments(&self, path: &str, suite: Option<usize>) -> Vec<String> {
+        let mut arguments = vec!["eval".to_owned(), path.to_owned()];
+        if let Some(name) = suite
+            .and_then(|at| SUITES.get(at))
+            .map(|(name, _, _)| *name)
+        {
+            arguments.push("--only".to_owned());
+            arguments.push(name.to_owned());
+        }
+        if self.retries != RETRIES_DEFAULT {
+            arguments.push("--retries".to_owned());
+            arguments.push(self.retries.to_string());
+        }
+        if let Some(window) = self.challenge_window {
+            arguments.push("--window".to_owned());
+            arguments.push(window.to_string());
+        }
+        arguments
     }
 
     /// Reads the readings and the model's summary again once a suite has
@@ -4302,6 +4347,21 @@ impl Desk {
     /// whatever was being typed before is applied first.
     pub fn edit(&mut self, field: Field) {
         self.apply_edit();
+        // The Challenges card's fields are the desk's own, on any model.
+        let card = match field {
+            Field::Retries => Some(self.retries.to_string()),
+            Field::Window => Some(
+                self.challenge_window
+                    .map_or_else(String::new, |window| window.to_string()),
+            ),
+            _ => None,
+        };
+        if let Some(now) = card {
+            self.editing = Some((field, now));
+            self.edit_refused = None;
+            self.caret = Caret::Setting;
+            return;
+        }
         let Some(settings) = self.settings.as_ref() else {
             return;
         };
@@ -4315,6 +4375,7 @@ impl Desk {
                 .started
                 .factor
                 .map_or_else(String::new, |factor| factor.to_string()),
+            Field::Retries | Field::Window => String::new(),
         };
         self.editing = Some((field, now));
         self.edit_refused = None;
@@ -4328,11 +4389,43 @@ impl Desk {
         let Some((field, typed)) = self.editing.take() else {
             return;
         };
+        let typed = typed.trim().replace([',', '_'], "");
+        let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
+        match field {
+            Field::Retries => {
+                self.edit_refused = match typed.parse::<usize>() {
+                    Ok(retries) if retries >= 1 => {
+                        self.retries = retries;
+                        None
+                    }
+                    Ok(_) => Some("a challenge needs at least one attempt".to_owned()),
+                    Err(_) => not_a_number("the retries"),
+                };
+                return;
+            }
+            Field::Window => {
+                self.edit_refused = if typed.is_empty() {
+                    self.challenge_window = None;
+                    None
+                } else {
+                    match typed.parse::<u64>() {
+                        Ok(window) if window >= SMALLEST_WINDOW => {
+                            self.challenge_window = Some(window);
+                            None
+                        }
+                        Ok(_) => Some(format!(
+                            "the window wants at least {SMALLEST_WINDOW} tokens"
+                        )),
+                        Err(_) => not_a_number("the window"),
+                    }
+                };
+                return;
+            }
+            _ => {}
+        }
         let Some(settings) = self.settings.as_mut() else {
             return;
         };
-        let typed = typed.trim().replace([',', '_'], "");
-        let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
         self.edit_refused = match field {
             Field::Context => match typed.parse::<u64>() {
                 Ok(tokens) if tokens >= 512 => {
@@ -4382,6 +4475,7 @@ impl Desk {
                     }
                 }
             }
+            Field::Retries | Field::Window => None,
         };
     }
 

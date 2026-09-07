@@ -222,6 +222,11 @@ pub struct Started {
     /// a file has been seen to declare is one, and a factor MCF rounded
     /// would be a condition MCF changed.
     pub factor: Option<u32>,
+    /// The window to open for the turn, in tokens, where the asker said;
+    /// sized to the turn otherwise. A conversation that grows — a
+    /// challenge and its corrections — is asked in the window the person
+    /// set, and that window is a condition of every attempt (D56, B-564).
+    pub window: Option<u64>,
 }
 
 /// How positions are scaled, in the engine's own vocabulary.
@@ -266,6 +271,15 @@ impl Started {
         self.draft_head || self.rope.is_some() || self.factor.is_some()
     }
 
+    /// Whether the engine's own switches are the same: the window is the
+    /// turn's, and a held server whose window suits is kept (B-559).
+    #[must_use]
+    pub fn same_switches(&self, other: &Self) -> bool {
+        self.draft_head == other.draft_head
+            && self.rope == other.rope
+            && self.factor == other.factor
+    }
+
     /// The switches the engine is started with.
     #[must_use]
     pub fn arguments(&self) -> Vec<String> {
@@ -302,6 +316,9 @@ impl Started {
                 .map_or_else(String::new, |factor| format!(" ×{factor}"));
             said.push(format!("rope scaling {}{by}", rope.as_str()));
         }
+        if let Some(window) = self.window {
+            said.push(format!("a window of {window} tokens"));
+        }
         if said.is_empty() {
             "nothing beyond the plain load".to_owned()
         } else {
@@ -324,6 +341,12 @@ impl Started {
                 self.factor
                     .map_or(Value::Null, |factor| Value::Integer(i64::from(factor))),
             ),
+            (
+                "window",
+                self.window.map_or(Value::Null, |window| {
+                    Value::Integer(i64::try_from(window).unwrap_or(i64::MAX))
+                }),
+            ),
         ])
     }
 
@@ -344,6 +367,10 @@ impl Started {
                 .get("rope_scale")
                 .and_then(Value::as_integer)
                 .and_then(|held| u32::try_from(held).ok()),
+            window: value
+                .get("window")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
         }
     }
 

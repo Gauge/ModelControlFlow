@@ -193,6 +193,7 @@ impl Places<'_> {
                 text: String::new(),
                 answer: None,
                 engine_ran: None,
+                window_ran: None,
             };
         }
         crate::probes::spoken(self.socket, model, prompt, pieces, budget, engine)

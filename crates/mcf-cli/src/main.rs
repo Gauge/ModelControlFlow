@@ -361,6 +361,9 @@ enum Request<'a> {
         languages: Option<&'a str>,
         /// One tier of the catalogue, where the person named it.
         tier: Option<&'a str>,
+        /// The window every challenge ask is made in, where the person set
+        /// it; sized to each turn otherwise (B-564).
+        window: Option<u64>,
     },
     /// A model's readings as a table (D54).
     Data {
@@ -954,7 +957,8 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
 /// The flags `mcf eval <model>` takes, in any order: `--only` a suite,
 /// `--retries` a count, `--languages` a list, `--tier` a tier (D56).
 fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let (mut only, mut retries, mut languages, mut tier) = (None, None, None, None);
+    let (mut only, mut retries, mut languages, mut tier, mut window) =
+        (None, None, None, None, None);
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -994,6 +998,15 @@ fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>
                 };
                 tier = Some(*value);
             }
+            "--window" => {
+                let Some(value) = rest.next().and_then(|held| held.parse::<u64>().ok()) else {
+                    return Ok(Request::MissingArgument {
+                        command: "eval --window",
+                        needs: "a whole number of tokens",
+                    });
+                };
+                window = Some(value);
+            }
             other => return Err(other),
         }
     }
@@ -1003,6 +1016,7 @@ fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>
         retries,
         languages,
         tier,
+        window,
     })
 }
 
@@ -2068,8 +2082,10 @@ const COMMANDS: &str = "\
     \x20       [--retries <n>]               in a container, no total; a suite\n\
     \x20       [--languages <a,b>]           is coding, languages, editing,\n\
     \x20       [--tier <tier>]               tests, queries or challenges; a\n\
-    \x20                                     challenge gets ten attempts\n\
-    \x20                                     unless --retries says\n\
+    \x20       [--window <tokens>]           challenge gets ten attempts\n\
+    \x20                                     unless --retries says, in a\n\
+    \x20                                     window sized to each turn unless\n\
+    \x20                                     --window says\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
     \x20             or --file <path>         receives each word, and how much\n\
     \x20       [--by word|phrase|sentence|   the answer moves without each\n\
@@ -2362,6 +2378,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             retries,
             languages,
             tier,
+            window,
         } => eval::eval(
             model,
             &eval::Asked {
@@ -2369,6 +2386,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 retries: *retries,
                 languages: *languages,
                 tier: *tier,
+                window: *window,
             },
         ),
         Request::Probe {
@@ -2778,6 +2796,60 @@ mod tests {
 
     /// `mcf measure` reads its flags in any order, and a flag without its
     /// value is a missing argument rather than a run (B-426).
+    #[test]
+    fn eval_reads_its_flags_in_any_order() {
+        assert_eq!(
+            parse(&[
+                "eval",
+                "m",
+                "--window",
+                "8192",
+                "--retries",
+                "3",
+                "--only",
+                "challenges"
+            ]),
+            Request::Eval {
+                model: "m",
+                only: Some("challenges"),
+                retries: Some(3),
+                languages: None,
+                tier: None,
+                window: Some(8192),
+            }
+        );
+        assert_eq!(
+            parse(&["eval", "m"]),
+            Request::Eval {
+                model: "m",
+                only: None,
+                retries: None,
+                languages: None,
+                tier: None,
+                window: None,
+            },
+            "nothing said is nothing set: the suite's own defaults"
+        );
+        assert!(
+            matches!(
+                parse(&["eval", "m", "--retries", "lots"]),
+                Request::MissingArgument {
+                    command: "eval --retries",
+                    ..
+                }
+            ),
+            "a word is not a count"
+        );
+        assert!(matches!(
+            parse(&["eval", "m", "--tier", "hard", "--languages", "go,rust"]),
+            Request::Eval {
+                tier: Some("hard"),
+                languages: Some("go,rust"),
+                ..
+            }
+        ));
+    }
+
     #[test]
     fn measure_reads_its_flags_in_any_order() {
         let both = Request::Measure {

@@ -25,6 +25,10 @@ pub(crate) const RETRIES_DEFAULT: usize = 10;
 /// How many tokens one answer may take: room for a hard one.
 const BUDGET: usize = 1400;
 
+/// The smallest window `--window` takes: the daemon's own floor, which
+/// holds an answer and its correction.
+const SMALLEST_WINDOW: u64 = 4096;
+
 /// The languages the catalogue runs in, by the name `--languages` takes.
 pub(crate) const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 
@@ -76,6 +80,9 @@ pub(crate) struct Plan {
     pub retries: usize,
     /// One tier, or every tier.
     pub tier: Option<Tier>,
+    /// The window every ask is made in, where the person set it; sized
+    /// to each turn otherwise.
+    pub window: Option<u64>,
 }
 
 impl Plan {
@@ -84,6 +91,7 @@ impl Plan {
         languages: Option<&str>,
         retries: Option<usize>,
         tier: Option<&str>,
+        window: Option<u64>,
     ) -> Result<Self, String> {
         let mut held = Vec::new();
         for name in languages.map_or_else(
@@ -113,11 +121,65 @@ impl Plan {
         if retries == 0 {
             return Err("--retries takes at least one attempt".to_owned());
         }
+        if window.is_some_and(|window| window < SMALLEST_WINDOW) {
+            return Err(format!(
+                "--window takes at least {SMALLEST_WINDOW} tokens: an answer may take {BUDGET} and \
+                 the correction carries the answer back"
+            ));
+        }
         Ok(Self {
             languages: held,
             retries,
             tier,
+            window,
         })
+    }
+
+    /// What the run will use, a line each, said before it runs: the
+    /// engine and device MCF resolves for the model here, the window, the
+    /// answer budget, the retries, the languages, the tier and the seed
+    /// (B-564, D56). What the daemon decides at the ask is said as such.
+    #[must_use]
+    pub(crate) fn said(&self, model: &Path) -> Vec<String> {
+        let resolved = crate::explain::choice_for(model);
+        let mut lines = vec!["  the challenges run under".to_owned()];
+        lines.push(match &resolved {
+            Ok(choice) => format!(
+                "    engine     {} on {}, the daemon's choice unless it holds another; each \
+                 row's record names what answered",
+                choice.engine, choice.device.name
+            ),
+            Err(why) => format!("    engine     not resolved here — {why}; the daemon's choice"),
+        });
+        lines.push(match self.window {
+            Some(window) => format!("    window     {window} tokens, every attempt"),
+            None => format!(
+                "    window     sized to each turn: twice the prompt and the budget, at least \
+                 {SMALLEST_WINDOW}, at most what the model and the machine hold{}",
+                resolved
+                    .as_ref()
+                    .map_or_else(|_| String::new(), |choice| format!(" ({})", choice.context))
+            ),
+        });
+        lines.push(format!("    budget     {BUDGET} tokens an answer"));
+        lines.push(format!(
+            "    retries    {} attempt(s) a challenge in a language",
+            self.retries
+        ));
+        lines.push(format!(
+            "    languages  {}",
+            self.languages
+                .iter()
+                .map(|language| language.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        lines.push(format!(
+            "    tier       {}",
+            self.tier.map_or("every tier", Tier::name)
+        ));
+        lines.push("    seed       0, temperature as the daemon has it".to_owned());
+        lines
     }
 
     /// The plan as the run's conditions, beside the engine's.
@@ -145,6 +207,12 @@ impl Plan {
             (
                 "budget",
                 Value::Integer(i64::try_from(BUDGET).unwrap_or(i64::MAX)),
+            ),
+            (
+                "window",
+                self.window.map_or(Value::Null, |window| {
+                    Value::Integer(i64::try_from(window).unwrap_or(i64::MAX))
+                }),
             ),
             (
                 "challenges",
@@ -520,6 +588,8 @@ pub(crate) struct Attempt {
     pub tokens: usize,
     /// What the asking took.
     pub ask_ns: u64,
+    /// The window the turn ran in, where the account said.
+    pub window: Option<u64>,
     /// The code, kept for the next attempt's feedback.
     pub code: String,
 }
@@ -619,6 +689,7 @@ pub(crate) fn attempt_all(
     language: &Language,
     challenge: &Challenge,
     retries: usize,
+    window: Option<u64>,
     engine_ran: &mut Option<String>,
 ) -> Vec<Attempt> {
     let mut attempts: Vec<Attempt> = Vec::new();
@@ -628,8 +699,18 @@ pub(crate) fn attempt_all(
             None => ask_for(language, challenge),
         };
         let began = std::time::Instant::now();
-        let spoken =
-            mcf_serve::probes::spoken(socket, Path::new(named), &asked, None, BUDGET, None);
+        let spoken = mcf_serve::probes::spoken_as(
+            socket,
+            Path::new(named),
+            &asked,
+            None,
+            BUDGET,
+            None,
+            mcf_serve::declared::Started {
+                window,
+                ..mcf_serve::declared::Started::default()
+            },
+        );
         let ask_ns = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
         if engine_ran.is_none() {
             engine_ran.clone_from(&spoken.engine_ran);
@@ -656,6 +737,7 @@ pub(crate) fn attempt_all(
             cases,
             tokens,
             ask_ns,
+            window: spoken.window_ran,
             code,
         };
         let solved = attempt.whole();
@@ -729,6 +811,14 @@ pub(crate) fn rows_of(challenge: &Challenge, language: &str, attempts: &[Attempt
             i64::try_from(attempt.ask_ns).unwrap_or(i64::MAX),
             "ns",
         ));
+        if let Some(window) = attempt.window {
+            rows.push(Reading::new(
+                &dims,
+                "window",
+                i64::try_from(window).unwrap_or(i64::MAX),
+                "tokens",
+            ));
+        }
     }
     let solved_at = attempts
         .iter()
@@ -851,6 +941,7 @@ pub(crate) fn run(
     languages: &[&Language],
     retries: usize,
     only_tier: Option<Tier>,
+    window: Option<u64>,
 ) -> (Vec<String>, Vec<Reading>, Option<String>) {
     let challenges: Vec<&Challenge> = crate::catalogue::CHALLENGES
         .iter()
@@ -906,6 +997,7 @@ pub(crate) fn run(
                 language,
                 challenge,
                 retries,
+                window,
                 &mut engine_ran,
             );
             rows.extend(rows_of(challenge, language.name, &attempts));
@@ -968,6 +1060,70 @@ mod tests {
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
+    /// What was asked becomes the plan and its conditions; a window too
+    /// small for an answer and its correction is refused with the floor.
+    #[test]
+    fn the_plan_says_what_it_runs_under_and_refuses_a_window_too_small() {
+        let plan =
+            super::Plan::asked(Some("go, python"), Some(3), Some("hard"), Some(8192)).unwrap();
+        assert_eq!(
+            plan.languages.iter().map(|l| l.name).collect::<Vec<_>>(),
+            vec!["go", "python"]
+        );
+        let conditions = plan.conditions();
+        let of = |key: &str| {
+            conditions
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(of("retries"), Some(mcf_record::json::Value::Integer(3)));
+        assert_eq!(of("window"), Some(mcf_record::json::Value::Integer(8192)));
+        assert_eq!(of("tier"), Some(mcf_record::json::Value::text("hard")));
+        assert_eq!(
+            of("languages"),
+            Some(mcf_record::json::Value::text("go,python"))
+        );
+        let said = plan
+            .said(std::path::Path::new("/nowhere/a.gguf"))
+            .join("\n");
+        assert!(said.contains("retries    3 attempt(s)"), "{said}");
+        assert!(
+            said.contains("window     8192 tokens, every attempt"),
+            "{said}"
+        );
+        assert!(said.contains("languages  go, python"), "{said}");
+        assert!(said.contains("tier       hard"), "{said}");
+        assert!(
+            said.contains("engine     not resolved here"),
+            "no file at that path: {said}"
+        );
+
+        let bare = super::Plan::asked(None, None, None, None).unwrap();
+        assert_eq!(bare.retries, super::RETRIES_DEFAULT);
+        assert_eq!(bare.languages.len(), super::LANGUAGE_NAMES.len());
+        assert_eq!(
+            bare.conditions()
+                .iter()
+                .find(|(k, _)| *k == "window")
+                .map(|(_, v)| v.clone()),
+            Some(mcf_record::json::Value::Null),
+            "no window asked is sized to the turn, said as null and not as nought"
+        );
+        assert!(
+            bare.said(std::path::Path::new("/nowhere/a.gguf"))
+                .join("\n")
+                .contains("sized to each turn")
+        );
+
+        let why = super::Plan::asked(None, None, None, Some(1024)).unwrap_err();
+        assert!(why.contains("at least 4096"), "{why}");
+        let why = super::Plan::asked(Some("cobol"), None, None, None).unwrap_err();
+        assert!(why.contains("cobol"), "{why}");
+        let why = super::Plan::asked(None, Some(0), None, None).unwrap_err();
+        assert!(why.contains("at least one"), "{why}");
+    }
+
     #[test]
     fn signatures_and_expectations_are_rendered_in_each_language() {
         let merge = CHALLENGES
@@ -1022,6 +1178,7 @@ mod tests {
             cases,
             tokens: 10,
             ask_ns: 1,
+            window: None,
             code: "def merge(a, b): return a".to_owned(),
         };
         let said = feedback(&crate::languages::LANGUAGES[0], merge, &last);

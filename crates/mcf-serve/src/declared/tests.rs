@@ -19,6 +19,7 @@ fn the_switches_are_the_engines_own() {
         draft_head: true,
         rope: Some(Scaling::Yarn),
         factor: Some(4),
+        window: None,
     };
     assert_eq!(
         asked.arguments(),
@@ -43,16 +44,25 @@ fn what_was_asked_survives_the_wire() {
             draft_head: true,
             rope: None,
             factor: None,
+            window: None,
         },
         Started {
             draft_head: false,
             rope: Some(Scaling::Off),
             factor: None,
+            window: None,
         },
         Started {
             draft_head: true,
             rope: Some(Scaling::Linear),
             factor: Some(8),
+            window: None,
+        },
+        Started {
+            draft_head: false,
+            rope: None,
+            factor: None,
+            window: Some(8192),
         },
     ] {
         assert_eq!(Started::from_value(&asked.to_value()), asked);

@@ -770,6 +770,8 @@ pub(crate) struct Asked<'a> {
     pub languages: Option<&'a str>,
     /// One tier of the catalogue.
     pub tier: Option<&'a str>,
+    /// The window every challenge ask is made in, where the person set it.
+    pub window: Option<u64>,
 }
 
 /// Evaluates one model against every task, or one suite's.
@@ -779,7 +781,12 @@ pub(crate) struct Asked<'a> {
 )]
 pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     let only = asked.only;
-    let plan = match crate::challenges::Plan::asked(asked.languages, asked.retries, asked.tier) {
+    let plan = match crate::challenges::Plan::asked(
+        asked.languages,
+        asked.retries,
+        asked.tier,
+        asked.window,
+    ) {
         Ok(plan) => plan,
         Err(why) => {
             return Response {
@@ -1045,7 +1052,13 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     // The catalogue: every challenge in every language named, with its
     // retries, the rows under their own method (B-563, D56).
     let (challenge_lines, challenge_rows, challenge_engine) = if wants("challenges") {
-        crate::challenges::run(
+        // Said before the run, on the output stream where the progress
+        // goes, so that a person watching knows what it runs under (B-564).
+        let under = plan.said(Path::new(named));
+        for line in &under {
+            println!("{line}");
+        }
+        let (mut said, rows, engine) = crate::challenges::run(
             &socket,
             named,
             &podman,
@@ -1053,7 +1066,13 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
             &plan.languages,
             plan.retries,
             plan.tier,
-        )
+            plan.window,
+        );
+        said.splice(
+            0..0,
+            under.into_iter().chain(std::iter::once(String::new())),
+        );
+        (said, rows, engine)
     } else {
         (Vec::new(), Vec::new(), None)
     };
