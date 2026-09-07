@@ -237,7 +237,20 @@ fn arriving(body: &Value) -> Vec<String> {
             )]
         }
         (_, Some(arrived), Some(total)) => {
-            vec![format!("  {file}: {arrived} of {total} bytes")]
+            // A set's part says which it is and how the whole is going
+            // (B-590).
+            let set = match (
+                body.get("part").and_then(Value::as_integer),
+                body.get("of").and_then(Value::as_integer),
+                body.get("arrived_whole").and_then(Value::as_integer),
+                body.get("bytes_whole").and_then(Value::as_integer),
+            ) {
+                (Some(part), Some(of), Some(so_far), Some(whole)) => {
+                    format!(" — part {part} of {of}; {so_far} of {whole} bytes of the model")
+                }
+                _ => String::new(),
+            };
+            vec![format!("  {file}: {arrived} of {total} bytes{set}")]
         }
         _ => vec![format!("  {file}: starting")],
     }

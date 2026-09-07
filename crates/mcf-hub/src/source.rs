@@ -33,6 +33,49 @@ use mcf_core::failure::Result;
 use crate::credentials::Identity;
 use crate::reference::Reference;
 
+/// The parts of a model published in several files (B-590).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Set<'a> {
+    /// The parts the repository publishes, in order.
+    pub parts: Vec<&'a Entry>,
+    /// How many the name says there are.
+    pub of: u32,
+}
+
+impl Set<'_> {
+    /// Whether every part the name declares is published.
+    #[must_use]
+    pub fn is_whole(&self) -> bool {
+        usize::try_from(self.of).is_ok_and(|of| of == self.parts.len() && of > 0)
+    }
+
+    /// What the whole set is said to weigh, or `None` on an overflow.
+    #[must_use]
+    pub fn bytes(&self) -> Option<u64> {
+        self.parts
+            .iter()
+            .try_fold(0_u64, |sum, part| sum.checked_add(part.size))
+    }
+}
+
+/// A published path's set, if its name is `<prefix>-<at>-of-<of>.gguf` in
+/// the shape the reference implementation reads: the directory and prefix
+/// together, which part, and of how many.
+fn part_name(path: &str) -> Option<(String, u32, u32)> {
+    let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
+    let stem = name.strip_suffix(".gguf")?;
+    let (before, of) = stem.rsplit_once("-of-")?;
+    let (prefix, at) = before.rsplit_once('-')?;
+    if of.is_empty() || at.is_empty() || prefix.is_empty() {
+        return None;
+    }
+    if !of.chars().all(|c| c.is_ascii_digit()) || !at.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let (at, of): (u32, u32) = (at.parse().ok()?, of.parse().ok()?);
+    (at >= 1 && at <= of).then(|| (format!("{directory}/{prefix}"), at, of))
+}
+
 /// One file a repository publishes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -144,6 +187,35 @@ impl Listing {
             .collect()
     }
 
+    /// The set a published part belongs to: every part of it, in the order
+    /// the engine loads them, and how many the name says there are.
+    ///
+    /// **A model published in parts is one model** (B-590). `<name>-00001-of-00003.gguf`
+    /// is the first of three files the reference implementation loads as one,
+    /// from exactly this pattern in the name; asking for any part is asking
+    /// for the model, and a store holding one part of three holds nothing
+    /// an engine can load. `None` for a file that is not a part. The parts
+    /// found may be fewer than the name declares, which a caller refuses
+    /// rather than fetches — a repository missing a part publishes no model.
+    #[must_use]
+    pub fn parts_of(&self, path: &str) -> Option<Set<'_>> {
+        let (prefix, _, of) = part_name(path)?;
+        let mut parts: Vec<(u32, &Entry)> = self
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let (other, at, count) = part_name(&entry.path)?;
+                (other == prefix && count == of).then_some((at, entry))
+            })
+            .collect();
+        parts.sort_by_key(|(at, _)| *at);
+        parts.dedup_by_key(|(at, _)| *at);
+        Some(Set {
+            parts: parts.into_iter().map(|(_, entry)| entry).collect(),
+            of,
+        })
+    }
+
     /// What the whole repository would cost to hold.
     ///
     /// `None` on an overflow rather than a wrapped total: a listing whose sizes
@@ -247,3 +319,6 @@ pub struct Fetched {
     /// (§3.7, B-021).
     pub digest: String,
 }
+
+#[cfg(test)]
+mod tests;

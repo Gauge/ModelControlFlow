@@ -1519,3 +1519,29 @@ fn the_engines_milliseconds_are_kept_as_whole_microseconds() {
     assert_eq!(super::micros_of_milliseconds("x"), None);
     assert_eq!(super::micros_of_milliseconds("1.2x"), None);
 }
+
+/// A file's name shortens toward its repository's name, a segment at a
+/// time, the part suffix and the extension first (B-590).
+#[test]
+fn a_files_name_shortens_toward_its_repositorys() {
+    let mut name = "Vega3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf".to_owned();
+    let mut tried = Vec::new();
+    while let Some(shorter) = super::shorter_name(&name) {
+        tried.push(shorter.clone());
+        name = shorter;
+    }
+    assert_eq!(
+        tried,
+        [
+            "Vega3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003",
+            "Vega3.8-Flash-Next-UD-Q3_K_XL",
+            "Vega3.8-Flash-Next-UD",
+            "Vega3.8-Flash-Next",
+            "Vega3.8-Flash",
+            "Vega3.8",
+        ]
+    );
+    assert_eq!(super::shorter_name("Vega3.8"), None);
+    assert_eq!(super::shorter_name(""), None);
+    assert_eq!(super::shorter_name("-"), None);
+}

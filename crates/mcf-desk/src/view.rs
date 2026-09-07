@@ -5129,6 +5129,15 @@ fn downloading_line(job: &crate::job::Job) -> String {
     match latest.get("doing").and_then(Value::as_text) {
         Some("checking") => "checking that what arrived is what was published".to_owned(),
         _ => match (held("arrived"), held("bytes")) {
+            // A model in parts: the whole is what a person is waiting for
+            // (B-590).
+            (Some(_), Some(_)) if held("bytes_whole").is_some() => format!(
+                "part {} of {}: {} of {}",
+                held("part").unwrap_or(0),
+                held("of").unwrap_or(0),
+                words::size_in_words(held("arrived_whole")).unwrap_or_default(),
+                words::size_in_words(held("bytes_whole")).unwrap_or_default()
+            ),
             (Some(arrived), Some(total)) => format!(
                 "{} of {}",
                 words::size_in_words(Some(arrived)).unwrap_or_default(),

@@ -174,7 +174,55 @@ pub(crate) fn run(
         };
     };
 
-    acquire_one(&hub, &listing, &entry, &root)
+    acquire_set(&hub, &listing, &wanted, entry, &root)
+}
+
+/// Fetches the file asked for — and where it is one part of a model
+/// published in several, every part, one after another (B-590): asking for
+/// any part is asking for the model, as the daemon does for the window.
+/// Each part is said as it lands, and the sentences at the end are about the
+/// first, which is the file an engine is pointed at.
+fn acquire_set(hub: &Hub, listing: &Listing, wanted: &str, entry: Entry, root: &Path) -> Response {
+    let parts: Vec<Entry> = match listing.parts_of(wanted) {
+        Some(set) if !set.is_whole() => {
+            return Response {
+                text: format!(
+                    "mcf: {wanted} is one of {} parts of a model, and {} publishes only {} of \
+                     them: nothing was acquired, because an engine loads the set or nothing",
+                    set.of,
+                    listing.reference.repository(),
+                    set.parts.len()
+                ),
+                served: false,
+            };
+        }
+        Some(set) => set.parts.into_iter().cloned().collect(),
+        None => vec![entry],
+    };
+    let mut said = Vec::new();
+    let count = parts.len();
+    for (index, part) in parts.iter().enumerate() {
+        if count > 1 {
+            said.push(format!(
+                "part {} of {count}: {} ({} bytes)",
+                index.saturating_add(1),
+                part.path,
+                part.size
+            ));
+        }
+        let response = acquire_one(hub, listing, part, root);
+        if !response.served || index.saturating_add(1) == count {
+            said.push(response.text);
+            return Response {
+                text: said.join("\n"),
+                served: response.served,
+            };
+        }
+    }
+    Response {
+        text: said.join("\n"),
+        served: false,
+    }
 }
 
 /// How much memory this machine has free, read because somebody ran a command.

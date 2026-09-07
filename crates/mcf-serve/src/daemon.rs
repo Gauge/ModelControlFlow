@@ -986,6 +986,65 @@ fn failure_said(account: &Value) -> String {
 
 /// The last line of an acquisition: where the model went, and what was
 /// written down about it.
+/// How many repositories a search gathers before it stops shortening the
+/// name it was given (B-590).
+const ENOUGH_FOUND: usize = 5;
+
+/// A name to search for after this one found nothing: the extension and a
+/// part suffix go first, then the last `-` segment; `None` when nothing
+/// shorter is worth asking.
+fn shorter_name(name: &str) -> Option<String> {
+    let name = name.trim();
+    if let Some(stem) = name.strip_suffix(".gguf") {
+        return Some(stem.to_owned());
+    }
+    if let Some((before, of)) = name.rsplit_once("-of-")
+        && of.chars().all(|c| c.is_ascii_digit())
+        && let Some((prefix, at)) = before.rsplit_once('-')
+        && at.chars().all(|c| c.is_ascii_digit())
+        && !prefix.is_empty()
+    {
+        return Some(prefix.to_owned());
+    }
+    let (shorter, _) = name.rsplit_once('-')?;
+    (!shorter.is_empty()).then(|| shorter.to_owned())
+}
+
+/// Where a transfer is within a set: this part of how many, the set's
+/// bytes, and the bytes of the parts already here (B-590).
+#[derive(Debug, Clone, Copy)]
+struct Progress {
+    part: usize,
+    of: usize,
+    whole: u64,
+    before: u64,
+}
+
+impl Progress {
+    /// A progress line: this file's bytes, and the set's where there is one.
+    fn said(self, path: &str, arrived: u64, total: u64, doing: &str) -> Value {
+        let mut fields = vec![
+            ("acquiring", Value::text(path.to_owned())),
+            ("arrived", as_whole(arrived)),
+            ("bytes", as_whole(total)),
+            ("doing", Value::text(doing.to_owned())),
+            ("done", Value::Bool(false)),
+        ];
+        if self.of > 1 {
+            fields.extend([
+                ("part", as_whole(self.part)),
+                ("of", as_whole(self.of)),
+                ("bytes_whole", as_whole(self.whole)),
+                (
+                    "arrived_whole",
+                    as_whole(self.before.saturating_add(arrived.min(total))),
+                ),
+            ]);
+        }
+        Value::map(fields)
+    }
+}
+
 fn acquired(file: &str, done: &mcf_hub::acquisition::Done) -> Answer {
     let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
     let bytes = Value::Integer(i64::try_from(done.acquired.bytes).unwrap_or(i64::MAX));
@@ -5702,17 +5761,17 @@ impl Daemon {
             Ok(base) => base,
             Err(failure) => return say(writer, &Answer::refused(&failure)),
         };
-        let base_again = base.clone();
         let wire = match mcf_hub::wire::for_url(&base) {
             Ok(wire) => wire,
             Err(failure) => return say(writer, &Answer::refused(&failure)),
         };
-        let hub = mcf_hub::client::Hub::at(base, wire);
+        let hub = mcf_hub::client::Hub::at(base.clone(), wire);
         let listing = match hub.list(&parsed) {
             Ok(listing) => listing,
             Err(failure) => return say(writer, &Answer::refused(&failure)),
         };
-        let Some(entry) = listing.entry(file).cloned() else {
+        drop(hub);
+        if listing.entry(file).is_none() {
             return say(
                 writer,
                 &Answer::refused(&crate::control::refused(
@@ -5720,22 +5779,89 @@ impl Daemon {
                     file,
                 )),
             );
+        }
+        // **A model published in parts is fetched whole** (B-590): asking
+        // for any part is asking for the model, and the engine loads the
+        // set from the first part's name. Every part, in order, with the
+        // progress said over the whole; a set the repository publishes only
+        // part of is refused before a byte of it moves.
+        let parts: Vec<mcf_hub::source::Entry> = match listing.parts_of(file) {
+            Some(set) if !set.is_whole() => {
+                return say(
+                    writer,
+                    &Answer::refused(
+                        &crate::control::refused(
+                            "a model published in parts, not all of which this repository \
+                             publishes",
+                            file,
+                        )
+                        .with_context("parts_found", set.parts.len().to_string())
+                        .with_context("parts_declared", set.of.to_string()),
+                    ),
+                );
+            }
+            Some(set) => set.parts.into_iter().cloned().collect(),
+            None => listing.entry(file).into_iter().cloned().collect(),
         };
-        let root = self.places.models.clone();
-        let arriving = mcf_hub::acquisition::arriving_at(&root, &listing, &entry);
-        let total = entry.size;
+        let whole: u64 = parts
+            .iter()
+            .map(|part| part.size)
+            .fold(0, u64::saturating_add);
+        let count = parts.len();
+        let mut before = 0_u64;
+        let mut first: Option<(String, mcf_hub::acquisition::Done)> = None;
+        for (index, part) in parts.iter().enumerate() {
+            let place = Progress {
+                part: index.saturating_add(1),
+                of: count,
+                whole,
+                before,
+            };
+            match self.fetching_one(&base, &listing, part, place, writer) {
+                Ok(done) => {
+                    before = before.saturating_add(part.size);
+                    if first.is_none() {
+                        first = Some((part.path.clone(), done));
+                    }
+                }
+                Err(answer) => return say(writer, &answer),
+            }
+        }
+        let answer = match first {
+            Some((path, done)) => {
+                let mut answer = acquired(&path, &done);
+                if let Value::Map(fields) = &mut answer.body {
+                    let _p = fields.insert("parts".to_owned(), as_whole(count));
+                    let _b = fields.insert("bytes_whole".to_owned(), as_whole(whole));
+                }
+                answer
+            }
+            None => Answer::refused(&crate::control::refused(
+                "a file this repository does not publish",
+                file,
+            )),
+        };
+        say(writer, &answer);
+    }
 
+    /// Fetches one published file, saying how far it has got as it goes:
+    /// this file's bytes, and where a set is being fetched, this part of
+    /// how many and the set's bytes so far (B-590).
+    fn fetching_one(
+        &self,
+        base: &mcf_hub::http::Url,
+        listing: &mcf_hub::source::Listing,
+        entry: &mcf_hub::source::Entry,
+        place: Progress,
+        writer: &mut &UnixStream,
+    ) -> core::result::Result<mcf_hub::acquisition::Done, Answer> {
+        let say = |writer: &mut &UnixStream, answer: &Answer| self.tell("acquire", writer, answer);
+        let root = self.places.models.clone();
+        let arriving = mcf_hub::acquisition::arriving_at(&root, listing, entry);
+        let total = entry.size;
         say(
             writer,
-            &Answer::served(Value::map([
-                ("acquiring", Value::text(entry.path.clone())),
-                (
-                    "bytes",
-                    Value::Integer(i64::try_from(total).unwrap_or(i64::MAX)),
-                ),
-                ("doing", Value::text("fetching")),
-                ("done", Value::Bool(false)),
-            ])),
+            &Answer::served(place.said(&entry.path, 0, total, "fetching")),
         );
 
         // The transfer runs on its own thread so that this one can keep
@@ -5744,9 +5870,8 @@ impl Daemon {
         // network layer for the sake of a progress bar. The thread opens its
         // own, which is one more connection to a hub that was going to be
         // asked for a file anyway.
-        drop(hub);
         let (listing_for_thread, entry_for_thread) = (listing.clone(), entry.clone());
-        let where_from = base_again.clone();
+        let where_from = base.clone();
         let handle = std::thread::spawn(move || {
             let wire = mcf_hub::wire::for_url(&where_from)?;
             let hub = mcf_hub::client::Hub::at(where_from, wire);
@@ -5770,38 +5895,23 @@ impl Daemon {
             // large model takes longer than a person will wait without being
             // told what is happening (A2).
             let checking = furthest >= total && total > 0;
+            let doing = if checking { "checking" } else { "fetching" };
             say(
                 writer,
-                &Answer::served(Value::map([
-                    ("acquiring", Value::text(entry.path.clone())),
-                    (
-                        "arrived",
-                        Value::Integer(i64::try_from(furthest).unwrap_or(i64::MAX)),
-                    ),
-                    (
-                        "bytes",
-                        Value::Integer(i64::try_from(total).unwrap_or(i64::MAX)),
-                    ),
-                    (
-                        "doing",
-                        Value::text(if checking { "checking" } else { "fetching" }),
-                    ),
-                    ("done", Value::Bool(false)),
-                ])),
+                &Answer::served(place.said(&entry.path, furthest, total, doing)),
             );
         }
 
-        let answer = match handle.join() {
-            Ok(Ok(done)) => acquired(&entry.path, &done),
-            Ok(Err(failure)) => Answer::refused(&failure),
+        match handle.join() {
+            Ok(Ok(done)) => Ok(done),
+            Ok(Err(failure)) => Err(Answer::refused(&failure)),
             // A thread that died left no failure to report, and saying
             // nothing would leave a window waiting forever (A2).
-            Err(_) => Answer::refused(&crate::control::refused(
+            Err(_) => Err(Answer::refused(&crate::control::refused(
                 "the transfer stopped without saying why",
                 &entry.path,
-            )),
-        };
-        say(writer, &answer);
+            ))),
+        }
     }
 
     /// Keeps what was just held as the last hold, for a person coming back
@@ -6657,12 +6767,50 @@ impl Daemon {
             Err(failure) => return Answer::refused(&failure),
         };
         let hub = mcf_hub::client::Hub::at(base, wire);
-        match hub.search(query) {
-            Ok(found) => Answer::served(Value::map([
+        // **A file's name finds its repository** (B-590). A person who has
+        // `Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf` from somewhere
+        // types that, and a hub that indexes repositories by name finds
+        // little or nothing for a file's name — one stray repository whose
+        // name shares a few words, on the first try here. So the name is
+        // searched as typed and then shortened a segment at a time — the
+        // extension and the part suffix first, then each `-` segment from
+        // the end — until a few repositories have been found or nothing
+        // shorter is left, and what each level found is kept, most
+        // downloaded first, with the last name searched said.
+        let mut searched = query.trim().to_owned();
+        let mut gathered: Vec<mcf_hub::client::Found> = Vec::new();
+        let found = loop {
+            match hub.search(&searched) {
+                Ok(found) => {
+                    for one in found {
+                        if !gathered.iter().any(|held| held.id == one.id) {
+                            gathered.push(one);
+                        }
+                    }
+                    if gathered.len() >= ENOUGH_FOUND {
+                        break Ok(());
+                    }
+                    match shorter_name(&searched) {
+                        Some(shorter) => searched = shorter,
+                        None => break Ok(()),
+                    }
+                }
+                Err(failure) => break Err(failure),
+            }
+        };
+        gathered.sort_by_key(|found| std::cmp::Reverse(found.downloads));
+        match found {
+            Ok(()) => Answer::served(Value::map([
                 ("query", Value::text(query.to_owned())),
+                ("searched_as", Value::text(searched)),
                 (
                     "repositories",
-                    Value::List(found.iter().map(mcf_hub::client::Found::to_value).collect()),
+                    Value::List(
+                        gathered
+                            .iter()
+                            .map(mcf_hub::client::Found::to_value)
+                            .collect(),
+                    ),
                 ),
             ])),
             Err(failure) => Answer::refused(&failure),

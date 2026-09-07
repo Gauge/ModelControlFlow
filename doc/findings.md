@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 272 | [F272 — A model published in parts is one acquisition, and a part's file name finds its repository: the ninety-gigabyte set the operator could not find, fetched in order with the whole said, and the hub's search shortened a segment at a time (B-590, F138, A7)](#272-f272-a-model-published-in-parts-is-one-acquisition-and-a-parts-file-name-finds-its-repository-the-ninety-gigabyte-set-the-operator-could-not-find-fetched-in-order-with-the-whole-said-and-the-hubs-search-shortened-a-segment-at-a-time-b-590-f138-a7) |
 | 271 | [F271 — The ladder's pair was measuring a quarter-second tick in MCF's own path: the watcher beside every request slept in a 250 ms read and the answer waited for it; woken, and with the pair on a prefix a warm run paid for, the 2B reads 8.4 to 10.3 ms a token with spreads under a millisecond, and the engine's own clock agrees (B-428, B-589, F155, A12)](#271-f271-the-ladders-pair-was-measuring-a-quarter-second-tick-in-mcfs-own-path-the-watcher-beside-every-request-slept-in-a-250-ms-read-and-the-answer-waited-for-it-woken-and-with-the-pair-on-a-prefix-a-warm-run-paid-for-the-2b-reads-84-to-103-ms-a-token-with-spreads-under-a-millisecond-and-the-engines-own-clock-agrees-b-428-b-589-f155-a12) |
 | 270 | [F270 — Seven thousand entries and not one failure: every refusal the daemon answered went to the client and nowhere else, and now every unserved answer is a failure row with what was asked beside it (B-588, B-074, A2)](#270-f270-seven-thousand-entries-and-not-one-failure-every-refusal-the-daemon-answered-went-to-the-client-and-nowhere-else-and-now-every-unserved-answer-is-a-failure-row-with-what-was-asked-beside-it-b-588-b-074-a2) |
 | 269 | [F269 — Failures are inspectable from the window: the daemon answers the record's newest classified failures, the System page shows each with every field the taxonomy gives it, and one rendering serves all 112 categories (B-074, §3.1, §3.2)](#269-f269-failures-are-inspectable-from-the-window-the-daemon-answers-the-records-newest-classified-failures-the-system-page-shows-each-with-every-field-the-taxonomy-gives-it-and-one-rendering-serves-all-112-categories-b-074-31-32) |
@@ -15500,11 +15501,15 @@ at every rung, which is the cross-check A12 asks for and the reason
 the engine's clock is now in the record.
 
 **What remains, and is a row.** A one-token turn the engine answers in
-11 ms returns to the daemon's clock in 220 ms. The two hundred
-milliseconds between are MCF's own — the socket pair the drained
-generation runs through, the account, the readings after the turn —
-and they cancel in a pair and are paid by every single generation
-(B-589).
+11 ms returns to the daemon's clock in 220 ms under the debug profile
+every figure above was taken with, and in 130 ms under the release
+profile: the same ladder rebuilt for release read 7.7 to 8.9 ms a
+token over three rungs with the same agreement, and every run of it
+carried 114 to 129 ms over the engine's own time. That hundred and
+twenty milliseconds is MCF's own — the header read, the framing, the
+socket pair the drained generation runs through, the account, the
+readings after the turn — and it cancels in a pair and is paid by
+every single generation (B-589).
 
 **The 8,192 rung, refused.** The engine's words — which the rung now
 carries, where it had said *in its own words* and left the words in
@@ -15517,7 +15522,46 @@ again, which is what it was meant to be; a hold's default is a hold's.
 With the ceiling restored the rung measured: 12.801 ms a token, spread
 0.534, three pairs of three.
 
+## 272 · F272 — A model published in parts is one acquisition, and a part's file name finds its repository: the ninety-gigabyte set the operator could not find, fetched in order with the whole said, and the hub's search shortened a segment at a time (B-590, F138, A7)
+
+**What the operator had.** A file name from somewhere else —
+`Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf` — and nothing in
+MCF that found it. Two things were wrong. The hub indexes repositories
+by name, and searched for a file's name it returned one stray
+repository that shared a few words; and had the repository been named,
+a pull of that file would have fetched its first part, eleven
+megabytes of a model that is ninety gigabytes in three files, and left
+a store an engine could load nothing from. The reference
+implementation loads a set from the first part's name — which F138
+already noted for sizing — and MCF fetched files.
+
+**What was built.** A listing knows a set: every entry whose name is
+`<prefix>-<n>-of-<m>.gguf` with the same prefix and count, in order,
+and whether the count the name declares is all published. Asking for
+any part — `mcf pull`, `mcf acquire`, the window's download — fetches
+every part in order, each said as it lands, with the progress over the
+whole beside the part's own: *part 2 of 3: 1.0 GB of 90.0 GB*. A set
+the repository publishes only part of is refused before a byte moves,
+naming how many it found of how many. And a search for a name the hub
+finds little for is shortened a segment at a time — the extension and
+the part suffix first, then each `-` segment from the end — gathering
+what each level finds until a few repositories are in hand, most
+downloaded first, with the last name searched said.
+
+**What it did.** On a scratch store: the search by the file's name,
+which had listed one stray repository, listed twenty-one with the
+publisher's first at 868,243 downloads. The set asked for by its first
+part fetched the first part, wrote its provenance beside it, and was a
+gigabyte into the second when the forty-five seconds given to the
+check ran out; the partial second part is kept for the next attempt to
+resume. The whole is ninety gigabytes, which on this connection is
+about an hour.
+
 ## Changelog
+
+### Version 194 — a model in parts is one model
+
+F272: the set fetched whole, the search shortened (B-590).
 
 ### Version 193 — the ladder's pair runs on a kept prefix
 
