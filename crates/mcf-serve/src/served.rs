@@ -747,7 +747,7 @@ impl Served {
         }
         let mut command = Command::new(&binary);
         command
-            .args(settings.arguments(&model.display().to_string(), crate::hosting::LOOPBACK))
+            .args(settings.arguments(&model.display().to_string(), settings.bind()))
             .arg("--port")
             .arg(settings.port.to_string())
             .stdin(Stdio::null())

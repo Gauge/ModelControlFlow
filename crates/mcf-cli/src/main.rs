@@ -1447,6 +1447,9 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
                 Value::Bool(said == Some("on")),
             ),
             "--keep-resident" => ("keep_resident".to_owned(), Value::Bool(said == Some("on"))),
+            // Reachable from the network, with the key the hold then needs
+            // (B-577).
+            "--open" => ("open".to_owned(), Value::Bool(said == Some("on"))),
             // The engine's own start, beyond the plain load (B-456).
             "--draft-head" => ("draft_head".to_owned(), Value::Bool(said == Some("on"))),
             "--rope-scaling" => (

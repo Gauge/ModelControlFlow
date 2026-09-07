@@ -969,6 +969,7 @@ fn what_is_hosted_carries_where_it_answers() {
         projector: None,
         takes: None,
         api_key: false,
+        network_address: None,
         in_use: None,
     });
     let hosting = desk.hosted.as_ref().expect("just set");
@@ -1039,6 +1040,7 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
         projector: None,
         takes: None,
         api_key: false,
+        network_address: None,
         in_use: None,
     });
     // Nothing answers, so nothing is learned — and nothing is forgotten.
@@ -1630,6 +1632,7 @@ fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
         projector: None,
         takes: None,
         api_key: false,
+        network_address: None,
         in_use: None,
     });
     let said = desk.second_copy().unwrap_or_default();

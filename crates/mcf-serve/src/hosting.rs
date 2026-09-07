@@ -83,8 +83,14 @@ pub struct Hosting {
     /// A key callers must present, where somebody set one.
     ///
     /// `None` is no key, which on the loopback address is the ordinary case
-    /// and is stated rather than assumed.
+    /// and is stated rather than assumed. A server reachable from the
+    /// network is refused without one (B-577).
     pub api_key: Option<String>,
+    /// Whether the server answers every address this machine has rather
+    /// than the loopback one alone: reachable from another machine on the
+    /// network. Off unless somebody turned it on, and never on without a
+    /// key (B-577).
+    pub open: bool,
     /// The projector loaded beside the model, where it has one.
     ///
     /// **Half of a multimodal model travels as a second file, and a host that
@@ -186,6 +192,7 @@ impl Hosting {
             keep_resident: false,
             port: DEFAULT_PORT,
             api_key: None,
+            open: false,
             projector: projector.map(|path| path.display().to_string()),
             // Never on by themselves: a draft head changes what the tokens
             // are drawn from, and a stretched rope changes what the model
@@ -244,6 +251,10 @@ impl Hosting {
     /// Every setting, in the order a person reads them, with what MCF
     /// recommended beside what it is set to.
     #[must_use]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one setting a row, each with its because"
+    )]
     pub fn listed(&self, against: &Self) -> Vec<Setting> {
         // The three words the diagnostics use for the same choice, with the
         // layer count as their consequence rather than the control: what a
@@ -312,10 +323,21 @@ impl Hosting {
                 because: "hold the model's pages in memory rather than letting them page out",
             },
             Setting {
+                name: "reachable from the network",
+                value: yes_no(self.open),
+                recommended: yes_no(against.open),
+                because: "answer every address this machine has, not the loopback one alone; \
+                          a key is required with it",
+            },
+            Setting {
                 name: "port",
                 value: self.port.to_string(),
                 recommended: against.port.to_string(),
-                because: "where the API listens, on this computer only",
+                because: if self.open {
+                    "where the API listens, on every address this machine has"
+                } else {
+                    "where the API listens, on this computer only"
+                },
             },
             Setting {
                 name: "API key",
@@ -381,6 +403,7 @@ impl Hosting {
             ("batch", Value::Integer(i64::from(self.batch))),
             ("flash_attention", Value::Bool(self.flash_attention)),
             ("keep_resident", Value::Bool(self.keep_resident)),
+            ("open", Value::Bool(self.open)),
             ("port", Value::Integer(i64::from(self.port))),
             // The key itself is never written down. That it exists is a
             // condition of the hosting; what it is is a secret, and a record
@@ -444,6 +467,7 @@ impl Hosting {
                 .max(1),
             flash_attention: flag("flash_attention", recommended.flash_attention),
             keep_resident: flag("keep_resident", recommended.keep_resident),
+            open: flag("open", recommended.open),
             port: number("port")
                 .and_then(|held| u16::try_from(held).ok())
                 .unwrap_or(recommended.port),
@@ -481,6 +505,49 @@ impl Hosting {
     pub fn address(&self) -> String {
         format!("http://{LOOPBACK}:{}", self.port)
     }
+
+    /// The address the engine is told to bind: every one this machine has
+    /// where the hold is open to the network, the loopback one otherwise
+    /// (B-577).
+    #[must_use]
+    pub const fn bind(&self) -> &'static str {
+        if self.open { "0.0.0.0" } else { LOOPBACK }
+    }
+
+    /// Where a caller on the network reaches a hold open to it: the address
+    /// of this machine on the route out, with the port. `None` where the
+    /// hold is not open, or the machine has no route to name (A7).
+    #[must_use]
+    pub fn network_address(&self) -> Option<String> {
+        if !self.open {
+            return None;
+        }
+        Some(format!("http://{}:{}", machine_address()?, self.port))
+    }
+}
+
+/// This machine's own address as another machine on the network would
+/// reach it: the first address the kernel's route table marks as this
+/// host's that is not the loopback one, read from `/proc/net/fib_trie`
+/// and nothing sent to find it. `None` where the table names none, which
+/// a machine with no network has, or where it cannot be read (A7).
+#[must_use]
+pub fn machine_address() -> Option<String> {
+    let trie = std::fs::read_to_string("/proc/net/fib_trie").ok()?;
+    let mut last: Option<&str> = None;
+    for line in trie.lines() {
+        let trimmed = line.trim();
+        if trimmed == "/32 host LOCAL"
+            && let Some(address) = last
+            && !address.starts_with("127.")
+        {
+            return Some(address.to_owned());
+        }
+        last = trimmed
+            .strip_prefix("|-- ")
+            .or_else(|| trimmed.strip_prefix("+-- "));
+    }
+    None
 }
 
 #[cfg(test)]

@@ -81,9 +81,15 @@ fn what_mcf_can_do_is_what_it_gates() {
         Gated::UntrustedExecution.asking(),
         Asking::NoPathExists { .. }
     ));
+    // A hold can be opened to the network by the person's own switch, with
+    // a key the daemon refuses to go without; the gate names the command
+    // (§6.12, B-577).
     assert!(matches!(
         Gated::NetworkExposure.asking(),
-        Asking::NoPathExists { .. }
+        Asking::ByCommand {
+            command: "mcf host",
+            ..
+        }
     ));
 }
 

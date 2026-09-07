@@ -509,6 +509,7 @@ fn in_use_lines(body: &Value) -> Vec<String> {
     lines
 }
 
+#[allow(clippy::too_many_lines, reason = "one report, a line a fact")]
 fn hosting(body: &Value) -> String {
     let text = |key: &str| body.get(key).and_then(Value::as_text).unwrap_or("?");
     let settings = body.get("settings");
@@ -529,6 +530,11 @@ fn hosting(body: &Value) -> String {
         format!("hosting {}", text("hosting")),
         String::new(),
         format!("  reachable at   {}", text("address")),
+        match body.get("network_address").and_then(Value::as_text) {
+            Some(network) => format!("  on the network {network} — with the key the hold was set"),
+            None => "  on the network no: this computer only, unless the hold is opened with a key"
+                .to_owned(),
+        },
         format!("  engine         {engine}"),
         format!(
             "  layers on card {}",

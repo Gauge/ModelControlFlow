@@ -113,13 +113,32 @@ fn a_large_download_happens_only_when_it_is_named() {
 /// §6.12 gates and B-036 would have to build the gate for.
 #[test]
 fn nothing_listens_where_another_machine_could_reach_it() {
-    let Asking::NoPathExists { why } = Gated::NetworkExposure.asking() else {
+    // Network exposure is gated by the hold's own switch and the key it
+    // requires (§6.12, B-577): what may bind an address other machines can
+    // reach is declared below, and only that.
+    let Asking::ByCommand { command, and } = Gated::NetworkExposure.asking() else {
         panic!(
-            "MCF has learned to expose itself to a network, and the gate §6.12 asks for is \
-             now owed rather than unnecessary (B-036)"
+            "network exposure is claimed absent while a hold can be opened to the network \
+             (B-577): the gate §6.12 asks for is owed"
         );
     };
-    assert!(why.contains("Unix socket"), "{why}");
+    assert!(command == "mcf host", "{command}");
+    assert!(
+        and.contains("--open on") && and.contains("API key"),
+        "{and}"
+    );
+    let gated: &[(&str, &str)] = &[
+        (
+            "crates/mcf-serve/src/hosting.rs",
+            "the address a hold's engine is told to bind: every address this machine has only \
+             where the person turned the hold open, and never without a key (B-577)",
+        ),
+        (
+            "crates/mcf-serve/src/served.rs",
+            "the engine started with that address, which is the loopback one unless the hold \
+             was opened (B-577)",
+        ),
+    ];
 
     // The laboratory listens on the loopback address to drive MCF's own client
     // against something that answers (B-028, D26). It is in the shipped binary
@@ -169,7 +188,9 @@ fn nothing_listens_where_another_machine_could_reach_it() {
             let by_name = trimmed.contains("LOOPBACK") && loopback_is_loopback(&root);
             let loopback = trimmed.contains("127.0.0.1") || trimmed.contains("[::1]") || by_name;
             let allowed = declared.iter().any(|(file, _)| *file == relative);
-            if !(loopback && allowed) {
+            let gated_here = gated.iter().any(|(file, _)| *file == relative)
+                && (trimmed.contains("fn bind(") || trimmed.contains("settings.bind()"));
+            if !(loopback && allowed) && !gated_here {
                 reachable.push(format!("{relative}: {trimmed}"));
             }
         }

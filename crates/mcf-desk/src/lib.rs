@@ -119,6 +119,9 @@ pub struct Hosted {
     pub takes: Option<mcf_serve::takes::Takes>,
     /// Whether callers must present a key.
     pub api_key: bool,
+    /// Where a caller on the network reaches it, where the hold is open to
+    /// the network (B-577).
+    pub network_address: Option<String>,
     /// What it is doing now, where the daemon read the engine's counters.
     pub in_use: Option<Use>,
 }
@@ -1927,6 +1930,9 @@ pub enum Switch {
     DraftHead,
     /// Loading the projector beside the file.
     Projector,
+    /// Answering every address this machine has, not the loopback one
+    /// alone; a key is required with it (B-577).
+    Open,
 }
 
 /// The rope scalings a hold can start with, in the order the list offers
@@ -3214,6 +3220,11 @@ impl Desk {
                             .get("settings")
                             .and_then(|settings| settings.get("api_key"))
                             .is_some_and(|key| !matches!(key, Value::Null)),
+                        network_address: answer
+                            .body
+                            .get("network_address")
+                            .and_then(Value::as_text)
+                            .map(str::to_owned),
                         in_use: answer.body.get("use").map(Use::from_value),
                     }),
                 // Served, and nothing is held: that is an answer, and it clears.
@@ -4809,6 +4820,7 @@ impl Desk {
         match switch {
             Switch::FlashAttention => settings.flash_attention = !settings.flash_attention,
             Switch::KeepResident => settings.keep_resident = !settings.keep_resident,
+            Switch::Open => settings.open = !settings.open,
             Switch::DraftHead => settings.started.draft_head = !settings.started.draft_head,
             // Text only, or the one beside the file: the recommendation
             // knows which projector that is, and *on* means that one.

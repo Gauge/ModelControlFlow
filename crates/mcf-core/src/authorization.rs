@@ -133,10 +133,17 @@ impl Gated {
                       what it publishes, the sizes, and which variants would run here — and \
                       nothing is acquired (B-029, B-213)",
             },
-            Self::NetworkExposure => Asking::NoPathExists {
-                why: "the control plane is a Unix socket with no bind address, no port and no \
-                      flag: exposure is not something a mistake can do because it is not \
-                      something MCF can do (B-030, B-036)",
+            // The control plane stays a Unix socket with no bind address and
+            // no port: what can be exposed is a hosted model's own API, and
+            // only by the hold's switch, which is the asking, with a key the
+            // daemon refuses to go without; letting the hold go revokes it
+            // (§6.12, B-577).
+            Self::NetworkExposure => Asking::ByCommand {
+                command: "mcf host",
+                and: "`--open on` is said with it and an API key is set, since a hold reachable \
+                      from the network without one answers anyone; the window's *Reachable \
+                      from the network* switch is the same asking, and `mcf unhost` or Stop \
+                      revokes it",
             },
             Self::Destruction => Asking::ByCommand {
                 command: "mcf rm",

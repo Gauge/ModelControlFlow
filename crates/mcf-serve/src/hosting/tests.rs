@@ -169,3 +169,41 @@ fn a_hosted_model_is_on_this_computer_only() {
         .expect("the engine is told what to bind");
     assert_eq!(arguments.get(at + 1).map(String::as_str), Some(LOOPBACK));
 }
+
+/// A hold open to the network binds every address and names the
+/// machine's own beside the loopback one; one on this computer alone
+/// binds the loopback address and names no network address; the switch
+/// round-trips and is off unless asked for (B-577).
+#[test]
+fn a_hold_open_to_the_network_binds_every_address_and_names_its_own() {
+    let recommended = on_a_card();
+    assert!(!recommended.open, "off unless somebody turned it on");
+    assert_eq!(recommended.bind(), LOOPBACK);
+    assert_eq!(recommended.network_address(), None);
+    let asked = Value::map([("open", Value::Bool(true)), ("api_key", Value::text("k"))]);
+    let open = Hosting::from_value(&asked, &recommended);
+    assert!(open.open);
+    assert_eq!(open.bind(), "0.0.0.0");
+    assert!(
+        open.address().starts_with(&format!("http://{LOOPBACK}:")),
+        "the loopback address is still named"
+    );
+    match open.network_address() {
+        Some(named) => {
+            assert!(named.starts_with("http://"), "{named}");
+            assert!(named.ends_with(&format!(":{}", open.port)), "{named}");
+            assert!(
+                !named.contains("127.0.0.1"),
+                "the network address is not the loopback one"
+            );
+        }
+        None => eprintln!("this machine has no route out; no network address to name"),
+    }
+    assert_eq!(open.to_value().get("open"), Some(&Value::Bool(true)));
+    assert!(
+        open.listed(&recommended)
+            .iter()
+            .any(|setting| setting.name == "reachable from the network" && setting.value == "on"),
+        "the switch is a listed setting"
+    );
+}

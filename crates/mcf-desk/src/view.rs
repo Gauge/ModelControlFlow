@@ -1559,6 +1559,11 @@ fn configure_tab(
             crate::Switch::KeepResident,
             settings.keep_resident,
         ),
+        (
+            "Reachable from the network",
+            crate::Switch::Open,
+            settings.open,
+        ),
     ] {
         label(
             paint,
@@ -5396,9 +5401,43 @@ fn where_it_answers(
         act = Some(Act::Copy(hosting.address.clone()));
     }
     y += 24.0;
+    // Where the network reaches it, where the hold is open to it (B-577).
+    if let Some(network) = &hosting.network_address {
+        paint.say_at(
+            at.x,
+            y,
+            "On the network",
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        let after = paint.measure("On the network", Weight::Regular, size::SMALL);
+        paint.say_at(
+            at.x + after + 8.0,
+            y - 1.0,
+            network,
+            Weight::Bold,
+            size::BODY,
+            ink.accent,
+        );
+        let wide = paint.measure(network, Weight::Bold, size::BODY);
+        let (copied, _) = ui::fitted(
+            paint,
+            mouse,
+            (at.x + after + wide + 22.0, y - 8.0),
+            "Copy",
+            Kind::Quiet,
+        );
+        if copied {
+            act = Some(Act::Copy(network.clone()));
+        }
+        y += 24.0;
+    }
     for line in [
         "OpenAI-compatible API · use as base URL".to_owned(),
-        if hosting.api_key {
+        if hosting.api_key && hosting.network_address.is_some() {
+            "API key: set · required, since the hold answers the network".to_owned()
+        } else if hosting.api_key {
             "API key: set".to_owned()
         } else {
             "API key: none (localhost only)".to_owned()

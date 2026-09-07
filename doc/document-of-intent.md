@@ -5169,6 +5169,14 @@ The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
 
+### Version 59 — a hold reachable from the network
+
+§6.12's act built for a hold, on the operator's instruction: the
+*Reachable from the network* switch and `--open on` are the explicit
+act, an API key is required with it, and the control plane stays a
+Unix socket — what is exposed is the hosted model's own API and
+nothing else. The gate `network_exposure` names the command (B-577).
+
 ### Version 58 — one shape for every run
 
 D56 written on the operator's instruction: every run announces its

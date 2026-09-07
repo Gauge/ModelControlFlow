@@ -1329,6 +1329,7 @@ fn running_says_what_the_held_window_costs() {
         projector: None,
         takes: None,
         api_key: false,
+        network_address: None,
         in_use: None,
     });
     // The same window, held under a model this list does not carry: the
@@ -1343,6 +1344,7 @@ fn running_says_what_the_held_window_costs() {
         projector: None,
         takes: None,
         api_key: false,
+        network_address: None,
         in_use: None,
     });
 
@@ -3205,6 +3207,7 @@ fn an_engine_in_use(path: &str) -> mcf_desk::Hosted {
         projector: None,
         takes: None,
         api_key: false,
+        network_address: None,
         in_use: Some(mcf_desk::Use {
             generated: Some(41_320),
             prompted: Some(12_004),

@@ -5874,6 +5874,10 @@ impl Daemon {
         say(writer, &answer);
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one hold, each refusal named before it starts"
+    )]
     fn host(&self, named: &str, asked: &Value, report: &mut dyn FnMut(Value)) -> Answer {
         let (recommended, path) = match self.recommend(named) {
             Ok(held) => held,
@@ -5887,6 +5891,18 @@ impl Daemon {
         let declared = crate::declared::Declared::of(&path);
         if let Err(failure) = settings.started.against(&declared) {
             return Answer::refused(&failure);
+        }
+        // A server every address this machine has can reach answers anyone
+        // on the network; without a key that is anyone at all (B-577).
+        if settings.open && settings.api_key.is_none() {
+            return Answer::refused(&Failure::new(
+                Category::ConfigInvalid,
+                Attribution::User,
+                Disposition::Refused,
+                WHERE,
+                "a hold reachable from the network needs an API key: set one, or leave the hold \
+                 on this computer alone",
+            ));
         }
 
         let llama = match self.engine_called(&settings.engine) {
@@ -5962,6 +5978,14 @@ impl Daemon {
                     Value::map([
                         ("model", Value::text(path.display().to_string())),
                         ("address", Value::text(settings.address())),
+                        (
+                            "network_address",
+                            settings.network_address().map_or(Value::Null, Value::text),
+                        ),
+                        (
+                            "network_address",
+                            settings.network_address().map_or(Value::Null, Value::text),
+                        ),
                         // Stated rather than implied: what a hosted model is
                         // reachable from is the question §6.12 asks, and the
                         // answer is on this machine and nowhere else.
@@ -5989,6 +6013,10 @@ impl Daemon {
                 Answer::served(Value::map([
                     ("hosting", Value::text(path.display().to_string())),
                     ("address", Value::text(settings.address())),
+                    (
+                        "network_address",
+                        settings.network_address().map_or(Value::Null, Value::text),
+                    ),
                     ("settings", settings.to_value()),
                     ("recommended", recommended.to_value()),
                     // What was moved off the recommendation, in writing,
@@ -6071,6 +6099,12 @@ impl Daemon {
             Some(held) => Value::map([
                 ("hosting", Value::text(held.model.display().to_string())),
                 ("address", Value::text(held.settings.address())),
+                (
+                    "network_address",
+                    held.settings
+                        .network_address()
+                        .map_or(Value::Null, Value::text),
+                ),
                 ("settings", held.settings.to_value()),
                 ("recommended", held.recommended.to_value()),
                 (
