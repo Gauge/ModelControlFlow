@@ -699,3 +699,24 @@ fn a_cards_free_memory_and_whether_it_is_the_hosts_are_read() {
         "no card: nothing beside the host"
     );
 }
+
+/// The window a hold defaults to keeps the cache within the weights: the
+/// two-billion model that was held with a cache eighteen times its size is
+/// held at 8,192, and the twenty-seven-billion model whose cache at its whole
+/// trained context is under its weights is held there.
+#[test]
+fn a_hold_defaults_to_the_window_whose_cache_stays_within_the_weights() {
+    use super::held_at;
+    // 1.5 GB of weights, 112 KiB of cache a token, 262,144 fits.
+    assert_eq!(held_at(262_144, 1_500_000_000, 112 * 1024), 8_192);
+    // 29 GB of weights, 68 KiB a token: 262,144 costs 17 GiB, within them.
+    assert_eq!(held_at(262_144, 29_000_000_000, 68 * 1024), 262_144);
+    // Within the largest that fits, whatever the weights would allow.
+    assert_eq!(held_at(32_768, 29_000_000_000, 68 * 1024), 32_768);
+    // Never below the smallest hold where the machine can hold that much...
+    assert_eq!(held_at(262_144, 10_000_000, 112 * 1024), 4_096);
+    // ...and the largest that fits where that is smaller still.
+    assert_eq!(held_at(2_048, 10_000_000, 112 * 1024), 2_048);
+    // No growing cache: the largest is the answer.
+    assert_eq!(held_at(262_144, 1_500_000_000, 0), 262_144);
+}

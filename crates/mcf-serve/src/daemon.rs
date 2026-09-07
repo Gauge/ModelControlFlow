@@ -5989,7 +5989,11 @@ impl Daemon {
         // the cache at the window MCF settled on. This is the figure the
         // layer recommendation turns on, and it is arithmetic rather than a
         // guess (A6).
-        let wanted = bytes.saturating_add(cache.unwrap_or(0).saturating_mul(choice.context));
+        // **Held at a window somebody decided, within the largest that
+        // fits** (B-423): the cache stays within the weights, and the
+        // settings surface says so.
+        let context = crate::engines::held_at(choice.context, bytes, cache.unwrap_or(0));
+        let wanted = bytes.saturating_add(cache.unwrap_or(0).saturating_mul(context));
         let fits = choice.device.free.is_none_or(|free| wanted <= free);
         // The projector its publisher shipped beside it, where there is one:
         // the recommendation is the whole model, and a model hosted without
@@ -6001,7 +6005,7 @@ impl Daemon {
                 &choice.engine,
                 &choice.device.name,
                 on_a_card,
-                choice.context,
+                context,
                 std::thread::available_parallelism().ok().map(Into::into),
                 fits,
                 projector.as_deref(),

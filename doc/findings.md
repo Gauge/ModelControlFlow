@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 266 | [F266 — A hold defaults to the largest window whose cache stays within the model's own size: the 2B held at 8,192 with 896 MiB of cache where it had been held at 262,144 with 28 GiB, and the 27B unchanged (B-423, F133, F243)](#266-f266-a-hold-defaults-to-the-largest-window-whose-cache-stays-within-the-models-own-size-the-2b-held-at-8192-with-896-mib-of-cache-where-it-had-been-held-at-262144-with-28-gib-and-the-27b-unchanged-b-423-f133-f243) |
 | 265 | [F265 — The first official build installed a binary and nothing a desktop could find: the launcher and icon were in the Flatpak packaging only, and `scripts/install.sh` now installs all three (B-585, B-583, B-448)](#265-f265-the-first-official-build-installed-a-binary-and-nothing-a-desktop-could-find-the-launcher-and-icon-were-in-the-flatpak-packaging-only-and-scriptsinstallsh-now-installs-all-three-b-585-b-583-b-448) |
 | 264 | [F264 — No sentence a person reads cites a document: the sixty remaining were rewritten to say the thing, the check that counted them now refuses any, and the window is inside its scope (B-403, F130, A23)](#264-f264-no-sentence-a-person-reads-cites-a-document-the-sixty-remaining-were-rewritten-to-say-the-thing-the-check-that-counted-them-now-refuses-any-and-the-window-is-inside-its-scope-b-403-f130-a23) |
 | 263 | [F263 — A termination signal stops the daemon the way `mcf stop` does: the handler writes one byte, a thread sends the request, and on the 2B the hold was let go in writing and the server was gone in a third of a second (B-584, A27, B-071)](#263-f263-a-termination-signal-stops-the-daemon-the-way-mcf-stop-does-the-handler-writes-one-byte-a-thread-sends-the-request-and-on-the-2b-the-hold-was-let-go-in-writing-and-the-server-was-gone-in-a-third-of-a-second-b-584-a27-b-071) |
@@ -15178,6 +15179,19 @@ as its reason, and `daemon_stopped` with *the process received
 SIGTERM*. Under B-574's build, the same signal had left the server
 under `systemd` and the record without either row.
 
+**What the full suite found afterwards.** The first build kept the
+handler's pipe per watch, in a static the newest watch overwrote: in a
+test process serving several daemons at once, a signal reached
+whichever daemon had started last, and a watch dropped by one test
+took the handler's descriptor away from the others. A test hung on it.
+The pipe and its reader thread are now made once per process and
+kept, the watches are a registry of the sockets being served, the
+handlers are installed while the registry is non-empty, and a signal
+stops every daemon the process serves — one, outside a test. The unit
+tests no longer raise the handler; they test the request a signal
+turns into and the registry, and the real `SIGTERM` is the
+whole-system tier's, against a daemon in a process of its own.
+
 ## 264 · F264 — No sentence a person reads cites a document: the sixty remaining were rewritten to say the thing, the check that counted them now refuses any, and the window is inside its scope (B-403, F130, A23)
 
 **What F130 left.** Sixty-four sentences in the CLI, the console and
@@ -15243,7 +15257,58 @@ daemon itself when none is up, which `mcf desk` already did.
 launcher, as the Flatpak, or as both is DEC-032, still open; this
 script is for the machine the tree is on.
 
+## 266 · F266 — A hold defaults to the largest window whose cache stays within the model's own size: the 2B held at 8,192 with 896 MiB of cache where it had been held at 262,144 with 28 GiB, and the 27B unchanged (B-423, F133, F243)
+
+**What was measured.** `mcf settings` on the two models held on this
+machine, under the rule B-423 opened with — the largest window the
+pair can hold:
+
+| model | weights | default window | cache at it |
+|---|---|---|---|
+| Qwen3-VL-2B, Q4_K_XL | 1.5 GB | 262,144 | 28.0 GiB |
+| Qwen3.8-27B, Q8_0 | 29 GB | 262,144 | 17.0 GiB |
+
+A cache eighteen times the weights, reserved for a conversation nobody
+was going to have with a two-billion model, on a machine where the
+card's memory is the host's (F243). The largest window is the right
+answer to *does this fit* and the wrong one to *what should it be held
+at*.
+
+**What was decided, and its reason.** `engines::held_at`: the hold
+defaults to the largest power of two, within the largest that fits,
+whose cache is no larger than the weights themselves — the one size a
+model brings with it — and no smaller than 4,096, the window MCF plans
+prompts against, where the machine can hold that much. The reason is
+on the settings surface beside the number, and `--context` sets it to
+anything the pair holds. Not a number picked here: a rule, stated,
+whose figure follows from the model.
+
+**On the 2B, and the 27B.** The same daemon, rebuilt:
+
+| model | default window | cache at it |
+|---|---|---|
+| Qwen3-VL-2B, Q4_K_XL | 8,192 | 896 MiB |
+| Qwen3.8-27B, Q8_0 | 262,144 | 17.0 GiB |
+
+`mcf host` on the 2B with no window stated started the engine at
+`--ctx-size 8192`, and `mcf hosted` said so. The 27B's cache at its
+whole trained context is under its weights, so nothing changed for the
+model the operator holds; a held-under line on the 2B now reads
+*context window: 4,096 tokens rather than 8,192*, against the new
+default.
+
+**What this is not.** A measurement of what a person sends. B-423 named
+that as the other honest fix, and the record cannot make it: what a
+program on the port sends goes to the engine, not through MCF, and the
+engine's counters give totals rather than lengths. The rule stands in
+for that measurement until there is one.
+
 ## Changelog
+
+### Version 188 — a hold's window is a decision
+
+F266: the cache stays within the weights (B-423). F263 amended: the
+watch is process-wide.
 
 ### Version 187 — installing puts the window where a person looks for it
 

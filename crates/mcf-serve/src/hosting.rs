@@ -151,7 +151,9 @@ impl Hosting {
     ///
     /// **Every value here is derived from something measured, and the ones
     /// that are not are named.** The context is arithmetic over the model's
-    /// own header and the device's free memory. The layer count is all of
+    /// own header and the device's free memory, held where the cache stays
+    /// within the weights rather than at the largest that fits (B-423). The
+    /// layer count is all of
     /// them where the weights and the cache fit on the card and none where
     /// they do not — there is no half-way that is not a guess. The thread
     /// count is the machine's cores. The batch size is the engine's own
@@ -276,7 +278,9 @@ impl Hosting {
                 value: format!("{} tokens", grouped(self.context)),
                 recommended: format!("{} tokens", grouped(against.context)),
                 because: "how long a conversation it can hold. Every token of it costs \
-                          memory on the device the model runs on",
+                          memory on the device the model runs on, so MCF holds it at the \
+                          largest window whose cache stays within the model's own size; \
+                          --context sets it to anything that fits",
             },
             Setting {
                 name: "put it on",

@@ -87,6 +87,47 @@ const HEADROOM_DENOMINATOR: u64 = 100;
 /// The smallest window worth proposing.
 const SMALLEST_CONTEXT: u64 = 512;
 
+/// The smallest window a hold defaults to, where the machine can hold it:
+/// the window MCF plans prompts against elsewhere, and the least a program
+/// on the port can be expected to do anything with.
+const SMALLEST_HOLD: u64 = 4_096;
+
+/// The window a hold defaults to, given the largest this pair can hold.
+///
+/// **A decision with a reason, not the largest number that fits** (B-423).
+/// The largest window is the right answer to *does this model fit here* and
+/// the wrong one to *what should it be held at*: on a large machine it is the
+/// model's whole trained context, and a two-billion-parameter model of 1.5 GB
+/// was held with a 28 GiB cache — a cache eighteen times the weights, spent
+/// silently, for a conversation nobody was going to have. That is the third
+/// instance of the class `-ngl 0` and `--ctx-size 0` belong to (F133): a value
+/// handed to an engine that nobody stated.
+///
+/// The rule: the largest power of two, within the largest that fits, whose
+/// cache is no larger than the weights themselves. The weights are the one
+/// size the model brings with it, and a cache within them is a hold whose
+/// memory is mostly the model. No smaller than [`SMALLEST_HOLD`] where the
+/// machine can hold that much, because a window a program on the port cannot
+/// use is not a hold. What is chosen is on the settings surface with this
+/// reason beside it, and `--context` sets it to anything the pair holds.
+#[must_use]
+pub fn held_at(largest: u64, weights: u64, cache_per_token: u64) -> u64 {
+    if cache_per_token == 0 || largest <= SMALLEST_HOLD {
+        return largest;
+    }
+    let mut context = SMALLEST_HOLD;
+    let mut best = SMALLEST_HOLD;
+    while context <= largest {
+        if context.saturating_mul(cache_per_token) <= weights {
+            best = context;
+        } else {
+            break;
+        }
+        context = context.saturating_mul(2);
+    }
+    best
+}
+
 /// A kind of thing an engine can compute on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
