@@ -1835,6 +1835,62 @@ fn the_model_under_test_is_read_and_its_cost_is_summed() {
     assert_eq!(desk.spent, crate::Spent::default());
 }
 
+/// A key still being typed when Start server is pressed is the key the
+/// hold gets; a hold open to the network with no key is refused in the
+/// fields' own words before the daemon is asked (B-578, B-577).
+#[test]
+fn start_server_takes_the_key_being_typed_and_names_the_field_it_needs() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    let recommended = mcf_serve::hosting::Hosting::recommended(
+        "llama.cpp",
+        "CPU",
+        false,
+        4096,
+        Some(8),
+        true,
+        None,
+    );
+    desk.settings = Some(recommended.clone());
+    desk.recommended = Some(recommended);
+    desk.models = vec![Model {
+        name: "a".to_owned(),
+        path: "/m/a.gguf".to_owned(),
+        ..Model::default()
+    }];
+    desk.chosen = Some(0);
+    desk.page = Page::Models;
+    desk.flip(crate::Switch::Open);
+    assert!(desk.settings.as_ref().is_some_and(|held| held.open));
+    desk.host_it();
+    let why = desk.host_refused.clone().unwrap_or_default();
+    assert!(why.contains("API key field"), "{why}");
+    assert!(
+        !matches!(desk.doing, crate::Doing::Hosting(_)),
+        "nothing was asked of the daemon"
+    );
+    desk.edit(crate::Field::ApiKey);
+    desk.typing().clear();
+    desk.typing().push_str("mcf-home");
+    // No Return: Start server is pressed with the key still in the field.
+    desk.host_it();
+    assert_eq!(
+        desk.settings
+            .as_ref()
+            .and_then(|held| held.api_key.clone())
+            .as_deref(),
+        Some("mcf-home"),
+        "the key typed is the key the hold gets"
+    );
+    assert!(
+        !desk
+            .host_refused
+            .as_deref()
+            .is_some_and(|why| why.contains("API key field")),
+        "with a key, the hold is not refused for one: {:?}",
+        desk.host_refused
+    );
+}
+
 #[test]
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;

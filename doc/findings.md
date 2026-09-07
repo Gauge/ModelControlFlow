@@ -9755,6 +9755,16 @@ at when the address does not answer.
 
 **Seen.** The 2B hosted on a scoped daemon with `--open on` and no key: refused before anything started. With `--open on --api-key try-key --port 17899`: the engine listening on 0.0.0.0:17899, the hosted report naming *on the network http://192.168.1.10:17899 — with the key the hold was set* beside the loopback address, and from that address a request to `/v1/models` answered 401 without the key and 200 with it. The Configure tab shows *Reachable from the network* beside Flash attention and Memory lock, and the window's unit tests hold that the switch flips.
 
+**Amended the same day (B-578).** The operator typed a key in the
+window, pressed Start server, and was refused for having no key. A
+setting typed is applied on Return or when another control is pressed,
+and Start server was not one of the controls that applied it, so the
+hold went out with the key still in the field. Start server now takes
+whatever is being typed first, and where the hold is open and the key
+field is empty it says so in the fields' own words — *type one in the
+API key field above, then Start server; or turn the switch off* —
+before the daemon is asked.
+
 **What is not done.** The key travels as a bearer token over plain
 HTTP, which on a home network is the ordinary arrangement and on any
 other is not; a hold that should be reached from further than the

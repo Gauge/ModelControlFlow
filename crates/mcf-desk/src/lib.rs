@@ -3263,10 +3263,34 @@ impl Desk {
     /// thing being held rather than a button here, a clock there and an ask
     /// box somewhere else.
     pub fn host_it(&mut self) {
+        // Whatever is still being typed — a key, a port — is taken first:
+        // a value in a field the person has not left is what they meant,
+        // and a hold started without it was refused for a key they had
+        // typed (B-578).
+        self.apply_edit();
+        if let Some(why) = &self.edit_refused {
+            self.host_refused = Some(why.clone());
+            return;
+        }
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             self.no_settings = Some("choose a model first".to_owned());
             return;
         };
+        // A hold open to the network is refused by the daemon without a
+        // key; said here first, in the words of the fields above (B-577).
+        if self
+            .settings
+            .as_ref()
+            .is_some_and(|settings| settings.open && settings.api_key.is_none())
+        {
+            self.host_refused = Some(
+                "Reachable from the network is on, so the hold needs an API key: type one in \
+                 the API key field above, then Start server; or turn the switch off to keep \
+                 the hold on this computer"
+                    .to_owned(),
+            );
+            return;
+        }
         self.host_refused = None;
         self.freed = None;
         self.page = Page::Hosting;
