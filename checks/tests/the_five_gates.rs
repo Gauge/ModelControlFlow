@@ -190,7 +190,7 @@ fn nothing_listens_where_another_machine_could_reach_it() {
             let allowed = declared.iter().any(|(file, _)| *file == relative);
             let gated_here = gated.iter().any(|(file, _)| *file == relative)
                 && (trimmed.contains("fn bind(") || trimmed.contains("settings.bind()"));
-            if !(loopback && allowed) && !gated_here {
+            if !(gated_here || loopback && allowed) {
                 reachable.push(format!("{relative}: {trimmed}"));
             }
         }

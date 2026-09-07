@@ -271,7 +271,7 @@ fn read_switches(engine: &Served, turn: &Turn, rendered: &str) -> Result<Vec<Str
 ///
 /// **A switch the template does not have is refused, not passed over.** Each
 /// switch asked for is checked against the template by rendering, in
-/// [`read_switches`]; a person who asked for thinking off would otherwise be
+/// `read_switches`; a person who asked for thinking off would otherwise be
 /// told they had it (A2, A7).
 ///
 /// # Errors
