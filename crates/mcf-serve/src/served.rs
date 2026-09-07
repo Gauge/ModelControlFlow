@@ -787,6 +787,7 @@ impl Served {
         served
             .wait_until_answering(settings.port, ATTEMPTS, report)
             .map_err(|failure| served.with_last_words(failure))?;
+        served.register();
         Ok(served)
     }
 
@@ -1063,6 +1064,7 @@ impl Served {
         served
             .wait_until_listening(attempts)
             .map_err(|failure| served.with_last_words(failure))?;
+        served.register();
         Ok(served)
     }
 
@@ -2325,6 +2327,67 @@ pub fn interpret(answer: &str) -> Result<Completed, Failure> {
     })
 }
 
+/// A server MCF started and still holds, as the daemon lists what is under
+/// test: enough to read its counters without holding whoever owns it — a
+/// measurement's step, a generation's slot, a hold (B-573).
+#[derive(Debug, Clone)]
+pub struct Live {
+    /// The server's process.
+    pub child: u32,
+    /// The model it holds.
+    pub model: PathBuf,
+    /// The engine's commit.
+    pub commit: String,
+    /// The window it was opened at.
+    pub window: u64,
+    /// Where it answers.
+    pub reach: Reach,
+}
+
+/// Every server alive now, oldest first: registered as one starts
+/// answering, struck as it is dropped.
+static LIVE: std::sync::OnceLock<std::sync::Mutex<Vec<Live>>> = std::sync::OnceLock::new();
+
+fn live_list() -> &'static std::sync::Mutex<Vec<Live>> {
+    LIVE.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+/// The servers alive now, oldest first.
+#[must_use]
+pub fn live() -> Vec<Live> {
+    live_list()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+impl Served {
+    /// Puts this server on the list of the live.
+    fn register(&self) {
+        let entry = Live {
+            child: self.child.id(),
+            model: self.model.clone(),
+            commit: self.commit.clone(),
+            window: self.window,
+            reach: self.reach.clone(),
+        };
+        let mut held = live_list()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        held.retain(|live| live.child != entry.child);
+        held.push(entry);
+    }
+
+    /// Strikes this server from the list of the live.
+    fn unregister(&self) {
+        let child = self.child.id();
+        let mut held = live_list()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        held.retain(|live| live.child != child);
+    }
+}
+
 impl Drop for Served {
     /// The server goes when the daemon does, and takes its socket with it.
     ///
@@ -2332,6 +2395,7 @@ impl Drop for Served {
     /// memory on a machine three other projects are sharing, which is the
     /// least neighbourly failure available here.
     fn drop(&mut self) {
+        self.unregister();
         let _killed = self.child.kill();
         let _waited = self.child.wait();
         if let Reach::Socket(socket) = &self.reach {

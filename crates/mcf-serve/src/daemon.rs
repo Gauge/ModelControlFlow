@@ -1142,18 +1142,6 @@ fn a_load_so_far(
 /// a fraction the engine computed, and MCF neither rounds it nor makes a
 /// number of its own out of it (A1, A7). Absent where the port did not
 /// answer or was started without counters.
-/// What is known of the server under test without holding its slot: the
-/// model, the engine's commit, the window, where it answers, and the
-/// process whose memory is read (B-573).
-#[derive(Debug, Clone)]
-struct Testing {
-    model: PathBuf,
-    commit: String,
-    window: u64,
-    reach: crate::served::Reach,
-    child: u32,
-}
-
 /// The engine's counters as the use figures name them, from what it
 /// publishes: tokens prompted and predicted, the rates, the cache, the
 /// requests in hand (B-573).
@@ -2330,9 +2318,6 @@ pub struct Daemon {
     /// one: MCF's engine loads into `resident`, and llama.cpp loads into its
     /// own process. Dropping this stops that process (A27).
     server: std::sync::Mutex<Option<crate::served::Served>>,
-    /// The server under test as it was the last time the slot was free:
-    /// enough to read its counters without the slot (B-573).
-    testing: std::sync::Mutex<Option<Testing>>,
     /// Raised when a stop was asked for: every request in flight is closed,
     /// so that a stop is not waited on behind a generation (D48).
     stopping: std::sync::atomic::AtomicBool,
@@ -2482,7 +2467,6 @@ impl Daemon {
             engines: std::sync::Mutex::new(engines),
             resident: std::sync::Mutex::new(None),
             server: std::sync::Mutex::new(None),
-            testing: std::sync::Mutex::new(None),
             stopping: std::sync::atomic::AtomicBool::new(false),
             running: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             arrivals: std::sync::atomic::AtomicU64::new(0),
@@ -6030,31 +6014,18 @@ impl Daemon {
     /// — shown the way a hosted one is: the model, the engine, the window,
     /// and what it is doing read off its own counters (B-573). Null where
     /// none is held.
-    fn under_test(&self) -> Value {
-        // The slot is held for the length of a generation, and a question
-        // asked once a second must never wait on one: it is tried, and
-        // where it is busy the server noted the last time it was free is
-        // read — its counters come off its own socket, not the slot.
-        let noted = match self.server.try_lock() {
-            Ok(slot) => {
-                let now = slot.as_ref().map(|served| Testing {
-                    model: served.model.clone(),
-                    commit: served.commit.clone(),
-                    window: served.window,
-                    reach: served.reach().clone(),
-                    child: served.child_id(),
-                });
-                if let Ok(mut kept) = self.testing.lock() {
-                    kept.clone_from(&now);
-                }
-                now
-            }
-            Err(std::sync::TryLockError::WouldBlock) => {
-                self.testing.lock().ok().and_then(|kept| kept.clone())
-            }
-            Err(std::sync::TryLockError::Poisoned(_)) => None,
-        };
-        let Some(testing) = noted else {
+    fn under_test() -> Value {
+        // Every server MCF starts for itself is on the list of the live —
+        // a measurement's step's, a generation's, a run's — and the newest
+        // that answers on a socket is the one under test; a hosted server
+        // answers on a port and is shown as what is hosted. Read off the
+        // list and the server's own socket, never off a slot a generation
+        // holds, so a question asked once a second never waits.
+        let testing = crate::served::live()
+            .into_iter()
+            .rev()
+            .find(|live| matches!(live.reach, crate::served::Reach::Socket(_)));
+        let Some(testing) = testing else {
             return Value::Null;
         };
         let mut fields: Vec<(&'static str, Value)> = Vec::new();
@@ -6085,7 +6056,7 @@ impl Daemon {
         match holding.as_ref() {
             None => Value::map([
                 ("hosting", Value::Null),
-                ("under_test", self.under_test()),
+                ("under_test", Self::under_test()),
                 // What was last held, so a person coming back is told
                 // before they look for it (A1).
                 (
@@ -6122,7 +6093,7 @@ impl Daemon {
                 // What it is doing now, read off the engine's own counters
                 // and the machine, on this request and no timer (B4, D49).
                 ("use", in_use(held)),
-                ("under_test", self.under_test()),
+                ("under_test", Self::under_test()),
             ]),
         }
     }

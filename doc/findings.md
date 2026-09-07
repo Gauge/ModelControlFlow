@@ -9788,12 +9788,19 @@ window's state (D24).
 **What is not done.** The processor's package power is a counter
 this platform keeps root-only, so the cost is the card's alone and
 says so by name; a machine whose card reports no power has a duration
-and a token count and no energy. The model under test is the server
-the daemon holds for the coding suites' asks; a measurement starts a
-server of its own for each step and is not yet shown, and a run
-started at the command line rather than from the window has its
-counters on the page but no cost line, since the window sums only the
-runs it started.
+and a token count and no energy. A run started at the command line
+rather than from the window has its counters on the page but no cost
+line, since the window sums only the runs it started.
+
+**Amended the same day.** The operator ran a measurement and the page
+showed nothing under test: a measurement starts a server of its own
+for each step, and the daemon reported only the server in its slot.
+Every server MCF starts now puts itself on a list of the live as it
+starts answering and strikes itself as it is dropped, and the daemon
+reports the newest that answers on a socket — a hosted server answers
+on a port and is shown as what is hosted. Asked during a soak on the
+2B: the step's server, 1,120 tokens generated at 69.5 a second, 1,074
+prompted, one request processing, 2.1 GB resident.
 
 ## 254 · F254 — Stop finishes the attempt in hand and closes the run; Resume goes on from what it has: a suite the window runs is asked to stop through its own input, records the pair it was on, closes its run as *stopped after k of n* and says so, a second press kills it; a row whose newest run stopped or was cut off offers Resume, which continues that run under the same conditions and skips the pairs it already has (B-571, B-570, B-569)
 
