@@ -152,6 +152,11 @@ pub struct Use {
     pub card: Option<u64>,
     /// How long it has been up.
     pub uptime_seconds: Option<u64>,
+    /// Tokens in the cache now.
+    pub cache_tokens: Option<u64>,
+    /// Decode steps the engine has taken since it came up: one a token
+    /// produced, so the count of answers' tokens by another road.
+    pub decodes: Option<u64>,
 }
 
 impl Use {
@@ -191,6 +196,8 @@ impl Use {
             resident: count("resident_bytes"),
             card: count("card_bytes"),
             uptime_seconds: count("uptime_seconds"),
+            cache_tokens: count("cache_tokens"),
+            decodes: count("decodes"),
         }
     }
 }

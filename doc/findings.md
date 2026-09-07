@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 259 | [F259 — Every useful figure of a served model has a tile of its own: the engine's twelve counters, the card's load, temperature, power and memory, and — while a run of the window's own goes — the run's energy, tokens, tokens a kilojoule and time, laid out in rows of five under the hosted model and under the model under test alike, each figure nobody read drawn as unmeasured rather than as nought (B-581, B-573, A7)](#259-f259-every-useful-figure-of-a-served-model-has-a-tile-of-its-own-the-engines-twelve-counters-the-cards-load-temperature-power-and-memory-and-while-a-run-of-the-windows-own-goes-the-runs-energy-tokens-tokens-a-kilojoule-and-time-laid-out-in-rows-of-five-under-the-hosted-model-and-under-the-model-under-test-alike-each-figure-nobody-read-drawn-as-unmeasured-rather-than-as-nought-b-581-b-573-a7) |
 | 258 | [F258 — A hold can be reachable from the network: a switch on the Configure tab and `--open on` at the command line bind the engine to every address this machine has instead of the loopback one, a hold open to the network is refused without an API key, and the Server page and the Hosted answer name the machine's own address on its route out beside the loopback one (B-577, B-480, A7)](#258-f258-a-hold-can-be-reachable-from-the-network-a-switch-on-the-configure-tab-and-open-on-at-the-command-line-bind-the-engine-to-every-address-this-machine-has-instead-of-the-loopback-one-a-hold-open-to-the-network-is-refused-without-an-api-key-and-the-server-page-and-the-hosted-answer-name-the-machines-own-address-on-its-route-out-beside-the-loopback-one-b-577-b-480-a7) |
 | 257 | [F257 — The menu answered to nothing while a coding run went, and a row said *never run* after its run: the Diagnostics page and its pane shared one scroll key and clamped it against each other every frame, so a scroll act went out each frame and beat every press outside them; and the ladder, the cross-check and the prompt report never read the summary again once they finished, so their rows kept the time they had before — the page has its own key, a scroll act never beats a press, a region marks its content from its own top, and every finish reads every last-run time again (B-575, B-576, A2)](#257-f257-the-menu-answered-to-nothing-while-a-coding-run-went-and-a-row-said-never-run-after-its-run-the-diagnostics-page-and-its-pane-shared-one-scroll-key-and-clamped-it-against-each-other-every-frame-so-a-scroll-act-went-out-each-frame-and-beat-every-press-outside-them-and-the-ladder-the-cross-check-and-the-prompt-report-never-read-the-summary-again-once-they-finished-so-their-rows-kept-the-time-they-had-before-the-page-has-its-own-key-a-scroll-act-never-beats-a-press-a-region-marks-its-content-from-its-own-top-and-every-finish-reads-every-last-run-time-again-b-575-b-576-a2) |
 | 256 | [F256 — The model under test is shown as a hosted model is: the daemon answers Hosted with the server it holds for a run — the model, the engine, the window, and its counters read off its own socket — the Server page shows it under its own heading with the same tiles, and the window sums the card's power a second at a time while any run goes, saying what the run has cost in kilojoules, the tokens produced meanwhile and tokens a kilojoule (B-573, B-071, D24)](#256-f256-the-model-under-test-is-shown-as-a-hosted-model-is-the-daemon-answers-hosted-with-the-server-it-holds-for-a-run-the-model-the-engine-the-window-and-its-counters-read-off-its-own-socket-the-server-page-shows-it-under-its-own-heading-with-the-same-tiles-and-the-window-sums-the-cards-power-a-second-at-a-time-while-any-run-goes-saying-what-the-run-has-cost-in-kilojoules-the-tokens-produced-meanwhile-and-tokens-a-kilojoule-b-573-b-071-d24) |
@@ -9707,6 +9708,31 @@ a step but their rows land at the step's end; a soak's row every
 tenth request, as it is taken, is the daemon-side half of F253 and a
 row once the catalogue's has been used.
 
+## 259 · F259 — Every useful figure of a served model has a tile of its own: the engine's twelve counters, the card's load, temperature, power and memory, and — while a run of the window's own goes — the run's energy, tokens, tokens a kilojoule and time, laid out in rows of five under the hosted model and under the model under test alike, each figure nobody read drawn as unmeasured rather than as nought (B-581, B-573, A7)
+
+**What the operator asked.** That every useful statistic have a
+dedicated box like the ones for tokens in and out, rather than a line
+of prose under the tiles.
+
+**The tiles.** The engine's counters were ten tiles in two rows; they
+are twelve now — KV tokens and Decodes join them — and the layout
+takes any number in rows of five. Under them a second block: the
+card's load, temperature, power and memory from the machine reading
+the window keeps, and, while a run of the window's own goes, the run's
+energy in kilojoules, the tokens it produced, tokens a kilojoule and
+its time — the figures the Server page said in a sentence before
+(F256) — as tiles. The hosted model's block and the model under
+test's block get the same, so a run and a hold are compared by the
+same boxes. A card that reports no power leaves its tile unmeasured;
+a run that has not begun draws none of its four.
+
+**Seen.** The Server page drawn for review with a model under test and a hosted model: twelve engine tiles in three rows under each, then the card's four and the run's four — *Run energy 38 kJ*, *Run tokens 41,200*, *Tokens/kJ 1,072*, *Run time 6 min 24 s* — with the card's tiles unmeasured where the fixture read no card, and the sentence F256 put under the tiles gone, since the tiles now say it. The window suite passes with the page.
+
+**What is not done.** The processor's own load, temperature and clock
+are on the System page and not here; a tile for each beside the card's
+is the same code and a row if the page wants them. Requests served in
+total is not a counter the engine publishes separately from decodes.
+
 ## 258 · F258 — A hold can be reachable from the network: a switch on the Configure tab and `--open on` at the command line bind the engine to every address this machine has instead of the loopback one, a hold open to the network is refused without an API key, and the Server page and the Hosted answer name the machine's own address on its route out beside the loopback one (B-577, B-480, A7)
 
 **What the operator hit.** A model hosted here, and no address that
@@ -14936,6 +14962,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 181 — a tile a figure
+
+F259: every counter, the card's figures and the run's cost as tiles
+(B-581).
 
 ### Version 180 — a hold reachable from the network
 

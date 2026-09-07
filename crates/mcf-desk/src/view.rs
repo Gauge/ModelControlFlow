@@ -5147,6 +5147,7 @@ fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
         return at.y;
     };
     let y = use_tiles(paint, in_use, Box::new(at.x, at.y, at.w, 0.0));
+    let y = machine_and_run_tiles(paint, desk, Box::new(at.x, y + 8.0, at.w, 0.0));
     let y = rate_line(paint, &desk.rates, Box::new(at.x, y + 8.0, at.w, 48.0));
     y + 16.0
 }
@@ -5174,42 +5175,8 @@ fn under_test_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     };
     let shown = paint.elide(&heading, Weight::Bold, size::BODY, at.w);
     paint.say_at(at.x, at.y + 24.0, &shown, Weight::Bold, size::BODY, ink.ink);
-    let mut y = use_tiles(paint, &under.in_use, Box::new(at.x, at.y + 50.0, at.w, 0.0));
-    let spent = desk.spent;
-    if spent.seconds > 0 {
-        let energy = format!(
-            "this run: {} kJ over {}",
-            words::grouped(spent.millijoules / 1_000_000),
-            clock(spent.seconds)
-        );
-        let tokens = match (spent.tokens(), spent.tokens_per_kilojoule()) {
-            (Some(tokens), Some(per)) => format!(
-                " · {} token(s) produced · {} token(s) a kJ",
-                words::grouped(tokens),
-                words::grouped(per)
-            ),
-            (Some(tokens), None) => format!(" · {} token(s) produced", words::grouped(tokens)),
-            _ => String::new(),
-        };
-        let said = if spent.millijoules == 0 {
-            format!(
-                "this run: the card reports no power, over {}{tokens}",
-                clock(spent.seconds)
-            )
-        } else {
-            format!("{energy}{tokens}")
-        };
-        let shown = paint.elide(&said, Weight::Regular, size::SMALL, at.w);
-        paint.say_at(
-            at.x,
-            y + 6.0,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.quiet,
-        );
-        y += 24.0;
-    }
+    let y = use_tiles(paint, &under.in_use, Box::new(at.x, at.y + 50.0, at.w, 0.0));
+    let y = machine_and_run_tiles(paint, desk, Box::new(at.x, y + 8.0, at.w, 0.0));
     y + 22.0
 }
 
@@ -5217,11 +5184,10 @@ fn under_test_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
 /// two rows of five. A figure the engine did not publish is drawn as
 /// unmeasured, not as nought (A7).
 fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
-    let ink = paint.ink;
     let rate = |held: Option<f32>| held.map(|rate| format!("{rate:.1}"));
     let count = |held: Option<u64>| held.map(words::grouped);
     let bytes = |held: Option<u64>| held.map(gigabytes);
-    let tiles: [(&str, Option<String>); 10] = [
+    let tiles: Vec<(&str, Option<String>)> = vec![
         ("Gen tok/s", rate(in_use.generated_per_second)),
         ("Prompt tok/s", rate(in_use.prompted_per_second)),
         ("Tokens out", count(in_use.generated)),
@@ -5232,29 +5198,83 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
                 .cache_used
                 .map(|ratio| format!("{:.0}%", (ratio * 100.0).clamp(0.0, 100.0))),
         ),
+        ("KV tokens", count(in_use.cache_tokens)),
+        ("Decodes", count(in_use.decodes)),
         ("Active", count(in_use.processing)),
         ("Queued", count(in_use.queued)),
         ("RAM", bytes(in_use.resident)),
         ("VRAM", bytes(in_use.card)),
         ("Uptime", in_use.uptime_seconds.map(crate::ago_said)),
     ];
+    tiles_of(paint, &tiles, at)
+}
+
+/// The machine and the run beside the engine, a tile each: what the card
+/// is doing and drawing now, and what the run going has spent — energy,
+/// tokens, tokens a kilojoule, time (B-581, B-573). A figure nobody read is
+/// drawn as unmeasured, not as nought (A7).
+fn machine_and_run_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
+    let card = desk.reading.cards.first();
+    let spent = desk.spent;
+    let mut tiles: Vec<(&str, Option<String>)> = vec![
+        (
+            "Card load",
+            card.and_then(|card| card.load.map(|load| format!("{}%", load.whole()))),
+        ),
+        (
+            "Card temp",
+            card.and_then(|card| card.temperature.map(|degrees| format!("{degrees} °C"))),
+        ),
+        (
+            "Card power",
+            card.and_then(|card| card.power.map(|watts| format!("{watts} W"))),
+        ),
+        (
+            "Card memory",
+            card.and_then(|card| card.used.map(gigabytes)),
+        ),
+    ];
+    if spent.seconds > 0 {
+        #[expect(
+            clippy::integer_division,
+            reason = "whole kilojoules is the unit shown"
+        )]
+        let kilojoules = spent.millijoules / 1_000_000;
+        tiles.push((
+            "Run energy",
+            (spent.millijoules > 0).then(|| format!("{} kJ", words::grouped(kilojoules))),
+        ));
+        tiles.push(("Run tokens", spent.tokens().map(words::grouped)));
+        tiles.push((
+            "Tokens/kJ",
+            spent.tokens_per_kilojoule().map(words::grouped),
+        ));
+        tiles.push(("Run time", Some(clock(spent.seconds))));
+    }
+    tiles_of(paint, &tiles, at)
+}
+
+/// Tiles in rows of five: a short label over a figure, each its own box;
+/// returns where the next block begins (B-581).
+fn tiles_of(paint: &mut Painter, tiles: &[(&str, Option<String>)], at: Box) -> f32 {
+    let ink = paint.ink;
     let across = (at.w - 4.0 * 10.0) / 5.0;
     let mut y = at.y;
-    for (index, (label, figure)) in tiles.into_iter().enumerate() {
+    for (index, (label, figure)) in tiles.iter().enumerate() {
         #[allow(
             clippy::cast_precision_loss,
-            reason = "ten tiles: the index is never large enough to lose one"
+            reason = "a few tiles: the index is never large enough to lose one"
         )]
         let column = (index % 5) as f32;
-        if index == 5 {
+        if index > 0 && index % 5 == 0 {
             y += 66.0;
         }
         let tile = Box::new(at.x + (across + 10.0) * column, y, across, 58.0);
         ui::card(paint, tile, false);
         spaced(paint, tile.x + 12.0, tile.y + 12.0, label, ink.faint);
-        let (said, colour) = figure.map_or_else(
+        let (said, colour) = figure.as_ref().map_or_else(
             || (words::UNMEASURED.to_owned(), ink.faint),
-            |said| (said, ink.ink),
+            |said| (said.clone(), ink.ink),
         );
         let shown = paint.elide(&said, Weight::Bold, size::HEAD, across - 24.0);
         paint.say_at(

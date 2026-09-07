@@ -2631,6 +2631,8 @@ fn every_page_is_drawn_for_review() {
             resident: Some(1_980_000_000),
             card: None,
             uptime_seconds: None,
+            cache_tokens: None,
+            decodes: None,
         },
     });
     desk.spent = mcf_desk::Spent {
@@ -3219,6 +3221,8 @@ fn an_engine_in_use(path: &str) -> mcf_desk::Hosted {
             resident: Some(6_700_000_000),
             card: Some(23_200_000_000),
             uptime_seconds: Some(3_725),
+            cache_tokens: None,
+            decodes: None,
         }),
     }
 }
