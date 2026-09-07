@@ -473,7 +473,7 @@ fn served(
             },
             match died {
                 Some(failure) => format!(
-                    "\n\x20 THE ENGINE DIED mid-answer; what arrived is above (A4):\n\x20 {failure}"
+                    "\n\x20 THE ENGINE DIED mid-answer; what arrived is above:\n\x20 {failure}"
                 ),
                 None => String::new(),
             },

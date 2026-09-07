@@ -708,7 +708,7 @@ fn interleave(
             // what stopped the run is said rather than left as a smaller
             // number nobody can explain (A4, B-087, B61).
             running.stopped_short(
-                "the declared seed set ran out, and repeating it would repeat a trajectory (B61)",
+                "the declared seed set ran out, and repeating it would repeat a trajectory",
             );
             break;
         }
@@ -1266,7 +1266,7 @@ fn rules_of_thumb(finding: &mcf_bench::compare::Finding, planned: &Planned) -> V
     for held in apt {
         lines.push(format!("  {held}"));
         lines.push(format!(
-            "    A laboratory would replace this with a measurement: {} (B-380)",
+            "    A laboratory would replace this with a measurement: {}",
             held.until()
         ));
     }
@@ -1326,7 +1326,7 @@ fn report(
         // it answers *will this fit in my latency budget*, which a ratio
         // cannot, and it is the figure that does not travel.
         lines.push(format!(
-            "  medians  {} and {} — local figures, which do not travel (§3.27)",
+            "  medians  {} and {} — local figures, which do not travel",
             milliseconds(left),
             milliseconds(right)
         ));
@@ -1346,7 +1346,7 @@ fn report(
         lines.push(
             "           back to back, and an interruption afterwards does not reach".to_owned(),
         );
-        lines.push("           back and unmake them (A4).".to_owned());
+        lines.push("           back and unmake them.".to_owned());
     }
     lines.extend(rules_of_thumb(finding, planned));
     lines.push(match written {
@@ -1358,10 +1358,10 @@ fn report(
     if !held.reuse().is_uniform() {
         lines.push(String::new());
         for said in [
-            "  The trials were not alike, so there is no delta (§6.13). One model is",
+            "  The trials were not alike, so there is no delta. One model is",
             "  resident at a time and a paired comparison alternates them, so most",
             "  trials reload and some do not — which of them is a property of the",
-            "  drawn order rather than of either arm (F65).",
+            "  drawn order rather than of either arm.",
             "",
             "  `--cold` makes every trial load the model, which is uniform and",
             "  measurable; comparing a model with itself is uniform too.",
@@ -1376,12 +1376,8 @@ fn report(
         for one in &snapshot.competitors {
             lines.push(format!("    {one}"));
         }
-        lines.push(
-            "  This run could not decide, and B24 says MCF must not attribute that".to_owned(),
-        );
-        lines.push(
-            "  to the arms. What it can do is say what else was here (PR5, §3.8).".to_owned(),
-        );
+        lines.push("  This run could not decide, and MCF does not attribute that".to_owned());
+        lines.push("  to the arms. What it can do is say what else was here.".to_owned());
         if let Some(Err(why)) = competing_written {
             lines.push(format!("  THE SNAPSHOT WAS NOT RECORDED — {why}"));
         }

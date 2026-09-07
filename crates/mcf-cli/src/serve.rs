@@ -409,15 +409,20 @@ pub(crate) fn status() -> Response {
     }
     match status.get("resident") {
         Some(resident) if resident.get("path").is_some() => lines.push(format!(
-            "  resident: {} — {} bytes dequantized, since {} (D41: held until displaced or stopped)",
+            "  resident: {} — {} bytes dequantized, since {} (held until displaced or stopped)",
             resident.get("path").and_then(Value::as_text).unwrap_or("?"),
             resident
                 .get("bytes_dequantized")
                 .and_then(Value::as_integer)
                 .unwrap_or(0),
-            resident.get("since").and_then(Value::as_text).unwrap_or("?"),
+            resident
+                .get("since")
+                .and_then(Value::as_text)
+                .unwrap_or("?"),
         )),
-        _ => lines.push("  resident: nothing — the first generation loads its model and holds it".to_owned()),
+        _ => lines.push(
+            "  resident: nothing — the first generation loads its model and holds it".to_owned(),
+        ),
     }
     lines.extend(exposed(&status));
     lines.extend(what_is_running(&status));

@@ -139,7 +139,7 @@ pub(crate) fn json(model: &str) -> Response {
 fn explain(path: &Path, file: &Model) -> String {
     let mut lines = vec![format!("{}", path.display()), String::new()];
 
-    lines.push("WHAT THE FILE DECLARES ABOUT ITSELF  (A21: declared, not verified)".to_owned());
+    lines.push("WHAT THE FILE DECLARES ABOUT ITSELF  (declared, not verified)".to_owned());
     for (key, shown) in header::declared(file) {
         lines.push(format!("  {key:<38}{shown}"));
     }
@@ -196,16 +196,13 @@ fn explain(path: &Path, file: &Model) -> String {
                 .trim_start_matches("licence: ")
         ));
     } else {
-        lines.push(format!(
-            "  {:<38}{}",
-            "came from", "nothing beside it says (A7)"
-        ));
+        lines.push(format!("  {:<38}{}", "came from", "nothing beside it says"));
         // Said rather than left out: an absent line reads as *no restrictions*,
         // which is the one thing MCF must not imply about somebody else's
         // model (A7, §III).
         lines.push(format!(
             "  {:<38}{}",
-            "terms", "unknown — nothing beside it states any (A7)"
+            "terms", "unknown — nothing beside it states any"
         ));
     }
 
@@ -217,7 +214,7 @@ fn explain(path: &Path, file: &Model) -> String {
     lines.extend(anatomy::spoken(file));
 
     lines.push(String::new());
-    lines.push("WHAT MCF WOULD CHOOSE IF ASKED TO RUN IT  (§3.15: no hidden choices)".to_owned());
+    lines.push("WHAT MCF WOULD CHOOSE IF ASKED TO RUN IT  (no hidden choices)".to_owned());
     for (what, value, source) in chosen(path, file) {
         // Three columns, and *both* of the last two wrapped under themselves.
         // The value was not wrapped once, on the reasoning that a value is
@@ -650,11 +647,11 @@ fn engine_row(
             ),
             Some(Err(_)) => (
                 "refused: more than one llama.cpp is provisioned".to_owned(),
-                "MCF will not choose between builds; `mcf provision --list` shows them (§3.15)",
+                "MCF will not choose between builds; `mcf provision --list` shows them",
             ),
             _ => (
                 "MCF's own stand-in".to_owned(),
-                "nothing is provisioned here (D39); `mcf provision llama.cpp` would change this line",
+                "nothing is provisioned here; `mcf provision llama.cpp` would change this line",
             ),
         }
     }
@@ -743,7 +740,7 @@ fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
         (
             "seed",
             "0 unless --seed says".to_owned(),
-            "a condition of the answer (D19)".to_owned(),
+            "a condition of the answer".to_owned(),
         ),
         derived_all(path).budget.map_or_else(
             || {

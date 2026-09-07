@@ -20,7 +20,12 @@
 use std::path::PathBuf;
 
 /// Crates whose strings a person reads.
-const SURFACES: &[&str] = &["crates/mcf-cli", "crates/mcf-tui", "crates/mcf-serve"];
+const SURFACES: &[&str] = &[
+    "crates/mcf-cli",
+    "crates/mcf-tui",
+    "crates/mcf-serve",
+    "crates/mcf-desk",
+];
 
 /// Lines that may cite, because what they carry is not read by a person.
 ///
@@ -47,6 +52,11 @@ fn sources(relative: &str) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
+                // A crate's `tests/` directory is the same fixtures and
+                // assertions as a `tests.rs`, one directory down.
+                if path.file_name().is_some_and(|name| name == "tests") {
+                    continue;
+                }
                 stack.push(path);
             } else if path.extension().is_some_and(|kind| kind == "rs")
                 // A test's strings are fixtures and assertions, not output. The
@@ -120,19 +130,6 @@ fn citation_in(text: &str) -> Option<String> {
     None
 }
 
-/// How many sentences still cite, on the day this check was written.
-///
-/// **A ratchet, because the debt is real and fixing it is not one change.**
-/// Sixty-four surfaces carry a citation into something a person reads, spread
-/// across fifteen files, and several are asserted on by tests that would have
-/// to move with them. Rewriting all of them at once is a large change with no
-/// way to review it carefully.
-///
-/// So the number is written down: adding one fails the build, and removing one
-/// fails it too — with the instruction to lower this constant. The count can
-/// only go down, and it reaches zero when B-403 is done.
-const STILL_CITING: usize = 63;
-
 /// No new sentence a person reads carries a rule, a register item or a clause.
 #[test]
 fn nothing_a_person_reads_cites_a_document() {
@@ -163,17 +160,16 @@ fn nothing_a_person_reads_cites_a_document() {
             }
         }
     }
+    // **This was a ratchet.** Sixty-four surfaces carried a citation into
+    // something a person reads when this check was written, spread across
+    // fifteen files, and the count was written down so that adding one
+    // failed the build and removing one failed it too, with the instruction
+    // to lower the constant. It reached zero with B-403 (F264), and stays
+    // there: a citation added now fails with the sentence that carries it.
     assert!(
-        found.len() <= STILL_CITING,
-        "{} sentences now cite a document, up from {STILL_CITING}. The rule belongs in the \
-         code and in the record; the screen gets what to do about it:\n{found:#?}",
-        found.len()
-    );
-    assert!(
-        found.len() >= STILL_CITING,
-        "{} sentences cite a document, down from {STILL_CITING} — lower STILL_CITING to {} so \
-         the ground that was won cannot be given back",
-        found.len(),
+        found.is_empty(),
+        "{} sentence(s) a person reads cite a document. The rule belongs in the code and in \
+         the record; the screen gets what to do about it:\n{found:#?}",
         found.len()
     );
 }

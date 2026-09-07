@@ -69,9 +69,9 @@ pub fn interposed(socket: &Path, trials: usize, conditions: Conditions) -> Optio
     Some(Interposed {
         round_trip: Measurement::from_samples(samples, conditions)?,
         excludes: vec![
-            "the engine's own latency, and the hand-off to it: there is no engine (B-320, B-032)",
-            "model resolution and residency, which D24 budgets separately (§7.18, B-037)",
-            "a network hop: the control plane is a Unix socket, and §XI's remote surface is later",
+            "the engine's own latency, and the hand-off to it: there is no engine",
+            "model resolution and residency, which are budgeted separately",
+            "a network hop: the control plane is a Unix socket, and a remote surface is later",
         ],
     })
 }
@@ -112,9 +112,9 @@ pub fn to_first_token(
         round_trip: Measurement::from_samples(samples, conditions)?,
         excludes: vec![
             "residency: the model is loaded per request and that load is *included* here, \
-             which is DEC-018's price until it is decided (§7.18)",
-            "a network hop: the control plane is a Unix socket, and §XI's remote surface is later",
-            "any engine but MCF's own: a provisioned engine's hand-off arrives with B-032",
+             which is the price until residency is decided",
+            "a network hop: the control plane is a Unix socket, and a remote surface is later",
+            "any engine but MCF's own: a provisioned engine's hand-off is not measured here yet",
         ],
     })
 }

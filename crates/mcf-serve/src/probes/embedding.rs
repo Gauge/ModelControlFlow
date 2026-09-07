@@ -40,7 +40,7 @@ use mcf_core::probe::{Method, Outcome, Probed};
 #[must_use]
 pub fn in_process() -> String {
     format!(
-        "MCF's own engine, in this process — `mcf embed` consults no daemon (F103); build {}",
+        "MCF's own engine, in this process — `mcf embed` consults no daemon; build {}",
         mcf_core::build_identity::identifier()
     )
 }

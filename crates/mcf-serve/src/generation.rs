@@ -977,7 +977,7 @@ fn choose_engine(mcf_home: &Path, asked: Option<&str>) -> Result<Chosen, Failure
                 mcf_core::failure::Attribution::Machine,
                 mcf_core::failure::Disposition::Refused,
                 mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-                "no provisioned engine is here: `mcf provision llama.cpp` builds one (B-367)",
+                "no provisioned engine is here: `mcf provision llama.cpp` builds one",
             )),
             None => Ok(Chosen::StandIn),
         },

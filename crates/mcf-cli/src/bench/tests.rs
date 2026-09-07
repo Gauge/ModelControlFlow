@@ -251,7 +251,7 @@ fn a_run_that_could_not_decide_renders_what_competed_with_it() {
     );
     assert!(said.contains("a burner somebody left running"), "{said}");
     assert!(
-        said.contains("must not attribute that"),
+        said.contains("does not attribute that"),
         "B24: the indecision is not attributed to the arms: {said}"
     );
     assert!(

@@ -301,12 +301,10 @@ fn body(machine: &Machine, cost: &Cost, laboratory: &Laboratory) -> Value {
                 (
                     "not_measurable_here",
                     Value::List(vec![
-                        Value::text("idle CPU — needs a daemon (B-030, B-031)"),
-                        Value::text("timer wakeups while idle — needs a daemon (B-031)"),
+                        Value::text("idle CPU — needs a daemon"),
+                        Value::text("timer wakeups while idle — needs a daemon"),
                         Value::text("memory growth over 30 simulated days — needs a daemon"),
-                        Value::text(
-                            "added request-to-first-token latency — needs a serving path (B-035)",
-                        ),
+                        Value::text("added request-to-first-token latency — needs a serving path"),
                     ]),
                 ),
             ]),
@@ -480,11 +478,7 @@ impl core::fmt::Display for Report {
                     RECORD_WRITE
                         .read_measurement(measured, &self.cost.record_write_attributability),
                 )?;
-                writeln!(
-                    f,
-                    "  {:<38} this is what MCF's own observation costs (§3.8, B3)",
-                    "",
-                )?;
+                writeln!(f, "  {:<38} this is what MCF's own observation costs", "")?;
                 writeln!(f, "  {:<38} {}", "", self.cost.record_write_attributability)?;
             }
             None => writeln!(f, "  {:<38} {}", RECORD_WRITE.name, Verdict::NotMeasured)?,
@@ -631,7 +625,8 @@ impl Report {
 
         promises.push((
             false,
-            "Nothing about model quality, speed or fitness — that is M5 onward".to_owned(),
+            "Nothing about model quality, speed or fitness — that is work for later milestones"
+                .to_owned(),
         ));
         let laboratory = &self.laboratory;
         promises.push((
@@ -830,10 +825,12 @@ mod tests {
         );
         assert!(
             promises.iter().any(|(held, _)| !*held),
-            "every promise is held, which cannot be true at M0"
+            "every promise is held, which cannot be true at the first milestone"
         );
         assert!(
-            promises.iter().any(|(_, text)| text.contains("M5 onward")),
+            promises
+                .iter()
+                .any(|(_, text)| text.contains("later milestones")),
             "the report claims something about model quality"
         );
     }

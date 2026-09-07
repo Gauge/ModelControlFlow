@@ -601,7 +601,7 @@ fn record_configured(
         ("addressing", addressing.to_value()),
         // What MCF did before, so that the entry says what *changed* and not
         // only what is now true (A1).
-        ("was", Value::text("raw text, MCF's default (§3.8)")),
+        ("was", Value::text("raw text, MCF's default")),
     ]);
     let mut journal = mcf_record::journal::Journal::open(&path)?;
     journal.append(&mcf_record::journal::Entry::new(
@@ -1107,9 +1107,7 @@ fn language_lines(
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
-            lines.push(
-                " which licenses nothing, and is not a negative result (D42, §3.18)".to_owned(),
-            );
+            lines.push(" which licenses nothing, and is not a negative result".to_owned());
         }
     }
     lines.push(String::new());
@@ -1645,7 +1643,7 @@ fn embedding_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
                 if embeds.identical_twice {
                     "the same vector to the last bit"
                 } else {
-                    "TWO DIFFERENT VECTORS, which MCF's own engine cannot do correctly (A19)"
+                    "TWO DIFFERENT VECTORS, which MCF's own engine cannot do correctly"
                 }
             ));
             lines.push(recorded(record_probed(
@@ -1706,7 +1704,7 @@ fn embedding_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
 fn declined_lines() -> Vec<String> {
     let mut lines = vec![
         "  not probed, and why".to_owned(),
-        " a modality MCF does not mention is one a reader assumes it checked (A7)".to_owned(),
+        " a modality MCF does not mention is one a reader assumes it checked".to_owned(),
         String::new(),
     ];
     for held in crate::probes::declined::DECLINED {
@@ -1889,9 +1887,7 @@ fn tool_lines(
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
-            lines.push(
-                " which licenses nothing, and is not a negative result (D42, §3.18)".to_owned(),
-            );
+            lines.push(" which licenses nothing, and is not a negative result".to_owned());
         }
     }
     lines.push(String::new());
@@ -2013,9 +2009,7 @@ fn structured_lines(
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
-            lines.push(
-                " which licenses nothing, and is not a negative result (D42, §3.18)".to_owned(),
-            );
+            lines.push(" which licenses nothing, and is not a negative result".to_owned());
         }
     }
     lines.push(String::new());
@@ -2064,19 +2058,19 @@ fn against_what_was_applied(
     match &probed.outcome {
         Outcome::Observed(addressed) if addressed.best == stored.name => {
             said.push(
-                "  agrees this run measured the same addressing that is applied, so the configuration is not merely old — it is confirmed (A21)"
+                "  agrees this run measured the same addressing that is applied, so the configuration is not merely old — it is confirmed"
                     .to_owned(),
             );
         }
         Outcome::Observed(addressed) => {
             said.push(format!(
-                "  DIVERGENCE what is applied is {}, and this run measured {} as best. MCF's answer would now differ, which is the case D43 is about — applying it is an act: `mcf probe --apply` (§3.11, D43)",
+                "  DIVERGENCE what is applied is {}, and this run measured {} as best. MCF's answer would now differ; applying it is an act: `mcf probe --apply`",
                 stored.name, addressed.best
             ));
         }
         Outcome::Inconclusive { .. } => {
             said.push(
-                "  unchanged  this run could not tell, which is not a disagreement with what is applied and does not license undoing it: an inconclusive probe leaves the capability where it was (A7, D42)"
+                "  unchanged  this run could not tell, which is not a disagreement with what is applied and does not license undoing it: an inconclusive probe leaves the capability where it was"
                     .to_owned(),
             );
         }
@@ -2093,7 +2087,7 @@ fn against_what_was_applied(
             ));
         }
         said.push(
-            " which does not mean the answer changed — two engines agreed on this question when it was measured (F39) — only that the evidence was gathered elsewhere (A21)"
+            " which does not mean the answer changed — two engines agreed on this question when it was measured — only that the evidence was gathered elsewhere"
                 .to_owned(),
         );
     }
@@ -2163,7 +2157,7 @@ fn apply_addressing(
                 format!(" written to {}", written.display()),
                 " `mcf run` addresses this model that way from now on, and every account says so"
                     .to_owned(),
-                " measurements taken before and after this are not comparable — the conditions changed, and MCF says so rather than assuming (D43, §3.4)"
+                " measurements taken before and after this are not comparable — the conditions changed, and MCF says so rather than assuming"
                     .to_owned(),
             ];
             match recorded {
@@ -2266,7 +2260,7 @@ fn stopping_lines(
             lines.push(String::new());
             if stopping.longest > stopping.default_budget {
                 lines.push(format!(
-                    " DIVERGENCE MCF allows {} tokens unless told otherwise, and this model's turns run to {}. Every answer past that is cut off by MCF rather than finished by the model, which measures the budget and not the model (§3.8)",
+                    " DIVERGENCE MCF allows {} tokens unless told otherwise, and this model's turns run to {}. Every answer past that is cut off by MCF rather than finished by the model, which measures the budget and not the model",
                     stopping.default_budget, stopping.longest
                 ));
             } else {
@@ -2283,7 +2277,7 @@ fn stopping_lines(
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
             lines.push(
-                " which licenses nothing: MCF configures no differently than before, and this is not a negative result (D42, §3.18)"
+                " which licenses nothing: MCF configures no differently than before, and this is not a negative result"
                     .to_owned(),
             );
         }
@@ -2314,7 +2308,7 @@ fn apply_budget(
 ) -> Vec<String> {
     if stopping.longest <= stopping.default_budget {
         return vec![
-            "  NOT APPLIED — MCF's default is already enough, and writing it down would put a probe's provenance on a default (A21)"
+            "  NOT APPLIED — MCF's default is already enough, and writing it down would put a probe's provenance on a default"
                 .to_owned(),
         ];
     }
@@ -2498,7 +2492,7 @@ fn context_lines(
                 ));
             } else {
                 lines.push(format!(
-                    " DIVERGENCE the file declares {} tokens and this engine on this machine takes {}. A prompt planned against the declaration would be refused, or worse, quietly shortened — which is a measurement of a different prompt (§3.8, A21)",
+                    " DIVERGENCE the file declares {} tokens and this engine on this machine takes {}. A prompt planned against the declaration would be refused, or worse, quietly shortened — which is a measurement of a different prompt",
                     context.declared, context.accepted
                 ));
                 if let Some(because) = &context.because {
@@ -2513,7 +2507,7 @@ fn context_lines(
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
             lines.push(
-                " which licenses nothing: MCF configures no differently than before, and this is not a negative result (D42, §3.18)"
+                " which licenses nothing: MCF configures no differently than before, and this is not a negative result"
                     .to_owned(),
             );
         }

@@ -407,7 +407,7 @@ pub(crate) fn remove(name: &str, because: Option<&str>, into: Option<&str>) -> R
     };
     let Some(reason) = because else {
         return Response {
-            text: "mcf: a removal carries its reason: --because <why> (§3.11, A27)".to_owned(),
+            text: "mcf: a removal carries its reason: --because <why>".to_owned(),
             served: false,
         };
     };

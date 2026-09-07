@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 264 | [F264 — No sentence a person reads cites a document: the sixty remaining were rewritten to say the thing, the check that counted them now refuses any, and the window is inside its scope (B-403, F130, A23)](#264-f264-no-sentence-a-person-reads-cites-a-document-the-sixty-remaining-were-rewritten-to-say-the-thing-the-check-that-counted-them-now-refuses-any-and-the-window-is-inside-its-scope-b-403-f130-a23) |
 | 263 | [F263 — A termination signal stops the daemon the way `mcf stop` does: the handler writes one byte, a thread sends the request, and on the 2B the hold was let go in writing and the server was gone in a third of a second (B-584, A27, B-071)](#263-f263-a-termination-signal-stops-the-daemon-the-way-mcf-stop-does-the-handler-writes-one-byte-a-thread-sends-the-request-and-on-the-2b-the-hold-was-let-go-in-writing-and-the-server-was-gone-in-a-third-of-a-second-b-584-a27-b-071) |
 | 262 | [F262 — An engine server whose daemon is gone is found and stopped by the next daemon: the sweep at start, tested against a real orphan, and one 2B server with ten stale sockets cleared with it (B-574, A27, B-561)](#262-f262-an-engine-server-whose-daemon-is-gone-is-found-and-stopped-by-the-next-daemon-the-sweep-at-start-tested-against-a-real-orphan-and-one-2b-server-with-ten-stale-sockets-cleared-with-it-b-574-a27-b-561) |
 | 261 | [F261 — The first official build of MCF, installed on this machine: the gating tier green, every scheduled tier run against the source it names, the release refusal cleared, the artifact built under the release profile with its revision set, and the one binary put on the path at `~/.local/bin/mcf` (B-583, B-185, D24, B-001)](#261-f261-the-first-official-build-of-mcf-installed-on-this-machine-the-gating-tier-green-every-scheduled-tier-run-against-the-source-it-names-the-release-refusal-cleared-the-artifact-built-under-the-release-profile-with-its-revision-set-and-the-one-binary-put-on-the-path-at-localbinmcf-b-583-b-185-d24-b-001) |
@@ -15176,7 +15177,51 @@ as its reason, and `daemon_stopped` with *the process received
 SIGTERM*. Under B-574's build, the same signal had left the server
 under `systemd` and the record without either row.
 
+## 264 · F264 — No sentence a person reads cites a document: the sixty remaining were rewritten to say the thing, the check that counted them now refuses any, and the window is inside its scope (B-403, F130, A23)
+
+**What F130 left.** Sixty-four sentences in the CLI, the console and
+the daemon carried a rule, a register item or a clause into something
+a person reads — `(A8)`, `(B-380)`, `(§3.15: no hidden choices)` — and
+a check counted them as a ratchet: adding one failed the build,
+removing one failed it too until the constant was lowered. Four were
+fixed with F130. The number stood at sixty-three since.
+
+**What was done.** Every remaining sentence was rewritten to say the
+thing rather than cite it. Most were the citation alone in
+parentheses, and the sentence stood without it. A few carried the rule
+as a name — *B24 says MCF must not attribute that*, *A8's confound
+wearing a helpful voice*, *that is M5 onward*, *DEC-018's price* — and
+those say what the rule says: MCF does not attribute the indecision to
+the arms; a confound wearing a helpful voice; work for later
+milestones; the price until residency is decided. Three tests had
+asserted on the citations and now assert on the words, and one asserts
+the citation is *absent*, since a reader has never seen the document
+it pointed at.
+
+**The check.** Seven of the sixty-three were assertion messages in the
+crates' `tests/` directories, which the check had meant to exclude
+alongside `tests.rs` and did not: a test's message is not a surface.
+That is fixed. The ratchet's constant is gone; the check now refuses
+any sentence at all, with the sentence that carries it, and the window
+crate is inside its scope — it had none to begin with.
+
+**What is outside the scope, and why.** The other crates hold
+thirty-five such sentences that can reach a person through the CLI:
+the taxonomy's own category descriptions in `mcf-core` (*Capability
+verified absent (B40) — not a failure*), the comparison's reasons in
+`mcf-bench`, three in `mcf-hub`. The check does not cover those crates
+because a quantization name has the shape of a citation — `Q6`, `Q4`
+— and the one match in `mcf-lab` is exactly that. Extending the scope
+needs the shape told from the name, which is a separate change; the
+sentences are listed here so that the debt is a number rather than a
+suspicion.
+
 ## Changelog
+
+### Version 186 — no sentence a person reads cites a document
+
+F264: the sixty remaining rewritten, the check made absolute, the
+window in scope, the other crates' thirty-five listed (B-403).
 
 ### Version 185 — a signal is a stop request
 

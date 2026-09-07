@@ -286,15 +286,15 @@ fn report(
         "  the prompt both arms were asked, which is text you wrote",
         "  this machine's full hardware identity, which a contribution would",
         "  strip and a bundle deliberately keeps — it is what makes the claim",
-        "  checkable rather than aggregable (PR2, §XIV)",
-        "  every trial's raw duration, not a summary of them (D16)",
+        "  checkable rather than aggregable",
+        "  every trial's raw duration, not a summary of them",
     ] {
         lines.push(said.to_owned());
     }
     lines.push(String::new());
     lines
         .push("  Writing this file is not sending it. Sending it is your act, and this".to_owned());
-    lines.push("  is the list you should read before you do (A24, §3.20).".to_owned());
+    lines.push("  is the list you should read before you do.".to_owned());
     lines.join("\n")
 }
 

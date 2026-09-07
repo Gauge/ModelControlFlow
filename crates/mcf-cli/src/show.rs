@@ -98,7 +98,7 @@ fn expand(entry: &Entry) -> String {
     lines.push(String::new());
     lines
         .push("  Nothing above is recomputed and nothing is summarized: the summary is".to_owned());
-    lines.push("  the line in `mcf log`, and this is what is underneath it (B55).".to_owned());
+    lines.push("  the line in `mcf log`, and this is what is underneath it.".to_owned());
     lines.join("\n")
 }
 

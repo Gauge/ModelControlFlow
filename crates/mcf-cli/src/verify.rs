@@ -130,7 +130,7 @@ fn conditions_then_and_now(claim: &Value) -> Vec<String> {
         .and_then(|arm| arm.get("conditions"))
         .and_then(|held| mcf_record::decode::conditions(held, BuildIdentity::current()))
     else {
-        lines.push("  the bundle's conditions could not be read by this build (§7.30)".to_owned());
+        lines.push("  the bundle's conditions could not be read by this build".to_owned());
         return lines;
     };
     let here = Conditions::new(
@@ -151,9 +151,8 @@ fn conditions_then_and_now(claim: &Value) -> Vec<String> {
              MCF's (§3.27)."
                 .to_owned(),
         ),
-        Isolation::Isolated { .. } | Isolation::Confounded { .. } => lines.push(
-            "  A difference in outcome cannot be attributed to any one of these (A8).".to_owned(),
-        ),
+        Isolation::Isolated { .. } | Isolation::Confounded { .. } => lines
+            .push("  A difference in outcome cannot be attributed to any one of these.".to_owned()),
         Isolation::Undetermined { unread, .. } => lines.push(format!(
             "  {} condition(s) could not be compared, so this is what MCF can see rather than \
              what is there (A7).",
@@ -257,8 +256,8 @@ fn the_refusal() -> Vec<String> {
         "── what MCF will not tell you ───────────────────────────────".to_owned(),
         "  If you re-run this and get a different number, MCF will not say which".to_owned(),
         "  of the differences above caused it. Picking one of them and calling it".to_owned(),
-        "  the cause is A8's confound wearing a helpful voice: you have the".to_owned(),
-        "  evidence and the attribution is yours (PR2, A8).".to_owned(),
+        "  the cause is a confound wearing a helpful voice: you have the".to_owned(),
+        "  evidence and the attribution is yours.".to_owned(),
     ]
 }
 

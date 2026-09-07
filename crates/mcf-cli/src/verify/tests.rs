@@ -45,8 +45,8 @@ fn it_refuses_to_attribute_the_gap() {
     );
     assert!(said.contains("attribution is yours"), "{said}");
     assert!(
-        said.contains("A8"),
-        "and cites the rule it is obeying: {said}"
+        !said.contains("A8"),
+        "and does not cite the rule it is obeying, which a reader has never seen: {said}"
     );
 }
 

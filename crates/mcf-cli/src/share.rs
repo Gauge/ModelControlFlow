@@ -238,7 +238,7 @@ fn render(
     lines.push(String::new());
     lines.push("  NOTHING HAS LEFT THIS MACHINE. MCF has no destination, no address to".to_owned());
     lines.push("  configure and no path that opens one: this wrote a file you named,".to_owned());
-    lines.push("  and sending it is your act and not MCF's (A24, §3.20).".to_owned());
+    lines.push("  and sending it is your act and not MCF's.".to_owned());
     lines.push(String::new());
 
     match written {
