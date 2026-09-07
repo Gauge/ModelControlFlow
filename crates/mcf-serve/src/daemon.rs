@@ -1142,6 +1142,18 @@ fn a_load_so_far(
 /// a fraction the engine computed, and MCF neither rounds it nor makes a
 /// number of its own out of it (A1, A7). Absent where the port did not
 /// answer or was started without counters.
+/// A carried request's kind as a sentence names it: *a measurement*, *a
+/// probe*, *a hold* (B-582).
+fn kind_noun(what: &str) -> &str {
+    match what {
+        "examining" => "measurement",
+        "probing" => "probe",
+        "measurement" => "ladder",
+        "hosting" => "hold",
+        other => other,
+    }
+}
+
 /// The engine's counters as the use figures name them, from what it
 /// publishes: tokens prompted and predicted, the rates, the cache, the
 /// requests in hand (B-573).
@@ -3123,6 +3135,146 @@ impl Daemon {
         reason = "one arm per request the daemon carries, each a call; the match is total by design"
     )]
     fn carrying(
+        &self,
+        request: Request,
+        waiting: crate::served::Waiting<'_>,
+        writer: &mut &UnixStream,
+    ) {
+        // One model runs at a time (D57, B-582): a run on a model other
+        // than the hosted one, or a hold while a run of another model goes,
+        // is refused here, before anything starts, in one sentence.
+        if let Some((what, named)) = Self::carried(&request)
+            && let Some(refusal) = self.one_model_rule(what, &named)
+        {
+            return Self::write_refusal(writer, &Answer::refused(&refusal));
+        }
+        // A measurement of the hosted model would be its second copy: the
+        // hold is let go for the run and taken up again after, under the
+        // settings it had, so that one model is resident throughout.
+        let restore = match &request {
+            Request::Measure { model, .. } | Request::Examine { model, .. } => {
+                self.release_for_a_run(model)
+            }
+            _ => None,
+        };
+        self.carrying_on(request, waiting, writer);
+        if let Some((named, settings)) = restore {
+            let _again = self.host(&named, &settings.to_request(), &mut |_| {});
+        }
+    }
+
+    /// Whether this request may run beside what is hosted and what is
+    /// under way, under the rule that one model runs at a time: `None`
+    /// where it may, the refusal otherwise (D57, B-582). A hold and a
+    /// run of the hosted model are fine; a run of another, or a hold
+    /// while a run of another goes, is not. The path is resolved so that a
+    /// name and a path for the same file are the same model.
+    fn one_model_rule(&self, what: &str, named: &str) -> Option<Failure> {
+        let noun = kind_noun;
+        let path = crate::generation::resolved(&self.places.models, named);
+        let refuse = |detail: String| {
+            Failure::new(
+                Category::ConfigInvalid,
+                Attribution::User,
+                Disposition::Refused,
+                WHERE,
+                &detail,
+            )
+        };
+        let hosted = self
+            .holding
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(|held| held.model.clone());
+        let under_way: Vec<(String, String)> = self
+            .running
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .filter(|running| running.what != what || running.model != named)
+            .map(|running| {
+                (
+                    running.what.to_owned(),
+                    crate::generation::resolved(&self.places.models, &running.model)
+                        .display()
+                        .to_string(),
+                )
+            })
+            .collect();
+        let short = |path: &str| {
+            Path::new(path).file_stem().map_or_else(
+                || path.to_owned(),
+                |stem| stem.to_string_lossy().into_owned(),
+            )
+        };
+        if what == "hosting" {
+            // A hold replaces a hold; what it may not do is cut under a run
+            // of another model.
+            if let Some((kind, other)) = under_way
+                .iter()
+                .find(|(kind, other)| kind != "hosting" && Path::new(other) != path)
+            {
+                return Some(refuse(format!(
+                    "a {} of {} is under way, and one model runs at a time: stop it, then host {}",
+                    noun(kind),
+                    short(other),
+                    short(&path.display().to_string())
+                )));
+            }
+            return None;
+        }
+        if let Some(hosted) = hosted
+            && hosted != path
+        {
+            return Some(refuse(format!(
+                "{} is hosted, and one model runs at a time: a {} runs on the hosted model. Let it \
+                 go, or host {} first",
+                short(&hosted.display().to_string()),
+                noun(what),
+                short(&path.display().to_string())
+            )));
+        }
+        if let Some((kind, other)) = under_way.iter().find(|(_, other)| Path::new(other) != path) {
+            return Some(refuse(format!(
+                "a {} of {} is under way, and one model runs at a time: stop it, then run the {} \
+                 on {}",
+                noun(kind),
+                short(other),
+                noun(what),
+                short(&path.display().to_string())
+            )));
+        }
+        None
+    }
+
+    /// Lets the hold of this model go for a measurement of it, returning
+    /// what to host again after: the model's name and the settings it was
+    /// held under. `None` where nothing is hosted, or another model is.
+    fn release_for_a_run(&self, named: &str) -> Option<(String, crate::hosting::Hosting)> {
+        let path = crate::generation::resolved(&self.places.models, named);
+        let settings = {
+            let holding = self
+                .holding
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let held = holding.as_ref()?;
+            if held.model != path {
+                return None;
+            }
+            held.settings.clone()
+        };
+        let _released =
+            self.let_go("let go for a measurement of the same model; hosted again after");
+        Some((named.to_owned(), settings))
+    }
+
+    /// Carries the request, the rule above having let it through.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm a kind of request, each named"
+    )]
+    fn carrying_on(
         &self,
         request: Request,
         waiting: crate::served::Waiting<'_>,

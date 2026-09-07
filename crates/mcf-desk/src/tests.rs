@@ -1636,16 +1636,15 @@ fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
         in_use: None,
     });
     let said = desk.second_copy().unwrap_or_default();
-    assert!(said.contains("second copy"), "{said}");
     assert!(
-        said.contains("17.7 GB") || said.contains("16.5 GB"),
-        "the size is said: {said}"
+        said.contains("lets the hold go") && said.contains("one copy"),
+        "a run on the hosted model lets the hold go and takes it up again: {said}"
     );
     desk.chosen = Some(1);
-    assert_eq!(
-        desk.second_copy(),
-        None,
-        "the other model is not the hosted one"
+    let said = desk.second_copy().unwrap_or_default();
+    assert!(
+        said.contains("one model runs at a time") && said.contains("a is hosted"),
+        "a run on another model is the rule, said before Run: {said}"
     );
 }
 

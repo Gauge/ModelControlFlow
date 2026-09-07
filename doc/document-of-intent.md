@@ -5139,6 +5139,31 @@ its corrections are a conversation that grows.
 third try in Rust and never in Go* is the row a person compares
 models by; a number that averages those is the summary D54 refuses.
 
+### D57 — One model runs at a time *(on the operator's instruction)*
+
+**One model resident.** At most one model's weights are resident on
+this machine through MCF at any moment, whether held for callers,
+under a diagnostic, or in the daemon's own slot. The hosted model is
+the running model: a diagnostic runs on the hosted model or on no
+hosted model, and a hold is refused while a run of another model is
+under way. A run of the hosted model that needs a server of its own —
+a measurement, which starts its servers under the settings it varies
+— lets the hold go for its run and takes it up again after, under the
+settings it had, so that the copy count never reaches two. A run that
+asks the model plainly — a probe, a coding suite, a message from the
+window — asks the hosted server and starts nothing.
+
+**Why.** The operator asked for complete control over what runs; and
+the machine's memory is the card's memory (F243), so a second copy is
+not a cost but a crash. A rule that says which model is running is a
+rule a person can hold in their head, and a refusal that names the
+hosted model and the one asked for is the whole explanation.
+
+**What this is not.** Not a queue: a run refused is not run later; the
+person lets the hold go or hosts the model they want and runs again.
+Not a limit on the command line's reach: `mcf host` and `mcf examine`
+obey the same rule through the same daemon.
+
 ## 8. Amending This Document
 
 - Intent changes when the *reasoning* changes, not when the code does. Code that
@@ -5168,6 +5193,12 @@ models by; a number that averages those is the summary D54 refuses.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 60 — one model runs at a time
+
+D57 written on the operator's instruction: one model resident, the
+hosted model the running one, a measurement of it letting the hold go
+and taking it up again (B-582).
 
 ### Version 59 — a hold reachable from the network
 

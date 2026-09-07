@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 260 | [F260 — One model runs at a time: the daemon refuses a run on a model other than the hosted one, and a hold while a run of another model goes, in one sentence naming both, before anything starts; a measurement of the hosted model lets the hold go for its run and hosts it again after under the settings it had; the Diagnostics page says the rule above the pane when the chosen model is not the hosted one (B-582, D57, F243)](#260-f260-one-model-runs-at-a-time-the-daemon-refuses-a-run-on-a-model-other-than-the-hosted-one-and-a-hold-while-a-run-of-another-model-goes-in-one-sentence-naming-both-before-anything-starts-a-measurement-of-the-hosted-model-lets-the-hold-go-for-its-run-and-hosts-it-again-after-under-the-settings-it-had-the-diagnostics-page-says-the-rule-above-the-pane-when-the-chosen-model-is-not-the-hosted-one-b-582-d57-f243) |
 | 259 | [F259 — Every useful figure of a served model has a tile of its own: the engine's twelve counters, the card's load, temperature, power and memory, and — while a run of the window's own goes — the run's energy, tokens, tokens a kilojoule and time, laid out in rows of five under the hosted model and under the model under test alike, each figure nobody read drawn as unmeasured rather than as nought (B-581, B-573, A7)](#259-f259-every-useful-figure-of-a-served-model-has-a-tile-of-its-own-the-engines-twelve-counters-the-cards-load-temperature-power-and-memory-and-while-a-run-of-the-windows-own-goes-the-runs-energy-tokens-tokens-a-kilojoule-and-time-laid-out-in-rows-of-five-under-the-hosted-model-and-under-the-model-under-test-alike-each-figure-nobody-read-drawn-as-unmeasured-rather-than-as-nought-b-581-b-573-a7) |
 | 258 | [F258 — A hold can be reachable from the network: a switch on the Configure tab and `--open on` at the command line bind the engine to every address this machine has instead of the loopback one, a hold open to the network is refused without an API key, and the Server page and the Hosted answer name the machine's own address on its route out beside the loopback one (B-577, B-480, A7)](#258-f258-a-hold-can-be-reachable-from-the-network-a-switch-on-the-configure-tab-and-open-on-at-the-command-line-bind-the-engine-to-every-address-this-machine-has-instead-of-the-loopback-one-a-hold-open-to-the-network-is-refused-without-an-api-key-and-the-server-page-and-the-hosted-answer-name-the-machines-own-address-on-its-route-out-beside-the-loopback-one-b-577-b-480-a7) |
 | 257 | [F257 — The menu answered to nothing while a coding run went, and a row said *never run* after its run: the Diagnostics page and its pane shared one scroll key and clamped it against each other every frame, so a scroll act went out each frame and beat every press outside them; and the ladder, the cross-check and the prompt report never read the summary again once they finished, so their rows kept the time they had before — the page has its own key, a scroll act never beats a press, a region marks its content from its own top, and every finish reads every last-run time again (B-575, B-576, A2)](#257-f257-the-menu-answered-to-nothing-while-a-coding-run-went-and-a-row-said-never-run-after-its-run-the-diagnostics-page-and-its-pane-shared-one-scroll-key-and-clamped-it-against-each-other-every-frame-so-a-scroll-act-went-out-each-frame-and-beat-every-press-outside-them-and-the-ladder-the-cross-check-and-the-prompt-report-never-read-the-summary-again-once-they-finished-so-their-rows-kept-the-time-they-had-before-the-page-has-its-own-key-a-scroll-act-never-beats-a-press-a-region-marks-its-content-from-its-own-top-and-every-finish-reads-every-last-run-time-again-b-575-b-576-a2) |
@@ -9708,6 +9709,44 @@ a step but their rows land at the step's end; a soak's row every
 tenth request, as it is taken, is the daemon-side half of F253 and a
 row once the catalogue's has been used.
 
+## 260 · F260 — One model runs at a time: the daemon refuses a run on a model other than the hosted one, and a hold while a run of another model goes, in one sentence naming both, before anything starts; a measurement of the hosted model lets the hold go for its run and hosts it again after under the settings it had; the Diagnostics page says the rule above the pane when the chosen model is not the hosted one (B-582, D57, F243)
+
+**What the operator asked.** Complete control over what runs: one
+model hostable at a time, any model under diagnostics the hosted one,
+only a single model running.
+
+**The rule, in one place.** Every request the daemon carries on a
+thread of its own — a generation, a measurement, a cross-check, a
+prompt report, a probe, an examination, a hold — passes one check
+before it starts. A run on a model other than the hosted one is
+refused: *X is hosted, and one model runs at a time: a measurement
+runs on the hosted model. Let it go, or host Y first.* A hold while a
+run of another model is under way is refused: *a measurement of X is
+under way, and one model runs at a time: stop it, then host Y.* A run
+while a run of another model goes is refused the same way. Names and
+paths for the same file are the same model.
+
+**One copy, not two.** A probe, a coding suite and a message from the
+window ask the hosted server and start nothing, as before. A
+measurement starts servers under the settings it varies, which was a
+second copy of the hosted model beside the first — the crash of F243
+in waiting. Now the daemon lets the hold go for the run, in writing
+as any release is, runs, and hosts the model again under the settings
+it had, so the copy count is one throughout. The Diagnostics page's
+note above the pane says which of the two will happen: the rule, when
+the chosen model is not the hosted one; the release and the re-host,
+when it is.
+
+**Seen.** On a scoped daemon with the 2B hosted: a measurement asked of the same model's BF16 file was refused — *Qwen3-VL-2B-Instruct-UD-Q4_K_XL is hosted, and one model runs at a time: a measurement runs on the hosted model. Let it go, or host Qwen3-VL-2B-Instruct-BF16 first*; the ladder on the hosted 2B let the hold go at 09:02:36, ran, and hosted it again at 09:02:56, the release and the re-host both in the record; a hold of the BF16 file asked while a soak of the hosted 2B ran was refused — *a measurement of Qwen3-VL-2B-Instruct-UD-Q4_K_XL is under way, and one model runs at a time: stop it, then host Qwen3-VL-2B-Instruct-BF16*; and after the soak the 2B was hosted again. The client is told the run is done before the re-host completes, so the page shows the model not hosted for the seconds a hold takes.
+
+**What is not done.** The daemon's own idle server — the one the
+coding suites use when nothing is hosted — is dropped before a
+measurement (F243) and is a copy of the model the suites asked; it is
+not a second model, and the rule counts models. A re-host after a run
+takes the seconds a hold takes, during which a caller on the network
+gets no answer; the page says the hold is under way as it does for
+any hold.
+
 ## 259 · F259 — Every useful figure of a served model has a tile of its own: the engine's twelve counters, the card's load, temperature, power and memory, and — while a run of the window's own goes — the run's energy, tokens, tokens a kilojoule and time, laid out in rows of five under the hosted model and under the model under test alike, each figure nobody read drawn as unmeasured rather than as nought (B-581, B-573, A7)
 
 **What the operator asked.** That every useful statistic have a
@@ -14962,6 +15001,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 182 — one model runs at a time
+
+F260: the rule in the daemon's dispatcher, and a measurement of the
+hosted model letting the hold go and taking it up again (B-582).
 
 ### Version 181 — a tile a figure
 

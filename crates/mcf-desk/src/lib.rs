@@ -3444,19 +3444,22 @@ impl Desk {
     pub fn second_copy(&self) -> Option<String> {
         let chosen = self.chosen.and_then(|at| self.models.get(at))?;
         let hosted = self.hosted_model()?;
+        // One model runs at a time (D57, B-582): a run on another model
+        // than the hosted one is refused by the daemon, and the page says
+        // so before Run is pressed; a run on the hosted one lets the hold
+        // go for its run and takes it up again after.
         if hosted.path != chosen.path {
-            return None;
+            return Some(format!(
+                "{} is hosted, and one model runs at a time: diagnostics run on the hosted model. \
+                 Let it go on the Server page, or host {} first",
+                hosted.name, chosen.name
+            ));
         }
-        Some(match chosen.bytes {
-            Some(bytes) => format!(
-                "hosted through the window: a run here starts a second copy of this model \
-                 beside it, {} more",
-                view::gigabytes(bytes)
-            ),
-            None => "hosted through the window: a run here starts a second copy of this model \
-                     beside it"
+        Some(
+            "hosted through the window: a measurement lets the hold go for its run and hosts it \
+             again after, so that one copy of the model is resident throughout"
                 .to_owned(),
-        })
+        )
     }
 
     /// Moves one setting on to its next value.

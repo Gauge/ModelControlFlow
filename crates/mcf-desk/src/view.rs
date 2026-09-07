@@ -5157,7 +5157,6 @@ fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
 /// spent — the card's energy summed a second at a time, the tokens it
 /// produced meanwhile, and tokens a kilojoule (B-573). Nothing where no
 /// run holds a server; returns where the next block begins.
-#[expect(clippy::integer_division, reason = "whole kilojoules is the unit said")]
 fn under_test_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let Some(under) = desk.under_test.as_ref() else {
         return at.y;
