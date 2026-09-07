@@ -5344,11 +5344,25 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
 
     let mut mouse = ui::Mouse::default();
     let mut last = std::time::Instant::now();
+    // **A frame is drawn when something happened, and not otherwise**
+    // (B-586). Drawing every sixteen milliseconds regardless cost
+    // forty-three per cent of a core with nothing on the screen changing
+    // (F267): an idle window should not be why a fan is running (B-071).
+    // The first frame, an event, a word from a job, a reading due, or an
+    // act taken on the last frame are what make one.
+    let mut dirty = true;
+    // The event the wait at the end of the loop came back with, handed to
+    // the next pass so that it is handled like any other.
+    let mut waiting: Option<[u8; sdl::EVENT_BYTES]> = None;
     loop {
         mouse.settle();
-        let mut acted = false;
+        let mut acted = dirty;
+        dirty = false;
         // The window is there: this loop only runs where one was opened.
-        while let Some(event) = paint.window().and_then(sdl::Window::next_event) {
+        while let Some(event) = waiting
+            .take()
+            .or_else(|| paint.window().and_then(sdl::Window::next_event))
+        {
             acted = true;
             match sdl::event_type(&event) {
                 sdl::EVENT_QUIT => return Ok(()),
@@ -5464,14 +5478,20 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
             acted = true;
         }
 
-        if let Some(act) = view::draw(&mut paint, &desk, &mouse) {
+        if acted && let Some(act) = view::draw(&mut paint, &desk, &mouse) {
             taken(&mut paint, &mut desk, act);
-            acted = true;
+            // What the act changed is on the next frame.
+            dirty = true;
         }
-        let _ = acted;
 
-        // Nothing to do until something happens.
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        // Nothing to do until something happens: asleep in the platform
+        // until an event, or for a second so that a reading due and a
+        // job's words are not waited on for longer than that.
+        if !dirty {
+            waiting = paint
+                .window()
+                .and_then(|window| window.wait_event(std::time::Duration::from_secs(1)));
+        }
     }
 }
 

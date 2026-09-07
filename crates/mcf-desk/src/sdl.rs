@@ -161,6 +161,7 @@ unsafe extern "C" {
     fn SDL_DestroyRenderer(renderer: *mut c_void);
     fn SDL_DestroyWindow(window: *mut c_void);
     fn SDL_PollEvent(event: *mut u8) -> bool;
+    fn SDL_WaitEventTimeout(event: *mut u8, timeout_ms: i32) -> bool;
     fn SDL_SetRenderDrawColor(renderer: *mut c_void, r: u8, g: u8, b: u8, a: u8) -> bool;
     fn SDL_RenderClear(renderer: *mut c_void) -> bool;
     fn SDL_RenderFillRect(renderer: *mut c_void, rect: *const Rect) -> bool;
@@ -298,6 +299,26 @@ impl Window {
         // SAFETY: SDL writes at most `sizeof(SDL_Event)` bytes, which is what
         // this buffer is sized for and why it is not smaller.
         let had = unsafe { SDL_PollEvent(event.as_mut_ptr()) };
+        had.then_some(event)
+    }
+
+    /// The next event, waiting up to `within` for one to arrive; `None` when
+    /// none did.
+    ///
+    /// **Waiting rather than polling, because an idle window should cost
+    /// nothing** (B-586). A loop that polled every sixteen milliseconds and
+    /// drew every time ran at sixty frames a second with nothing to show,
+    /// and was found taking forty-three per cent of a core while nobody was
+    /// looking at it (F267). This sleeps in the platform until something
+    /// happens or the time is up, whichever is first.
+    #[cfg(have_sdl)]
+    #[must_use]
+    pub fn wait_event(&self, within: std::time::Duration) -> Option<[u8; EVENT_BYTES]> {
+        let mut event = [0_u8; EVENT_BYTES];
+        let timeout = i32::try_from(within.as_millis()).unwrap_or(i32::MAX);
+        // SAFETY: as for `next_event` — SDL writes at most `sizeof(SDL_Event)`
+        // bytes into a buffer sized for it.
+        let had = unsafe { SDL_WaitEventTimeout(event.as_mut_ptr(), timeout) };
         had.then_some(event)
     }
 
@@ -537,6 +558,12 @@ impl Window {
     /// Unreachable: `open` refused.
     #[must_use]
     pub fn next_event(&self) -> Option<[u8; EVENT_BYTES]> {
+        None
+    }
+    /// Unreachable: `open` refused.
+    #[must_use]
+    pub fn wait_event(&self, within: std::time::Duration) -> Option<[u8; EVENT_BYTES]> {
+        std::thread::sleep(within);
         None
     }
     /// Unreachable: `open` refused.
