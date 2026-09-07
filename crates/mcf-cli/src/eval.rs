@@ -197,6 +197,16 @@ fn which_podman() -> Result<PathBuf, Failure> {
 /// shape every suite uses — `progress: done/of what` — so that the
 /// window's bar and a person at a terminal see the work as it goes and
 /// not only the report at the end (D56).
+/// One result of a suite, said on the output stream the moment it is
+/// known: `result: <line>`, the same words the report would have used, so
+/// that a window reading the stream can show the results as they come
+/// (B-569).
+pub(crate) fn result(line: &str) {
+    use std::io::Write as _;
+    println!("result: {line}");
+    let _flushed = std::io::stdout().flush();
+}
+
 pub(crate) fn progress(done: usize, of: usize, what: &str) {
     use std::io::Write as _;
     println!("progress: {done}/{of} {what}");
@@ -396,10 +406,17 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
         engine_ran = challenge_engine;
     }
     let engine_said = said_of(&engine_ran);
+    // One tier's run is its own method — `challenges-easy` — so that each
+    // tier has its own rows and its own last-run time; a run of every tier
+    // stays under `challenges` (B-569).
+    let challenges_method = plan.tier.map_or_else(
+        || "challenges".to_owned(),
+        |tier| format!("challenges-{}", tier.name()),
+    );
     let challenges_recorded = wants("challenges").then(|| {
         mcf_serve::examine::record_rows(
             Path::new(named),
-            "challenges",
+            &challenges_method,
             &engine_said,
             plan.conditions(),
             &challenge_rows,
@@ -498,8 +515,8 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     if let Some(recorded) = challenges_recorded {
         lines.push(match recorded {
             Ok(_) => format!(
-                "  {} reading(s) recorded under challenges; `mcf data {named} --method challenges` \
-                 writes them",
+                "  {} reading(s) recorded under {challenges_method}; `mcf data {named} --method \
+                 {challenges_method}` writes them",
                 challenge_rows.len()
             ),
             Err(why) => format!("  CHALLENGE READINGS NOT RECORDED: {why}"),

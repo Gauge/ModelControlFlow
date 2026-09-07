@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 252 | [F252 — The catalogue is four rows, one a tier, and a running suite shows its results as they come: `mcf eval` writes `result:` lines the moment each challenge and each language is known and records a tier's run under its own method, the window lists Challenges: easy, medium, hard and expert with a Languages field beside Retries and Window, and the pane lists the results so far under Run while the suite runs and after it finishes (B-569, B-563, D56)](#252-f252-the-catalogue-is-four-rows-one-a-tier-and-a-running-suite-shows-its-results-as-they-come-mcf-eval-writes-result-lines-the-moment-each-challenge-and-each-language-is-known-and-records-a-tiers-run-under-its-own-method-the-window-lists-challenges-easy-medium-hard-and-expert-with-a-languages-field-beside-retries-and-window-and-the-pane-lists-the-results-so-far-under-run-while-the-suite-runs-and-after-it-finishes-b-569-b-563-d56) |
 | 251 | [F251 — The window suite ran twenty-three minutes and now runs under a minute: one test swept the whole screen for the Exit entry at three thousand frames a page, every press found its control by rendering a frame a probe, every frame walked the font directories and baked every glyph afresh, and the painter was unoptimised; the menu has one layout a test presses directly, a frame records the controls it asked the mouse about and a test presses those, the font is found once and its atlases shared, and the desk crate is optimised in the dev profile (B-568, B-011)](#251-f251-the-window-suite-ran-twenty-three-minutes-and-now-runs-under-a-minute-one-test-swept-the-whole-screen-for-the-exit-entry-at-three-thousand-frames-a-page-every-press-found-its-control-by-rendering-a-frame-a-probe-every-frame-walked-the-font-directories-and-baked-every-glyph-afresh-and-the-painter-was-unoptimised-the-menu-has-one-layout-a-test-presses-directly-a-frame-records-the-controls-it-asked-the-mouse-about-and-a-test-presses-those-the-font-is-found-once-and-its-atlases-shared-and-the-desk-crate-is-optimised-in-the-dev-profile-b-568-b-011) |
 | 250 | [F250 — The older coding and languages suites are retired: their twenty tasks are all in the catalogue by another name, so `mcf eval` runs four suites — challenges, editing, tests, queries — the window lists four rows, and two thousand lines of tasks, checkers and a second correction loop are gone; the readings they wrote stay under `coding` and `coding-repair` and `mcf data` still writes them (B-567, B-563, D56)](#250-f250-the-older-coding-and-languages-suites-are-retired-their-twenty-tasks-are-all-in-the-catalogue-by-another-name-so-mcf-eval-runs-four-suites-challenges-editing-tests-queries-the-window-lists-four-rows-and-two-thousand-lines-of-tasks-checkers-and-a-second-correction-loop-are-gone-the-readings-they-wrote-stay-under-coding-and-coding-repair-and-mcf-data-still-writes-them-b-567-b-563-d56) |
 | 249 | [F249 — The daemon is first to go and, where the session offers a scope, held under a cap: `mcf serve` sets the highest out-of-memory adjustment on itself, which its servers inherit, so the kernel takes MCF before the desktop; a surface that starts the daemon starts it through the session manager's own runner in a transient scope capped at the machine less an eighth, never less than eight gigabytes, with no swap; the daemon says both on its first line; and the Diagnostics page says, above a run on the model the window is hosting, that it starts a second copy and how much more (B-561, F243, D41)](#249-f249-the-daemon-is-first-to-go-and-where-the-session-offers-a-scope-held-under-a-cap-mcf-serve-sets-the-highest-out-of-memory-adjustment-on-itself-which-its-servers-inherit-so-the-kernel-takes-mcf-before-the-desktop-a-surface-that-starts-the-daemon-starts-it-through-the-session-managers-own-runner-in-a-transient-scope-capped-at-the-machine-less-an-eighth-never-less-than-eight-gigabytes-with-no-swap-the-daemon-says-both-on-its-first-line-and-the-diagnostics-page-says-above-a-run-on-the-model-the-window-is-hosting-that-it-starts-a-second-copy-and-how-much-more-b-561-f243-d41) |
@@ -9674,6 +9675,45 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 252 · F252 — The catalogue is four rows, one a tier, and a running suite shows its results as they come: `mcf eval` writes `result:` lines the moment each challenge and each language is known and records a tier's run under its own method, the window lists Challenges: easy, medium, hard and expert with a Languages field beside Retries and Window, and the pane lists the results so far under Run while the suite runs and after it finishes (B-569, B-563, D56)
+
+**What the operator saw.** One Challenges row ran for two hundred and
+sixty-four minutes on a fifty-gigabyte model — forty-four challenges
+in four languages with up to ten attempts each is a hundred and
+seventy-six pairs, and a pair on a model that writes thirty tokens a
+second is minutes — and the pane said nothing until the end. A test
+that long is not one test, and a result known at minute three should
+not wait for minute two hundred.
+
+**Four rows.** The Diagnostics list has a row a tier: *Challenges:
+easy* (fourteen), *medium* (seventeen), *hard* (ten) and *expert*
+(three). A row's Run is `mcf eval --only challenges --tier <tier>`,
+and a tier's run is recorded under its own method — `challenges-easy`
+— so each row has its own rows and its own last-run time; a run of
+every tier from the command line stays under `challenges`. The pane's
+fields are three: Retries, Window and now Languages, a list separated
+by commas that becomes `--languages`; a name the catalogue does not
+know is refused with the four it does. Easy in one language with
+three attempts is minutes; the expert tier in four languages with ten
+is the long one, and a person chooses it.
+
+**Results as they come.** The catalogue prints each challenge — its
+tier, category and name, then its statement, then a line a language —
+on the output stream the moment it is known, as `result:` lines, and
+the report at the end repeats none of them. The window reads them off
+the job's stream and lists them under Run as *so far*, one a line,
+while the suite runs and once it has finished, until the readings
+replace them. The progress bar moves by the `progress:` lines as
+before; the results are the other stream.
+
+**Seen.** The easy tier in Python with one attempt on the 2B: forty-two `result:` lines on the output stream as the run went, the first three within seconds — *easy · arrays · merge-sorted*, its statement, *python solved at attempt 1 · 0 correction(s) · 97 token(s) · 4.6s* — and 224 rows recorded under `challenges-easy`, which `mcf data --method challenges-easy` writes. The pane drawn for review with the suite under way shows Stop beside the progress line, the three fields, and *so far* with two challenges' lines under them; the strip below the list carries the bar. The window suite passes with the seven rows in fifty-two seconds.
+
+**What is not done.** A row's readings table still appears only when
+the run ends, since the rows are recorded then; a run recorded a
+challenge at a time would let the table grow with the results and is
+a row to open if the lines are not enough. And a person who wants a
+single challenge has no row for it; the tiers are the grain.
+
 ## 251 · F251 — The window suite ran twenty-three minutes and now runs under a minute: one test swept the whole screen for the Exit entry at three thousand frames a page, every press found its control by rendering a frame a probe, every frame walked the font directories and baked every glyph afresh, and the painter was unoptimised; the menu has one layout a test presses directly, a frame records the controls it asked the mouse about and a test presses those, the font is found once and its atlases shared, and the desk crate is optimised in the dev profile (B-568, B-011)
 
 **What it was.** The operator asked why the tests took so long. The
@@ -14604,6 +14644,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 175 — a row a tier, results as they come
+
+F252: the catalogue split into tiers with a languages field, and a
+running suite's results shown as they arrive (B-569).
 
 ### Version 174 — the window suite under a minute
 

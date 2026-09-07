@@ -1038,15 +1038,20 @@ pub(crate) fn run(
     }
     let of = challenges.len().saturating_mul(present.len().max(1));
     let mut done = 0_usize;
+    // Every challenge's lines go out as they are known — the challenge, its
+    // statement, then a language a line — so that a person, or a window
+    // reading the stream, sees each result the moment it is in, not at the
+    // end of a run that can take hours (B-569). The report at the end
+    // repeats none of them.
     for challenge in &challenges {
-        lines.push(format!(
-            "  {} · {} · {}",
+        crate::eval::result(&format!(
+            "{} · {} · {}",
             challenge.tier.name(),
             challenge.category,
             challenge.name
         ));
-        lines.push(format!(
-            "      {}",
+        crate::eval::result(&format!(
+            "    {}",
             challenge.statement.chars().take(160).collect::<String>()
         ));
         for language in &present {
@@ -1072,11 +1077,16 @@ pub(crate) fn run(
                 &mut engine_ran,
             );
             rows.extend(rows_of(challenge, language.name, &attempts));
-            lines.push(format!("      {}", said_of(language.name, &attempts)));
+            crate::eval::result(&format!("    {}", said_of(language.name, &attempts)));
             done = done.saturating_add(1);
         }
-        lines.push(String::new());
     }
+    lines.push(format!(
+        "  {} result line(s) were written above as they came in",
+        challenges
+            .len()
+            .saturating_mul(present.len().saturating_add(2))
+    ));
     (lines, rows, engine_ran)
 }
 

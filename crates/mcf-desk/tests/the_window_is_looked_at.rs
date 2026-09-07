@@ -2843,8 +2843,8 @@ fn review_the_challenges_row(desk: &mut Desk) {
             1_i64,
         ),
         ("merge-sorted", "easy", "arrays", "go", Some(2), 2),
-        ("lru-cache", "hard", "design", "python", None, 3),
-        ("lru-cache", "hard", "design", "go", None, 3),
+        ("kth-largest", "easy", "arrays", "python", None, 3),
+        ("kth-largest", "easy", "arrays", "go", None, 3),
     ] {
         let named = |attempt: Option<i64>| {
             let mut dims = vec![
@@ -2905,7 +2905,7 @@ fn review_the_challenges_row(desk: &mut Desk) {
         .unwrap_or_default();
     let mut run = mcf_record::readings::run_body(
         &path,
-        "challenges",
+        "challenges-easy",
         "through provisioned llama.cpp-vulkan server @925e1179947e, run in a container",
         vec![
             ("languages", Value::text("python,go")),
@@ -2924,12 +2924,40 @@ fn review_the_challenges_row(desk: &mut Desk) {
     }
     if let Some(held) = desk.models.get_mut(0) {
         let _was = held.readings_at.insert(
-            "challenges".to_owned(),
+            "challenges-easy".to_owned(),
             "2026-09-06T22:54:59.000000000Z (local offset +00:00)".to_owned(),
         );
     }
     desk.readings = Some((path, vec![run]));
     let _ = drawn(desk, DAY, "review-diagnostics-challenges");
+    // The same row while its suite runs: the results so far under Run,
+    // a line a result as the stream said them (B-569).
+    let mut going = mcf_desk::job::Job::already(
+        "running the Challenges: easy suite on Assistant-8B".to_owned(),
+        [
+            "progress: 0/14 challenges · easy · python · merge-sorted",
+            "result: easy · arrays · merge-sorted",
+            "result:     Merge two lists of integers, each already sorted ascending, into one sorted list.",
+            "result:     python     solved at attempt 1 · 0 correction(s) · 97 token(s) · 3.7s",
+            "result: easy · strings · balanced-brackets",
+            "result:     Return whether every bracket in the string is closed in the right order.",
+            "result:     python     never in 3 attempt(s) · the best held 2 of 5 · 280 token(s) · 9.1s",
+            "progress: 2/14 challenges · easy · python · run-length",
+        ]
+        .iter()
+        .map(|line| Value::map([("line", Value::text(*line))]))
+        .collect(),
+    );
+    going.finished = false;
+    desk.doing = mcf_desk::Doing::Evaluating(going);
+    desk.evaluating = Some(0);
+    let drawn_running = drawn(desk, DAY, "review-diagnostics-challenges-running");
+    assert!(
+        drawn_running.width < 2 || (drawn_running.width == 1180 && drawn_running.height == 760),
+        "the running pane draws"
+    );
+    desk.doing = mcf_desk::Doing::Nothing;
+    desk.evaluating = None;
 }
 
 /// The measurements two in: the daemon has announced the second.

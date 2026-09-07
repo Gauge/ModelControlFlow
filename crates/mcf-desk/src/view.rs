@@ -3073,9 +3073,23 @@ fn eval_pane(
     } else {
         0.0
     };
+    // The results so far, a line each, while the suite runs and once it
+    // has finished (B-569).
+    let so_far = if running_one || done {
+        desk.results_so_far()
+    } else {
+        Vec::new()
+    };
+    #[allow(clippy::cast_precision_loss, reason = "a count of lines")]
+    let so_far_height = if so_far.is_empty() {
+        0.0
+    } else {
+        22.0 + 16.0 * so_far.len() as f32
+    };
     let height = head_height_of(paint, diagnostic.answers(), area.w)
         + 44.0
         + under
+        + so_far_height
         + if done { 30.0 } else { 0.0 }
         + 12.0;
     let frame = Box::new(area.x, area.y, area.w, height);
@@ -3132,6 +3146,29 @@ fn eval_pane(
         && let Some(pressed) = runs_under(paint, desk, mouse, inner_x, &mut below)
     {
         act = Some(pressed);
+    }
+    if !so_far.is_empty() {
+        paint.say_at(
+            inner_x,
+            below + 4.0,
+            "so far",
+            Weight::Bold,
+            size::SMALL,
+            ink.faint,
+        );
+        below += 22.0;
+        for line in &so_far {
+            let shown = paint.elide(line, Weight::Regular, size::SMALL, inner_w);
+            paint.say_at(
+                inner_x,
+                below,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.quiet,
+            );
+            below += 16.0;
+        }
     }
     if done {
         paint.say_at(
@@ -3802,12 +3839,12 @@ fn throughput_buttons(
 /// the window (B-564).
 fn is_the_challenges_row(diagnostic: crate::Diagnostic) -> bool {
     matches!(diagnostic, crate::Diagnostic::Eval(at)
-        if crate::SUITES.get(at).is_some_and(|(name, _, _)| *name == "challenges"))
+        if crate::SUITES.get(at).is_some_and(|(name, _, _)| name.starts_with("challenges")))
 }
 
 /// What the Challenges pane's conditions and fields take, in height; a
 /// refusal of what was typed takes one line more.
-const RUNS_UNDER_HEIGHT: f32 = 18.0 * 3.0 + 34.0 * 2.0 + 8.0;
+const RUNS_UNDER_HEIGHT: f32 = 18.0 * 3.0 + 34.0 * 3.0 + 8.0;
 
 /// What the catalogue will run under, said before Run is pressed: the
 /// engine and device MCF resolved for the model, the answer budget, and
@@ -3850,6 +3887,12 @@ fn runs_under(paint: &mut Painter, desk: &Desk, mouse: &Mouse, x: f32, y: &mut f
             desk.challenge_window
                 .map_or_else(String::new, |window| window.to_string()),
             "sized to the turn",
+        ),
+        (
+            "Languages",
+            crate::Field::Languages,
+            desk.challenge_languages.clone().unwrap_or_default(),
+            "python, javascript, rust, go",
         ),
     ] {
         paint.say_at(x, *y, name, Weight::Regular, size::BODY, ink.quiet);

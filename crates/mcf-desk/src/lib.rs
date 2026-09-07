@@ -1609,8 +1609,19 @@ pub enum Diagnostic {
 
 /// The coding suites `mcf eval --only` runs, each with the row's name and
 /// the method the record keeps its readings under (B-519, D54).
-pub const SUITES: [(&str, &str, &str); 4] = [
-    ("challenges", "Challenges", "challenges"),
+pub const SUITES: [(&str, &str, &str); 7] = [
+    ("challenges-easy", "Challenges: easy", "challenges-easy"),
+    (
+        "challenges-medium",
+        "Challenges: medium",
+        "challenges-medium",
+    ),
+    ("challenges-hard", "Challenges: hard", "challenges-hard"),
+    (
+        "challenges-expert",
+        "Challenges: expert",
+        "challenges-expert",
+    ),
     ("editing", "Editing", "editing"),
     ("tests", "Test writing", "test-writing"),
     ("queries", "SQL and patterns", "queries"),
@@ -1624,9 +1635,16 @@ pub const RETRIES_DEFAULT: usize = 10;
 /// own floor.
 pub const SMALLEST_WINDOW: u64 = 4096;
 
+/// The languages the catalogue runs in, by the name `--languages` takes:
+/// the command line's own list.
+pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
+
 /// What each suite answers, in one line, in `SUITES` order.
-const SUITE_ANSWERS: [&str; 4] = [
-    "Forty-four challenges from easy to expert in Python, JavaScript, Rust and Go, up to ten attempts each: the attempt that solved it, the corrections, the tokens and the time",
+const SUITE_ANSWERS: [&str; 7] = [
+    "The catalogue's fourteen easy challenges in Python, JavaScript, Rust and Go, up to ten attempts each: the attempt that solved it, the corrections, the tokens and the time",
+    "The seventeen medium challenges — parsing, geometry, dynamic programming, bits — in the same four languages, with retries",
+    "The ten hard challenges — graphs, search, caches, sequences — in the same four languages, with retries",
+    "The three expert challenges — regular expressions, grid validity, knapsack — in the same four languages, with retries",
     "A whole file given and one change asked: the cases held, and every untouched function compared byte for byte",
     "Tests written for a stated function, run against a correct implementation and three broken ones",
     "SQL queries run against a fixed table beside the reference, and patterns run against match and no-match cases",
@@ -1888,6 +1906,9 @@ pub enum Field {
     /// The window every challenge ask is made in, on the same card; empty
     /// is sized to each turn.
     Window,
+    /// The languages a challenge run asks in, on the same card, separated
+    /// by commas; empty is every language MCF has an image for.
+    Languages,
 }
 
 /// A setting on the Configure tab that is a switch.
@@ -2321,6 +2342,9 @@ pub struct Desk {
     /// The window every challenge ask is made in, passed as `--window`;
     /// sized to each turn where none is typed.
     pub challenge_window: Option<u64>,
+    /// The languages a challenge run asks in, passed as `--languages`;
+    /// every one MCF has an image for where none is typed.
+    pub challenge_languages: Option<String>,
     /// What the chosen model's file declares that a hold may start.
     pub declared: Option<mcf_serve::declared::Declared>,
     /// The model to hold once the engine being built is there — the one Host
@@ -2389,6 +2413,7 @@ impl Desk {
             edit_refused: None,
             retries: RETRIES_DEFAULT,
             challenge_window: None,
+            challenge_languages: None,
             declared: None,
             shown: None,
             scrolls: std::collections::BTreeMap::new(),
@@ -4139,7 +4164,19 @@ impl Desk {
             .map(|(name, _, _)| *name)
         {
             arguments.push("--only".to_owned());
-            arguments.push(name.to_owned());
+            // A tier's row is the catalogue held to that tier (B-569).
+            match name.strip_prefix("challenges-") {
+                Some(tier) => {
+                    arguments.push("challenges".to_owned());
+                    arguments.push("--tier".to_owned());
+                    arguments.push(tier.to_owned());
+                }
+                None => arguments.push(name.to_owned()),
+            }
+        }
+        if let Some(languages) = &self.challenge_languages {
+            arguments.push("--languages".to_owned());
+            arguments.push(languages.clone());
         }
         if self.retries != RETRIES_DEFAULT {
             arguments.push("--retries".to_owned());
@@ -4150,6 +4187,23 @@ impl Desk {
             arguments.push(window.to_string());
         }
         arguments
+    }
+
+    /// What a running or just-finished suite has said so far, a result a
+    /// line, in the order it came: the `result:` lines of its stream, so
+    /// that the pane shows each challenge's outcome the moment it is known
+    /// rather than the readings at the end (B-569).
+    #[must_use]
+    pub fn results_so_far(&self) -> Vec<String> {
+        let Doing::Evaluating(job) = &self.doing else {
+            return Vec::new();
+        };
+        job.answers
+            .iter()
+            .filter_map(|answer| answer.get("line").and_then(Value::as_text))
+            .filter_map(|line| line.strip_prefix("result: "))
+            .map(str::to_owned)
+            .collect()
     }
 
     /// Reads the readings and the model's summary again once a suite has
@@ -4373,6 +4427,7 @@ impl Desk {
                 self.challenge_window
                     .map_or_else(String::new, |window| window.to_string()),
             ),
+            Field::Languages => Some(self.challenge_languages.clone().unwrap_or_default()),
             _ => None,
         };
         if let Some(now) = card {
@@ -4394,7 +4449,7 @@ impl Desk {
                 .started
                 .factor
                 .map_or_else(String::new, |factor| factor.to_string()),
-            Field::Retries | Field::Window => String::new(),
+            Field::Retries | Field::Window | Field::Languages => String::new(),
         };
         self.editing = Some((field, now));
         self.edit_refused = None;
@@ -4404,10 +4459,13 @@ impl Desk {
     /// Takes what was typed into the setting it was typed for, or says why
     /// not and leaves the setting as it was. A number is a number: a window
     /// of *lots* is refused with the word, not read as nought (A7, §3.15).
+    #[allow(clippy::too_many_lines, reason = "one arm a field, each named")]
     pub fn apply_edit(&mut self) {
         let Some((field, typed)) = self.editing.take() else {
             return;
         };
+        // A list keeps its commas; a number loses its grouping.
+        let listed = typed.trim().to_owned();
         let typed = typed.trim().replace([',', '_'], "");
         let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
         match field {
@@ -4419,6 +4477,24 @@ impl Desk {
                     }
                     Ok(_) => Some("a challenge needs at least one attempt".to_owned()),
                     Err(_) => not_a_number("the retries"),
+                };
+                return;
+            }
+            Field::Languages => {
+                let named: Vec<&str> = listed
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .collect();
+                let unknown = named.iter().find(|name| !LANGUAGE_NAMES.contains(name));
+                self.edit_refused = if let Some(name) = unknown {
+                    Some(format!(
+                        "no language is called {name}; the catalogue runs in {}",
+                        LANGUAGE_NAMES.join(", ")
+                    ))
+                } else {
+                    self.challenge_languages = (!named.is_empty()).then(|| named.join(","));
+                    None
                 };
                 return;
             }
@@ -4494,7 +4570,7 @@ impl Desk {
                     }
                 }
             }
-            Field::Retries | Field::Window => None,
+            Field::Retries | Field::Window | Field::Languages => None,
         };
     }
 

@@ -1532,8 +1532,12 @@ fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
     desk.page = Page::Diagnostics;
     assert_eq!(
         desk.eval_arguments("/m.gguf", Some(0)),
-        vec!["eval", "/m.gguf", "--only", "challenges"],
-        "ten attempts is the suite's own default and is not said"
+        vec!["eval", "/m.gguf", "--only", "challenges", "--tier", "easy"],
+        "a tier's row is the catalogue held to that tier; ten attempts is the default and is not said"
+    );
+    assert_eq!(
+        desk.eval_arguments("/m.gguf", Some(4)),
+        vec!["eval", "/m.gguf", "--only", "editing"]
     );
     desk.edit(crate::Field::Retries);
     assert!(desk.takes_typing(), "the card's field takes the keys");
@@ -1554,13 +1558,33 @@ fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
     desk.apply_edit();
     assert_eq!(desk.challenge_window, Some(8192));
     assert!(desk.edit_refused.is_none());
+    desk.edit(crate::Field::Languages);
+    desk.typing().clear();
+    desk.typing().push_str("go, cobol");
+    desk.apply_edit();
+    assert_eq!(desk.challenge_languages, None);
+    assert!(
+        desk.edit_refused
+            .clone()
+            .unwrap_or_default()
+            .contains("cobol")
+    );
+    desk.edit(crate::Field::Languages);
+    desk.typing().clear();
+    desk.typing().push_str("go, python");
+    desk.apply_edit();
+    assert_eq!(desk.challenge_languages.as_deref(), Some("go,python"));
     assert_eq!(
-        desk.eval_arguments("/m.gguf", Some(0)),
+        desk.eval_arguments("/m.gguf", Some(2)),
         vec![
             "eval",
             "/m.gguf",
             "--only",
             "challenges",
+            "--tier",
+            "hard",
+            "--languages",
+            "go,python",
             "--retries",
             "3",
             "--window",
@@ -1622,11 +1646,48 @@ fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
     );
 }
 
+/// A suite's `result:` lines are the pane's results so far, in order,
+/// without the progress lines between them (B-569).
+#[test]
+fn a_running_suite_shows_its_results_as_they_come() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    assert!(desk.results_so_far().is_empty());
+    desk.doing = crate::Doing::Evaluating(crate::job::Job::already(
+        "running the Challenges: easy suite on a-model".to_owned(),
+        vec![
+            Value::map([(
+                "line",
+                Value::text("progress: 0/28 challenges · easy · python · merge-sorted"),
+            )]),
+            Value::map([("line", Value::text("result: easy · arrays · merge-sorted"))]),
+            Value::map([("line", Value::text("result:     Merge two sorted lists."))]),
+            Value::map([(
+                "line",
+                Value::text(
+                    "result:     python     solved at attempt 1 · 0 correction(s) · 97 token(s) · 3.7s",
+                ),
+            )]),
+            Value::map([(
+                "line",
+                Value::text("progress: 1/28 challenges · easy · go · merge-sorted"),
+            )]),
+        ],
+    ));
+    assert_eq!(
+        desk.results_so_far(),
+        vec![
+            "easy · arrays · merge-sorted",
+            "    Merge two sorted lists.",
+            "    python     solved at attempt 1 · 0 correction(s) · 97 token(s) · 3.7s",
+        ]
+    );
+}
+
 #[test]
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;
     let all = Diagnostic::all();
-    assert_eq!(all.len(), 4 + 9 + 47 + 4, "{all:?}");
+    assert_eq!(all.len(), 4 + 9 + 47 + 7, "{all:?}");
     let names: std::collections::BTreeSet<&str> = all.iter().map(|held| held.name()).collect();
     assert_eq!(names.len(), all.len(), "two rows share a name");
     assert_eq!(Diagnostic::Probe(2).name(), "stop-conditions");
@@ -1648,9 +1709,13 @@ fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     assert_eq!(families[1].1, Some(crate::Card::Capabilities));
     assert_eq!(families[5].1, Some(crate::Card::Coding));
     assert_eq!(families[5].2.len(), crate::SUITES.len());
-    assert_eq!(Diagnostic::Eval(1).name(), "Editing");
-    assert_eq!(Diagnostic::Eval(2).readings_method(), Some("test-writing"));
-    assert_eq!(Diagnostic::Eval(0).suite(), Some("challenges"));
+    assert_eq!(Diagnostic::Eval(4).name(), "Editing");
+    assert_eq!(Diagnostic::Eval(5).readings_method(), Some("test-writing"));
+    assert_eq!(Diagnostic::Eval(0).suite(), Some("challenges-easy"));
+    assert_eq!(
+        Diagnostic::Eval(2).readings_method(),
+        Some("challenges-hard")
+    );
     assert_eq!(Diagnostic::Eval(0).card(), crate::Card::Coding);
 
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2182,15 +2247,15 @@ fn a_models_runs_are_read_from_under_runs() {
     desk.models.push(model);
     desk.chosen = Some(0);
     assert!(
-        desk.last_run(crate::Diagnostic::Eval(1)).is_some(),
+        desk.last_run(crate::Diagnostic::Eval(4)).is_some(),
         "editing's row says when it last ran"
     );
     assert!(
         desk.last_run(crate::Diagnostic::Eval(0)).is_none(),
-        "the catalogue has not run; the older coding suite's time is not its own"
+        "the easy tier has not run; the older coding suite's time is not its own"
     );
     assert!(
-        desk.last_run(crate::Diagnostic::Eval(2)).is_none(),
+        desk.last_run(crate::Diagnostic::Eval(5)).is_none(),
         "test writing has not run"
     );
 }
