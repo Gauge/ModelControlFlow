@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 262 | [F262 — An engine server whose daemon is gone is found and stopped by the next daemon: the sweep at start, tested against a real orphan, and one 2B server with ten stale sockets cleared with it (B-574, A27, B-561)](#262-f262-an-engine-server-whose-daemon-is-gone-is-found-and-stopped-by-the-next-daemon-the-sweep-at-start-tested-against-a-real-orphan-and-one-2b-server-with-ten-stale-sockets-cleared-with-it-b-574-a27-b-561) |
 | 261 | [F261 — The first official build of MCF, installed on this machine: the gating tier green, every scheduled tier run against the source it names, the release refusal cleared, the artifact built under the release profile with its revision set, and the one binary put on the path at `~/.local/bin/mcf` (B-583, B-185, D24, B-001)](#261-f261-the-first-official-build-of-mcf-installed-on-this-machine-the-gating-tier-green-every-scheduled-tier-run-against-the-source-it-names-the-release-refusal-cleared-the-artifact-built-under-the-release-profile-with-its-revision-set-and-the-one-binary-put-on-the-path-at-localbinmcf-b-583-b-185-d24-b-001) |
 | 260 | [F260 — One model runs at a time: the daemon refuses a run on a model other than the hosted one, and a hold while a run of another model goes, in one sentence naming both, before anything starts; a measurement of the hosted model lets the hold go for its run and hosts it again after under the settings it had; the Diagnostics page says the rule above the pane when the chosen model is not the hosted one (B-582, D57, F243)](#260-f260-one-model-runs-at-a-time-the-daemon-refuses-a-run-on-a-model-other-than-the-hosted-one-and-a-hold-while-a-run-of-another-model-goes-in-one-sentence-naming-both-before-anything-starts-a-measurement-of-the-hosted-model-lets-the-hold-go-for-its-run-and-hosts-it-again-after-under-the-settings-it-had-the-diagnostics-page-says-the-rule-above-the-pane-when-the-chosen-model-is-not-the-hosted-one-b-582-d57-f243) |
 | 259 | [F259 — Every useful figure of a served model has a tile of its own: the engine's twelve counters, the card's load, temperature, power and memory, and — while a run of the window's own goes — the run's energy, tokens, tokens a kilojoule and time, laid out in rows of five under the hosted model and under the model under test alike, each figure nobody read drawn as unmeasured rather than as nought (B-581, B-573, A7)](#259-f259-every-useful-figure-of-a-served-model-has-a-tile-of-its-own-the-engines-twelve-counters-the-cards-load-temperature-power-and-memory-and-while-a-run-of-the-windows-own-goes-the-runs-energy-tokens-tokens-a-kilojoule-and-time-laid-out-in-rows-of-five-under-the-hosted-model-and-under-the-model-under-test-alike-each-figure-nobody-read-drawn-as-unmeasured-rather-than-as-nought-b-581-b-573-a7) |
@@ -15060,7 +15061,76 @@ ratchet — adding one fails the build, and removing one fails it too, with the
 instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
+## 262 · F262 — An engine server whose daemon is gone is found and stopped by the next daemon: the sweep at start, tested against a real orphan, and one 2B server with ten stale sockets cleared with it (B-574, A27, B-561)
+
+**What was observed.** During F253's and F261's work, daemons started
+under scopes were ended with `SIGTERM` and, in the memory-cap case
+B-561 built for, `SIGKILL` from the kernel. Neither reaches the drop
+that stops the daemon's engine server. Nine servers, reparented to the
+session manager, sat on the machine holding twenty gigabytes between
+them, each still answering on its port or socket, and nothing MCF
+showed named one. A27 says what MCF starts, MCF stops; this was the
+failure of that rule that a signal makes ordinary.
+
+**What was built.** `mcf_serve::orphans`: at the daemon's start,
+before it starts anything of its own, it reads the process table for
+an `llama-server` under this home's `provisioned` directory whose
+parent is process 1 or the session manager — the one shape a live
+daemon's server never has — asks it to stop, waits three seconds,
+makes it, waits two more, and reports how it went: *stopped on
+request*, *killed*, or *would not stop*, which is reported rather than
+assumed away (A7). What was stopped goes into the `daemon_started` row
+as `engines_stopped`: pid, binary, model, where it listened, bytes
+resident, how it ended. `mcf serve` prints one line per server under
+its recovery line, `mcf status` shows the same, and `mcf log` counts
+them. Socket files named for a daemon that is not in the table are
+removed with the sweep. A server whose parent is any live process —
+another daemon, a test, a shell — is left alone, and a server from
+another home's engines is not this daemon's to stop. The module is
+the third in the workspace to take the `unsafe_code` opt-out, for one
+`kill` call, because the standard library can signal only a child of
+its own (build.md §4).
+
+**What was not built, and why.** A death signal on the child was
+considered and declined: on Linux it is tied to the spawning *thread*,
+not the daemon, so a server would die with whichever worker started
+it. The sweep runs once a start, which is what the acceptance
+criterion asks — no server outlives its daemon by more than the next
+daemon's start — and costs a read of the process table.
+
+**The test.** A stand-in server under a fixture home, started by a
+`bash` that exits so the stand-in is reparented, is found and stopped
+on request; a second stand-in started by the test itself, whose parent
+therefore lives, is left running; a socket named for a process that
+cannot exist is removed and the test's own is kept. Skipped where
+`bash` is absent, since `exec -a` is what gives a process a name other
+than its executable's (B19).
+
+**On the 2B.** A daemon in a scratch runtime held the 2B on port
+17999; the daemon was ended with `SIGKILL`; the server's parent became
+`systemd`, holding 192 MiB resident (the weights sit on the card). The
+next daemon's first lines:
+
+```
+recovered 2 record entries and 16 model files
+stopped an engine server whose daemon was gone: process 3460400 holding Qwen3-VL-2B-Instruct-UD-Q4_K_XL.gguf on port 17999, 192 MiB resident: stopped on request
+```
+
+The server was gone from the table, the row was in the record, and the
+scratch runtime, which had held ten `llama-<pid>.sock` files from
+earlier daemons, held only the control socket.
+
+**Open.** A daemon that receives `SIGTERM` still does not stop its own
+server before it goes; it is the next daemon that does. Handling the
+signal in the daemon would close the gap between the two starts, and
+is a separate item.
+
 ## Changelog
+
+### Version 184 — the servers of daemons that are gone
+
+F262: the sweep at start, the test against a real orphan, the 2B run
+(B-574).
 
 ### Version 183 — the first official build
 

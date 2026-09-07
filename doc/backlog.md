@@ -8,8 +8,8 @@
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **482 items: 63 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 13
-decided, 23 resolved) and 419 build items (327 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 37 open).** Every item cites
+decided, 23 resolved) and 419 build items (328 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 36 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -410,7 +410,7 @@ first and importance second.
 | B-571 | Stop finishes the unit in hand and closes the run as *stopped after k of n*, saying what it kept; Resume beside Run on a row whose last run was stopped or cut off, skipping the pairs it already has under the same conditions | B-570, B-569 | A four-hour tier can be run in pieces across an evening; nothing is half-written | done. F254: the word `stop` on the suite's input, the pair in hand finished and landed, the run closed as *stopped after k of n*; Resume continues the newest unfinished run of the same conditions and skips its pairs |
 | B-572 | Detailed tracking in a diagnostic's pane while it runs: a line an attempt for the coding suites — compiled, cases held — a row every tenth request of a soak, and the strip's time left as an estimate from this run's average a unit, said as an estimate | B-570, B-569, D56 | A ten-attempt struggle is visible as it happens; a person knows roughly when a run ends | done. F255: a `result:` line an attempt with compiled, held, tokens and time; the strip says about how long is left from the run's own pace; the soak's rows still land at the step's end |
 | B-573 | The model under test shown as a hosted model is: the Server page lists the server the daemon holds for a run with the same figures — requests, tokens in and out, rates, cache, memory — read off its own counters, and the card's power sampled while the run goes, as energy and tokens a joule | B-570, B-071, B-561 | A person watching a run sees what the model is doing and what it costs, the way they would a served one | done. F256: the Hosted answer carries `under_test` read off the daemon's own server's socket; the Server page shows it with the same tiles; the card's power summed a second at a time while a run goes, with tokens produced and tokens a kilojoule |
-| B-574 | A daemon that dies by signal leaves its engine server running: nine servers of daemons stopped with SIGTERM during this work sat on the machine holding twenty gigabytes between them; the daemon at start finds the servers of daemons that are gone — a socket named for a process that is not there — and stops them, and says so in the record | B-561, B-025, A27 | No engine server outlives the daemon that started it by more than the next daemon's start | open |
+| B-574 | A daemon that dies by signal leaves its engine server running: nine servers of daemons stopped with SIGTERM during this work sat on the machine holding twenty gigabytes between them; the daemon at start finds the servers of daemons that are gone — a server whose parent is the reparenting target — and stops them, and says so in the record | B-561, B-025, A27 | No engine server outlives the daemon that started it by more than the next daemon's start | done. F262: `mcf_serve::orphans`, the sweep at start, its rows under `daemon_started`, the stale socket files cleared with it |
 | B-575 | The Diagnostics page's menu answers while a run fills its pane: the page and its pane no longer share a scroll key, a scroll act never beats a press elsewhere, and a region scrolled past its content settles in a frame | A2, B-490, D53 | A press on Models during a coding run changes the page; a page scrolled past its content asks to scroll once, not every frame | done. F257 |
 | B-576 | A row says when its run last ran the moment the run ends: the ladder, the cross-check and the prompt report read the model's summary again when they finish, as the coding suites do | A2, D53 | No row says *never run* for a run that just finished | done. F257 |
 | B-577 | A hold reachable from the network: a switch on Configure and `--open on` bind every address this machine has, a key is required with it, and the Server page names the machine's own address beside the loopback one | B-480, A7, §3.15 | Another machine on the network reaches the hold at the address the page names, with the key; an open hold with no key never starts | done. F258 |
@@ -599,6 +599,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 321 — the servers of daemons that are gone
+
+B-574 done (F262).
 
 ### Version 320 — the first official build
 

@@ -89,6 +89,14 @@ const DECLARED: &[Deletes] = &[
                directory, and leaving one behind is the litter B58 is about (A27, §3.11)",
     },
     Deletes {
+        file: "crates/mcf-serve/src/orphans.rs",
+        calls: 2,
+        what: "the socket file of an engine server whose daemon was gone, once the server \
+               is stopped, and a socket named for a daemon that is not in the process \
+               table. Both are names the kernel has already forgotten (B-574, A27); the \
+               model files the servers held are not touched",
+    },
+    Deletes {
         file: "crates/mcf-serve/src/configured.rs",
         calls: 1,
         what: "a model's derived configuration, in `forget`, which is somebody undoing a \

@@ -27,6 +27,7 @@ pub mod examine;
 mod generation;
 pub mod hosting;
 pub mod ladder;
+pub mod orphans;
 pub mod probes;
 pub mod projector;
 pub mod prompt;

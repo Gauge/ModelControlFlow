@@ -282,7 +282,7 @@ pub(crate) fn run() -> Response {
     // the code and carried in the record, which is where a citation is useful.
     println!(
         "mcf is up on {}\n  \
-         recovered {} record entr{} and {} model file{}{}\n  \
+         recovered {} record entr{} and {} model file{}{}{}\n  \
          {}\n  \
          {}\n  \
          it costs nothing while nobody is asking",
@@ -295,6 +295,7 @@ pub(crate) fn run() -> Response {
             Some(what) => format!("\n  PART OF THE RECORD COULD NOT BE READ: {what}"),
             None => String::new(),
         },
+        engines_stopped_lines(&recovered.engines_stopped),
         engines_line(),
         memory_line(cap, &dies_first),
     );
@@ -404,20 +405,7 @@ pub(crate) fn status() -> Response {
         ));
     }
     if let Some(recovered) = status.get("recovered") {
-        lines.push(format!(
-            "  recovered {} record entries and {} model files",
-            recovered
-                .get("record_entries")
-                .and_then(Value::as_integer)
-                .unwrap_or(0),
-            recovered
-                .get("models_held")
-                .and_then(Value::as_integer)
-                .unwrap_or(0),
-        ));
-        if let Some(lost) = recovered.get("record_unreadable").and_then(Value::as_text) {
-            lines.push(format!("  PART OF THE RECORD COULD NOT BE READ: {lost}"));
-        }
+        recovered_lines(recovered, &mut lines);
     }
     match status.get("resident") {
         Some(resident) if resident.get("path").is_some() => lines.push(format!(
@@ -618,4 +606,73 @@ fn ask(socket: &std::path::Path, request: &Request) -> Result<Answer, String> {
     Answer::read(line.trim_end()).map_err(|failure| {
         format!("mcf: the daemon answered with something MCF cannot read\n  {failure}")
     })
+}
+
+/// What the daemon recovered at its start, as the status shows it.
+fn recovered_lines(recovered: &Value, lines: &mut Vec<String>) {
+    lines.push(format!(
+        "  recovered {} record entries and {} model files",
+        recovered
+            .get("record_entries")
+            .and_then(Value::as_integer)
+            .unwrap_or(0),
+        recovered
+            .get("models_held")
+            .and_then(Value::as_integer)
+            .unwrap_or(0),
+    ));
+    if let Some(lost) = recovered.get("record_unreadable").and_then(Value::as_text) {
+        lines.push(format!("  PART OF THE RECORD COULD NOT BE READ: {lost}"));
+    }
+    for stopped in recovered
+        .get("engines_stopped")
+        .and_then(Value::as_list)
+        .unwrap_or_default()
+    {
+        lines.push(format!(
+            "  stopped an engine server whose daemon was gone: {}",
+            stopped_said(stopped)
+        ));
+    }
+}
+
+/// One line per engine server the daemon stopped at its start because the
+/// daemon that started it was gone (B-574), each on its own line under the
+/// recovery line; nothing where there were none, which is the ordinary case.
+fn engines_stopped_lines(stopped: &[mcf_serve::orphans::Orphan]) -> String {
+    stopped.iter().fold(String::new(), |mut lines, orphan| {
+        lines.push_str("\n  stopped an engine server whose daemon was gone: ");
+        lines.push_str(&orphan.said());
+        lines
+    })
+}
+
+/// The words for one stopped server, read back from its row in the record.
+fn stopped_said(row: &Value) -> String {
+    let text = |key: &str| row.get(key).and_then(Value::as_text).map(str::to_owned);
+    let model = text("model").map_or_else(
+        || "no model named".to_owned(),
+        |model| {
+            std::path::Path::new(&model)
+                .file_name()
+                .map_or(model.clone(), |name| name.to_string_lossy().into_owned())
+        },
+    );
+    let held = row
+        .get("resident_bytes")
+        .and_then(Value::as_integer)
+        .map_or_else(String::new, |bytes| {
+            #[expect(
+                clippy::integer_division,
+                reason = "whole mebibytes are the unit shown"
+            )]
+            let whole = bytes / (1024 * 1024);
+            format!(", {whole} MiB resident")
+        });
+    format!(
+        "process {} holding {model} on {}{held}: {}",
+        row.get("pid").and_then(Value::as_integer).unwrap_or(0),
+        text("reach").unwrap_or_else(|| "nowhere it said".to_owned()),
+        text("ended").unwrap_or_else(|| "MCF did not say".to_owned()),
+    )
 }

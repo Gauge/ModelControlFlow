@@ -2395,6 +2395,9 @@ pub struct Recovered {
     pub unreadable: Option<String>,
     /// How many artifacts the store held.
     pub held: usize,
+    /// The engine servers of daemons that were gone, found running at this
+    /// start and stopped (B-574, A27). Empty is the ordinary case.
+    pub engines_stopped: Vec<crate::orphans::Orphan>,
 }
 
 /// Why the daemon stopped.
@@ -2451,7 +2454,16 @@ impl Daemon {
             let _leftover = std::fs::remove_file(&places.socket);
         }
 
-        let recovered = recover(&places)?;
+        let mut recovered = recover(&places)?;
+        // **The servers of daemons that are gone** (B-574). A daemon ended by
+        // signal never reached the drop that stops its engine, and the
+        // engine sat there holding its model. Before this daemon starts
+        // anything of its own, it stops what the last one left, and says so
+        // with its start.
+        recovered.engines_stopped = crate::orphans::stop_all(
+            places.models.parent().unwrap_or(&places.models),
+            places.socket.parent().unwrap_or_else(|| Path::new("/tmp")),
+        );
         let listener = UnixListener::bind(&places.socket)
             .map_err(|error| unusable("the control socket", &places.socket, &error))?;
 
@@ -2868,6 +2880,16 @@ impl Daemon {
             (
                 "models_held",
                 Value::Integer(i64::try_from(self.recovered.held).unwrap_or(i64::MAX)),
+            ),
+            (
+                "engines_stopped",
+                Value::List(
+                    self.recovered
+                        .engines_stopped
+                        .iter()
+                        .map(crate::orphans::Orphan::as_value)
+                        .collect(),
+                ),
             ),
         ])
     }
@@ -6596,6 +6618,16 @@ impl Daemon {
                         "models_held",
                         Value::Integer(i64::try_from(self.recovered.held).unwrap_or(i64::MAX)),
                     ),
+                    (
+                        "engines_stopped",
+                        Value::List(
+                            self.recovered
+                                .engines_stopped
+                                .iter()
+                                .map(crate::orphans::Orphan::as_value)
+                                .collect(),
+                        ),
+                    ),
                 ]),
             ),
             ("engines", self.engines_as_value()),
@@ -6794,6 +6826,7 @@ fn recover(places: &Places) -> Result<Recovered> {
         entries,
         unreadable,
         held,
+        engines_stopped: Vec::new(),
     })
 }
 

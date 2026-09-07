@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 45 |
+| **Version** | 46 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -183,7 +183,7 @@ loudly is the honest outcome, and `crates/mcf-core/build.rs` carries the one
 documented opt-out: a build script has no MCF failure type available to it and
 no record to write to.
 
-**Two modules opt out of `unsafe_code`, and both say why at the site.**
+**Three modules opt out of `unsafe_code`, and each says why at the site.**
 `crates/mcf-core/src/hardware/nvml.rs` loads the vendor's management library at
 runtime and calls it over the C ABI, because F1 established that a device's live
 state — available memory, temperature — is reachable no other way, and D25 makes
@@ -204,6 +204,15 @@ opposite answers. It is checked against `df` (A12), and
 [findings.md](findings.md) F11 has the measurement that made it necessary: a
 buffered write to a full filesystem *succeeds*, and the failure arrives at the
 flush.
+
+The third is `crates/mcf-serve/src/orphans.rs`, one `kill` call, and its
+reason is A27: a daemon that ends by signal never reaches the drop that stops
+its engine server, and the server sits there holding its model (F262). The
+next daemon finds the servers whose parent is gone and stops them, and the
+standard library can signal only a child of its own — which an orphan, by
+definition, is not. The call takes a process id above one and a signal
+number, touches no memory of this process, and its status is not trusted:
+whether the server went is read back from the process table.
 
 **A signal is a claim too.** `scripts/check-fault-signal.sh` spawns one binary
 thirty times warm and thirty times with its pages evicted, and requires the
@@ -1030,6 +1039,11 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 46 — the third `unsafe` opt-out
+
+`crates/mcf-serve/src/orphans.rs`: one `kill` call, for the engine servers of
+daemons that are gone (B-574, F262).
 
 ### Version 45 — the frontier
 

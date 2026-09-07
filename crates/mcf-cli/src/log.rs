@@ -335,11 +335,7 @@ fn described(entry: &Entry) -> String {
                 .and_then(Value::as_list)
                 .map_or(0, <[Value]>::len)
         ),
-        EntryKind::DaemonStarted => format!(
-            "the daemon started; recovered {} record entries and {} model files",
-            integer(body, "record_entries"),
-            integer(body, "models_held")
-        ),
+        EntryKind::DaemonStarted => daemon_started_said(body),
         EntryKind::DaemonStopped => match text(body, "reason") {
             Some(reason) => format!("the daemon stopped, because: {reason}"),
             None => format!(
@@ -592,6 +588,25 @@ fn per_cent(held: i64) -> String {
 
 fn text(body: &Value, key: &str) -> Option<String> {
     body.get(key).and_then(Value::as_text).map(str::to_owned)
+}
+
+/// The words for a daemon's start: what it recovered, and what it stopped
+/// on the way up where the last daemon left engine servers behind (B-574).
+fn daemon_started_said(body: &Value) -> String {
+    let stopped = body
+        .get("engines_stopped")
+        .and_then(Value::as_list)
+        .map_or(0, <[Value]>::len);
+    format!(
+        "the daemon started; recovered {} record entries and {} model files{}",
+        integer(body, "record_entries"),
+        integer(body, "models_held"),
+        match stopped {
+            0 => String::new(),
+            1 => "; stopped 1 engine server whose daemon was gone".to_owned(),
+            n => format!("; stopped {n} engine servers whose daemons were gone"),
+        }
+    )
 }
 
 fn integer(body: &Value, key: &str) -> i64 {
