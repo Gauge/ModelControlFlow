@@ -2024,6 +2024,18 @@ fn newest_of(journal: &Path, kind: EntryKind) -> std::collections::BTreeMap<Path
     newest
 }
 
+/// How long the same refusal is one refusal in the record (B-588).
+const REFUSAL_REPEAT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The word a client's request line asks with, for the record's `asked`;
+/// the line itself where it has none.
+fn asked_in(line: &str) -> String {
+    mcf_record::json::parse(line.trim_end())
+        .ok()
+        .and_then(|value| value.get("ask").and_then(Value::as_text).map(str::to_owned))
+        .unwrap_or_else(|| line.trim_end().chars().take(60).collect())
+}
+
 /// A run's body with when it was recorded beside it, so that a surface
 /// can say when a diagnostic last ran rather than only that it did (D53,
 /// B-507). The time is the record's, never the body's own to overwrite.
@@ -2342,6 +2354,10 @@ pub struct Daemon {
     running: std::sync::Mutex<std::collections::BTreeMap<u64, std::sync::Arc<Running>>>,
     /// Numbers the requests as they arrive.
     arrivals: std::sync::atomic::AtomicU64,
+    /// The refusals recorded lately, by what they said and when: the same
+    /// refusal within a minute is one refusal in the record, not a row a
+    /// second from a client that keeps asking (B-588).
+    refusals: std::sync::Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
 }
 
 /// One request being carried on its own thread.
@@ -2497,6 +2513,7 @@ impl Daemon {
             stopping: std::sync::atomic::AtomicBool::new(false),
             running: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             arrivals: std::sync::atomic::AtomicU64::new(0),
+            refusals: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         };
         // An event, not a tick. *MCF was up between these two moments* is a
         // condition of anything measured in between (§3.4), and a daemon that
@@ -3076,16 +3093,62 @@ impl Daemon {
                 }
                 Ok(request) => {
                     let (answer, stop) = self.respond(&request);
-                    let _written = writeln!(writer, "{}", answer.to_line());
-                    let _flushed = writer.flush();
+                    self.tell(&asked_in(&line), writer, &answer);
                     return stop;
                 }
                 Err(failure) => Answer::refused(&failure),
             },
         };
+        self.tell("a request MCF could not read", writer, &answer);
+        None
+    }
+
+    /// Sends an answer, and puts a refusal in the record (B-588).
+    ///
+    /// **A refusal a person was shown is a classified failure, and the
+    /// record held none of them.** Seven thousand entries on this machine
+    /// and not one `failure`: every refusal the daemon answered — a hold
+    /// without a key, an engine that would not start, a model that was not
+    /// there — went to the client and nowhere else, so `mcf failures` and
+    /// the System page had nothing to show for a morning of them (F269).
+    /// The answer is already the record's shape for a failure; this writes
+    /// it, with what was asked beside it.
+    fn tell(&self, asked: &str, writer: &UnixStream, answer: &Answer) {
+        let mut writer = writer;
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
-        None
+        if !answer.served {
+            self.record_refusal(asked, &answer.body);
+        }
+    }
+
+    /// One row per refusal, and the same refusal within a minute is one:
+    /// a client that asks every second and is refused every second is one
+    /// fact, not sixty (A1 keeps the fact; B-031 keeps the record from
+    /// being written on a timer by proxy).
+    fn record_refusal(&self, asked: &str, body: &Value) {
+        let said = |key: &str| body.get(key).and_then(Value::as_text).unwrap_or_default();
+        let key = format!("{}\u{1f}{}\u{1f}{asked}", said("category"), said("detail"));
+        {
+            let mut lately = self
+                .refusals
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let now = std::time::Instant::now();
+            if lately
+                .get(&key)
+                .is_some_and(|last| now.duration_since(*last) < REFUSAL_REPEAT)
+            {
+                return;
+            }
+            lately.retain(|_, last| now.duration_since(*last) < REFUSAL_REPEAT);
+            let _was = lately.insert(key, now);
+        }
+        let mut recorded = body.clone();
+        if let Value::Map(fields) = &mut recorded {
+            let _added = fields.insert("asked".to_owned(), Value::text(asked));
+        }
+        let _noted = self.note(EntryKind::Failure, Timestamp::now(), recorded);
     }
 
     /// What a request is called while it runs, and the model it names, for
@@ -3174,7 +3237,11 @@ impl Daemon {
         if let Some((what, named)) = Self::carried(&request)
             && let Some(refusal) = self.one_model_rule(what, &named)
         {
-            return Self::write_refusal(writer, &Answer::refused(&refusal));
+            return self.write_refusal(
+                Self::carried(&request).map_or("carry", |(what, _)| what),
+                writer,
+                &Answer::refused(&refusal),
+            );
         }
         // A measurement of the hosted model would be its second copy: the
         // hold is let go for the run and taken up again after, under the
@@ -3960,7 +4027,9 @@ impl Daemon {
         let held = hosted.as_ref().map(|hosted| &*hosted.served);
         let settle = match self.settle_asked(named, settle) {
             Ok(settle) => settle,
-            Err(failure) => return Self::write_refusal(writer, &Answer::refused(&failure)),
+            Err(failure) => {
+                return self.write_refusal("prompt-report", writer, &Answer::refused(&failure));
+            }
         };
         let mut tally = ReportTally::default();
         // **Every generation is announced before it is asked**, and the
@@ -4025,7 +4094,7 @@ impl Daemon {
             baseline_account,
         } = tally;
         if let Some(failure) = refused {
-            return Self::write_refusal(writer, &Answer::refused_as(failure));
+            return self.write_refusal("prompt-report", writer, &Answer::refused_as(failure));
         }
         // What the model was asked, as the baseline was: the parts put back
         // together, which is what the counts below are of.
@@ -4097,7 +4166,8 @@ impl Daemon {
         };
         let path = crate::generation::resolved(&self.places.models, named);
         if !path.is_file() {
-            return Self::write_refusal(
+            return self.write_refusal(
+                "probe",
                 writer,
                 &Answer::refused(&crate::control::refused(
                     "there is no model at this name; `mcf list` says what this machine holds",
@@ -4163,7 +4233,7 @@ impl Daemon {
             ])),
             Err(why) => Answer::refused(&crate::control::refused(&why, named)),
         };
-        Self::write_refusal(writer, &answer);
+        self.write_refusal("probe", writer, &answer);
     }
 
     /// A model's readings runs, newest first, one method's where one is
@@ -4255,7 +4325,8 @@ impl Daemon {
     ) {
         let path = crate::generation::resolved(&self.places.models, named);
         if !path.is_file() {
-            return Self::write_refusal(
+            return self.write_refusal(
+                "examine",
                 writer,
                 &Answer::refused(&crate::control::refused(
                     "there is no model at this name; `mcf list` says what this machine holds",
@@ -4264,7 +4335,8 @@ impl Daemon {
             );
         }
         if engine.is_some_and(|engine| engine != "provisioned") {
-            return Self::write_refusal(
+            return self.write_refusal(
+                "examine",
                 writer,
                 &Answer::refused(&crate::control::refused(
                     "a measurement starts the provisioned engine under the settings it varies; \
@@ -4276,7 +4348,8 @@ impl Daemon {
         let (llama, gpu_layers, context) = match self.picked_engine_or_why(named) {
             Ok(picked) => picked,
             Err(why) => {
-                return Self::write_refusal(
+                return self.write_refusal(
+                    "examine",
                     writer,
                     &Answer::refused(&crate::control::refused(&why, named)),
                 );
@@ -4382,7 +4455,7 @@ impl Daemon {
             ])),
             Err(why) => Answer::refused(&crate::control::refused(&why, named)),
         };
-        Self::write_refusal(writer, &answer);
+        self.write_refusal("examine", writer, &answer);
     }
 
     /// The engine a report reads and asks through: the server hosted for
@@ -4397,10 +4470,10 @@ impl Daemon {
         (hosted, picked)
     }
 
-    /// Writes a refusal as the answer, and does not mind a client that left.
-    fn write_refusal(writer: &mut &UnixStream, answer: &Answer) {
-        let _written = writeln!(writer, "{}", answer.to_line());
-        let _flushed = writer.flush();
+    /// Writes a refusal as the answer, puts it in the record (B-588), and
+    /// does not mind a client that left.
+    fn write_refusal(&self, asked: &str, writer: &mut &UnixStream, answer: &Answer) {
+        self.tell(asked, writer, answer);
     }
 
     /// One generation of a report, and what the tally keeps of it.
@@ -4652,10 +4725,7 @@ impl Daemon {
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
-        let say = |writer: &mut &UnixStream, answer: &Answer| {
-            let _written = writeln!(writer, "{}", answer.to_line());
-            let _flushed = writer.flush();
-        };
+        let say = |writer: &mut &UnixStream, answer: &Answer| self.tell("measure", writer, answer);
 
         let ladder = depth_ladder(deepest);
         if ladder.is_empty() {
@@ -4825,10 +4895,8 @@ impl Daemon {
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
-        let say = |writer: &mut &UnixStream, answer: &Answer| {
-            let _written = writeln!(writer, "{}", answer.to_line());
-            let _flushed = writer.flush();
-        };
+        let say =
+            |writer: &mut &UnixStream, answer: &Answer| self.tell("cross-check", writer, answer);
         let path = crate::generation::resolved(&self.places.models, named);
         let file = match crate::crosscheck::examined(&path, system_memory_free()) {
             Ok(file) => file,
@@ -5366,10 +5434,8 @@ impl Daemon {
     /// else this daemon holds changes: a build is a new directory beside the
     /// ones it knew.
     fn provisioning(&self, component: Option<&str>, writer: &mut &UnixStream) {
-        let say = |writer: &mut &UnixStream, answer: &Answer| {
-            let _written = writeln!(writer, "{}", answer.to_line());
-            let _flushed = writer.flush();
-        };
+        let say =
+            |writer: &mut &UnixStream, answer: &Answer| self.tell("provision", writer, answer);
         let (component, chosen) = match component {
             Some(name) => match mcf_core::component::COMPONENTS
                 .iter()
@@ -5475,10 +5541,7 @@ impl Daemon {
     /// One line a second while it runs, then one last line saying where the
     /// model went and what was written down about it.
     fn acquiring(&self, reference: &str, file: &str, from: Option<&str>, writer: &mut &UnixStream) {
-        let say = |writer: &mut &UnixStream, answer: &Answer| {
-            let _written = writeln!(writer, "{}", answer.to_line());
-            let _flushed = writer.flush();
-        };
+        let say = |writer: &mut &UnixStream, answer: &Answer| self.tell("acquire", writer, answer);
 
         let parsed = match mcf_hub::reference::parse(reference) {
             Ok(parsed) => parsed,
@@ -6053,10 +6116,7 @@ impl Daemon {
     /// out as *this much of this many bytes read*, and the last line
     /// carries what `mcf hosted` would say, marked done (A7, B-072).
     fn hosting(&self, named: &str, asked: &Value, writer: &mut &UnixStream) {
-        let say = |writer: &mut &UnixStream, answer: &Answer| {
-            let _written = writeln!(writer, "{}", answer.to_line());
-            let _flushed = writer.flush();
-        };
+        let say = |writer: &mut &UnixStream, answer: &Answer| self.tell("host", writer, answer);
         let answer = self.host(named, asked, &mut |loading| {
             say(writer, &Answer::served(loading));
         });

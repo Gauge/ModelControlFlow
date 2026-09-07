@@ -7,8 +7,8 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**486 items: 63 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 13
-decided, 23 resolved) and 423 build items (336 done, 2 dropped, 16 in progress,
+**487 items: 63 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 13
+decided, 23 resolved) and 424 build items (337 done, 2 dropped, 16 in progress,
 37 blocked on a decision, 32 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
@@ -422,6 +422,7 @@ first and importance second.
 | B-583 | An official build installed on this machine: the gating tier green, every scheduled tier run against this source, the release refusal cleared, the release artifact built with its revision set and put on the path | B-185, D24, B-001, DEC-032 | `mcf --version` on the path names this revision; `scripts/check-tier-ages.sh --release` exits clean on the source it was built from | done. F261 |
 | B-584 | A termination signal stops the daemon the way `mcf stop` does: `SIGTERM`, `SIGINT` and `SIGHUP` become the stop request a client would send, so the hold is let go in writing, the engine server is dropped, and `daemon_stopped` names the signal; before this the daemon died where it stood and its server outlived it until the next daemon's sweep | B-574, A27, A4, B-071 | A daemon sent `SIGTERM` while holding a model exits clean, its server is gone, and the record carries `model_unhosted` and `daemon_stopped` with the signal as the reason | done. F263: `mcf_serve::signals`, a handler that writes one byte and a thread that sends the request |
 | B-585 | Installing puts the window where a person looks for it: `scripts/install.sh` installs the release binary, and the launcher and icon the Flatpak packaging already carried, under `~/.local`, so the desktop's application search finds *Model Control Flow*; the first official build had installed the binary alone | B-583, B-448, DEC-032 | The desktop's application search finds MCF and starts the window; the binary the launcher runs is the one on the path | done. F265 |
+| B-588 | A refusal the daemon answers is a classified failure in the record: seven thousand entries on this machine held not one, because every refusal went to the client and nowhere else; every answer that is not served is recorded with what was asked beside it, the same refusal within a minute counted once | B-074, A1, A2, §3.1 | `mcf failures` after a refused ask shows it, with what was asked; the same ask refused twice in a minute is one row | done. F270 |
 | B-586 | An idle window costs nothing: a frame is drawn when something happened — an event, a word from a job, a reading due, an act taken — and the loop sleeps in the platform until an event or a second passes, rather than drawing every sixteen milliseconds; measured at forty-three per cent of a core while nobody was looking | B-071, §6.11, §3.13 | With the window open and idle for a minute, its processor time is indistinguishable from a window that is not there | done. F267: 2,559 ticks in sixty seconds before, none after |
 | B-587 | The citation check reaches every shipped crate but the laboratory: the thirty-five sentences a library crate handed the CLI and the window — the taxonomy's own meanings among them — say the thing, and the taxonomy document's meaning column says the same words, since the code is generated from it | B-403, F264, A23 | No string in a shipped crate but the laboratory carries a rule, a register item or a clause; the taxonomy's meanings in the document and the code are one text | done. F268 |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
@@ -603,6 +604,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 329 — a refusal is in the record
+
+B-588 opened and done (F270).
 
 ### Version 328 — failures are inspectable from the window
 

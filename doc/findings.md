@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 270 | [F270 — Seven thousand entries and not one failure: every refusal the daemon answered went to the client and nowhere else, and now every unserved answer is a failure row with what was asked beside it (B-588, B-074, A2)](#270-f270-seven-thousand-entries-and-not-one-failure-every-refusal-the-daemon-answered-went-to-the-client-and-nowhere-else-and-now-every-unserved-answer-is-a-failure-row-with-what-was-asked-beside-it-b-588-b-074-a2) |
 | 269 | [F269 — Failures are inspectable from the window: the daemon answers the record's newest classified failures, the System page shows each with every field the taxonomy gives it, and one rendering serves all 112 categories (B-074, §3.1, §3.2)](#269-f269-failures-are-inspectable-from-the-window-the-daemon-answers-the-records-newest-classified-failures-the-system-page-shows-each-with-every-field-the-taxonomy-gives-it-and-one-rendering-serves-all-112-categories-b-074-31-32) |
 | 268 | [F268 — The citation check reaches every shipped crate but the laboratory: thirty-five sentences in the library crates, the taxonomy's meanings among them, and the one word that has a citation's shape and is not one (B-587, B-403, F264)](#268-f268-the-citation-check-reaches-every-shipped-crate-but-the-laboratory-thirty-five-sentences-in-the-library-crates-the-taxonomys-meanings-among-them-and-the-one-word-that-has-a-citations-shape-and-is-not-one-b-587-b-403-f264) |
 | 267 | [F267 — Idle cost, measured: the daemon uses nothing with the window open, and the window used forty-three per cent of a core drawing nothing — fixed by drawing when something happened and sleeping on events (B-071, B-586, §6.11)](#267-f267-idle-cost-measured-the-daemon-uses-nothing-with-the-window-open-and-the-window-used-forty-three-per-cent-of-a-core-drawing-nothing-fixed-by-drawing-when-something-happened-and-sleeping-on-events-b-071-b-586-611) |
@@ -15418,7 +15419,41 @@ context, `mcf failures --last 3` printed them, and the window's review
 renders the System page with two failures under the engines at every
 size.
 
+## 270 · F270 — Seven thousand entries and not one failure: every refusal the daemon answered went to the client and nowhere else, and now every unserved answer is a failure row with what was asked beside it (B-588, B-074, A2)
+
+**What F269's command found.** `mcf failures` over a copy of this
+machine's record — 7,071 entries after a morning of holds refused,
+engines that would not start and models that were not there — said
+*no classified failure is in the record*. The record writes a
+`failure` row only when an appended entry carries an anomaly; a
+refusal the daemon answers is a `Failure` in the record's own shape,
+sent to the client and written nowhere. A2 calls a swallowed
+classification worse than a crash, and this was every refusal
+anybody had been shown.
+
+**What was done.** One method sends every answer the daemon gives —
+the one-line path and the carried ones, which had five identical
+closures for it — and an answer that is not served goes into the
+record as a `failure` row, its body already the record's shape, with
+`asked` beside it: the word the client asked with, or what the daemon
+was doing when it refused. The same refusal within a minute is one
+row: a client that asks every second and is refused every second is
+one fact, not sixty, and a record written on a timer by proxy is what
+B-031 forbids.
+
+**What it looks like.** On a scratch daemon, a hold asked of a model
+that is not there is refused, and `mcf failures` shows it at once:
+the code and its meaning, *the operator's doing; refused; in
+mcf-serve::daemon*, the sentence, the context, and `asked: host`.
+The same ask a moment later adds nothing; a different refusal adds a
+row.
+
 ## Changelog
+
+### Version 192 — a refusal is in the record
+
+F270: every unserved answer recorded, once a minute per refusal
+(B-588).
 
 ### Version 191 — failures are inspectable from the window
 

@@ -2616,8 +2616,10 @@ fn a_failures_cause_and_axes_are_said_plainly() {
         "the hold could not start",
     )
     .caused_by(cause);
-    let fault = super::fault_from(&mcf_record::encode::failure(&failure));
+    let mut fault = super::fault_from(&mcf_record::encode::failure(&failure));
+    fault.asked = "host".to_owned();
     let lines = super::fault_lines(&fault);
+    assert!(lines.contains(&"asked: host".to_owned()), "{lines:?}");
     assert!(
         lines[1].starts_with("the operator's doing; refused; in mcf-serve::daemon"),
         "{lines:?}"

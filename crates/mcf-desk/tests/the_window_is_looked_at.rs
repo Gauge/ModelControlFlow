@@ -2687,6 +2687,7 @@ fn review_small_windows() {
             detail: "the provisioned server could not be started".to_owned(),
             context: vec![("error".to_owned(), "No such file or directory".to_owned())],
             caused_by: None,
+            asked: "host".to_owned(),
         },
         mcf_desk::Fault {
             at: "2026-09-07T14:02:11".to_owned(),
@@ -2701,6 +2702,7 @@ fn review_small_windows() {
                 "set one, or keep the hold on this computer".to_owned(),
             )],
             caused_by: None,
+            asked: "host".to_owned(),
         },
     ];
     desk.faults_in_record = 7;

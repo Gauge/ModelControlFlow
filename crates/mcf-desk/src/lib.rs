@@ -437,6 +437,9 @@ pub struct Fault {
     pub context: Vec<(String, String)>,
     /// What caused it, where the failure carries one.
     pub caused_by: Option<Box<Fault>>,
+    /// What was being asked when the daemon refused, where the record says
+    /// (B-588); empty for a failure recorded another way.
+    pub asked: String,
 }
 
 /// A failure from the record's entry: the body's fields under the entry's
@@ -488,6 +491,7 @@ fn fault_body(body: &Value) -> Fault {
         detail: text("detail"),
         context,
         caused_by,
+        asked: text("asked"),
     }
 }
 
@@ -512,6 +516,9 @@ pub fn fault_lines(fault: &Fault) -> Vec<String> {
     }
     for (key, value) in &fault.context {
         lines.push(format!("{key}: {value}"));
+    }
+    if !fault.asked.is_empty() {
+        lines.push(format!("asked: {}", fault.asked));
     }
     if let Some(cause) = &fault.caused_by {
         lines.push(format!("because: {} — {}", cause.category, cause.detail));

@@ -1437,3 +1437,71 @@ fn the_newest_failures_are_answered_from_the_record_newest_first() {
     );
     let _joined = handle.join();
 }
+
+/// A refusal the daemon answers is a classified failure in the record, with
+/// what was asked beside it; the same refusal within a minute is one row,
+/// and a different one is another (B-588).
+#[test]
+fn a_refusal_answered_is_recorded_once_a_minute_per_refusal() {
+    let machine = Machine::new("refusals");
+    let (handle, socket) = running(machine.places());
+
+    let refused = ask(
+        &socket,
+        &Request::Anatomy {
+            model: "/nowhere/at/all.gguf".to_owned(),
+        },
+    );
+    assert!(!refused.served, "{:?}", refused.body);
+    let again = ask(
+        &socket,
+        &Request::Anatomy {
+            model: "/nowhere/at/all.gguf".to_owned(),
+        },
+    );
+    assert!(!again.served);
+
+    let failures = ask(&socket, &Request::Failures { last: 10 });
+    let listed = failures
+        .body
+        .get("failures")
+        .and_then(Value::as_list)
+        .expect("a list");
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    let body = listed[0].get("body").expect("a body");
+    assert_eq!(body.get("asked").and_then(Value::as_text), Some("anatomy"));
+    assert!(body.get("category").and_then(Value::as_text).is_some());
+    assert_eq!(
+        body.get("category").and_then(Value::as_text),
+        refused.body.get("category").and_then(Value::as_text)
+    );
+    assert_eq!(
+        failures.body.get("in_record").and_then(Value::as_integer),
+        Some(1)
+    );
+
+    let other = ask(
+        &socket,
+        &Request::Settings {
+            model: "/nowhere/else.gguf".to_owned(),
+        },
+    );
+    assert!(!other.served);
+    let failures = ask(&socket, &Request::Failures { last: 10 });
+    assert_eq!(
+        failures
+            .body
+            .get("failures")
+            .and_then(Value::as_list)
+            .map(<[Value]>::len),
+        Some(2)
+    );
+
+    let _stopped = ask(
+        &socket,
+        &Request::Stop {
+            reason: "done".to_owned(),
+        },
+    );
+    let _joined = handle.join();
+}
