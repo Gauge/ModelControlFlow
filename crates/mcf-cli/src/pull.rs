@@ -181,7 +181,8 @@ pub(crate) fn run(
 /// published in several, every part, one after another (B-590): asking for
 /// any part is asking for the model, as the daemon does for the window.
 /// Each part is said as it lands, and the sentences at the end are about the
-/// first, which is the file an engine is pointed at.
+/// first, which is the file an engine is pointed at and the name the store
+/// lists the model by.
 fn acquire_set(hub: &Hub, listing: &Listing, wanted: &str, entry: Entry, root: &Path) -> Response {
     let parts: Vec<Entry> = match listing.parts_of(wanted) {
         Some(set) if !set.is_whole() => {
@@ -201,6 +202,7 @@ fn acquire_set(hub: &Hub, listing: &Listing, wanted: &str, entry: Entry, root: &
     };
     let mut said = Vec::new();
     let count = parts.len();
+    let mut about_the_first = None;
     for (index, part) in parts.iter().enumerate() {
         if count > 1 {
             said.push(format!(
@@ -211,17 +213,30 @@ fn acquire_set(hub: &Hub, listing: &Listing, wanted: &str, entry: Entry, root: &
             ));
         }
         let response = acquire_one(hub, listing, part, root);
-        if !response.served || index.saturating_add(1) == count {
+        if !response.served {
             said.push(response.text);
             return Response {
                 text: said.join("\n"),
-                served: response.served,
+                served: false,
             };
         }
+        if about_the_first.is_none() {
+            about_the_first = Some(response.text);
+        }
     }
+    if count > 1 {
+        said.push(format!(
+            "{count} parts, {} bytes in all",
+            parts
+                .iter()
+                .map(|part| part.size)
+                .fold(0_u64, u64::saturating_add)
+        ));
+    }
+    said.extend(about_the_first);
     Response {
         text: said.join("\n"),
-        served: false,
+        served: true,
     }
 }
 
