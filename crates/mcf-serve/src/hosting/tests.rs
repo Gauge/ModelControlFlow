@@ -207,3 +207,25 @@ fn a_hold_open_to_the_network_binds_every_address_and_names_its_own() {
         "the switch is a listed setting"
     );
 }
+
+/// A hold asked for over the control plane carries the key itself, since
+/// the engine is started with it; the record's form never does, and a
+/// hold read back from the request has the key (B-579).
+#[test]
+fn a_hold_asked_for_carries_its_key_and_the_record_does_not() {
+    let mut chosen = on_a_card();
+    chosen.api_key = Some("a-secret-nobody-should-see".to_owned());
+    chosen.open = true;
+    let asked = chosen.to_request();
+    assert_eq!(
+        asked.get("api_key").and_then(Value::as_text),
+        Some("a-secret-nobody-should-see")
+    );
+    let read = Hosting::from_value(&asked, &on_a_card());
+    assert_eq!(read.api_key.as_deref(), Some("a-secret-nobody-should-see"));
+    assert!(read.open);
+    assert!(
+        !chosen.to_value().to_line().contains("nobody-should-see"),
+        "the record's form keeps the key out"
+    );
+}

@@ -3325,7 +3325,9 @@ impl Desk {
             &self.socket,
             Request::Host {
                 model: held.path.clone(),
-                settings: settings.to_value(),
+                // The request's form, which carries the key; the record's
+                // form says only that one is set (B-579).
+                settings: settings.to_request(),
             },
             format!("holding {}", held.name),
         ));

@@ -500,6 +500,19 @@ impl Hosting {
         std::net::TcpListener::bind((LOOPBACK, self.port)).is_ok()
     }
 
+    /// These settings as a hold is asked for over the control plane: the
+    /// record's form with the key itself beside it, since the daemon must
+    /// be told the key to start the engine with it. The record never gets
+    /// this form; [`Self::to_value`] is what is written down (B-579).
+    #[must_use]
+    pub fn to_request(&self) -> Value {
+        let mut asked = self.to_value();
+        if let (Value::Map(fields), Some(key)) = (&mut asked, &self.api_key) {
+            let _key = fields.insert("api_key".to_owned(), Value::text(key.clone()));
+        }
+        asked
+    }
+
     /// Where a caller reaches a model hosted under these settings.
     #[must_use]
     pub fn address(&self) -> String {

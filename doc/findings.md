@@ -9765,6 +9765,15 @@ field is empty it says so in the fields' own words — *type one in the
 API key field above, then Start server; or turn the switch off* —
 before the daemon is asked.
 
+**Amended again (B-579).** With the field applied, the same refusal:
+the window sends a hold as the settings' record form, and that form
+writes `api_key_set` and never the key, by design — a record must not
+hold a secret. So no key typed in the window had ever reached the
+daemon; only the command line's `--api-key` did, since it builds the
+request by hand. The settings gain a request form, the record's with
+the key beside it, and the window asks with that; the record keeps
+its form and the test that the key is never written down still holds.
+
 **What is not done.** The key travels as a bearer token over plain
 HTTP, which on a home network is the ordinary arrangement and on any
 other is not; a hold that should be reached from further than the
