@@ -116,3 +116,57 @@ fn the_offset_read_is_a_plausible_offset() {
     // Every real zone is a whole number of minutes.
     assert_eq!(read.seconds_east() % 60, 0, "{read} is not whole minutes");
 }
+
+/// A version 1 zone file with two transitions and three types: the offset
+/// before the first transition, the offset between the two, and the offset
+/// after the second. Each type is a different number of seconds east, so a
+/// moment in any of the three spans has exactly one right answer.
+fn a_zone_with_two_transitions() -> Vec<u8> {
+    const TRANSITIONS: [i32; 2] = [1_000, 2_000];
+    const OFFSETS: [i32; 3] = [3_600, 7_200, 10_800];
+
+    let mut bytes = b"TZif1".to_vec();
+    bytes.extend(std::iter::repeat_n(0_u8, 15));
+    // isutcnt, isstdcnt, leapcnt, timecnt, typecnt, charcnt.
+    for count in [0_u32, 0, 0, 2, 3, 4] {
+        bytes.extend(count.to_be_bytes());
+    }
+    for when in TRANSITIONS {
+        bytes.extend(when.to_be_bytes());
+    }
+    // Transition k switches to type k + 1.
+    bytes.extend([1_u8, 2]);
+    for east in OFFSETS {
+        bytes.extend(east.to_be_bytes());
+        // Not daylight saving, designation at 0.
+        bytes.extend([0_u8, 0]);
+    }
+    bytes.extend(b"UTC\0");
+    bytes
+}
+
+/// Between two transitions the offset in force is the one the *earlier*
+/// transition switched to, not the one the later will switch to. Read against
+/// a file built here, so that the answer is known rather than looked up, and
+/// so that the three spans are told apart on a machine of any zone.
+#[test]
+fn the_offset_between_two_transitions_is_the_one_the_earlier_switched_to() {
+    const NANOS_PER_SECOND: i128 = 1_000_000_000;
+    let at =
+        |seconds: i128| Timestamp::from_utc_nanos(seconds * NANOS_PER_SECOND, Attested::Unknown);
+    let east = |seconds| UtcOffset::from_seconds_east(seconds);
+
+    let zone = Zone::parse(&a_zone_with_two_transitions()).expect("the built file is read");
+
+    // Before the first transition: the initial type.
+    assert_eq!(zone.offset_at(at(0)), east(3_600));
+    assert_eq!(zone.offset_at(at(999)), east(3_600));
+    // On and after the first, before the second: the first's type.
+    assert_eq!(zone.offset_at(at(1_000)), east(7_200));
+    assert_eq!(zone.offset_at(at(1_500)), east(7_200));
+    assert_eq!(zone.offset_at(at(1_999)), east(7_200));
+    // On the second: the second's type, which is the last thing the file says.
+    assert_eq!(zone.offset_at(at(2_000)), east(10_800));
+    // Past it: unknown, not extrapolated.
+    assert_eq!(zone.offset_at(at(2_001)), None);
+}
