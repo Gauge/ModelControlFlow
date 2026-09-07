@@ -1577,6 +1577,51 @@ fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
     assert!(!desk.takes_typing(), "nothing is being typed once applied");
 }
 
+/// A run on the model the window is hosting costs a second copy, and the
+/// page says so before Run; a run on another model says nothing (B-561).
+#[test]
+fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.models = vec![
+        Model {
+            name: "a".to_owned(),
+            path: "/m/a.gguf".to_owned(),
+            bytes: Some(17_665_334_432),
+            ..Model::default()
+        },
+        Model {
+            name: "b".to_owned(),
+            path: "/m/b.gguf".to_owned(),
+            bytes: None,
+            ..Model::default()
+        },
+    ];
+    desk.chosen = Some(0);
+    assert_eq!(desk.second_copy(), None, "nothing hosted, nothing to say");
+    desk.hosted = Some(crate::Hosted {
+        model: "/m/a.gguf".to_owned(),
+        address: "127.0.0.1:8080".to_owned(),
+        since: "2026-09-06T13:56:00Z".to_owned(),
+        context: Some(4096),
+        projector: None,
+        takes: None,
+        api_key: false,
+        in_use: None,
+    });
+    let said = desk.second_copy().unwrap_or_default();
+    assert!(said.contains("second copy"), "{said}");
+    assert!(
+        said.contains("17.7 GB") || said.contains("16.5 GB"),
+        "the size is said: {said}"
+    );
+    desk.chosen = Some(1);
+    assert_eq!(
+        desk.second_copy(),
+        None,
+        "the other model is not the hosted one"
+    );
+}
+
 #[test]
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;

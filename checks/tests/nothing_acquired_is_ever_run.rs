@@ -133,10 +133,13 @@ const DECLARED: &[Spawns] = &[
     },
     Spawns {
         file: "crates/mcf-cli/src/serve.rs",
-        sites: 1,
+        sites: 2,
         what: "MCF itself, asked to serve, when a surface finds no daemon listening. The \
                program started is the one already running — `current_exe` — with one \
-               argument and no file of any kind. A person opening a console expects the \
+               argument and no file of any kind; where the person's session manager \
+               offers a scope, it is started through the system's own `systemd-run` \
+               under a memory cap, so that what the kernel kills under pressure is MCF \
+               and not the desktop (B-561, F243). A person opening a console expects the \
                tools to be working, and starting the daemon is MCF's job rather than \
                something to report to them as their problem (B-408, D39)",
     },

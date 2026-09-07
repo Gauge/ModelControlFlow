@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 249 | [F249 — The daemon is first to go and, where the session offers a scope, held under a cap: `mcf serve` sets the highest out-of-memory adjustment on itself, which its servers inherit, so the kernel takes MCF before the desktop; a surface that starts the daemon starts it through the session manager's own runner in a transient scope capped at the machine less an eighth, never less than eight gigabytes, with no swap; the daemon says both on its first line; and the Diagnostics page says, above a run on the model the window is hosting, that it starts a second copy and how much more (B-561, F243, D41)](#249-f249-the-daemon-is-first-to-go-and-where-the-session-offers-a-scope-held-under-a-cap-mcf-serve-sets-the-highest-out-of-memory-adjustment-on-itself-which-its-servers-inherit-so-the-kernel-takes-mcf-before-the-desktop-a-surface-that-starts-the-daemon-starts-it-through-the-session-managers-own-runner-in-a-transient-scope-capped-at-the-machine-less-an-eighth-never-less-than-eight-gigabytes-with-no-swap-the-daemon-says-both-on-its-first-line-and-the-diagnostics-page-says-above-a-run-on-the-model-the-window-is-hosting-that-it-starts-a-second-copy-and-how-much-more-b-561-f243-d41) |
 | 248 | [F248 — A run that did not reach the end of the cases is handed back with what the program said on its way out: the harnesses keep the program's error stream beside the compiler's, told apart by whether `compiled` was printed, the host reads the same bounded twelve lines back into the correction — a traceback, a panic, a thrown error — a run that said nothing is told it may have run past the deadline, and a row counts the lines (B-566, B-565, B-025)](#248-f248-a-run-that-did-not-reach-the-end-of-the-cases-is-handed-back-with-what-the-program-said-on-its-way-out-the-harnesses-keep-the-programs-error-stream-beside-the-compilers-told-apart-by-whether-compiled-was-printed-the-host-reads-the-same-bounded-twelve-lines-back-into-the-correction-a-traceback-a-panic-a-thrown-error-a-run-that-said-nothing-is-told-it-may-have-run-past-the-deadline-and-a-row-counts-the-lines-b-566-b-565-b-025) |
 | 247 | [F247 — A compile failure is handed back with the compiler's first lines: the Rust and Go harnesses send the compiler's complaint to the container's error stream and the program's own nowhere, the host reads at most twelve lines of two hundred characters back into the correction, and a row counts them (B-565, B-563, B-025)](#247-f247-a-compile-failure-is-handed-back-with-the-compilers-first-lines-the-rust-and-go-harnesses-send-the-compilers-complaint-to-the-containers-error-stream-and-the-programs-own-nowhere-the-host-reads-at-most-twelve-lines-of-two-hundred-characters-back-into-the-correction-and-a-row-counts-them-b-565-b-563-b-025) |
 | 246 | [F246 — What a run will use is said before it runs: `mcf eval` prints the engine and device MCF resolves for the model, the window, the answer budget, the retries, the languages, the tier and the seed before the first ask and keeps them in the report, the Challenges pane shows the same under its Run button with two fields — the retries and the window — that become the command line's own flags, `--window` opens every attempt in the window the person set, and every attempt's row carries the window it ran in (B-564, D56, DEC-063)](#246-f246-what-a-run-will-use-is-said-before-it-runs-mcf-eval-prints-the-engine-and-device-mcf-resolves-for-the-model-the-window-the-answer-budget-the-retries-the-languages-the-tier-and-the-seed-before-the-first-ask-and-keeps-them-in-the-report-the-challenges-pane-shows-the-same-under-its-run-button-with-two-fields-the-retries-and-the-window-that-become-the-command-lines-own-flags-window-opens-every-attempt-in-the-window-the-person-set-and-every-attempts-row-carries-the-window-it-ran-in-b-564-d56-dec-063) |
@@ -9671,6 +9672,53 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 249 · F249 — The daemon is first to go and, where the session offers a scope, held under a cap: `mcf serve` sets the highest out-of-memory adjustment on itself, which its servers inherit, so the kernel takes MCF before the desktop; a surface that starts the daemon starts it through the session manager's own runner in a transient scope capped at the machine less an eighth, never less than eight gigabytes, with no swap; the daemon says both on its first line; and the Diagnostics page says, above a run on the model the window is hosting, that it starts a second copy and how much more (B-561, F243, D41)
+
+**What was missing.** F243's gate refuses a server that would not
+fit at the moment it starts, and nothing held the daemon after that:
+a server that grew, or three that each fit alone, could still take
+the machine to the point where the kernel chose what to kill, and it
+chose the desktop. The fix has two halves and a sentence.
+
+**First to go.** On start, `mcf serve` writes the highest adjustment
+there is to its own out-of-memory score, which a process may raise on
+itself without any right and which every server it starts inherits.
+When the kernel must kill, it takes the process with the highest
+score; the daemon's servers hold the memory and carry the score, so
+they go first, then the daemon, and the session after. The daemon
+says on its first line whether the kernel agreed, since a machine
+that refused is not to be reported as one that agreed.
+
+**Held under a cap.** A surface that finds no daemon and starts one
+does so, where the session manager offers a scope and its runner is
+on the system, through that runner: a transient scope with a memory
+ceiling of the machine less an eighth — never less than eight
+gigabytes — and no swap, so that what the kernel reclaims under
+pressure is MCF's own pages and what it kills at the ceiling is inside
+the scope. The daemon reads the ceiling from its own control group
+and says it on its first line; where there is no scope it says that
+instead. The scope is the session's own — nothing is asked of the
+system, and a machine without the runner starts the daemon as before.
+
+**Said before Run.** The Diagnostics page, above the pane of any
+diagnostic, says *hosted through the window: a run here starts a
+second copy of this model beside it, N GB more* when the chosen model
+is the one the window hosts, and nothing otherwise. F243's crash was
+exactly that run, made without the sentence.
+
+**Seen.** A daemon started plainly on the 2B: `/proc/<pid>/oom_score_adj` read 1000 on the daemon and 1000 on the `llama-server` it started, and its first line said *under no memory cap: the system offered no scope to hold one, and first to go when memory runs out*. The same daemon started through `systemd-run --user --scope` with the cap this machine's 125 GiB gives: its control group's `memory.max` read 117,526,274,048 and its first line *held under a memory cap of 109 GiB with its servers*; the scope charged 72 MB before the 2B was asked anything and 1.98 GB after, of which 1.93 GB was anonymous memory and 34 MB file pages — the weights the Vulkan engine uploads to a card whose memory is the host's are charged to the scope as anonymous pages, not as a file the kernel could drop. So on this machine the cap counts what the card holds, and at the ceiling the kernel kills inside the scope rather than reclaiming its way around it.
+
+**What is not done.** The cap is on the scope the surface started;
+a daemon a person starts by hand with `mcf serve` is first to go and
+under no cap unless they start it under one. The reserve is one
+rule for every machine, an eighth or eight gigabytes; a person who
+wants a different one has no setting yet. A model an engine reads
+as a mapped file rather than uploading — the processor path — sits in
+the scope as file pages the kernel reclaims before it kills, which on
+a model that does not fit is thrashing rather than a refusal; the
+gate of F243 is what refuses, and the cap is what holds the line
+behind it.
+
 ## 248 · F248 — A run that did not reach the end of the cases is handed back with what the program said on its way out: the harnesses keep the program's error stream beside the compiler's, told apart by whether `compiled` was printed, the host reads the same bounded twelve lines back into the correction — a traceback, a panic, a thrown error — a run that said nothing is told it may have run past the deadline, and a row counts the lines (B-566, B-565, B-025)
 
 **What was missing.** F247 handed the compiler's complaint back and
@@ -14466,6 +14514,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 172 — first to go, and held under a cap
+
+F249: the daemon's out-of-memory adjustment, a scope with a ceiling
+where the session offers one, and the second copy said before Run
+(B-561).
 
 ### Version 171 — what the program said on its way out
 

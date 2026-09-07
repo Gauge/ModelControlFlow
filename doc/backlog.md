@@ -8,8 +8,8 @@
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **465 items: 63 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 13
-decided, 23 resolved) and 402 build items (310 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 37 open).** Every item cites
+decided, 23 resolved) and 402 build items (311 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 36 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -397,7 +397,7 @@ first and importance second.
 | B-558 | Retrieval past sixteen thousand: the single-fact and multi-fact retrievals at 32k, 64k and 128k where the window allows | D55, B-497, B-529 | Rows per depth, and a depth past the window says so | done. F241: 32k, 64k and 128k; the 2B found every placement |
 | B-559 | The server a probe opens at the trained context outlives the probe: the usable-context probe started the 2B at 262,144 tokens and the daemon kept that server for every ask after it, so a suite that followed ran through a cache sized for a window nobody else asked for; a server opened for a probe's depth closes with the probe, or the next ask sizes its own | D48, B-459, F225 | After a probe, the next ask runs on a server sized for its own window | done. F226: a held window more than sixteen times the turn's need is replaced; the abandoned read that runs on is noted |
 | B-560 | A server that would not fit beside what is resident is refused before it starts, and the daemon stops its own idle server before a measurement starts one | D41, DEC-018, F243 | Three copies of a model cannot be started on a machine that holds two | done. F243: the fit is the file's bytes and its cache against the host's available memory and a discrete card's free memory |
-| B-561 | A memory cap on the daemon the window and the command line start, so that what the kernel kills under pressure is MCF and not the desktop; and the window saying, before a measurement on a hosted model, that it will hold a second copy | D41, F243, B-560 | The daemon runs under a cap where the system offers one, and the window says what a measurement on a hosted model costs | open |
+| B-561 | A memory cap on the daemon the window and the command line start, so that what the kernel kills under pressure is MCF and not the desktop; and the window saying, before a measurement on a hosted model, that it will hold a second copy | D41, F243, B-560 | The daemon runs under a cap where the system offers one, and the window says what a measurement on a hosted model costs | done. F249: `mcf serve` is first to go and its servers inherit it; a surface starts the daemon through `systemd-run --user --scope` under a cap of the machine less an eighth where the session offers one; both said on the daemon's first line; the Diagnostics page says a run on the hosted model starts a second copy and how much more |
 | B-562 | Every run says how far it is within its step and names its conditions: a progress line a part, shown by the command line and the window, and the engine, window and layers on every run's record | D56, DEC-063, D54 | Every measurement's loop reports; the suites print progress lines as they go; the window's bar moves within a step | done. F244: every measurement's main loop reports, the five suites print `progress:` lines, every run's conditions carry engine, window and layers, shown under the readings |
 | B-563 | The coding catalogue: challenges with a tier, a category, a statement and language-neutral cases, run in every language MCF has an image for, with retries the person sets (ten by default) and rows for time, tokens, the attempt solved at and the corrections it took | D56, DEC-063, B-518, B-523 | The window and the command line show the challenge and the language beside every figure; a challenge never solved in a language is a row | done. F245: forty-four challenges in four tiers, four languages through one harness each, `--retries` (ten), `--languages`, `--tier`; rows an attempt and a whole with the attempt solved at, the corrections, the tokens and the time; the Go build held to the process limit |
 | B-564 | The configuration a diagnostic runs under shown before it runs — engine, window, layers, sampler, budget, retries — on the pane and in the command line's header, and a way to set the retries and the window from the window | D56, DEC-063, B-562 | A person can say what a run will use before pressing Run | done. F246: `mcf eval` says the engine, device, window, budget, retries, languages, tier and seed before the first ask; the Challenges pane shows the same with Retries and Window fields that become `--retries` and `--window`; the window rides the request's declared start and every attempt's row carries the window it ran in |
@@ -582,6 +582,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 309 — first to go, and held under a cap
+
+B-561 done (F249).
 
 ### Version 308 — what the program said on its way out
 

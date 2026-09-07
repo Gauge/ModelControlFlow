@@ -2989,22 +2989,44 @@ fn diagnostic_pane(
         desk,
         Region::Diagnostics,
         area,
-        |paint, mouse, inner| match desk.diagnostic {
-            crate::Diagnostic::Throughput => {
-                let (act, opened) = throughput_card(paint, desk, mouse, inner);
-                menu = opened;
-                act
+        |paint, mouse, inner| {
+            let inner = second_copy_line(paint, desk, inner);
+            match desk.diagnostic {
+                crate::Diagnostic::Throughput => {
+                    let (act, opened) = throughput_card(paint, desk, mouse, inner);
+                    menu = opened;
+                    act
+                }
+                crate::Diagnostic::CrossCheck
+                | crate::Diagnostic::Prompt
+                | crate::Diagnostic::Comparison => run_pane(paint, desk, mouse, inner),
+                crate::Diagnostic::Probe(_) | crate::Diagnostic::Measure(_) => {
+                    one_pane(paint, desk, mouse, inner, desk.diagnostic)
+                }
+                crate::Diagnostic::Eval(_) => eval_pane(paint, desk, mouse, inner, desk.diagnostic),
             }
-            crate::Diagnostic::CrossCheck
-            | crate::Diagnostic::Prompt
-            | crate::Diagnostic::Comparison => run_pane(paint, desk, mouse, inner),
-            crate::Diagnostic::Probe(_) | crate::Diagnostic::Measure(_) => {
-                one_pane(paint, desk, mouse, inner, desk.diagnostic)
-            }
-            crate::Diagnostic::Eval(_) => eval_pane(paint, desk, mouse, inner, desk.diagnostic),
         },
     );
     (act, menu)
+}
+
+/// The cost of a run on a hosted model, above its pane: the space it takes
+/// off the top of the pane is returned as what is left (B-561, F243).
+fn second_copy_line(paint: &mut Painter, desk: &Desk, inner: Box) -> Box {
+    let Some(said) = desk.second_copy() else {
+        return inner;
+    };
+    let ink = paint.ink;
+    let shown = paint.elide(&said, Weight::Regular, size::SMALL, inner.w);
+    paint.say_at(
+        inner.x,
+        inner.y,
+        &shown,
+        Weight::Regular,
+        size::SMALL,
+        ink.warn,
+    );
+    Box::new(inner.x, inner.y + 24.0, inner.w, (inner.h - 24.0).max(0.0))
 }
 
 /// A coding suite's pane: what it answers, Run — which starts MCF's own

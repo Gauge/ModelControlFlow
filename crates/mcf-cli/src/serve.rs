@@ -100,8 +100,27 @@ pub(crate) fn ensure_running(socket: &Path) -> Option<String> {
     };
     // The same binary, asked to serve. Detached, so closing the window does not
     // take the daemon with it — a model held resident should outlive the thing
-    // that was looking at it.
-    let started = Command::new(binary)
+    // that was looking at it. Under a memory cap where the system offers one
+    // (B-561): a transient scope of the person's own session manager, so
+    // that what the kernel reclaims and kills under pressure is MCF's
+    // scope and not the desktop's (F243).
+    let mut command = match memory_cap() {
+        Some(cap) => {
+            let mut scoped = Command::new(SYSTEMD_RUN);
+            scoped
+                .arg("--user")
+                .arg("--scope")
+                .arg("--quiet")
+                .arg(format!("--unit=mcf-serve-{}", std::process::id()))
+                .arg(format!("--property=MemoryMax={cap}"))
+                .arg("--property=MemorySwapMax=0")
+                .arg("--")
+                .arg(&binary);
+            scoped
+        }
+        None => Command::new(&binary),
+    };
+    let started = command
         .arg("serve")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -119,6 +138,78 @@ pub(crate) fn ensure_running(socket: &Path) -> Option<String> {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     Some("a daemon was started and did not begin listening".to_owned())
+}
+
+/// What holds the daemon's memory, in one line: the cap its scope carries
+/// and whether the kernel agreed to take it first.
+#[expect(clippy::integer_division, reason = "whole gigabytes are the unit said")]
+fn memory_line(cap: Option<u64>, dies_first: &Result<(), String>) -> String {
+    let capped = match cap {
+        Some(bytes) => format!(
+            "held under a memory cap of {} GiB with its servers",
+            bytes / (1024 * 1024 * 1024)
+        ),
+        None => "under no memory cap: the system offered no scope to hold one".to_owned(),
+    };
+    let first = match dies_first {
+        Ok(()) => "and first to go when memory runs out",
+        Err(_) => "and the kernel would not let it go first",
+    };
+    format!("{capped}, {first}")
+}
+
+/// The session manager's runner, where the system has one.
+const SYSTEMD_RUN: &str = "/usr/bin/systemd-run";
+
+/// The most memory the daemon and its servers may hold together, in bytes,
+/// where this machine offers a scope to hold them to; `None` where it does
+/// not, or where the machine's memory is not known (A7).
+///
+/// The cap leaves the desktop a reserve: an eighth of the machine, and
+/// never less than eight gigabytes. Under it the kernel reclaims MCF's own
+/// pages first and, at the cap, kills inside the scope — so a model that
+/// does not fit takes the daemon down and not the session (B-561, F243).
+#[expect(
+    clippy::integer_division,
+    reason = "an eighth of the machine, whole bytes"
+)]
+fn memory_cap() -> Option<u64> {
+    let manager = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(|runtime| Path::new(&runtime).join("systemd"))
+        .is_some_and(|held| held.is_dir());
+    if !manager || !Path::new(SYSTEMD_RUN).is_file() {
+        return None;
+    }
+    let total = match mcf_core::hardware::Machine::read().memory.total {
+        mcf_core::attested::Attested::Known(bytes) => bytes.0,
+        mcf_core::attested::Attested::Unknown => return None,
+    };
+    let reserve = (total / 8).max(RESERVE_AT_LEAST);
+    total.checked_sub(reserve).filter(|cap| *cap > 0)
+}
+
+/// The least the desktop keeps for itself beside a capped daemon.
+const RESERVE_AT_LEAST: u64 = 8 * 1024 * 1024 * 1024;
+
+/// Asks the kernel to take this process, and every server it starts, before
+/// anything else when memory runs out: the highest adjustment there is,
+/// which a process may set on itself without any right (B-561, F243). What
+/// the kernel does with it is said back, so that a machine that refused is
+/// not reported as one that agreed (A7).
+fn prefer_to_die_first() -> Result<(), String> {
+    std::fs::write("/proc/self/oom_score_adj", "1000\n").map_err(|error| error.to_string())
+}
+
+/// The memory cap this process runs under, in bytes, read from its own
+/// control group; `None` where there is none or it cannot be read.
+fn cap_in_force() -> Option<u64> {
+    let groups = std::fs::read_to_string("/proc/self/cgroup").ok()?;
+    let path = groups
+        .lines()
+        .find_map(|line| line.strip_prefix("0::"))?
+        .trim();
+    let held = std::fs::read_to_string(format!("/sys/fs/cgroup{path}/memory.max")).ok()?;
+    held.trim().parse::<u64>().ok()
 }
 
 /// What engines this machine has, in one line a person can read.
@@ -178,6 +269,8 @@ pub(crate) fn run() -> Response {
             };
         }
     };
+    let dies_first = prefer_to_die_first();
+    let cap = cap_in_force();
 
     // Printed before serving rather than after, because after is never: the
     // next thing this process does is block in `accept` until somebody asks it
@@ -191,6 +284,7 @@ pub(crate) fn run() -> Response {
         "mcf is up on {}\n  \
          recovered {} record entr{} and {} model file{}{}\n  \
          {}\n  \
+         {}\n  \
          it costs nothing while nobody is asking",
         daemon.socket().display(),
         recovered.entries,
@@ -202,6 +296,7 @@ pub(crate) fn run() -> Response {
             None => String::new(),
         },
         engines_line(),
+        memory_line(cap, &dies_first),
     );
 
     match daemon.serve() {

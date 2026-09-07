@@ -3239,6 +3239,29 @@ impl Desk {
         self.models.iter().find(|held| held.path == hosting.model)
     }
 
+    /// What a diagnostic on the chosen model costs while that model is
+    /// hosted through the window: a second copy beside the first, said
+    /// before Run is pressed rather than after the machine ran out
+    /// (B-561, F243). `None` where the chosen model is not the hosted one.
+    #[must_use]
+    pub fn second_copy(&self) -> Option<String> {
+        let chosen = self.chosen.and_then(|at| self.models.get(at))?;
+        let hosted = self.hosted_model()?;
+        if hosted.path != chosen.path {
+            return None;
+        }
+        Some(match chosen.bytes {
+            Some(bytes) => format!(
+                "hosted through the window: a run here starts a second copy of this model \
+                 beside it, {} more",
+                view::gigabytes(bytes)
+            ),
+            None => "hosted through the window: a run here starts a second copy of this model \
+                     beside it"
+                .to_owned(),
+        })
+    }
+
     /// Moves one setting on to its next value.
     ///
     /// Cycling rather than typing, because every one of these has a small set
