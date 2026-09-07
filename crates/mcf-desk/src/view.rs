@@ -5266,6 +5266,25 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
         ),
         ("KV tokens", count(in_use.cache_tokens)),
         ("Decodes", count(in_use.decodes)),
+        // The card's draw and what it has spent while MCF watched, which
+        // is the card's and not this model's alone (B-593).
+        ("Card watts", rate(in_use.card_power_watts)),
+        (
+            "Card energy",
+            in_use.card_energy_joules.map(|joules| {
+                if joules >= 1_000.0 {
+                    format!("{:.1} kJ", joules / 1_000.0)
+                } else {
+                    format!("{joules:.0} J")
+                }
+            }),
+        ),
+        (
+            "Energy over",
+            in_use
+                .card_energy_over_seconds
+                .map(|seconds| clock(seconds.max(0.0) as u64)),
+        ),
         ("Active", count(in_use.processing)),
         ("Queued", count(in_use.queued)),
         ("RAM", bytes(in_use.resident)),
@@ -5308,7 +5327,15 @@ fn machine_and_run_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
         let kilojoules = spent.millijoules / 1_000_000;
         tiles.push((
             "Run energy",
-            (spent.millijoules > 0).then(|| format!("{} kJ", words::grouped(kilojoules))),
+            (spent.millijoules > 0).then(|| {
+                if kilojoules > 0 {
+                    format!("{} kJ", words::grouped(kilojoules))
+                } else {
+                    #[expect(clippy::integer_division, reason = "whole joules, under a kilojoule")]
+                    let joules = spent.millijoules / 1_000;
+                    format!("{joules} J")
+                }
+            }),
         ));
         tiles.push(("Run tokens", spent.tokens().map(words::grouped)));
         tiles.push((

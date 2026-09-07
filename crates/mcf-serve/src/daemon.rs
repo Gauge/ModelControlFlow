@@ -1270,6 +1270,17 @@ struct Counted {
     generated: u64,
     /// Tokens of prompt read by then.
     prompted: u64,
+    /// What the card was drawing then, in microwatts, where it says.
+    power_uw: Option<i64>,
+    /// The card's energy since MCF began watching this engine, in
+    /// microjoules: each interval's mean draw over its length, summed.
+    microjoules: u64,
+    /// How much of this engine's life those intervals cover, in
+    /// nanoseconds. Less than the whole where nobody was asking: MCF reads
+    /// the card when somebody asks and never on a timer (B-031, B-071), so
+    /// the energy is over the time it could see and says how long that was
+    /// (A6).
+    covered_ns: u64,
 }
 
 /// Where an engine answers, as one line, to tell two of them apart.
@@ -1290,6 +1301,17 @@ static COUNTED: std::sync::Mutex<std::collections::BTreeMap<String, Counted>> =
 /// (A7).
 const RATE_OVER_AT_MOST_NS: u64 = 30 * 1_000_000_000;
 
+/// The card's energy while an engine was watched, and how much of its
+/// life that covers: microjoules and nanoseconds, taken from the store so
+/// that a stopped engine's figures do not go on ageing there.
+fn energy_of(reach: &crate::served::Reach) -> Option<(u64, u64)> {
+    let held = COUNTED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&where_it_answers(reach))?;
+    (held.covered_ns > 0).then_some((held.microjoules, held.covered_ns))
+}
+
 /// One engine's counters, and the rates MCF measures over them.
 ///
 /// **The rate is MCF's own arithmetic, and named as such.** The engine's
@@ -1306,10 +1328,20 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
     // Read the way the server is reached, key and all: a keyed hold refused
     // its counters to a reader without the key, and the page showed a
     // served model doing nothing (B-580).
-    let Some(metrics) = crate::served::metrics_via(reach) else {
-        return fields;
-    };
-    fields.extend(counters(&metrics));
+    if let Some(metrics) = crate::served::metrics_via(reach) {
+        fields.extend(counters(&metrics));
+    }
+    // **The card's draw, which is a fact about the card and not about the
+    // model** (B-593). What it publishes is the whole card's power, and
+    // anything else drawing on it is in the figure; MCF says what it read
+    // and where, and attributes nothing (A8).
+    let power_uw = crate::engines::card_sensors().power_uw;
+    if let Some(power) = power_uw {
+        fields.push((
+            "card_power_watts",
+            thousandths_of(u64::try_from(power.max(0)).unwrap_or(0), 1_000),
+        ));
+    }
     let whole = |key: &str| -> Option<u64> {
         fields
             .iter()
@@ -1332,18 +1364,41 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
         fields.push(("generated_tokens_live", as_whole(generated)));
     }
     let now = SystemClock.now();
-    let (Some(generated), Some(prompted)) = (generated, prompted) else {
-        return fields;
-    };
     let mut counted = COUNTED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let key = where_it_answers(reach);
+    let before = counted.get(&key);
+    let over = before.map_or(0, |before| {
+        now.saturating_duration_since(before.at).as_nanos()
+    });
+    let usable = over > 0 && over <= RATE_OVER_AT_MOST_NS;
+    // **The energy between two readings, by the trapezoid rule**: the mean
+    // of the draw then and the draw now, over the time between. Microwatts
+    // times nanoseconds over a thousand million is microjoules.
+    let (mut microjoules, mut covered_ns) =
+        before.map_or((0, 0), |before| (before.microjoules, before.covered_ns));
+    if usable
+        && let (Some(then), Some(held)) = (before.and_then(|before| before.power_uw), power_uw)
+    {
+        let mean = then.saturating_add(held).max(0);
+        #[expect(
+            clippy::integer_division,
+            reason = "the mean of two draws, and then microjoules; what is discarded is under a microjoule"
+        )]
+        let spent = u64::try_from(mean).unwrap_or(0).saturating_mul(over) / 2_000_000_000;
+        microjoules = microjoules.saturating_add(spent);
+        covered_ns = covered_ns.saturating_add(over);
+    }
     let before = counted.insert(
-        where_it_answers(reach),
+        key,
         Counted {
             at: now,
-            generated,
-            prompted,
+            generated: generated.unwrap_or(0),
+            prompted: prompted.unwrap_or(0),
+            power_uw,
+            microjoules,
+            covered_ns,
         },
     );
     // Only what is being watched is kept: an engine nobody has asked after
@@ -1351,12 +1406,21 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
     counted
         .retain(|_, held| now.saturating_duration_since(held.at).as_nanos() < RATE_OVER_AT_MOST_NS);
     drop(counted);
+    if covered_ns > 0 {
+        fields.push(("card_energy_joules", thousandths_of(microjoules, 1_000)));
+        fields.push((
+            "card_energy_over_seconds",
+            thousandths_of(covered_ns, 1_000_000),
+        ));
+    }
+    let (Some(generated), Some(prompted)) = (generated, prompted) else {
+        return fields;
+    };
     let Some(before) = before else {
         // One reading is no rate, and A7 forbids the plausible nought.
         return fields;
     };
-    let over = now.saturating_duration_since(before.at).as_nanos();
-    if over == 0 || over > RATE_OVER_AT_MOST_NS {
+    if !usable {
         return fields;
     }
     // In whole thousandths throughout: a rate is tokens over nanoseconds,
@@ -1382,8 +1446,10 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
 ///
 /// A rate in tokens a second is the tokens times a million million over the
 /// nanoseconds between two readings; an interval in seconds is its
-/// nanoseconds over a million. Integer throughout, because a number the
-/// record carries has to be one a reader can order (A6).
+/// nanoseconds over a million; joules are microjoules over a thousand,
+/// since a thousandth of a joule is a thousand microjoules. Integer
+/// throughout, because a number the record carries has to be one a reader
+/// can order (A6).
 fn thousandths_of(held: u64, over: u64) -> Value {
     #[expect(
         clippy::integer_division,
@@ -6808,6 +6874,9 @@ impl Daemon {
         }
         let model = held.model.display().to_string();
         let resident = held.served.resident_bytes();
+        // What the card drew while this was watched, taken before the
+        // engine goes and its reach is gone with it (B-593).
+        let energy = energy_of(held.served.reach());
         // The card's memory before and after the engine goes: what it gave
         // back there, which the engine's own figure never held. Read after
         // the process has gone, which the driver takes a moment over.
@@ -6832,6 +6901,7 @@ impl Daemon {
             resident,
             card,
         };
+        let spent = energy;
         let at = Timestamp::now();
         let _recorded = self.note(
             EntryKind::ModelUnhosted,
@@ -6841,6 +6911,23 @@ impl Daemon {
                 ("reason", Value::text(why.to_owned())),
                 ("freed_bytes", freed.resident.map_or(Value::Null, as_whole)),
                 ("freed_card_bytes", freed.card.map_or(Value::Null, as_whole)),
+                // The card's draw while this was held and somebody was
+                // asking, and how much of the hold that covers (B-593).
+                // The card's, not the model's: whatever else drew on it is
+                // in the figure, and the coverage says how much of the hold
+                // MCF could see at all (A8, A6).
+                (
+                    "card_energy_joules",
+                    spent.map_or(Value::Null, |(microjoules, _)| {
+                        thousandths_of(microjoules, 1_000)
+                    }),
+                ),
+                (
+                    "card_energy_over_seconds",
+                    spent.map_or(Value::Null, |(_, covered_ns)| {
+                        thousandths_of(covered_ns, 1_000_000)
+                    }),
+                ),
             ]),
         );
         if let Ok(mut last) = self.last_hold.lock()

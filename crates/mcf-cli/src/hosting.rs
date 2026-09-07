@@ -503,6 +503,21 @@ fn in_use_lines(body: &Value) -> Vec<String> {
             "                 {live} tokens produced, counting the answer in hand"
         ));
     }
+    // The card's draw and what it has spent while MCF was watching it: the
+    // card's, and over the time MCF could see rather than the whole hold
+    // (B-593, A8, A6).
+    if let Some(watts) = figure("card_power_watts") {
+        lines.push(format!("  card           {watts} W now"));
+    }
+    if let (Some(joules), Some(over)) = (
+        figure("card_energy_joules"),
+        figure("card_energy_over_seconds"),
+    ) {
+        lines.push(format!(
+            "                 {joules} J drawn by the card over {over} s of watching — the \
+             card's draw, not this model's alone"
+        ));
+    }
     if let (Some(processing), Some(queued)) =
         (figure("requests_processing"), figure("requests_queued"))
     {

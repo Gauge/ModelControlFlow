@@ -151,6 +151,16 @@ pub struct Use {
     pub generated_per_second: Option<f32>,
     /// How long the rates above were measured over, in seconds.
     pub rate_over_seconds: Option<f32>,
+    /// What the card is drawing now, in watts, where it says (B-593).
+    /// The card's, not this model's: whatever else draws on it is in it.
+    pub card_power_watts: Option<f32>,
+    /// The card's energy while MCF has been watching this engine, in
+    /// joules.
+    pub card_energy_joules: Option<f32>,
+    /// How much of the engine's life that energy covers, in seconds. Less
+    /// than the whole where nobody was asking, because MCF reads the card
+    /// when it is asked and never on a timer.
+    pub card_energy_over_seconds: Option<f32>,
     /// Its prompt-reading rate now, tokens a second.
     pub prompted_per_second: Option<f32>,
     /// How much of its cache is in use, nought to one.
@@ -204,6 +214,9 @@ impl Use {
             generated_live: count("generated_tokens_live"),
             generated_per_second: rate("generated_tokens_per_second"),
             rate_over_seconds: rate("rate_over_seconds"),
+            card_power_watts: rate("card_power_watts"),
+            card_energy_joules: rate("card_energy_joules"),
+            card_energy_over_seconds: rate("card_energy_over_seconds"),
             prompted_per_second: rate("prompt_tokens_per_second"),
             cache_used: rate("cache_used_ratio"),
             processing: count("requests_processing"),
@@ -2415,9 +2428,12 @@ impl UnderTest {
 /// (B-573). Whole millijoules: no fraction reaches the record (D24).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Spent {
-    /// Millijoules summed from the card's watts, one second a sample.
+    /// Millijoules the card drew while the run was watched, as the daemon
+    /// measured them: each interval's mean draw over its own length, which
+    /// is not the same as a watts reading a second assumed to be a second
+    /// (B-593).
     pub millijoules: u64,
-    /// Seconds sampled.
+    /// Seconds those intervals cover.
     pub seconds: u64,
     /// The model under test's generated tokens when the run began, where
     /// its counters were readable then.
@@ -4601,24 +4617,35 @@ impl Desk {
         if !self.doing.busy() {
             return;
         }
-        let watts: u64 = self
-            .reading
-            .cards
-            .iter()
-            .filter_map(|card| card.power)
-            .map(u64::from)
-            .sum();
-        if watts > 0 {
-            self.spent.millijoules = self
-                .spent
-                .millijoules
-                .saturating_add(watts.saturating_mul(1000));
+        // **What the daemon measured, not what this window assumed.** The
+        // energy used to be a watts reading multiplied by a second that was
+        // taken on faith; the daemon now measures each interval's mean draw
+        // over its own length and says how much of the run that covers
+        // (B-593, F275).
+        let under = self.under_test.as_ref().map(|under| &under.in_use);
+        if let Some(joules) = under.and_then(|in_use| in_use.card_energy_joules) {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "joules the daemon wrote to three places, as millijoules"
+            )]
+            let millijoules = (joules.max(0.0) * 1_000.0) as u64;
+            self.spent.millijoules = millijoules;
         }
-        self.spent.seconds = self.spent.seconds.saturating_add(1);
-        let tokens = self
-            .under_test
-            .as_ref()
-            .and_then(|under| under.in_use.generated);
+        if let Some(seconds) = under.and_then(|in_use| in_use.card_energy_over_seconds) {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "whole seconds, for the run's clock"
+            )]
+            let whole = seconds.max(0.0) as u64;
+            self.spent.seconds = whole;
+        } else {
+            self.spent.seconds = self.spent.seconds.saturating_add(1);
+        }
+        // The answer in hand counted, so the tokens do not stand still
+        // through a generation and jump at the end (B-591).
+        let tokens = under.and_then(|in_use| in_use.generated_live.or(in_use.generated));
         if self.spent.tokens_at_start.is_none() {
             self.spent.tokens_at_start = tokens;
         }

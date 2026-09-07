@@ -1778,52 +1778,58 @@ fn a_run_says_about_how_long_is_left_from_its_own_pace() {
 /// card's watts and the model's tokens (B-573).
 #[test]
 fn the_model_under_test_is_read_and_its_cost_is_summed() {
-    let answer = Value::map([
-        ("model", Value::text("/m/Assistant-2B-Instruct-Q4_K_M.gguf")),
-        ("engine", Value::text("provisioned llama.cpp @925e")),
-        ("window", Value::Integer(8192)),
-        (
-            "use",
-            Value::map([
-                ("generated_tokens", Value::text("1500")),
-                ("prompted_tokens", Value::text("9000")),
-                ("requests_processing", Value::text("1")),
-            ]),
-        ),
-    ]);
-    let under = crate::UnderTest::from_value(&answer);
+    let reading = |joules: &str, over: &str, live: &str| {
+        Value::map([
+            ("model", Value::text("/m/Assistant-2B-Instruct-Q4_K_M.gguf")),
+            ("engine", Value::text("provisioned llama.cpp @925e")),
+            ("window", Value::Integer(8192)),
+            (
+                "use",
+                Value::map([
+                    ("generated_tokens", Value::text("1500")),
+                    ("generated_tokens_live", Value::text(live)),
+                    ("prompted_tokens", Value::text("9000")),
+                    ("requests_processing", Value::text("1")),
+                    ("card_power_watts", Value::text("100.000")),
+                    ("card_energy_joules", Value::text(joules)),
+                    ("card_energy_over_seconds", Value::text(over)),
+                ]),
+            ),
+        ])
+    };
+    let under = crate::UnderTest::from_value(&reading("200.000", "2.000", "1500"));
     assert_eq!(under.name(), "Assistant-2B-Instruct-Q4_K_M");
     assert_eq!(under.window, Some(8192));
     assert_eq!(under.in_use.generated, Some(1500));
     assert_eq!(under.in_use.prompted, Some(9000));
+    assert_eq!(under.in_use.card_power_watts, Some(100.0));
 
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
     desk.under_test = Some(under);
-    desk.reading.cards.push(mcf_tui::machine::Card {
-        name: "card0".to_owned(),
-        load: None,
-        temperature: None,
-        power: Some(100),
-        used: None,
-        total: None,
-    });
     desk.tally();
     assert_eq!(desk.spent.seconds, 0, "nothing running: nothing spent");
+
+    // **The daemon's measurement, not a watts reading multiplied by a
+    // second nobody timed** (B-593): what the window shows is what was
+    // measured over the intervals it covers.
     let mut going = crate::job::Job::already("running".to_owned(), Vec::new());
     going.finished = false;
     desk.doing = crate::Doing::Evaluating(going);
     desk.tally();
-    desk.tally();
     assert_eq!(desk.spent.seconds, 2);
     assert_eq!(
         desk.spent.millijoules, 200_000,
-        "a hundred watts for two seconds"
+        "two hundred joules, as the daemon measured them"
     );
     assert_eq!(desk.spent.tokens_at_start, Some(1500));
-    if let Some(under) = desk.under_test.as_mut() {
-        under.in_use.generated = Some(1900);
-    }
+
+    // The answer in hand counts toward the run's tokens, so they do not
+    // stand still through a generation (B-591).
+    desk.under_test = Some(crate::UnderTest::from_value(&reading(
+        "300.000", "3.000", "1900",
+    )));
     desk.tally();
+    assert_eq!(desk.spent.seconds, 3);
     assert_eq!(desk.spent.tokens(), Some(400));
     assert_eq!(
         desk.spent.tokens_per_kilojoule(),
@@ -1832,6 +1838,31 @@ fn the_model_under_test_is_read_and_its_cost_is_summed() {
     );
     desk.tally_afresh();
     assert_eq!(desk.spent, crate::Spent::default());
+}
+
+/// Where the daemon says nothing about the card, the run's clock still
+/// runs and its energy stays unmeasured rather than becoming nought (A7).
+#[test]
+fn a_run_on_a_card_that_says_nothing_counts_seconds_and_no_energy() {
+    let answer = Value::map([
+        ("model", Value::text("/m/Assistant-2B-Instruct-Q4_K_M.gguf")),
+        ("engine", Value::text("provisioned llama.cpp @925e")),
+        ("window", Value::Integer(8192)),
+        (
+            "use",
+            Value::map([("generated_tokens", Value::text("1500"))]),
+        ),
+    ]);
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.under_test = Some(crate::UnderTest::from_value(&answer));
+    let mut going = crate::job::Job::already("running".to_owned(), Vec::new());
+    going.finished = false;
+    desk.doing = crate::Doing::Evaluating(going);
+    desk.tally();
+    desk.tally();
+    assert_eq!(desk.spent.seconds, 2);
+    assert_eq!(desk.spent.millijoules, 0);
+    assert_eq!(desk.spent.tokens_per_kilojoule(), None);
 }
 
 /// A key still being typed when Start server is pressed is the key the

@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 275 | [F275 — Power was measured inside diagnostics and nowhere else: a served model drew 90 W with nothing recording it, and the window's run energy was a watts reading multiplied by a second nobody timed (B-593, A8, A6)](#275-f275-power-was-measured-inside-diagnostics-and-nowhere-else-a-served-model-drew-90-w-with-nothing-recording-it-and-the-windows-run-energy-was-a-watts-reading-multiplied-by-a-second-nobody-timed-b-593-a8-a6) |
 | 274 | [F274 — Closing the window let a model keep the card: the hold outlived the window by design, and now the window lets go on its way out, freeing 3.6 GB on the 2B and recording it (B-592, A27, F267)](#274-f274-closing-the-window-let-a-model-keep-the-card-the-hold-outlived-the-window-by-design-and-now-the-window-lets-go-on-its-way-out-freeing-36-gb-on-the-2b-and-recording-it-b-592-a27-f267) |
 | 273 | [F273 — The rate bar was flat because the engine's rate gauge is a bucket: nought for the whole of a request, one spike after it, emptied by whoever reads it; MCF now counts the tokens itself and the bar moves (B-591, A6, A12)](#273-f273-the-rate-bar-was-flat-because-the-engines-rate-gauge-is-a-bucket-nought-for-the-whole-of-a-request-one-spike-after-it-emptied-by-whoever-reads-it-mcf-now-counts-the-tokens-itself-and-the-bar-moves-b-591-a6-a12) |
 | 272 | [F272 — A model published in parts is one acquisition, and a part's file name finds its repository: the ninety-gigabyte set the operator could not find, fetched in order with the whole said, and the hub's search shortened a segment at a time (B-590, F138, A7)](#272-f272-a-model-published-in-parts-is-one-acquisition-and-a-parts-file-name-finds-its-repository-the-ninety-gigabyte-set-the-operator-could-not-find-fetched-in-order-with-the-whole-said-and-the-hubs-search-shortened-a-segment-at-a-time-b-590-f138-a7) |
@@ -15651,7 +15652,68 @@ socket closes, which the daemon reads as the asker having left.
 | freed | 202,866,688 bytes of memory, 3,606,605,824 on the card |
 | recorded | `model_unhosted`, reason *asked* |
 
+## 275 · F275 — Power was measured inside diagnostics and nowhere else: a served model drew 90 W with nothing recording it, and the window's run energy was a watts reading multiplied by a second nobody timed (B-593, A8, A6)
+
+**What was there.** An energy measurement that samples the card every
+twenty milliseconds through a pinned generation and integrates it
+(B-531), which runs only as a diagnostic. For a model somebody is
+actually serving — the case the operator asked about — there was
+nothing: no draw in `mcf hosted`, nothing in the record when the hold
+ended, and on the window a *Run energy* tile that existed only while a
+job was running and was computed by taking the card's watts once a
+second and multiplying by a second that had not been timed.
+
+**What was built.** The card's draw is read wherever MCF already reads
+the engine's counters — when somebody asks what a hold is doing, and
+never on a timer, so a daemon nobody is asking still costs nothing
+(B-031, B-071, F267). Between two such readings the energy is the mean
+of the two draws over the time between them, the trapezoid rule the
+diagnostic already uses, summed in microjoules. What goes out is the
+draw now, the joules so far, and **how much of the hold those
+intervals cover** — because nobody watching means nothing sampled, and
+a total without its coverage would be a claim about a whole hold made
+from a minute of it (A6). When the hold ends, both go into
+`model_unhosted` beside the memory it freed.
+
+**Whose figure it is.** The card's. What the driver publishes is the
+whole card's power, and anything else drawing on it is inside the
+number; MCF says what it read and attributes nothing to the model
+(A8). The processor's own counter is root-only on this machine and
+stays unread rather than guessed.
+
+**On the 2B.** Hosted, watched once a second, one generation in the
+middle:
+
+| watching | card | energy so far |
+|---|---|---|
+| idle | 8 to 27 W | 43 J at 3.0 s |
+| generating | 62 to 91 W | 327 J at 7.1 s |
+| after | 24 W | 432 J at 9.1 s |
+
+Released, the record carried *431.7 J over 9.096 s*, a mean of 47.5 W
+across a run that idled near 10 W and generated near 90.
+
+**The window's run tile follows the same figures.** It shows what the
+daemon measured over intervals it timed, rather than a reading
+multiplied by an assumed second, and the tokens it divides by count
+the answer in hand (B-591).
+
+**And a check that measuring this made fail.** The gating suite
+cross-checks the card's temperature two ways and allows them to differ
+by a degree. Reading it while the card was hot from these runs — 102
+°C, swinging four degrees between one read and the next — it failed;
+at 59 °C it passes. The two readings are taken one after the other
+rather than at one moment, so the tolerance is a claim about how fast
+the chip can move, and under load it moves faster than that. The check
+is right to compare them and wrong about how much they may differ
+while the machine is busy (B-594).
+
 ## Changelog
+
+### Version 197 — power is measured for a served model
+
+F275: the card's draw read when asked, the energy integrated between
+readings, both recorded with their coverage (B-593).
 
 ### Version 196 — closing the window lets the model go
 

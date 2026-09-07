@@ -7,9 +7,9 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**491 items: 63 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 13
-decided, 23 resolved) and 428 build items (341 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 32 open).** Every item cites
+**493 items: 63 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 13
+decided, 23 resolved) and 430 build items (342 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 33 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -427,6 +427,8 @@ first and importance second.
 | B-590 | A model published in parts is acquired whole, and a part's file name finds its repository: the operator had `Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf` and could find nothing, and a pull of it would have fetched eleven megabytes of a ninety-gigabyte model; asking for any part now fetches every part in order with the progress said over the whole, on the command line and through the window, a set the repository publishes only part of is refused before a byte moves, and a search shortens a file's name a segment at a time until a few repositories are found | B-021, F138, A7, §3.11 | `mcf pull owner/name:<any part>` leaves every part and its provenance in the store; a search for a part's file name lists its repository first | done. F272 |
 | B-591 | The rate a held model is generating at is measured rather than read off the engine: llama.cpp's `predicted_tokens_seconds` is a bucket emptied by whoever reads it, nought for the whole of a request and a spike on the scrape after it ends, so the window's rate bar was flat and `mcf hosted` said *0 generating now* against four thousand tokens produced; MCF counts the engine's finished total plus what its slots have produced of the answer in hand, and divides the difference between two readings by the seconds between, with the interval stated | B-573, A6, A12, A7 | The window's bar moves while a model generates, and MCF's figure agrees with the engine's own gauge when the engine finally publishes one | done. F273 |
 | B-592 | Closing the window lets go of the model it is holding: a hold outlives the window by design, which is also how tens of gigabytes stay spent after somebody thinks they have finished, so the window says what it is doing and asks the daemon to let go on its way out — the same act as the Stop button, recorded the same way, and not a stop of the daemon | B-591, A27, §3.11 | Closing the window with a model held leaves no engine server running and the record carries the release | done. F274 |
+| B-593 | Power is measured and recorded for a model that is being served, not only inside a diagnostic: the card's draw is read whenever somebody asks what a hold is doing, the energy between two readings is the mean of the two draws over the time between, and the total goes out with how much of the hold it covers — never on a timer, so a daemon nobody is asking still costs nothing; the figure is the card's and says so, since whatever else draws on it is in it | B-591, B-531, A8, A6, B-031 | `mcf hosted` shows the card's draw and the joules it has drawn while watched; `model_unhosted` carries both; nothing is sampled while nobody asks | done. F275 |
+| B-594 | The temperature cross-check allows a degree between two readings taken one after the other, which is a claim about how fast the chip can move: on a card hot from a run it swings four degrees between them and the gating suite fails, at rest it passes (F275) | A19, A12, B-530 | The check states the tolerance it is entitled to, or takes both readings close enough that the tolerance holds, and says which | open |
 | B-586 | An idle window costs nothing: a frame is drawn when something happened — an event, a word from a job, a reading due, an act taken — and the loop sleeps in the platform until an event or a second passes, rather than drawing every sixteen milliseconds; measured at forty-three per cent of a core while nobody was looking | B-071, §6.11, §3.13 | With the window open and idle for a minute, its processor time is indistinguishable from a window that is not there | done. F267: 2,559 ticks in sixty seconds before, none after |
 | B-587 | The citation check reaches every shipped crate but the laboratory: the thirty-five sentences a library crate handed the CLI and the window — the taxonomy's own meanings among them — say the thing, and the taxonomy document's meaning column says the same words, since the code is generated from it | B-403, F264, A23 | No string in a shipped crate but the laboratory carries a rule, a register item or a clause; the taxonomy's meanings in the document and the code are one text | done. F268 |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
@@ -608,6 +610,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 334 — power is measured for a served model
+
+B-593 opened and done, B-594 opened (F275).
 
 ### Version 333 — closing the window lets the model go
 
