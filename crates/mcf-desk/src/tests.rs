@@ -2633,3 +2633,37 @@ fn a_failures_cause_and_axes_are_said_plainly() {
         "unattributed; no disposition; in "
     );
 }
+
+/// Closing the window lets go of the model MCF is holding, and lets go of
+/// nothing where it holds nothing (B-592).
+#[test]
+fn closing_lets_go_of_what_is_held_and_of_nothing_else() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    assert_eq!(desk.to_let_go(), None);
+
+    desk.hosted = Some(super::Hosted {
+        model: "/models/Assistant-2B-Instruct-Q4_K_M.gguf".to_owned(),
+        address: "http://127.0.0.1:17817".to_owned(),
+        since: String::new(),
+        context: Some(8192),
+        projector: None,
+        takes: None,
+        api_key: false,
+        network_address: None,
+        in_use: None,
+    });
+    assert_eq!(
+        desk.to_let_go().as_deref(),
+        Some("Assistant-2B-Instruct-Q4_K_M")
+    );
+
+    // A model under a run is the run's to end, not the window's.
+    desk.hosted = None;
+    desk.under_test = Some(super::UnderTest {
+        model: "/models/Assistant-2B-Instruct-Q4_K_M.gguf".to_owned(),
+        engine: "provisioned llama.cpp".to_owned(),
+        window: Some(4096),
+        in_use: super::Use::default(),
+    });
+    assert_eq!(desk.to_let_go(), None);
+}

@@ -5355,6 +5355,28 @@ fn tiles_of(paint: &mut Painter, tiles: &[(&str, Option<String>)], at: Box) -> f
     y + 66.0
 }
 
+/// One line in the middle of an empty window, shown while the window is
+/// doing the last thing it does (B-592).
+///
+/// Its own frame rather than a page: the pages are drawn from what the
+/// daemon last said, and what is being said here is that MCF is asking it
+/// for something the answer to which is not back yet.
+pub fn saying(paint: &mut Painter, said: &str) {
+    let ink = paint.ink;
+    paint.begin();
+    let (width, height) = paint.size();
+    let across = paint.measure(said, Weight::Regular, size::BODY);
+    paint.say_at(
+        ((width - across) / 2.0).max(12.0),
+        (height / 2.0) - 10.0,
+        said,
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    paint.end();
+}
+
 /// The predicting rate over the last two minutes, one bar a second, newest
 /// at the right, against the highest seen in that time.
 fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: Box) -> f32 {

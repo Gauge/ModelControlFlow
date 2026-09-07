@@ -3527,6 +3527,17 @@ impl Desk {
         ));
     }
 
+    /// What closing the window would let go of: the model MCF is holding,
+    /// by name, or `None` where it holds nothing (B-592).
+    ///
+    /// A model held for a diagnostic rather than for somebody to ask is
+    /// not this: the run that asked for it is what ends it, and a window
+    /// that let go of the model under a run would be stopping the run.
+    #[must_use]
+    pub fn to_let_go(&self) -> Option<String> {
+        self.hosted.as_ref().map(Hosted::name)
+    }
+
     /// Stops holding whatever is held.
     pub fn stop_hosting(&mut self) {
         let answered = ask(&self.socket, &Request::Unhost);
@@ -5561,7 +5572,10 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         {
             acted = true;
             match sdl::event_type(&event) {
-                sdl::EVENT_QUIT => return Ok(()),
+                sdl::EVENT_QUIT => {
+                    closing(&mut paint, &mut desk);
+                    return Ok(());
+                }
                 sdl::EVENT_WINDOW_PIXEL_SIZE_CHANGED => paint.rescale(),
                 sdl::EVENT_MOUSE_MOTION => {
                     mouse.at = points(&paint, sdl::event_mouse(&event));
@@ -5589,7 +5603,10 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     }
                 }
                 sdl::EVENT_KEY_DOWN => match sdl::event_key(&event) {
-                    sdl::KEY_ESCAPE => return Ok(()),
+                    sdl::KEY_ESCAPE => {
+                        closing(&mut paint, &mut desk);
+                        return Ok(());
+                    }
                     // Paste. Typing arrives already composed as text input,
                     // but a paste never does: Ctrl+V is a key event and the
                     // characters are on the clipboard, so a field that only
@@ -5627,7 +5644,10 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     // typing, when it is a letter. A field that ate the
                     // application on the letter q would be a field nobody
                     // could type a name into.
-                    key if key == u32::from(b'q') && !desk.takes_typing() => return Ok(()),
+                    key if key == u32::from(b'q') && !desk.takes_typing() => {
+                        closing(&mut paint, &mut desk);
+                        return Ok(());
+                    }
                     key if key == u32::from(b'r') && !desk.takes_typing() => {
                         desk.refresh();
                         desk.sample();
@@ -5690,6 +5710,28 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                 .and_then(|window| window.wait_event(std::time::Duration::from_secs(1)));
         }
     }
+}
+
+/// What closing the window does before it goes: lets go of the model MCF
+/// is holding, so that shutting the window gives the memory back (B-592).
+///
+/// **A held model outlives the window that asked for it, and that is the
+/// point of the daemon** — a program on another machine goes on asking it
+/// questions with nobody at this screen. It is also how tens of gigabytes
+/// stay spent after somebody thinks they have finished: the operator shuts
+/// the window and the card is still full. So the window lets go on its way
+/// out, which is the same act as the Stop button on the hosting page and is
+/// recorded the same way; what it does not do is stop the daemon, which
+/// costs nothing while nobody is asking (F267).
+///
+/// A daemon that does not answer is not a reason to hang about: the ask has
+/// its own deadline, and the window goes either way.
+fn closing(paint: &mut paint::Painter, desk: &mut Desk) {
+    let Some(held) = desk.to_let_go() else {
+        return;
+    };
+    view::saying(paint, &format!("letting go of {held} before closing…"));
+    desk.stop_hosting();
 }
 
 /// A count over a count as a fraction between nought and one; `None` of

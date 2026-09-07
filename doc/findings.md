@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 274 | [F274 — Closing the window let a model keep the card: the hold outlived the window by design, and now the window lets go on its way out, freeing 3.6 GB on the 2B and recording it (B-592, A27, F267)](#274-f274-closing-the-window-let-a-model-keep-the-card-the-hold-outlived-the-window-by-design-and-now-the-window-lets-go-on-its-way-out-freeing-36-gb-on-the-2b-and-recording-it-b-592-a27-f267) |
 | 273 | [F273 — The rate bar was flat because the engine's rate gauge is a bucket: nought for the whole of a request, one spike after it, emptied by whoever reads it; MCF now counts the tokens itself and the bar moves (B-591, A6, A12)](#273-f273-the-rate-bar-was-flat-because-the-engines-rate-gauge-is-a-bucket-nought-for-the-whole-of-a-request-one-spike-after-it-emptied-by-whoever-reads-it-mcf-now-counts-the-tokens-itself-and-the-bar-moves-b-591-a6-a12) |
 | 272 | [F272 — A model published in parts is one acquisition, and a part's file name finds its repository: the ninety-gigabyte set the operator could not find, fetched in order with the whole said, and the hub's search shortened a segment at a time (B-590, F138, A7)](#272-f272-a-model-published-in-parts-is-one-acquisition-and-a-parts-file-name-finds-its-repository-the-ninety-gigabyte-set-the-operator-could-not-find-fetched-in-order-with-the-whole-said-and-the-hubs-search-shortened-a-segment-at-a-time-b-590-f138-a7) |
 | 271 | [F271 — The ladder's pair was measuring a quarter-second tick in MCF's own path: the watcher beside every request slept in a 250 ms read and the answer waited for it; woken, and with the pair on a prefix a warm run paid for, the 2B reads 8.4 to 10.3 ms a token with spreads under a millisecond, and the engine's own clock agrees (B-428, B-589, F155, A12)](#271-f271-the-ladders-pair-was-measuring-a-quarter-second-tick-in-mcfs-own-path-the-watcher-beside-every-request-slept-in-a-250-ms-read-and-the-answer-waited-for-it-woken-and-with-the-pair-on-a-prefix-a-warm-run-paid-for-the-2b-reads-84-to-103-ms-a-token-with-spreads-under-a-millisecond-and-the-engines-own-clock-agrees-b-428-b-589-f155-a12) |
@@ -15617,7 +15618,44 @@ The window's bar has a reading a second to draw, and the tile that
 says *tokens out* counts the answer in hand rather than standing still
 until it lands.
 
+## 274 · F274 — Closing the window let a model keep the card: the hold outlived the window by design, and now the window lets go on its way out, freeing 3.6 GB on the 2B and recording it (B-592, A27, F267)
+
+**What the operator asked for.** That closing the window unload the
+model first. It did not: the daemon holds the model, the window is one
+client of it, and shutting the window left the engine server up with
+the weights on the card. That is the design — a program on another
+machine goes on asking a hosted model questions with nobody at this
+screen — and it is also how tens of gigabytes stay spent after
+somebody thinks they have finished.
+
+**What was built.** The window's three ways out — the close button,
+Escape, and `q` — all pass through one act: where MCF is holding a
+model, the window draws a line saying it is letting go of it by name,
+asks the daemon to unhost, and then goes. That is the same request the
+Stop button on the hosting page sends, recorded the same way, with the
+bytes it freed. What it does not do is stop the daemon, which costs
+nothing while nobody is asking (F267), so the record, the model store
+and the next window are all still there.
+
+**What it does not touch.** A model held for a diagnostic is the run's,
+not the window's: a window that let go of it would be stopping the run
+in the middle. A daemon-carried job already ends when the window's
+socket closes, which the daemon reads as the asker having left.
+
+**On the 2B.** A headless window over a hosted 2B, closed:
+
+| | |
+|---|---|
+| engine server after | gone |
+| the daemon | holding nothing |
+| freed | 202,866,688 bytes of memory, 3,606,605,824 on the card |
+| recorded | `model_unhosted`, reason *asked* |
+
 ## Changelog
+
+### Version 196 — closing the window lets the model go
+
+F274: the window unhosts on its way out (B-592).
 
 ### Version 195 — the generation rate is measured
 
