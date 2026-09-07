@@ -1537,6 +1537,75 @@ fn the_daemon_starts_stays_up_and_stops_when_asked() {
 ///
 /// **The kill is `SIGKILL`.** A28's shape: what is asserted is what survives
 /// the worst interruption, not what a polite shutdown manages to clean up.
+/// A daemon told to terminate stops the way `mcf stop` stops it: it says
+/// why on the way out, and the record carries the stop with the signal as
+/// its reason (B-584). Before this it died where it stood.
+#[test]
+fn a_daemon_sent_a_termination_signal_stops_and_says_why() {
+    use std::io::Read as _;
+
+    let machine = Machine::new("daemon-terminated");
+    let mut daemon = machine
+        .command(&["serve"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the daemon spawns");
+
+    let mut answered = false;
+    for _ in 0..300 {
+        if machine.run(&["status"]).status.success() {
+            answered = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(answered, "the daemon never answered");
+
+    let signalled = Command::new("kill")
+        .arg("-TERM")
+        .arg(daemon.id().to_string())
+        .status()
+        .expect("kill runs");
+    assert!(signalled.success(), "kill could not signal the daemon");
+
+    let mut exited = None;
+    for _ in 0..600 {
+        if let Ok(Some(status)) = daemon.try_wait() {
+            exited = Some(status);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let Some(exited) = exited else {
+        let _killed = daemon.kill();
+        panic!("the daemon did not stop within six seconds of SIGTERM");
+    };
+    assert!(exited.success(), "the daemon left with {exited}");
+
+    let mut said = String::new();
+    daemon
+        .stdout
+        .take()
+        .expect("stdout was piped")
+        .read_to_string(&mut said)
+        .expect("stdout is read");
+    assert!(
+        said.contains("mcf stopped, because: the process received SIGTERM"),
+        "the daemon did not say why it stopped:\n{said}"
+    );
+
+    let record = std::fs::read_to_string(machine.journal()).expect("the record is there");
+    let stopped = record
+        .lines()
+        .find(|line| line.contains("daemon_stopped"))
+        .expect("the record carries the stop");
+    assert!(
+        stopped.contains("the process received SIGTERM"),
+        "the stop does not name the signal: {stopped}"
+    );
+}
+
 #[test]
 fn a_daemon_killed_at_any_stage_comes_back() {
     let machine = Machine::new("daemon-killed");

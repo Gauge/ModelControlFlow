@@ -33,5 +33,6 @@ pub mod projector;
 pub mod prompt;
 pub mod provisioning;
 pub mod served;
+pub mod signals;
 pub mod takes;
 pub mod turn;

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 46 |
+| **Version** | 47 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -183,7 +183,7 @@ loudly is the honest outcome, and `crates/mcf-core/build.rs` carries the one
 documented opt-out: a build script has no MCF failure type available to it and
 no record to write to.
 
-**Three modules opt out of `unsafe_code`, and each says why at the site.**
+**Four modules opt out of `unsafe_code`, and each says why at the site.**
 `crates/mcf-core/src/hardware/nvml.rs` loads the vendor's management library at
 runtime and calls it over the C ABI, because F1 established that a device's live
 state — available memory, temperature — is reachable no other way, and D25 makes
@@ -213,6 +213,13 @@ standard library can signal only a child of its own — which an orphan, by
 definition, is not. The call takes a process id above one and a signal
 number, touches no memory of this process, and its status is not trusted:
 whether the server went is read back from the process table.
+
+The fourth is `crates/mcf-serve/src/signals.rs`, `signal` and `write`, and
+its reason is the same rule from the other side: a daemon sent `SIGTERM`
+should stop the way `mcf stop` stops it, and the standard library offers no
+way to hear a signal. The handler stores one atomic and writes one byte to a
+socket pair; a thread does everything else in safe Rust, as a client of the
+daemon's own socket (F263).
 
 **A signal is a claim too.** `scripts/check-fault-signal.sh` spawns one binary
 thirty times warm and thirty times with its pages evicted, and requires the
@@ -1039,6 +1046,11 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 47 — the fourth `unsafe` opt-out
+
+`crates/mcf-serve/src/signals.rs`: `signal` and `write`, so that a
+termination signal is a stop request (B-584, F263).
 
 ### Version 46 — the third `unsafe` opt-out
 

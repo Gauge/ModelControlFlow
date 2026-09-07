@@ -2925,6 +2925,11 @@ impl Daemon {
     /// socket is reachable only by this user (B-036), so the client that could
     /// do it is the operator's own.
     pub fn serve(&mut self) -> Stopped {
+        // **A termination signal is a stop request** (B-584). Without this
+        // the process died where it stood, its server outlived it, and the
+        // record never said it stopped; the watch turns the signal into the
+        // request `mcf stop` would send, and is taken down when serving ends.
+        let _watch = crate::signals::Watch::over(&self.places.socket);
         // **A request that takes minutes is carried on its own thread, and
         // the socket keeps answering** (D48, B-460). One thread answered
         // everything in turn, and a generation that ran for hours had every

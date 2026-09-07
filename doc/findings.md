@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 263 | [F263 — A termination signal stops the daemon the way `mcf stop` does: the handler writes one byte, a thread sends the request, and on the 2B the hold was let go in writing and the server was gone in a third of a second (B-584, A27, B-071)](#263-f263-a-termination-signal-stops-the-daemon-the-way-mcf-stop-does-the-handler-writes-one-byte-a-thread-sends-the-request-and-on-the-2b-the-hold-was-let-go-in-writing-and-the-server-was-gone-in-a-third-of-a-second-b-584-a27-b-071) |
 | 262 | [F262 — An engine server whose daemon is gone is found and stopped by the next daemon: the sweep at start, tested against a real orphan, and one 2B server with ten stale sockets cleared with it (B-574, A27, B-561)](#262-f262-an-engine-server-whose-daemon-is-gone-is-found-and-stopped-by-the-next-daemon-the-sweep-at-start-tested-against-a-real-orphan-and-one-2b-server-with-ten-stale-sockets-cleared-with-it-b-574-a27-b-561) |
 | 261 | [F261 — The first official build of MCF, installed on this machine: the gating tier green, every scheduled tier run against the source it names, the release refusal cleared, the artifact built under the release profile with its revision set, and the one binary put on the path at `~/.local/bin/mcf` (B-583, B-185, D24, B-001)](#261-f261-the-first-official-build-of-mcf-installed-on-this-machine-the-gating-tier-green-every-scheduled-tier-run-against-the-source-it-names-the-release-refusal-cleared-the-artifact-built-under-the-release-profile-with-its-revision-set-and-the-one-binary-put-on-the-path-at-localbinmcf-b-583-b-185-d24-b-001) |
 | 260 | [F260 — One model runs at a time: the daemon refuses a run on a model other than the hosted one, and a hold while a run of another model goes, in one sentence naming both, before anything starts; a measurement of the hosted model lets the hold go for its run and hosts it again after under the settings it had; the Diagnostics page says the rule above the pane when the chosen model is not the hosted one (B-582, D57, F243)](#260-f260-one-model-runs-at-a-time-the-daemon-refuses-a-run-on-a-model-other-than-the-hosted-one-and-a-hold-while-a-run-of-another-model-goes-in-one-sentence-naming-both-before-anything-starts-a-measurement-of-the-hosted-model-lets-the-hold-go-for-its-run-and-hosts-it-again-after-under-the-settings-it-had-the-diagnostics-page-says-the-rule-above-the-pane-when-the-chosen-model-is-not-the-hosted-one-b-582-d57-f243) |
@@ -15125,7 +15126,61 @@ server before it goes; it is the next daemon that does. Handling the
 signal in the daemon would close the gap between the two starts, and
 is a separate item.
 
+## 263 · F263 — A termination signal stops the daemon the way `mcf stop` does: the handler writes one byte, a thread sends the request, and on the 2B the hold was let go in writing and the server was gone in a third of a second (B-584, A27, B-071)
+
+**What F262 left open.** The sweep at start cleans up after a daemon
+that died by signal; it does not stop the daemon from dying badly.
+`SIGTERM` is what a scope being stopped, a session ending and a
+person's `kill` all send, and `SIGINT` is the keyboard in a foreground
+`mcf serve`. Every one of them ended the daemon where it stood: no
+`daemon_stopped` row, no `model_unhosted` row, and a server holding
+its model until the next start.
+
+**What was built.** `mcf_serve::signals`. A handler runs between two
+instructions of whatever the process was doing and may do almost
+nothing, so it does one thing the platform lists as safe there: it
+writes a byte to a socket pair the module holds. A thread sleeping on
+the other end reads the byte and, as an ordinary client, connects to
+the daemon's own control socket and sends the stop request `mcf stop`
+sends, with *the process received SIGTERM* as the reason. From there
+the stop is the ordinary stop: the requests in flight close, the hold
+is let go in writing, the server is dropped, `daemon_stopped` is
+recorded, and `serve` returns. Nothing polls — the thread costs
+nothing while no signal comes (B-071) — and the watch is taken down
+with the platform's handling restored when serving ends. Two calls the
+standard library does not offer, `signal(2)` and `write(2)`, make this
+the fourth `unsafe_code` opt-out in the workspace (build.md §4).
+`SIGKILL` cannot be handled by anything; a daemon ended that way is
+still the next daemon's to clean up after, which is F262.
+
+**The tests.** The handler is called as a function against a stand-in
+listener, and what arrives on the socket is the stop request with the
+signal named; a watch dropped without a signal sends nothing. In the
+whole-system tier a real daemon is sent a real `SIGTERM` by `kill`,
+exits clean within six seconds, says why on its way out, and its
+record carries the stop with the signal as the reason.
+
+**On the 2B.** A daemon in a scratch runtime held the 2B on port
+17999, its server a child of the daemon. `kill -TERM` on the daemon:
+
+| | |
+|---|---|
+| daemon gone after | 0.31 s |
+| the server | gone |
+| the runtime directory | only the control socket, then nothing |
+| the daemon's last line | `mcf stopped, because: the process received SIGTERM` |
+
+The record's last three rows were the hold, `model_unhosted` with the
+bytes freed on the processor and on the card and *the daemon stopped*
+as its reason, and `daemon_stopped` with *the process received
+SIGTERM*. Under B-574's build, the same signal had left the server
+under `systemd` and the record without either row.
+
 ## Changelog
+
+### Version 185 — a signal is a stop request
+
+F263: the handler, the thread, the request; the 2B run (B-584).
 
 ### Version 184 — the servers of daemons that are gone
 
