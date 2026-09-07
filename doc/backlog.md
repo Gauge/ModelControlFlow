@@ -8,8 +8,8 @@
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **472 items: 63 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 13
-decided, 23 resolved) and 409 build items (315 done, 2 dropped, 16 in progress,
-37 blocked on a decision, 39 open).** Every item cites
+decided, 23 resolved) and 409 build items (316 done, 2 dropped, 16 in progress,
+37 blocked on a decision, 38 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -407,7 +407,7 @@ first and importance second.
 | B-568 | The window suite in under a minute: a test presses the controls a frame asked the mouse about rather than sweeping the screen a frame a probe, the menu has one layout a test presses directly, the font is found once and its atlases shared, and the desk crate is optimised in the dev profile | B-011, A2 | `cargo test -p mcf-desk` finishes in about a minute on this machine and a rebuild after one change in seconds | done. F251: 1,400 seconds to 48; the two tests that still sweep are named |
 | B-569 | The catalogue as a row a tier — easy, medium, hard, expert — each recorded under its own method, a Languages field beside Retries and Window, and a running suite's results listed in the pane as they come rather than at the end | B-563, B-564, D56 | A tier's row runs in minutes on a small model and its pane fills a line a result while it runs; a run of every tier at the command line stays one method | done. F252: four rows, `challenges-<tier>` methods, `result:` lines on the stream and *so far* under Run |
 | B-570 | A run's rows land in the record as they are taken — opened with its conditions, a part a unit, closed with how it ended — so that a run stopped or killed keeps every row it earned, and the window's table grows while the run goes | D54, B-569, B-563 | A coding tier killed at pair forty has forty pairs of rows under its method and reads as cut off; the table under the pane fills as results arrive | done. F253: the catalogue lands each pair; parts merge on read; the ladder is next |
-| B-571 | Stop finishes the unit in hand and closes the run as *stopped after k of n*, saying what it kept; Resume beside Run on a row whose last run was stopped or cut off, skipping the pairs it already has under the same conditions | B-570, B-569 | A four-hour tier can be run in pieces across an evening; nothing is half-written | open |
+| B-571 | Stop finishes the unit in hand and closes the run as *stopped after k of n*, saying what it kept; Resume beside Run on a row whose last run was stopped or cut off, skipping the pairs it already has under the same conditions | B-570, B-569 | A four-hour tier can be run in pieces across an evening; nothing is half-written | done. F254: the word `stop` on the suite's input, the pair in hand finished and landed, the run closed as *stopped after k of n*; Resume continues the newest unfinished run of the same conditions and skips its pairs |
 | B-572 | Detailed tracking in a diagnostic's pane while it runs: a line an attempt for the coding suites — compiled, cases held — a row every tenth request of a soak, and the strip's time left as an estimate from this run's average a unit, said as an estimate | B-570, B-569, D56 | A ten-attempt struggle is visible as it happens; a person knows roughly when a run ends | open |
 | B-573 | The model under test shown as a hosted model is: the Server page lists the server the daemon holds for a run with the same figures — requests, tokens in and out, rates, cache, memory — read off its own counters, and the card's power sampled while the run goes, as energy and tokens a joule | B-570, B-071, B-561 | A person watching a run sees what the model is doing and what it costs, the way they would a served one | open |
 | B-464 | The moved figure reads a dropped full stop as a changed word, and on a one-word answer a changed word is the whole answer, so five forms that answered `Nile` against `Nile.` drew five bars at full height beside `open 3/4`; the figure is read by pieces as well as by words, or punctuation is set aside before the words are compared, so that a reader of the forms and impact tables does not take one river for five | F170, B-444, B-443, A7, A19 | A bar at full height means the answer changed, not that its punctuation did | **done** (F170). Of the two, punctuation set aside: `moved_by` trims the sentence marks, quotes and brackets from each word's edges and drops a word that is only punctuation, so `Nile` and `Nile.` are one word while `L'Indus`, `x.y` and `a + b` against `a - b` keep their difference; a second figure by pieces waits on the engine's tokenizer (B-442) and would have doubled every table for one column of correction. One measure for the impact table, the floors, each extra and the seeds' spread, named on the impact head on both surfaces. Re-read on Qwen3-VL-2B: one line, bullets, headings and tags 0.0%, the numbered list alone 100.0% |
@@ -589,6 +589,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 314 — stop finishes the attempt, resume goes on
+
+B-571 done (F254).
 
 ### Version 313 — rows land as they are taken
 

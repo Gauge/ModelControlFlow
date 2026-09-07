@@ -4194,6 +4194,11 @@ impl Desk {
             arguments.push("--languages".to_owned());
             arguments.push(languages.clone());
         }
+        // A row whose newest run stopped or was cut off goes on from it
+        // (B-571).
+        if suite.is_some_and(|at| self.resumable(Diagnostic::Eval(at))) {
+            arguments.push("--resume".to_owned());
+        }
         if self.retries != RETRIES_DEFAULT {
             arguments.push("--retries".to_owned());
             arguments.push(self.retries.to_string());
@@ -4203,6 +4208,17 @@ impl Desk {
             arguments.push(window.to_string());
         }
         arguments
+    }
+
+    /// Whether a diagnostic's newest run on the chosen model can be gone on
+    /// with: recorded a part at a time and not finished — stopped at
+    /// somebody's asking, or cut off (B-571).
+    #[must_use]
+    pub fn resumable(&self, diagnostic: Diagnostic) -> bool {
+        self.readings_of(diagnostic).is_some_and(|run| {
+            mcf_record::readings::in_parts(run)
+                && mcf_record::readings::ended_of(run).as_deref() != Some("finished")
+        })
     }
 
     /// What a running or just-finished suite has said so far, a result a

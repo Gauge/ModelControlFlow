@@ -197,6 +197,34 @@ fn which_podman() -> Result<PathBuf, Failure> {
 /// shape every suite uses — `progress: done/of what` — so that the
 /// window's bar and a person at a terminal see the work as it goes and
 /// not only the report at the end (D56).
+/// Whether the word `stop` has arrived on the input: a surface asking the
+/// run to finish the unit in hand, record it, and end (B-571).
+static STOP_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Listens on the input for the word `stop`, on a thread of its own, so
+/// that a run can be asked to stop between attempts rather than killed
+/// between rows. An input that is closed, or a terminal, ends the thread
+/// at once or never says it; either is fine.
+pub(crate) fn listen_for_stop() {
+    let _listener = std::thread::spawn(|| {
+        use std::io::BufRead as _;
+        let stdin = std::io::stdin();
+        for line in stdin.lock().lines() {
+            let Ok(line) = line else { break };
+            if line.trim() == "stop" {
+                STOP_ASKED.store(true, std::sync::atomic::Ordering::SeqCst);
+                break;
+            }
+        }
+    });
+}
+
+/// Whether the run has been asked to stop.
+#[must_use]
+pub(crate) fn stop_asked() -> bool {
+    STOP_ASKED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// One result of a suite, said on the output stream the moment it is
 /// known: `result: <line>`, the same words the report would have used, so
 /// that a window reading the stream can show the results as they come
@@ -230,6 +258,9 @@ pub(crate) struct Asked<'a> {
     pub tier: Option<&'a str>,
     /// The window every challenge ask is made in, where the person set it.
     pub window: Option<u64>,
+    /// Whether to go on from the newest run of the same conditions that
+    /// did not finish, skipping what it already has (B-571).
+    pub resume: bool,
 }
 
 /// Evaluates one model against every task, or one suite's.
@@ -388,23 +419,63 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     // its conditions before the first ask, each pair's rows are recorded
     // the moment they are known, and the run is closed with how it ended
     // — so a run stopped, or killed, keeps every row it earned (B-570).
+    listen_for_stop();
+    // Resumed: the newest run under this method with these conditions that
+    // did not finish is continued, its pairs skipped (B-571).
+    let resumed = if asked.resume && wants("challenges") {
+        match crate::challenges::resumable(named, &challenges_method, &plan) {
+            Ok(Some(found)) => Some(found),
+            Ok(None) => {
+                println!(
+                    "  nothing to resume: no unfinished run of these conditions; starting afresh"
+                );
+                None
+            }
+            Err(why) => {
+                return Response {
+                    text: format!("mcf: {why}"),
+                    served: false,
+                };
+            }
+        }
+    } else {
+        None
+    };
+    let done_pairs: Vec<(String, String)> = resumed
+        .as_ref()
+        .map(|found| found.pairs.clone())
+        .unwrap_or_default();
     let mut landing = wants("challenges")
-        .then(|| {
-            mcf_serve::examine::Landing::open(
+        .then(|| match &resumed {
+            Some(found) => Ok(mcf_serve::examine::Landing::resume(
+                Path::new(named),
+                &challenges_method,
+                &found.run,
+                found.rows,
+            )),
+            None => mcf_serve::examine::Landing::open(
                 Path::new(named),
                 &challenges_method,
                 plan.conditions(),
-            )
+            ),
         })
         .transpose();
-    let (challenge_lines, challenge_rows, challenge_engine) = if wants("challenges") {
+    let mut challenges_stopped: Option<String> = None;
+    let (challenge_lines, _challenge_rows, challenge_engine) = if wants("challenges") {
         // Said before the run, on the output stream where the progress
         // goes, so that a person watching knows what it runs under (B-564).
         let under = plan.said(Path::new(named));
         for line in &under {
             println!("{line}");
         }
-        let (mut said, rows, engine) = crate::challenges::run(
+        if let Some(found) = &resumed {
+            println!(
+                "  resuming the run of {} with {} pair(s) already recorded",
+                found.at,
+                found.pairs.len()
+            );
+        }
+        let (mut said, rows, engine, stopped) = crate::challenges::run(
             &socket,
             named,
             &podman,
@@ -414,11 +485,13 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
             plan.tier,
             plan.window,
             landing.as_mut().ok().and_then(Option::as_mut),
+            &done_pairs,
         );
         said.splice(
             0..0,
             under.into_iter().chain(std::iter::once(String::new())),
         );
+        challenges_stopped = stopped;
         (said, rows, engine)
     } else {
         (Vec::new(), Vec::new(), None)
@@ -430,7 +503,10 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     let challenges_recorded: Option<Result<usize, String>> = match landing {
         Ok(Some(mut landing)) => {
             let _named = landing.land(Some(&engine_said), &[]);
-            Some(landing.close("finished").map_err(|why| why.to_string()))
+            let ended = challenges_stopped
+                .clone()
+                .unwrap_or_else(|| "finished".to_owned());
+            Some(landing.close(&ended).map_err(|why| why.to_string()))
         }
         Ok(None) => None,
         Err(why) => Some(Err(why.to_string())),
@@ -529,12 +605,18 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
         lines.push(match recorded {
             Ok(landed) => format!(
                 "  {landed} reading(s) recorded under {challenges_method} as they were taken, and \
-                 the run closed; `mcf data {named} --method {challenges_method}` writes them"
+                 the run closed as {}; `mcf data {named} --method {challenges_method}` writes \
+                 them{}",
+                challenges_stopped.as_deref().unwrap_or("finished"),
+                if challenges_stopped.is_some() {
+                    "; `--resume` goes on from here"
+                } else {
+                    ""
+                }
             ),
             Err(why) => format!("  CHALLENGE READINGS NOT CLOSED: {why}"),
         });
     }
-    let _kept = challenge_rows;
     Response {
         text: lines.join("\n"),
         served: true,

@@ -1683,6 +1683,69 @@ fn a_running_suite_shows_its_results_as_they_come() {
     );
 }
 
+/// A row whose newest run stopped or was cut off offers to go on from it:
+/// the run is passed `--resume`; a finished run is not (B-571).
+#[test]
+fn a_row_whose_run_did_not_finish_resumes_it() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.models = vec![Model {
+        name: "a".to_owned(),
+        path: "/m/a.gguf".to_owned(),
+        ..Model::default()
+    }];
+    desk.chosen = Some(0);
+    let row = mcf_record::readings::Reading::new(
+        &[
+            ("challenge", Value::text("merge-sorted")),
+            ("language", Value::text("python")),
+        ],
+        "solved",
+        1,
+        "bool",
+    );
+    let part = |ended: Option<&str>| {
+        mcf_record::readings::part_body(
+            "/m/a.gguf",
+            "challenges-easy",
+            "e",
+            vec![],
+            std::slice::from_ref(&row),
+            "r1",
+            1,
+            ended,
+        )
+    };
+    desk.readings = Some((
+        "/m/a.gguf".to_owned(),
+        vec![part(Some("stopped after 3 of 14"))],
+    ));
+    assert!(desk.resumable(crate::Diagnostic::Eval(0)));
+    assert_eq!(
+        desk.eval_arguments("/m/a.gguf", Some(0)),
+        vec![
+            "eval",
+            "/m/a.gguf",
+            "--only",
+            "challenges",
+            "--tier",
+            "easy",
+            "--resume"
+        ]
+    );
+    desk.readings = Some(("/m/a.gguf".to_owned(), vec![part(None)]));
+    assert!(
+        desk.resumable(crate::Diagnostic::Eval(0)),
+        "cut off is resumable too"
+    );
+    desk.readings = Some(("/m/a.gguf".to_owned(), vec![part(Some("finished"))]));
+    assert!(!desk.resumable(crate::Diagnostic::Eval(0)));
+    assert!(
+        !desk
+            .eval_arguments("/m/a.gguf", Some(0))
+            .contains(&"--resume".to_owned())
+    );
+}
+
 #[test]
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;

@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 254 | [F254 — Stop finishes the attempt in hand and closes the run; Resume goes on from what it has: a suite the window runs is asked to stop through its own input, records the pair it was on, closes its run as *stopped after k of n* and says so, a second press kills it; a row whose newest run stopped or was cut off offers Resume, which continues that run under the same conditions and skips the pairs it already has (B-571, B-570, B-569)](#254-f254-stop-finishes-the-attempt-in-hand-and-closes-the-run-resume-goes-on-from-what-it-has-a-suite-the-window-runs-is-asked-to-stop-through-its-own-input-records-the-pair-it-was-on-closes-its-run-as-stopped-after-k-of-n-and-says-so-a-second-press-kills-it-a-row-whose-newest-run-stopped-or-was-cut-off-offers-resume-which-continues-that-run-under-the-same-conditions-and-skips-the-pairs-it-already-has-b-571-b-570-b-569) |
 | 253 | [F253 — A run's rows land as they are taken: the catalogue opens its run in the record with its conditions before the first ask, records each challenge-language pair the moment it is known as a part of that run, and closes the run with how it ended; parts read back as one run, a run killed between parts keeps every row it earned and reads as cut off, and the window's table grows while the suite runs (B-570, B-569, D54)](#253-f253-a-runs-rows-land-as-they-are-taken-the-catalogue-opens-its-run-in-the-record-with-its-conditions-before-the-first-ask-records-each-challenge-language-pair-the-moment-it-is-known-as-a-part-of-that-run-and-closes-the-run-with-how-it-ended-parts-read-back-as-one-run-a-run-killed-between-parts-keeps-every-row-it-earned-and-reads-as-cut-off-and-the-windows-table-grows-while-the-suite-runs-b-570-b-569-d54) |
 | 252 | [F252 — The catalogue is four rows, one a tier, and a running suite shows its results as they come: `mcf eval` writes `result:` lines the moment each challenge and each language is known and records a tier's run under its own method, the window lists Challenges: easy, medium, hard and expert with a Languages field beside Retries and Window, and the pane lists the results so far under Run while the suite runs and after it finishes (B-569, B-563, D56)](#252-f252-the-catalogue-is-four-rows-one-a-tier-and-a-running-suite-shows-its-results-as-they-come-mcf-eval-writes-result-lines-the-moment-each-challenge-and-each-language-is-known-and-records-a-tiers-run-under-its-own-method-the-window-lists-challenges-easy-medium-hard-and-expert-with-a-languages-field-beside-retries-and-window-and-the-pane-lists-the-results-so-far-under-run-while-the-suite-runs-and-after-it-finishes-b-569-b-563-d56) |
 | 251 | [F251 — The window suite ran twenty-three minutes and now runs under a minute: one test swept the whole screen for the Exit entry at three thousand frames a page, every press found its control by rendering a frame a probe, every frame walked the font directories and baked every glyph afresh, and the painter was unoptimised; the menu has one layout a test presses directly, a frame records the controls it asked the mouse about and a test presses those, the font is found once and its atlases shared, and the desk crate is optimised in the dev profile (B-568, B-011)](#251-f251-the-window-suite-ran-twenty-three-minutes-and-now-runs-under-a-minute-one-test-swept-the-whole-screen-for-the-exit-entry-at-three-thousand-frames-a-page-every-press-found-its-control-by-rendering-a-frame-a-probe-every-frame-walked-the-font-directories-and-baked-every-glyph-afresh-and-the-painter-was-unoptimised-the-menu-has-one-layout-a-test-presses-directly-a-frame-records-the-controls-it-asked-the-mouse-about-and-a-test-presses-those-the-font-is-found-once-and-its-atlases-shared-and-the-desk-crate-is-optimised-in-the-dev-profile-b-568-b-011) |
@@ -9676,6 +9677,45 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 254 · F254 — Stop finishes the attempt in hand and closes the run; Resume goes on from what it has: a suite the window runs is asked to stop through its own input, records the pair it was on, closes its run as *stopped after k of n* and says so, a second press kills it; a row whose newest run stopped or was cut off offers Resume, which continues that run under the same conditions and skips the pairs it already has (B-571, B-570, B-569)
+
+**What Stop was.** The window killed the suite's process outright,
+between whatever rows it was writing, and said *nothing was
+recorded*. With rows landing as they are taken (F253) that was no
+longer true, but the run read as cut off, and the pair under way was
+lost with its attempts.
+
+**Stop asks first.** A command MCF runs for a suite now has its input
+held open, and Stop writes the word *stop* on it and closes it. The
+suite listens on a thread of its own: the catalogue finishes the
+attempt in hand, ends that pair, lands its rows, closes its run as
+*stopped after k of n* and says on its stream *stopped at your asking
+after k of n pairs; every row of them is recorded, and `--resume`
+goes on from here*. The job goes on until the process ends of its own
+accord; the strip says *stopping after the attempt in hand* and the
+button reads *Kill*, which is the second press. At a terminal, typing
+`stop` and Return does the same; Ctrl-C still kills, and the rows
+landed stay.
+
+**Resume goes on.** A row whose newest run on the chosen model was
+recorded in parts and did not finish — stopped, or cut off — reads
+*Resume* in place of *Run*, and its command carries `--resume`. The
+suite asks the daemon for the model's runs under its method, takes
+the newest with the same retries, window, tier and languages whose
+end is not *finished*, continues that very run — the parts written
+from here carry its identity, so reading merges them into it — and
+skips every pair that run already has a `solved` row for, saying so
+on the stream a pair. Nothing to resume starts afresh and says so.
+
+**Seen.** The easy tier in Python and Go with three attempts on the 2B, the word *stop* written to its input forty seconds in: the process ended eight seconds later of its own accord, its stream said *stopped at your asking after 6 of 28 pairs*, its report *120 readings recorded as they were taken, and the run closed as stopped after 6 of 28*, and the record held 120 rows for six pairs. The same command with `--resume`: *resuming the run of 05:56:26 with 6 pairs already recorded*, six *already recorded by the run being resumed* lines, the rest run, and the record then held one run of 703 rows for all 28 pairs under the first run's time, closed as finished. The window's unit tests hold that a row whose newest run stopped or was cut off carries `--resume`, and one whose run finished does not.
+
+**What is not done.** The ladder and the daemon's runs stop as they
+did: the connection closes and the measurement in hand is lost, though
+every finished step is kept. A daemon-side stop that finishes the
+step and a Resume for the measurements are the same design on the
+other side of the socket, and a row once the catalogue's has been
+used.
+
 ## 253 · F253 — A run's rows land as they are taken: the catalogue opens its run in the record with its conditions before the first ask, records each challenge-language pair the moment it is known as a part of that run, and closes the run with how it ended; parts read back as one run, a run killed between parts keeps every row it earned and reads as cut off, and the window's table grows while the suite runs (B-570, B-569, D54)
 
 **What the operator feared, and was right to.** A run of readings was
@@ -14687,6 +14727,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 177 — stop finishes the attempt, resume goes on
+
+F254: a suite asked to stop through its input, its run closed as
+stopped, and Resume continuing it (B-571).
 
 ### Version 176 — rows land as they are taken
 

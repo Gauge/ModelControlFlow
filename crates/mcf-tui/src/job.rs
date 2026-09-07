@@ -47,6 +47,14 @@ pub struct Job {
     connection: Option<UnixStream>,
     /// Whether it was cut short from this side.
     pub stopped: bool,
+    /// Whether the process was asked to stop and is finishing the unit in
+    /// hand: the job goes on until the process ends of its own accord, and
+    /// a second Stop kills it (B-571).
+    pub stopping: bool,
+    /// The process's own input, where the job is a command MCF ran: the
+    /// word `stop` on it asks the process to finish what it is doing,
+    /// record it, and end.
+    asked: std::sync::Arc<std::sync::Mutex<Option<std::process::ChildStdin>>>,
     /// The process behind it, where the job is a command MCF ran rather
     /// than a request to the daemon (B-519): the reader thread waits on it
     /// once its output ends, and stopping kills it.
@@ -85,6 +93,8 @@ impl Job {
             started: Instant::now(),
             connection: None,
             stopped: false,
+            stopping: false,
+            asked: std::sync::Arc::new(std::sync::Mutex::new(None)),
             child: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -99,7 +109,7 @@ impl Job {
     pub fn spawned(mut command: std::process::Command, what: String) -> Self {
         let (send, heard) = channel();
         let spawned = command
-            .stdin(std::process::Stdio::null())
+            .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn();
@@ -118,12 +128,15 @@ impl Job {
                     started: Instant::now(),
                     connection: None,
                     stopped: false,
+                    stopping: false,
+                    asked: std::sync::Arc::new(std::sync::Mutex::new(None)),
                     child: std::sync::Arc::new(std::sync::Mutex::new(None)),
                 };
             }
         };
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(child.stdin.take()));
         let held = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
         let waited = std::sync::Arc::clone(&held);
         let _worker = std::thread::spawn(move || {
@@ -166,6 +179,8 @@ impl Job {
             started: Instant::now(),
             connection: None,
             stopped: false,
+            stopping: false,
+            asked,
             child: held,
         }
     }
@@ -277,6 +292,8 @@ impl Job {
             started: Instant::now(),
             connection: kept,
             stopped: false,
+            stopping: false,
+            asked: std::sync::Arc::new(std::sync::Mutex::new(None)),
             child: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -294,6 +311,21 @@ impl Job {
         }
         if let Some(connection) = self.connection.take() {
             let _closed = connection.shutdown(std::net::Shutdown::Both);
+        }
+        // A command MCF ran is asked first: the word `stop` on its input,
+        // and the input closed. It finishes the unit in hand, records it,
+        // says what it kept and ends on its own; the job goes on until it
+        // does. Asked twice, it is killed (B-571).
+        if !self.stopping
+            && let Ok(mut input) = self.asked.lock()
+            && let Some(mut stdin) = input.take()
+        {
+            use std::io::Write as _;
+            let _asked = writeln!(stdin, "stop");
+            let _flushed = stdin.flush();
+            drop(stdin);
+            self.stopping = true;
+            return;
         }
         if let Ok(mut slot) = self.child.lock()
             && let Some(mut child) = slot.take()

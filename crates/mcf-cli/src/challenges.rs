@@ -798,11 +798,89 @@ pub(crate) fn attempt_all(
         };
         let solved = attempt.whole();
         attempts.push(attempt);
-        if solved {
+        // A stop asked mid-pair ends the pair after this attempt: the rows
+        // say how many attempts it had (B-571).
+        if solved || crate::eval::stop_asked() {
             break;
         }
     }
     attempts
+}
+
+/// A run to go on from: the newest under the method whose conditions are
+/// these and which did not finish — stopped, or cut off (B-571).
+#[derive(Debug)]
+pub(crate) struct Resumable {
+    /// The run's identity in the record.
+    pub run: String,
+    /// When it began, as the record says.
+    pub at: String,
+    /// The challenge-language pairs it already has a `solved` row for.
+    pub pairs: Vec<(String, String)>,
+    /// How many rows it holds.
+    pub rows: usize,
+}
+
+/// Finds the run to resume, asking the daemon for the model's runs under
+/// the method: the newest whose conditions match the plan's and whose
+/// end is not `finished`. `None` where there is none.
+///
+/// # Errors
+///
+/// The daemon could not be asked.
+pub(crate) fn resumable(
+    named: &str,
+    method: &str,
+    plan: &Plan,
+) -> Result<Option<Resumable>, String> {
+    let answered = crate::hosting::ask(&mcf_serve::control::Request::Readings {
+        model: named.to_owned(),
+        method: Some(method.to_owned()),
+    })?;
+    let runs = answered.get("runs").and_then(Value::as_list).unwrap_or(&[]);
+    let wanted: std::collections::BTreeMap<&str, Value> = plan
+        .conditions()
+        .into_iter()
+        .filter(|(key, _)| matches!(*key, "languages" | "retries" | "tier" | "window"))
+        .collect();
+    for run in runs {
+        if !mcf_record::readings::in_parts(run)
+            || mcf_record::readings::ended_of(run).as_deref() == Some("finished")
+        {
+            continue;
+        }
+        let same = wanted.iter().all(|(key, value)| {
+            run.get("conditions")
+                .and_then(|conditions| conditions.get(key))
+                .is_some_and(|held| held == value)
+        });
+        if !same {
+            continue;
+        }
+        let rows = mcf_record::readings::rows_of(run);
+        let mut pairs: Vec<(String, String)> = rows
+            .iter()
+            .filter(|row| row.metric == "solved")
+            .map(|row| (row.dim("challenge"), row.dim("language")))
+            .collect();
+        pairs.sort();
+        pairs.dedup();
+        return Ok(Some(Resumable {
+            run: run
+                .get("run")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned(),
+            at: run
+                .get("at")
+                .and_then(Value::as_text)
+                .unwrap_or("an earlier time")
+                .to_owned(),
+            pairs,
+            rows: rows.len(),
+        }));
+    }
+    Ok(None)
 }
 
 /// The rows of one challenge in one language: each attempt, and the
@@ -1014,8 +1092,10 @@ pub(crate) fn run(
     only_tier: Option<Tier>,
     window: Option<u64>,
     landing: Option<&mut mcf_serve::examine::Landing>,
-) -> (Vec<String>, Vec<Reading>, Option<String>) {
+    done_already: &[(String, String)],
+) -> (Vec<String>, Vec<Reading>, Option<String>, Option<String>) {
     let mut landing = landing;
+    let mut stopped: Option<String> = None;
     let challenges: Vec<&Challenge> = crate::catalogue::CHALLENGES
         .iter()
         .filter(|challenge| only_tier.is_none_or(|tier| challenge.tier == tier))
@@ -1057,6 +1137,19 @@ pub(crate) fn run(
             challenge.statement.chars().take(160).collect::<String>()
         ));
         for language in &present {
+            // A pair the run being resumed already has is skipped, and said
+            // so, so that the stream still names every pair (B-571).
+            if done_already
+                .iter()
+                .any(|(held, in_language)| held == challenge.name && in_language == language.name)
+            {
+                crate::eval::result(&format!(
+                    "    {:<10} already recorded by the run being resumed",
+                    language.name
+                ));
+                done = done.saturating_add(1);
+                continue;
+            }
             crate::eval::progress(
                 done,
                 of,
@@ -1089,6 +1182,19 @@ pub(crate) fn run(
             rows.extend(pair);
             crate::eval::result(&format!("    {}", said_of(language.name, &attempts)));
             done = done.saturating_add(1);
+            // Asked to stop: the attempt in hand was finished and its rows
+            // landed; nothing further is started (B-571).
+            if crate::eval::stop_asked() {
+                stopped = Some(format!("stopped after {done} of {of}"));
+                crate::eval::result(&format!(
+                    "stopped at your asking after {done} of {of} pair(s); every row of them is \
+                     recorded, and `--resume` goes on from here"
+                ));
+                break;
+            }
+        }
+        if stopped.is_some() {
+            break;
         }
     }
     lines.push(format!(
@@ -1097,7 +1203,7 @@ pub(crate) fn run(
             .len()
             .saturating_mul(present.len().saturating_add(2))
     ));
-    (lines, rows, engine_ran)
+    (lines, rows, engine_ran, stopped)
 }
 
 #[cfg(test)]

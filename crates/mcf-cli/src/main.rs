@@ -364,6 +364,9 @@ enum Request<'a> {
         /// The window every challenge ask is made in, where the person set
         /// it; sized to each turn otherwise (B-564).
         window: Option<u64>,
+        /// Go on from the newest unfinished run of the same conditions,
+        /// skipping what it already has (B-571).
+        resume: bool,
     },
     /// A model's readings as a table (D54).
     Data {
@@ -959,6 +962,7 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
 fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let (mut only, mut retries, mut languages, mut tier, mut window) =
         (None, None, None, None, None);
+    let mut resume = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -1007,6 +1011,7 @@ fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>
                 };
                 window = Some(value);
             }
+            "--resume" => resume = true,
             other => return Err(other),
         }
     }
@@ -1017,6 +1022,7 @@ fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>
         languages,
         tier,
         window,
+        resume,
     })
 }
 
@@ -2083,8 +2089,9 @@ const COMMANDS: &str = "\
     \x20       [--languages <a,b>]           is challenges, editing, tests or\n\
     \x20       [--tier <tier>]               queries; a challenge gets ten\n\
     \x20       [--window <tokens>]           attempts unless --retries says,\n\
-    \x20                                     in a window sized to each turn\n\
-    \x20                                     unless --window says\n\
+    \x20       [--resume]                    in a window sized to each turn\n\
+    \x20                                     unless --window says; --resume\n\
+    \x20                                     goes on from a run that stopped\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
     \x20             or --file <path>         receives each word, and how much\n\
     \x20       [--by word|phrase|sentence|   the answer moves without each\n\
@@ -2378,6 +2385,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             languages,
             tier,
             window,
+            resume,
         } => eval::eval(
             model,
             &eval::Asked {
@@ -2386,6 +2394,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 languages: *languages,
                 tier: *tier,
                 window: *window,
+                resume: *resume,
             },
         ),
         Request::Probe {
@@ -2815,6 +2824,7 @@ mod tests {
                 languages: None,
                 tier: None,
                 window: Some(8192),
+                resume: false,
             }
         );
         assert_eq!(
@@ -2826,6 +2836,7 @@ mod tests {
                 languages: None,
                 tier: None,
                 window: None,
+                resume: false,
             },
             "nothing said is nothing set: the suite's own defaults"
         );
@@ -2840,10 +2851,19 @@ mod tests {
             "a word is not a count"
         );
         assert!(matches!(
-            parse(&["eval", "m", "--tier", "hard", "--languages", "go,rust"]),
+            parse(&[
+                "eval",
+                "m",
+                "--tier",
+                "hard",
+                "--languages",
+                "go,rust",
+                "--resume"
+            ]),
             Request::Eval {
                 tier: Some("hard"),
                 languages: Some("go,rust"),
+                resume: true,
                 ..
             }
         ));

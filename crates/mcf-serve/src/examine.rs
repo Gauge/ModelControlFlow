@@ -592,6 +592,25 @@ impl Landing {
         })
     }
 
+    /// Goes on with a run recorded earlier that did not finish: the parts
+    /// written from here carry its identity, so that reading merges them
+    /// into it (B-571).
+    #[must_use]
+    pub fn resume(model: &Path, method: &str, run: &str, rows_so_far: usize) -> Self {
+        Self {
+            model: model.to_path_buf(),
+            method: method.to_owned(),
+            engine: String::new(),
+            run: run.to_owned(),
+            // Parts are read in the order recorded; the number only has to
+            // keep rising within one writer.
+            part: u64::try_from(rows_so_far)
+                .unwrap_or(u64::MAX)
+                .saturating_add(1),
+            rows: rows_so_far,
+        }
+    }
+
     /// Lands one unit's rows, naming the engine where it is known by now.
     ///
     /// # Errors

@@ -2842,6 +2842,11 @@ fn progress_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> O
         Some((place, of)) => format!("run {place} of {of} · {}", running.name()),
         None => running.name().to_owned(),
     };
+    let what = if job.stopping && !job.finished {
+        format!("{what} · stopping after the attempt in hand")
+    } else {
+        what
+    };
     let shown = paint.elide(&what, Weight::Bold, size::SMALL, at.w - 96.0);
     paint.say_at(
         at.x,
@@ -3096,11 +3101,24 @@ fn eval_pane(
     let y = card_head_named(paint, frame, diagnostic.name(), diagnostic.answers());
     let mut act = None;
     let running = a_run_is_going(desk);
+    // Stop asks the suite to finish the attempt in hand and close its run;
+    // a second press kills it. A row whose newest run did not finish
+    // offers Resume, which goes on from what that run has (B-571).
+    let stopping = matches!(&desk.doing, Doing::Evaluating(job) if job.stopping && !job.finished);
+    let label = if running_one && stopping {
+        "Kill"
+    } else if running_one {
+        "Stop"
+    } else if !running && desk.resumable(diagnostic) {
+        "Resume"
+    } else {
+        run_label(desk, running_one)
+    };
     let (pressed, button) = ui::fitted(
         paint,
         mouse,
         (inner_x, y),
-        run_label(desk, running_one),
+        label,
         if running && !running_one {
             Kind::Quiet
         } else {
