@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 269 | [F269 — Failures are inspectable from the window: the daemon answers the record's newest classified failures, the System page shows each with every field the taxonomy gives it, and one rendering serves all 112 categories (B-074, §3.1, §3.2)](#269-f269-failures-are-inspectable-from-the-window-the-daemon-answers-the-records-newest-classified-failures-the-system-page-shows-each-with-every-field-the-taxonomy-gives-it-and-one-rendering-serves-all-112-categories-b-074-31-32) |
 | 268 | [F268 — The citation check reaches every shipped crate but the laboratory: thirty-five sentences in the library crates, the taxonomy's meanings among them, and the one word that has a citation's shape and is not one (B-587, B-403, F264)](#268-f268-the-citation-check-reaches-every-shipped-crate-but-the-laboratory-thirty-five-sentences-in-the-library-crates-the-taxonomys-meanings-among-them-and-the-one-word-that-has-a-citations-shape-and-is-not-one-b-587-b-403-f264) |
 | 267 | [F267 — Idle cost, measured: the daemon uses nothing with the window open, and the window used forty-three per cent of a core drawing nothing — fixed by drawing when something happened and sleeping on events (B-071, B-586, §6.11)](#267-f267-idle-cost-measured-the-daemon-uses-nothing-with-the-window-open-and-the-window-used-forty-three-per-cent-of-a-core-drawing-nothing-fixed-by-drawing-when-something-happened-and-sleeping-on-events-b-071-b-586-611) |
 | 266 | [F266 — A hold defaults to the largest window whose cache stays within the model's own size: the 2B held at 8,192 with 896 MiB of cache where it had been held at 262,144 with 28 GiB, and the 27B unchanged (B-423, F133, F243)](#266-f266-a-hold-defaults-to-the-largest-window-whose-cache-stays-within-the-models-own-size-the-2b-held-at-8192-with-896-mib-of-cache-where-it-had-been-held-at-262144-with-28-gib-and-the-27b-unchanged-b-423-f133-f243) |
@@ -15374,7 +15375,55 @@ library crate that one day names a quantization in a sentence a person
 reads will trip the check, and the answer then is to spell the name
 out, which the sentence should do anyway.
 
+## 269 · F269 — Failures are inspectable from the window: the daemon answers the record's newest classified failures, the System page shows each with every field the taxonomy gives it, and one rendering serves all 112 categories (B-074, §3.1, §3.2)
+
+**What was missing.** A classified failure went into the record with
+its category, its meaning, whose doing it was, what MCF did about it,
+where in MCF it was classified, a sentence, and the context to rebuild
+it from — and the only way to see one was `mcf log --kind failure` in
+a terminal, which shows the code, the attribution and the sentence and
+nothing else. The window, where the operator had watched a hold be
+refused and a run be killed, showed no failure at all.
+
+**What was built.** A request, `failures`, that the daemon answers
+from the record's index: the newest classified failures, newest first,
+each as the record holds it under its id and its time, and how many
+the record holds in all. The System page carries them under the
+engines, a card each: when and the code and its meaning in bold, then
+whose doing and what MCF did and where, the sentence, every line of
+context as `key: value`, and the cause under it where the failure
+carries one. The window reads them at start, on `r`, and with the
+machine's readings at the poll's cadence rather than every second,
+since a failure is an event and the record does not change between
+them. A silence leaves what was read alone, as every other reading
+does.
+
+**One rendering for every category.** The taxonomy gives every failure
+the same fields, so the rendering is one function over them, and a
+test builds a failure of each of the 112 categories, encodes it as the
+record does, reads it back as the window does, and asserts the code,
+the meaning, the subsystem, the detail and the context are on the
+lines. The axes are said plainly — *the operator's doing; refused; in
+mcf-serve::daemon* — from the taxonomy's own names for them.
+
+**And a command, because a capability only a window reaches is what
+A22 forbids.** `mcf failures [--last <n>]` asks the same request and
+prints each failure through the same rendering, so the terminal and
+the window cannot say different things about one failure; the parity
+check that found the request without a command is what asked for it.
+
+**On a scratch daemon.** Over a copy of this machine's own record, the
+request answered the newest failures with their subsystems and
+context, `mcf failures --last 3` printed them, and the window's review
+renders the System page with two failures under the engines at every
+size.
+
 ## Changelog
+
+### Version 191 — failures are inspectable from the window
+
+F269: the request, the cards, the one rendering over 112 categories
+(B-074).
 
 ### Version 190 — the citation check reaches the library crates
 

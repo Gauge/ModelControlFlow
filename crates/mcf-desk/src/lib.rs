@@ -66,6 +66,11 @@ pub const ACTIONS: &[Action] = &[
         reaches: Some("Status"),
     },
     Action {
+        key: "open Your computer",
+        does: "show the record's newest classified failures, each with its context",
+        reaches: Some("Failures"),
+    },
+    Action {
         key: "scroll",
         does: "move through a long list",
         reaches: None,
@@ -403,6 +408,140 @@ pub fn loading_said(read: u64, on_card: bool, of: Option<u64>, seconds: u64) -> 
             )
         }
         None => format!("Loading{where_}: {} · {seconds} s", view::gigabytes(read)),
+    }
+}
+
+/// How many failures the System page shows at most.
+pub const FAULTS_SHOWN: usize = 12;
+
+/// A classified failure as the record holds it, for the System page
+/// (B-074): every field the taxonomy gives a failure, so that what went
+/// wrong is inspectable from the window rather than only from `mcf log`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Fault {
+    /// When it was recorded, as the record writes it.
+    pub at: String,
+    /// The taxonomy code — `engine.exit.immediate`.
+    pub category: String,
+    /// What the code means, in the taxonomy's words.
+    pub meaning: String,
+    /// Whose doing it was: the machine, the user, MCF itself.
+    pub attribution: String,
+    /// What MCF did about it: refused, degraded, failed.
+    pub disposition: String,
+    /// Where in MCF it was classified.
+    pub subsystem: String,
+    /// What happened, in a sentence.
+    pub detail: String,
+    /// The context to rebuild it from, key by key, as recorded.
+    pub context: Vec<(String, String)>,
+    /// What caused it, where the failure carries one.
+    pub caused_by: Option<Box<Fault>>,
+}
+
+/// A failure from the record's entry: the body's fields under the entry's
+/// time.
+#[must_use]
+pub fn fault_from(entry: &Value) -> Fault {
+    let body = entry.get("body").unwrap_or(entry);
+    let mut fault = fault_body(body);
+    fault.at = entry
+        .get("recorded_at")
+        .and_then(Value::as_text)
+        .map(|at| at.chars().take(19).collect())
+        .unwrap_or_default();
+    fault
+}
+
+fn fault_body(body: &Value) -> Fault {
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let context = match body.get("context") {
+        Some(Value::Map(fields)) => fields
+            .iter()
+            .map(|(key, value)| {
+                (
+                    key.clone(),
+                    value
+                        .as_text()
+                        .map_or_else(|| value.to_line(), str::to_owned),
+                )
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    let caused_by = match body.get("caused_by") {
+        Some(cause @ Value::Map(_)) => Some(Box::new(fault_body(cause))),
+        _ => None,
+    };
+    Fault {
+        at: String::new(),
+        category: text("category"),
+        meaning: text("meaning"),
+        attribution: text("attribution"),
+        disposition: text("disposition"),
+        subsystem: text("subsystem"),
+        detail: text("detail"),
+        context,
+        caused_by,
+    }
+}
+
+/// A failure as the System page says it, line by line: the code and its
+/// meaning, whose doing and what MCF did about it and where, the detail,
+/// every line of context, and the cause under it (B-074). One rendering
+/// for every category, because the taxonomy gives every one the same
+/// fields; what differs is what they say.
+#[must_use]
+pub fn fault_lines(fault: &Fault) -> Vec<String> {
+    let mut lines = vec![
+        format!("{} — {}", fault.category, fault.meaning),
+        format!(
+            "{}; {}; in {}",
+            attribution_said(&fault.attribution),
+            disposition_said(&fault.disposition),
+            fault.subsystem
+        ),
+    ];
+    if !fault.detail.is_empty() {
+        lines.push(fault.detail.clone());
+    }
+    for (key, value) in &fault.context {
+        lines.push(format!("{key}: {value}"));
+    }
+    if let Some(cause) = &fault.caused_by {
+        lines.push(format!("because: {} — {}", cause.category, cause.detail));
+    }
+    lines
+}
+
+/// The taxonomy's attribution axis, said plainly.
+fn attribution_said(held: &str) -> String {
+    match held {
+        "machine" => "the machine's doing".to_owned(),
+        "user" => "the operator's doing".to_owned(),
+        "mcf" => "MCF's own doing".to_owned(),
+        "managed" => "something MCF manages".to_owned(),
+        "hub" => "the hub's doing".to_owned(),
+        "artifact" => "the artifact's own".to_owned(),
+        "" => "unattributed".to_owned(),
+        other => format!("attributed to {other}"),
+    }
+}
+
+/// The taxonomy's disposition axis, said plainly.
+fn disposition_said(held: &str) -> String {
+    match held {
+        "refused" => "refused".to_owned(),
+        "degraded" => "went on degraded".to_owned(),
+        "partial" => "partly done".to_owned(),
+        "recovered" => "recovered".to_owned(),
+        "" => "no disposition".to_owned(),
+        other => other.to_owned(),
     }
 }
 
@@ -2402,6 +2541,13 @@ pub struct Desk {
     pub queued_of: usize,
     /// What MCF can build, and which of it is here.
     pub components: Vec<Component>,
+    /// The newest classified failures in the record, newest first (B-074).
+    pub faults: Vec<Fault>,
+    /// How many failures the record holds in all.
+    pub faults_in_record: usize,
+    /// When the failures were last read, so that the once-a-second reading
+    /// of the machine does not ask the record every second.
+    faults_read: Option<std::time::Instant>,
     /// What the chosen model would be hosted under, and what MCF advised.
     ///
     /// Both, because a run under a changed setting is not a run under the
@@ -2553,6 +2699,9 @@ impl Desk {
             queued_of: 0,
             probes_apply: false,
             components: Vec::new(),
+            faults: Vec::new(),
+            faults_in_record: 0,
+            faults_read: None,
             settings: None,
             recommended: None,
             no_settings: None,
@@ -5098,6 +5247,35 @@ impl Desk {
     /// Takes a reading of the machine.
     pub fn sample(&mut self) {
         self.reading = self.sampler.read();
+        // The failures with the machine, at the poll's cadence rather than
+        // the reading's: a failure is an event and the record does not
+        // change between them.
+        if self.faults_read.is_none_or(|read| read.elapsed() >= POLL) {
+            self.read_faults();
+        }
+    }
+
+    /// Asks MCF for the newest classified failures in the record (B-074).
+    ///
+    /// A silence leaves what was read alone, as every other reading does:
+    /// a daemon busy loading a model has not lost its record (A7).
+    pub fn read_faults(&mut self) {
+        self.faults_read = Some(std::time::Instant::now());
+        if let Ok(answer) = ask_within(
+            &self.socket,
+            &Request::Failures { last: FAULTS_SHOWN },
+            POLL,
+        ) && answer.served
+            && let Some(listed) = answer.body.get("failures").and_then(Value::as_list)
+        {
+            self.faults = listed.iter().map(fault_from).collect();
+            self.faults_in_record = answer
+                .body
+                .get("in_record")
+                .and_then(Value::as_integer)
+                .and_then(|held| usize::try_from(held).ok())
+                .unwrap_or(self.faults.len());
+        }
     }
 
     /// The word at the right of the menu bar.
@@ -5341,6 +5519,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     desk.sample();
     desk.read_hosted();
     desk.read_components();
+    desk.read_faults();
 
     let mut mouse = ui::Mouse::default();
     let mut last = std::time::Instant::now();
@@ -5437,6 +5616,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                         desk.sample();
                         desk.read_hosted();
                         desk.read_components();
+                        desk.read_faults();
                     }
                     _ => {}
                 },

@@ -3110,6 +3110,7 @@ impl Daemon {
             Request::Status
             | Request::Holding
             | Request::Components
+            | Request::Failures { .. }
             | Request::Offered { .. }
             | Request::Search { .. }
             | Request::Settings { .. }
@@ -3413,6 +3414,7 @@ impl Daemon {
             Request::Status
             | Request::Holding
             | Request::Components
+            | Request::Failures { .. }
             | Request::Offered { .. }
             | Request::Search { .. }
             | Request::Settings { .. }
@@ -4536,6 +4538,7 @@ impl Daemon {
             Request::Status => (Answer::served(self.status()), None),
             Request::Holding => (Answer::served(self.holding()), None),
             Request::Components => (Answer::served(self.components()), None),
+            Request::Failures { last } => (Answer::served(self.failures(*last)), None),
             Request::Offered {
                 reference,
                 from,
@@ -6682,6 +6685,50 @@ impl Daemon {
     /// say rather than an absence to leave a person guessing at (A7).
     ///
     /// Read-only. Building is a command, not a request.
+    /// The newest classified failures in the record, each as the record
+    /// holds it — the body with its category, meaning, attribution,
+    /// disposition, subsystem, detail, context and cause, under the entry's
+    /// id and when it was recorded — and how many the record holds in all
+    /// (B-074).
+    ///
+    /// Through the index, as every other reading of the record is (B-300):
+    /// a record MCF cannot index is one it reads nothing from, and the
+    /// answer says so with a count of nothing rather than a guess (A7).
+    fn failures(&self, last: usize) -> Value {
+        let journal = &self.places.journal;
+        let index = if journal.exists() {
+            mcf_record::journal::Index::over(
+                journal,
+                &mcf_record::journal::index::default_path(journal),
+            )
+            .ok()
+        } else {
+            None
+        };
+        let Some(index) = index else {
+            return Value::map([
+                ("failures", Value::List(Vec::new())),
+                ("in_record", Value::Integer(0)),
+            ]);
+        };
+        let mut failures: Vec<Value> = index
+            .latest(Some(EntryKind::Failure), last)
+            .iter()
+            .filter_map(|located| index.read(located).ok())
+            .map(|entry| entry.to_value())
+            .collect();
+        // Newest first: what went wrong last is what somebody looking is
+        // looking for.
+        failures.reverse();
+        Value::map([
+            ("failures", Value::List(failures)),
+            (
+                "in_record",
+                Value::Integer(i64::try_from(index.count(EntryKind::Failure)).unwrap_or(i64::MAX)),
+            ),
+        ])
+    }
+
     fn components(&self) -> Value {
         let mcf_home = self
             .places

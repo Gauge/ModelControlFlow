@@ -2675,6 +2675,35 @@ fn review_small_windows() {
     let _was = desk.scrolls.insert(mcf_desk::Region::Library, 120.0);
     let _was = desk.scrolls.insert(mcf_desk::Region::Page, 80.0);
     let _ = drawn_sized(&desk, DAY, "review-small-scrolled", small);
+    // The System page carries the record's failures, newest first (B-074).
+    desk.faults = vec![
+        mcf_desk::Fault {
+            at: "2026-09-07T15:20:04".to_owned(),
+            category: "engine.spawn.refused".to_owned(),
+            meaning: "The engine could not be started".to_owned(),
+            attribution: "machine".to_owned(),
+            disposition: "refused".to_owned(),
+            subsystem: "mcf-serve::served".to_owned(),
+            detail: "the provisioned server could not be started".to_owned(),
+            context: vec![("error".to_owned(), "No such file or directory".to_owned())],
+            caused_by: None,
+        },
+        mcf_desk::Fault {
+            at: "2026-09-07T14:02:11".to_owned(),
+            category: "config.invalid".to_owned(),
+            meaning: "A setting is not one MCF can act on".to_owned(),
+            attribution: "user".to_owned(),
+            disposition: "refused".to_owned(),
+            subsystem: "mcf-serve::daemon".to_owned(),
+            detail: "a hold reachable from the network needs an API key".to_owned(),
+            context: vec![(
+                "what_to_do".to_owned(),
+                "set one, or keep the hold on this computer".to_owned(),
+            )],
+            caused_by: None,
+        },
+    ];
+    desk.faults_in_record = 7;
     desk.page = Page::Diagnostics;
     let _ = drawn_sized(&desk, NIGHT, "review-small-diagnostics", small);
     // Any size: a small window and a large one, the same pages laid out

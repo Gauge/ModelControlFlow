@@ -18,7 +18,7 @@ fn every_action_reaches_a_request_or_asks_nothing() {
             assert!(
                 matches!(
                     reaches,
-                    "Status" | "Holding" | "Stop" | "Components" | "Anatomy"
+                    "Status" | "Holding" | "Stop" | "Components" | "Anatomy" | "Failures"
                 ),
                 "{} reaches {reaches}, which this surface cannot build",
                 action.key
@@ -2538,4 +2538,96 @@ fn a_step_says_how_far_it_is_and_a_suite_line_gives_a_fraction() {
     desk.doing = crate::Doing::Evaluating(suite);
     let fraction = desk.run_fraction().unwrap_or(0.0);
     assert!((fraction - 0.25).abs() < 0.01, "{fraction}");
+}
+
+/// Every taxonomy category renders on the System page with its subsystem
+/// and its context: one rendering for all of them, because the taxonomy
+/// gives every failure the same fields (B-074).
+#[test]
+fn every_taxonomy_category_renders_with_its_subsystem_and_context() {
+    use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
+    for category in Category::ALL {
+        let failure = Failure::new(
+            category,
+            Attribution::Machine,
+            Disposition::Refused,
+            Subsystem::new("mcf-serve::daemon"),
+            "what happened, in a sentence",
+        )
+        .with_context("looked_for", "/somewhere/on/the/disk");
+        let entry = Value::map([
+            ("body", mcf_record::encode::failure(&failure)),
+            (
+                "recorded_at",
+                Value::text("2026-09-07T15:20:04.250382271Z (local offset -07:00)"),
+            ),
+        ]);
+        let fault = super::fault_from(&entry);
+        assert_eq!(fault.category, category.code());
+        assert_eq!(fault.meaning, category.meaning());
+        assert_eq!(fault.at, "2026-09-07T15:20:04");
+        let lines = super::fault_lines(&fault);
+        assert!(
+            lines[0].contains(category.code()) && lines[0].contains(category.meaning()),
+            "{}: {lines:?}",
+            category.code()
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("in mcf-serve::daemon")),
+            "{}: the subsystem is not named: {lines:?}",
+            category.code()
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "looked_for: /somewhere/on/the/disk"),
+            "{}: the context is not there: {lines:?}",
+            category.code()
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "what happened, in a sentence"),
+            "{}: the detail is not there: {lines:?}",
+            category.code()
+        );
+    }
+}
+
+/// A failure's cause is under it, and the words for whose doing and what
+/// MCF did are the taxonomy's axes said plainly.
+#[test]
+fn a_failures_cause_and_axes_are_said_plainly() {
+    use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
+    let cause = Failure::new(
+        Category::EngineExitImmediate,
+        Attribution::Machine,
+        Disposition::Partial,
+        Subsystem::new("mcf-serve::served"),
+        "the engine left at once",
+    );
+    let failure = Failure::new(
+        Category::EngineSpawnRefused,
+        Attribution::User,
+        Disposition::Refused,
+        Subsystem::new("mcf-serve::daemon"),
+        "the hold could not start",
+    )
+    .caused_by(cause);
+    let fault = super::fault_from(&mcf_record::encode::failure(&failure));
+    let lines = super::fault_lines(&fault);
+    assert!(
+        lines[1].starts_with("the operator's doing; refused; in mcf-serve::daemon"),
+        "{lines:?}"
+    );
+    assert_eq!(
+        lines.last().map(String::as_str),
+        Some("because: engine.exit.immediate — the engine left at once")
+    );
+    assert_eq!(
+        super::fault_lines(&super::Fault::default())[1],
+        "unattributed; no disposition; in "
+    );
 }

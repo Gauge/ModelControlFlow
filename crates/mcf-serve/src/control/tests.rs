@@ -11,6 +11,7 @@ fn every_request_round_trips() {
     for request in [
         Request::Status,
         Request::Holding,
+        Request::Failures { last: 12 },
         Request::Stop {
             reason: "the operator asked".to_owned(),
         },

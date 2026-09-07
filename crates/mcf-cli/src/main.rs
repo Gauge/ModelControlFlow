@@ -25,6 +25,7 @@ mod embed;
 mod eval;
 mod examine;
 mod explain;
+mod failures;
 mod history;
 mod hosting;
 mod languages;
@@ -149,6 +150,12 @@ enum Request<'a> {
     /// It adds no capability: every action it offers is a request a command
     /// here already sends.
     Tui,
+    /// The record's newest classified failures, with every field the
+    /// taxonomy gives them.
+    Failures {
+        /// How many of the most recent to show.
+        last: Option<usize>,
+    },
     /// Read the record back.
     Log {
         /// Only entries of this kind.
@@ -552,6 +559,18 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["serve", argument, ..] => Request::UnexpectedArgument {
             command: "serve",
+            argument,
+        },
+        ["failures"] => Request::Failures { last: None },
+        ["failures", "--last", count] => match count.parse() {
+            Ok(count) => Request::Failures { last: Some(count) },
+            Err(_) => Request::MissingArgument {
+                command: "failures",
+                needs: "--last <n>, a number",
+            },
+        },
+        ["failures", argument, ..] => Request::UnexpectedArgument {
+            command: "failures",
             argument,
         },
         ["log", rest @ ..] => match log_options(rest) {
@@ -2156,6 +2175,9 @@ const COMMANDS: &str = "\
     \x20 mcf show <entry-id>                 one recorded entry, expanded into\n\
     \x20                                     the measurements and conditions it\n\
     \x20                                     rests on (B55)\n\
+    \x20 mcf failures [--last <n>]          what went wrong, classified: the\n\
+    \x20                                     record's newest failures, each\n\
+    \x20                                     with its context\n\
     \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
     \x20         [--last <n>] [--full]       read back out of the record\n\
     \x20 mcf explain <model> [--json]        what it declares, what MCF read,\n\
@@ -2288,6 +2310,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Serve => serve::run(),
         Request::Tui => tui::run(),
         Request::Desk => desk::run(),
+        Request::Failures { last } => failures::run(*last),
         Request::Log { kind, last, full } => log::run(*kind, *last, *full),
         Request::Check {
             only,
@@ -2523,6 +2546,7 @@ mod tests {
         assert!(text.contains("mcf run"), "{text}");
         assert!(text.contains("mcf explain"), "{text}");
         assert!(text.contains("mcf log"), "{text}");
+        assert!(text.contains("mcf failures"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         assert!(text.contains("mcf check"), "{text}");
         // Built since this list was written: `mcf probe` asks a model to do

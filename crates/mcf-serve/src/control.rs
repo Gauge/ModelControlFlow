@@ -128,6 +128,13 @@ pub enum Request {
     /// Read-only: it says what the catalogue holds and what is on the disk
     /// beside it. Building one is [`Request::Provision`].
     Components,
+    /// The newest classified failures in the record, newest first: what went
+    /// wrong, whose doing it was, what MCF did about it, where in MCF, and
+    /// the context to rebuild it from (B-074). Read-only, from the index.
+    Failures {
+        /// How many, at most.
+        last: usize,
+    },
     /// Provision: build a component, streamed a line at a time as the build
     /// prints them, so that a surface can show minutes of compiling as
     /// something happening rather than something hung (B-367).
@@ -653,6 +660,13 @@ impl Request {
             Self::Status => Value::map([("ask", Value::text("status"))]),
             Self::Holding => Value::map([("ask", Value::text("holding"))]),
             Self::Components => Value::map([("ask", Value::text("components"))]),
+            Self::Failures { last } => Value::map([
+                ("ask", Value::text("failures")),
+                (
+                    "last",
+                    Value::Integer(i64::try_from(*last).unwrap_or(i64::MAX)),
+                ),
+            ]),
             Self::Provision { component } => {
                 let mut fields = vec![("ask", Value::text("provision"))];
                 if let Some(component) = component {
@@ -965,6 +979,13 @@ impl Request {
             }),
             Some("holding") => Ok(Self::Holding),
             Some("components") => Ok(Self::Components),
+            Some("failures") => Ok(Self::Failures {
+                last: value
+                    .get("last")
+                    .and_then(Value::as_integer)
+                    .and_then(|held| usize::try_from(held).ok())
+                    .unwrap_or(20),
+            }),
             Some("provision") => Ok(Self::Provision {
                 component: optional("component"),
             }),

@@ -433,7 +433,30 @@ fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         .or(act);
         y += tall + 10.0;
     }
-    let _ = y;
+
+    // The failures: what went wrong, classified, newest first, each with
+    // the fields the taxonomy gives it, on the page about the machine
+    // (B-074).
+    y += 18.0;
+    let heading = match desk.faults_in_record {
+        0 => "failures — none in the record".to_owned(),
+        n if n <= desk.faults.len() => format!("failures — {n} in the record, newest first"),
+        n => format!(
+            "failures — the newest {} of {n} in the record",
+            desk.faults.len()
+        ),
+    };
+    spaced(paint, area.x, y, &heading, ink.faint);
+    y += 20.0;
+    for fault in &desk.faults {
+        let lines = crate::fault_lines(fault);
+        let tall = 22.0 + 16.0 * lines.len() as f32;
+        if y + tall > area.bottom() - 70.0 {
+            break;
+        }
+        fault_card(paint, fault, &lines, Box::new(area.x, y, wide, tall));
+        y += tall + 8.0;
+    }
 
     // The divider and the state line sit against the bottom, as the console
     // has them, so the tables above can grow without moving them.
@@ -457,6 +480,36 @@ fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         ink.quiet,
     );
     act
+}
+
+/// One classified failure: when and what, in bold, then every line the
+/// taxonomy gives it, wrapped rather than cut (B-074).
+fn fault_card(paint: &mut Painter, fault: &crate::Fault, lines: &[String], card: Box) {
+    let ink = paint.ink;
+    ui::card(paint, card, false);
+    let mut at = card.y + 12.0;
+    let mut first = true;
+    for line in lines {
+        let (weight, colour, size) = if first {
+            (Weight::Bold, ink.ink, size::BODY)
+        } else {
+            (Weight::Regular, ink.quiet, size::SMALL)
+        };
+        let said = if first && !fault.at.is_empty() {
+            format!("{}  {line}", fault.at)
+        } else {
+            line.clone()
+        };
+        for wrapped in paint
+            .wrap(&said, weight, size, card.w - 28.0)
+            .iter()
+            .take(2)
+        {
+            paint.say_at(card.x + 14.0, at, wrapped, weight, size, colour);
+            at += 16.0;
+        }
+        first = false;
+    }
 }
 
 /// The processor and every card, with what each is doing.

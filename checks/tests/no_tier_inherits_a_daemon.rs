@@ -87,6 +87,10 @@ const REACHES: &[Reaches] = &[
     // starting it, asking what is up, and stopping it are one act seen from
     // four sides.
     Reaches {
+        module: "crates/mcf-cli/src/failures.rs",
+        subcommand: Some("failures"),
+    },
+    Reaches {
         module: "crates/mcf-cli/src/hosting.rs",
         subcommand: Some("settings"),
     },

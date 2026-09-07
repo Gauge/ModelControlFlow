@@ -589,7 +589,7 @@ pub(crate) fn stop(reason: &str) -> Response {
 /// here is *there is nothing there*, which is a fact about this machine rather
 /// than about MCF — and saying it plainly beats classifying it (A2's spirit:
 /// what matters is that the operator is told).
-fn ask(socket: &std::path::Path, request: &Request) -> Result<Answer, String> {
+pub(crate) fn ask(socket: &std::path::Path, request: &Request) -> Result<Answer, String> {
     let mut connection = UnixStream::connect(socket).map_err(|error| {
         format!(
             "mcf: nothing is listening on {}\n  {error}\n  if MCF should be running, `mcf serve` \

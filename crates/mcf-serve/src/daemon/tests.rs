@@ -1357,3 +1357,83 @@ fn readings_are_answered_from_the_record_newest_first() {
     );
     let _ended = handle.join();
 }
+
+/// The newest classified failures are answered from the record, newest
+/// first, with how many the record holds (B-074).
+#[test]
+fn the_newest_failures_are_answered_from_the_record_newest_first() {
+    use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
+    let machine = Machine::new("failures");
+    let places = machine.places();
+    {
+        let mut journal =
+            mcf_record::journal::Journal::open(&places.journal).expect("a journal opens");
+        for (category, detail) in [
+            (Category::EngineExitImmediate, "the first"),
+            (Category::EngineSpawnRefused, "the second"),
+        ] {
+            let failure = Failure::new(
+                category,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::daemon"),
+                detail,
+            )
+            .with_context("looked_for", "/x");
+            journal
+                .append(&mcf_record::journal::Entry::new(
+                    mcf_record::journal::EntryKind::Failure,
+                    mcf_core::time::Timestamp::now(),
+                    mcf_record::encode::failure(&failure),
+                ))
+                .expect("the failure is recorded");
+        }
+    }
+    let (handle, socket) = running(places);
+
+    let answer = ask(&socket, &Request::Failures { last: 1 });
+    assert!(answer.served, "{:?}", answer.body);
+    let listed = answer
+        .body
+        .get("failures")
+        .and_then(Value::as_list)
+        .expect("a list");
+    assert_eq!(listed.len(), 1);
+    let newest = &listed[0];
+    assert_eq!(
+        newest
+            .get("body")
+            .and_then(|body| body.get("detail"))
+            .and_then(Value::as_text),
+        Some("the second")
+    );
+    assert_eq!(
+        newest
+            .get("body")
+            .and_then(|body| body.get("subsystem"))
+            .and_then(Value::as_text),
+        Some("mcf-serve::daemon")
+    );
+    assert!(newest.get("recorded_at").is_some());
+    assert_eq!(
+        answer.body.get("in_record").and_then(Value::as_integer),
+        Some(2)
+    );
+
+    let all = ask(&socket, &Request::Failures { last: 20 });
+    assert_eq!(
+        all.body
+            .get("failures")
+            .and_then(Value::as_list)
+            .map(<[Value]>::len),
+        Some(2)
+    );
+
+    let _stopped = ask(
+        &socket,
+        &Request::Stop {
+            reason: "done".to_owned(),
+        },
+    );
+    let _joined = handle.join();
+}
