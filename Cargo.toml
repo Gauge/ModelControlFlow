@@ -113,6 +113,15 @@ overflow-checks = true
 panic = "abort"
 overflow-checks = true
 
+# The window's painter — a rasteriser and a text shaper — is what every
+# window test spends its time in: a frame took seventy milliseconds
+# unoptimised and a test that presses its way across a screen renders a
+# frame a press. Optimised a little, the same frame takes a fraction of
+# that, and the suite is minutes rather than half an hour; the rest of the
+# tree stays unoptimised for its compile time.
+[profile.dev.package.mcf-desk]
+opt-level = 3
+
 # Cargo forces the test and bench profiles to unwind whatever the dev profile
 # says, because the harness catches a failing assertion. That is the one place
 # where what the suite runs and what MCF ships genuinely differ, and it is why

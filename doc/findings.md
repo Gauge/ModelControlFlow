@@ -212,6 +212,8 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 251 | [F251 — The window suite ran twenty-three minutes and now runs under a minute: one test swept the whole screen for the Exit entry at three thousand frames a page, every press found its control by rendering a frame a probe, every frame walked the font directories and baked every glyph afresh, and the painter was unoptimised; the menu has one layout a test presses directly, a frame records the controls it asked the mouse about and a test presses those, the font is found once and its atlases shared, and the desk crate is optimised in the dev profile (B-568, B-011)](#251-f251-the-window-suite-ran-twenty-three-minutes-and-now-runs-under-a-minute-one-test-swept-the-whole-screen-for-the-exit-entry-at-three-thousand-frames-a-page-every-press-found-its-control-by-rendering-a-frame-a-probe-every-frame-walked-the-font-directories-and-baked-every-glyph-afresh-and-the-painter-was-unoptimised-the-menu-has-one-layout-a-test-presses-directly-a-frame-records-the-controls-it-asked-the-mouse-about-and-a-test-presses-those-the-font-is-found-once-and-its-atlases-shared-and-the-desk-crate-is-optimised-in-the-dev-profile-b-568-b-011) |
+| 250 | [F250 — The older coding and languages suites are retired: their twenty tasks are all in the catalogue by another name, so `mcf eval` runs four suites — challenges, editing, tests, queries — the window lists four rows, and two thousand lines of tasks, checkers and a second correction loop are gone; the readings they wrote stay under `coding` and `coding-repair` and `mcf data` still writes them (B-567, B-563, D56)](#250-f250-the-older-coding-and-languages-suites-are-retired-their-twenty-tasks-are-all-in-the-catalogue-by-another-name-so-mcf-eval-runs-four-suites-challenges-editing-tests-queries-the-window-lists-four-rows-and-two-thousand-lines-of-tasks-checkers-and-a-second-correction-loop-are-gone-the-readings-they-wrote-stay-under-coding-and-coding-repair-and-mcf-data-still-writes-them-b-567-b-563-d56) |
 | 249 | [F249 — The daemon is first to go and, where the session offers a scope, held under a cap: `mcf serve` sets the highest out-of-memory adjustment on itself, which its servers inherit, so the kernel takes MCF before the desktop; a surface that starts the daemon starts it through the session manager's own runner in a transient scope capped at the machine less an eighth, never less than eight gigabytes, with no swap; the daemon says both on its first line; and the Diagnostics page says, above a run on the model the window is hosting, that it starts a second copy and how much more (B-561, F243, D41)](#249-f249-the-daemon-is-first-to-go-and-where-the-session-offers-a-scope-held-under-a-cap-mcf-serve-sets-the-highest-out-of-memory-adjustment-on-itself-which-its-servers-inherit-so-the-kernel-takes-mcf-before-the-desktop-a-surface-that-starts-the-daemon-starts-it-through-the-session-managers-own-runner-in-a-transient-scope-capped-at-the-machine-less-an-eighth-never-less-than-eight-gigabytes-with-no-swap-the-daemon-says-both-on-its-first-line-and-the-diagnostics-page-says-above-a-run-on-the-model-the-window-is-hosting-that-it-starts-a-second-copy-and-how-much-more-b-561-f243-d41) |
 | 248 | [F248 — A run that did not reach the end of the cases is handed back with what the program said on its way out: the harnesses keep the program's error stream beside the compiler's, told apart by whether `compiled` was printed, the host reads the same bounded twelve lines back into the correction — a traceback, a panic, a thrown error — a run that said nothing is told it may have run past the deadline, and a row counts the lines (B-566, B-565, B-025)](#248-f248-a-run-that-did-not-reach-the-end-of-the-cases-is-handed-back-with-what-the-program-said-on-its-way-out-the-harnesses-keep-the-programs-error-stream-beside-the-compilers-told-apart-by-whether-compiled-was-printed-the-host-reads-the-same-bounded-twelve-lines-back-into-the-correction-a-traceback-a-panic-a-thrown-error-a-run-that-said-nothing-is-told-it-may-have-run-past-the-deadline-and-a-row-counts-the-lines-b-566-b-565-b-025) |
 | 247 | [F247 — A compile failure is handed back with the compiler's first lines: the Rust and Go harnesses send the compiler's complaint to the container's error stream and the program's own nowhere, the host reads at most twelve lines of two hundred characters back into the correction, and a row counts them (B-565, B-563, B-025)](#247-f247-a-compile-failure-is-handed-back-with-the-compilers-first-lines-the-rust-and-go-harnesses-send-the-compilers-complaint-to-the-containers-error-stream-and-the-programs-own-nowhere-the-host-reads-at-most-twelve-lines-of-two-hundred-characters-back-into-the-correction-and-a-row-counts-them-b-565-b-563-b-025) |
@@ -9672,6 +9674,94 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 251 · F251 — The window suite ran twenty-three minutes and now runs under a minute: one test swept the whole screen for the Exit entry at three thousand frames a page, every press found its control by rendering a frame a probe, every frame walked the font directories and baked every glyph afresh, and the painter was unoptimised; the menu has one layout a test presses directly, a frame records the controls it asked the mouse about and a test presses those, the font is found once and its atlases shared, and the desk crate is optimised in the dev profile (B-568, B-011)
+
+**What it was.** The operator asked why the tests took so long. The
+command line's set is not the problem: its fifty whole-system tests
+run in under a minute and its unit tests in six seconds, and the
+minutes it seemed to take were the cargo lock held by the window suite
+running beside it. The window suite was: forty-three tests in twenty-
+three to twenty-five minutes, and a rebuild after a one-line change is
+seconds. Timed a test at a time, one test took 1,380 seconds and the
+next five between 118 and 543.
+
+**Where the time went.** A test that wants to press a control found it
+by sweeping: a frame rendered at every point of a grid across the
+screen, twenty-four pixels apart across and ten down, until the frame
+said the act wanted — 3,675 frames when the control was at the bottom
+or not there. *Every menu entry can be pressed from every screen*
+swept for Exit, which is at the bottom, from five pages. Each frame
+built a painter, and a painter found the font by walking every font
+directory on the machine and then rasterised the whole repertoire at
+every size it drew; and the painter was compiled unoptimised, where a
+frame took seventy milliseconds.
+
+**What changed.** Four things, each measured on the slowest test
+before the next.
+- The menu column has one layout, `menu_box`, that the side bar draws
+  from and the test presses at: twenty-five frames instead of
+  seventeen thousand. That test: 1,380 seconds to one.
+- The desk crate is optimised in the dev profile — `opt-level = 3` for
+  `mcf-desk` alone, the rest of the tree unoptimised for its compile
+  time. The next slowest test: 543 seconds to 107. A rebuild of the
+  suite after a change to the view is nine seconds.
+- The font is found once a process and its baked atlases are shared
+  by every painter after, keyed by file, weight and size: 107 to 86.
+- A frame records every box the mouse was asked whether it clicked —
+  `boxes_asked` — and a test that wants a control presses the centres
+  of those, one frame each, sweeping only where none of them is the
+  one wanted: 86 seconds to 5.
+
+**Seen.** The whole suite, timed a test at a time: 48 seconds, from
+1,400. The two slowest now sweep still — the prompt analysis under
+way at 48 seconds and pressing a form at 32 — since the control they
+want is hit-tested some other way than a click on a box; the rest are
+seven seconds or under. The suite drew every page for review before
+and after and the pages are the same.
+
+**What is not done.** The two sweeping tests would drop to seconds if
+the rows they press asked the mouse through `clicked` like every
+other control; that is a row to open if the minute matters. And a
+test that sweeps and does not find its control still pays the full
+sweep before it fails, which is the right time to pay it.
+
+## 250 · F250 — The older coding and languages suites are retired: their twenty tasks are all in the catalogue by another name, so `mcf eval` runs four suites — challenges, editing, tests, queries — the window lists four rows, and two thousand lines of tasks, checkers and a second correction loop are gone; the readings they wrote stay under `coding` and `coding-repair` and `mcf data` still writes them (B-567, B-563, D56)
+
+**What was doubled.** The catalogue (F245) asks forty-four challenges
+in four languages with retries and a correction; the older coding
+suite asked twenty Python tasks three times each with one second try,
+and the languages suite the same twenty in JavaScript and Rust. Every
+one of the twenty is in the catalogue: seventeen by the same name,
+and *intervals-touching*, *rle-decode-counts*, *fix-the-median* and
+*double* as *intervals-merge*, *rle-decode*, *median-doubled* and the
+easy tier's arithmetic. Two rows in the window and two suites at the
+command line asked the same questions twice, with two harnesses, two
+feedbacks and two shapes of row.
+
+**What is gone.** The twenty Python tasks and their checker, the
+JavaScript and Rust task lists and their checkers, the second-try loop
+and its `coding-repair` rows, and the rows a run wrote under `coding`
+— about two thousand lines. What stays is what the other suites and
+the catalogue use: the Python runner and its pinned image, the
+stripping of an answer's exports and `main`, the presence check, and
+the one runner for a program in a language's container with both its
+streams. `mcf eval --only` takes `challenges`, `editing`, `tests` or
+`queries`; the window's Diagnostics list has those four rows, the
+catalogue first. The rows the old suites wrote are still in the record
+under `coding` and `coding-repair`, and `mcf data --method coding`
+still writes them; a model measured last week keeps its figures.
+
+**Seen.** The command line, the window's unit tests and the whole
+window suite pass with the four rows; the Diagnostics list drawn for
+review shows *Challenges*, *Editing*, *Test writing* and *SQL and
+patterns*; a desk holding a model whose summary says `coding` last ran
+at a time no longer reads that time as the catalogue's.
+
+**What is not done.** The `coding` method's old rows are shaped
+differently from the catalogue's — `task` where the catalogue says
+`challenge`, no tier — and a comparison across the two is a reader's
+job; nothing here joins them.
+
 ## 249 · F249 — The daemon is first to go and, where the session offers a scope, held under a cap: `mcf serve` sets the highest out-of-memory adjustment on itself, which its servers inherit, so the kernel takes MCF before the desktop; a surface that starts the daemon starts it through the session manager's own runner in a transient scope capped at the machine less an eighth, never less than eight gigabytes, with no swap; the daemon says both on its first line; and the Diagnostics page says, above a run on the model the window is hosting, that it starts a second copy and how much more (B-561, F243, D41)
 
 **What was missing.** F243's gate refuses a server that would not
@@ -14514,6 +14604,17 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 174 — the window suite under a minute
+
+F251: the sweeps, the font search and the unoptimised painter that
+made the window suite twenty-three minutes, and what made it forty-eight
+seconds (B-568).
+
+### Version 173 — the older coding suites retired
+
+F250: the coding and languages suites, doubled by the catalogue, are
+gone; their rows stay (B-567).
 
 ### Version 172 — first to go, and held under a cap
 

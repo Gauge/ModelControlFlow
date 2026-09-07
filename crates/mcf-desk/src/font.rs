@@ -108,7 +108,7 @@ fn repertoire() -> Vec<u32> {
 }
 
 /// A font file, held in memory because stb reads from it on every bake.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Face {
     bytes: Vec<u8>,
     /// The file this came from, so that what MCF is drawing with can be said
@@ -251,9 +251,20 @@ pub struct Text {
     regular: Face,
     bold: Option<Face>,
     /// Keyed by weight and by size in tenths of a pixel, so that a size is
-    /// rasterised once however many times it is asked for.
-    baked: BTreeMap<(Weight, u32), Atlas>,
+    /// rasterised once however many times it is asked for. The atlases are
+    /// shared across every `Text` of a process that draws from the same
+    /// file: a window repaints with one painter, but a test renders a
+    /// frame a press with a painter each, and baking the whole repertoire
+    /// at every size for every frame was most of what a frame cost.
+    baked: BTreeMap<(Weight, u32), std::sync::Arc<Atlas>>,
 }
+
+/// Every atlas baked in this process, by the file it came from, the weight
+/// and the size: baked once, shared by every painter after.
+static BAKED: std::sync::OnceLock<std::sync::Mutex<Baked>> = std::sync::OnceLock::new();
+
+/// The shared atlases, by file, weight and size in tenths.
+type Baked = BTreeMap<(PathBuf, Weight, u32), std::sync::Arc<Atlas>>;
 
 impl Text {
     /// Finds a face on this machine and prepares to draw with it.
@@ -265,8 +276,19 @@ impl Text {
     /// falling back to the bitmap font would be falling back to exactly the
     /// thing this module was written to replace, and doing it quietly (A2).
     pub fn found() -> Result<Self, String> {
-        let regular = discover(Weight::Regular)?;
-        let bold = discover(Weight::Bold).ok();
+        // Found once a process: the search walks every font directory on
+        // the machine, and a window that repaints — or a test that renders
+        // a frame a press — would otherwise walk it every frame. The faces
+        // are bytes and are cloned; the glyphs baked from them are each
+        // painter's own.
+        static FOUND: std::sync::OnceLock<Result<(Face, Option<Face>), String>> =
+            std::sync::OnceLock::new();
+        let (regular, bold) = FOUND
+            .get_or_init(|| {
+                let regular = discover(Weight::Regular)?;
+                Ok((regular, discover(Weight::Bold).ok()))
+            })
+            .clone()?;
         Ok(Self {
             regular,
             bold,
@@ -310,11 +332,29 @@ impl Text {
                 Weight::Bold => self.bold.as_ref().unwrap_or(&self.regular),
                 Weight::Regular => &self.regular,
             };
-            let atlas = bake(face, size)?;
+            let shared = (face.source.clone(), weight, key.1);
+            let held = BAKED
+                .get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&shared)
+                .cloned();
+            let atlas = if let Some(atlas) = held {
+                atlas
+            } else {
+                let atlas = std::sync::Arc::new(bake(face, size)?);
+                let _kept = BAKED
+                    .get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .insert(shared, std::sync::Arc::clone(&atlas));
+                atlas
+            };
             let _replaced = self.baked.insert(key, atlas);
         }
         self.baked
             .get(&key)
+            .map(std::convert::AsRef::as_ref)
             .ok_or_else(|| "a size was baked and then was not there".to_owned())
     }
 }

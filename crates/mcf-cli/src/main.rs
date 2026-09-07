@@ -966,7 +966,7 @@ fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>
                 let Some(value) = rest.next() else {
                     return Ok(Request::MissingArgument {
                         command: "eval --only",
-                        needs: "a suite's name: coding, languages, editing, tests, queries or challenges",
+                        needs: "a suite's name: challenges, editing, tests or queries",
                     });
                 };
                 only = Some(*value);
@@ -2080,12 +2080,11 @@ const COMMANDS: &str = "\
     \x20 mcf eval <model>                    ask a model to do the work and\n\
     \x20       [--only <suite>]              check what it did: each answer run\n\
     \x20       [--retries <n>]               in a container, no total; a suite\n\
-    \x20       [--languages <a,b>]           is coding, languages, editing,\n\
-    \x20       [--tier <tier>]               tests, queries or challenges; a\n\
-    \x20       [--window <tokens>]           challenge gets ten attempts\n\
-    \x20                                     unless --retries says, in a\n\
-    \x20                                     window sized to each turn unless\n\
-    \x20                                     --window says\n\
+    \x20       [--languages <a,b>]           is challenges, editing, tests or\n\
+    \x20       [--tier <tier>]               queries; a challenge gets ten\n\
+    \x20       [--window <tokens>]           attempts unless --retries says,\n\
+    \x20                                     in a window sized to each turn\n\
+    \x20                                     unless --window says\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
     \x20             or --file <path>         receives each word, and how much\n\
     \x20       [--by word|phrase|sentence|   the answer moves without each\n\

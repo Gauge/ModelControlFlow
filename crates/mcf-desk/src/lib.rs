@@ -1609,13 +1609,11 @@ pub enum Diagnostic {
 
 /// The coding suites `mcf eval --only` runs, each with the row's name and
 /// the method the record keeps its readings under (B-519, D54).
-pub const SUITES: [(&str, &str, &str); 6] = [
-    ("coding", "Coding", "coding"),
-    ("languages", "Coding in JavaScript and Rust", "coding"),
+pub const SUITES: [(&str, &str, &str); 4] = [
+    ("challenges", "Challenges", "challenges"),
     ("editing", "Editing", "editing"),
     ("tests", "Test writing", "test-writing"),
     ("queries", "SQL and patterns", "queries"),
-    ("challenges", "Challenges", "challenges"),
 ];
 
 /// How many attempts a challenge gets unless the person types otherwise:
@@ -1627,13 +1625,11 @@ pub const RETRIES_DEFAULT: usize = 10;
 pub const SMALLEST_WINDOW: u64 = 4096;
 
 /// What each suite answers, in one line, in `SUITES` order.
-const SUITE_ANSWERS: [&str; 6] = [
-    "Twenty Python tasks, three attempts each, run against hidden cases; every failed attempt handed back for a second try",
-    "The same twenty tasks in JavaScript and Rust, each in its own pinned image; a Rust answer says whether it compiled",
+const SUITE_ANSWERS: [&str; 4] = [
+    "Forty-four challenges from easy to expert in Python, JavaScript, Rust and Go, up to ten attempts each: the attempt that solved it, the corrections, the tokens and the time",
     "A whole file given and one change asked: the cases held, and every untouched function compared byte for byte",
     "Tests written for a stated function, run against a correct implementation and three broken ones",
     "SQL queries run against a fixed table beside the reference, and patterns run against match and no-match cases",
-    "Forty-four challenges from easy to expert in Python, JavaScript, Rust and Go, up to ten attempts each: the attempt that solved it, the corrections, the tokens and the time",
 ];
 
 /// What each probe answers, in one line, in the daemon's order.

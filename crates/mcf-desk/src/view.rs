@@ -150,16 +150,14 @@ fn side_bar(
     paint.say_at(18.0, 16.0, "MCF", Weight::Bold, size::HEAD, ink.ink);
 
     let mut act = None;
-    let mut y = 56.0;
     for (page, label) in Page::MENU {
         if *page == Page::Exit {
             continue;
         }
-        let area = Box::new(10.0, y, side - 20.0, 32.0);
+        let area = menu_box(*page, height, side);
         if ui::nav(paint, mouse, area, label, desk.page.section() == *page) {
             act = Some(Act::Go(*page));
         }
-        y += 36.0;
     }
     // What MCF is doing, where a person's eye rests between pages: the job
     // and its clock, or nothing.
@@ -182,11 +180,30 @@ fn side_bar(
         );
         at += 16.0;
     }
-    let exit = Box::new(10.0, height - 46.0, side - 20.0, 32.0);
+    let exit = menu_box(Page::Exit, height, side);
     if ui::nav(paint, mouse, exit, "Exit", desk.page == Page::Exit) {
         act = Some(Act::Go(Page::Exit));
     }
     act
+}
+
+/// Where one entry of the menu column sits, in a window of this height
+/// with a side bar this wide: the entries from the top in `Page::MENU`'s
+/// order, Exit at the bottom. One place for the layout, so that a test
+/// pressing an entry presses where the window draws it rather than
+/// sweeping the screen for it.
+#[must_use]
+pub fn menu_box(page: Page, height: f32, side: f32) -> Box {
+    if page == Page::Exit {
+        return Box::new(10.0, height - 46.0, side - 20.0, 32.0);
+    }
+    #[allow(clippy::cast_precision_loss, reason = "a handful of entries")]
+    let at = Page::MENU
+        .iter()
+        .filter(|(held, _)| *held != Page::Exit)
+        .position(|(held, _)| *held == page)
+        .unwrap_or(0) as f32;
+    Box::new(10.0, 56.0 + 36.0 * at, side - 20.0, 32.0)
 }
 
 /// A column in a table: where it ends, and whether its figures are flush right.

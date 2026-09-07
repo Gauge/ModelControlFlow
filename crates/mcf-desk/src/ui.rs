@@ -40,6 +40,27 @@ pub struct Mouse {
     pub wheel: f32,
 }
 
+thread_local! {
+    /// Every box the mouse was asked about while a frame was being recorded,
+    /// on this thread; `None` while nothing is recording.
+    static ASKED: std::cell::RefCell<Option<Vec<Box>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Draws a frame and returns every box the mouse was asked whether it
+/// clicked while it was drawn: the controls of that frame, where the window
+/// put them. A test that wants to press a control presses one of these
+/// rather than sweeping the screen for it — a sweep is a frame a probe and
+/// thousands of probes, and a frame is milliseconds; this is one frame and
+/// a press a control.
+pub fn boxes_asked<T>(draw: impl FnOnce() -> T) -> (T, Vec<Box>) {
+    ASKED.with(|held| *held.borrow_mut() = Some(Vec::new()));
+    let drawn = draw();
+    let asked = ASKED
+        .with(|held| held.borrow_mut().take())
+        .unwrap_or_default();
+    (drawn, asked)
+}
+
 impl Mouse {
     /// Clears what is only true for one frame. Called at the top of each.
     pub fn settle(&mut self) {
@@ -75,6 +96,11 @@ impl Mouse {
     /// pressed inside it.
     #[must_use]
     pub fn clicked(&self, area: Box) -> bool {
+        ASKED.with(|held| {
+            if let Some(list) = held.borrow_mut().as_mut() {
+                list.push(area);
+            }
+        });
         let Some(up) = self.click else {
             return false;
         };

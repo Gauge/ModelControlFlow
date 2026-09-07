@@ -75,7 +75,6 @@ pub(crate) const GO: Language = Language {
          else echo notcompiled; fi",
     ],
     present: &["go", "version"],
-    tasks: &[],
 };
 
 /// Python as a language of the catalogue: the same pinned image the
@@ -88,7 +87,6 @@ pub(crate) const PYTHON: Language = Language {
     memory: "512m",
     command: &["timeout", "20", "python3", "/work/answer.py"],
     present: &["python3", "--version"],
-    tasks: &[],
 };
 
 /// What one run of the catalogue was asked to be: which languages, how
@@ -1122,7 +1120,8 @@ mod tests {
         for (name, answer) in answers {
             let language = super::language_named(name).unwrap();
             let program = super::checker(language, merge, answer);
-            let said = crate::languages::run_program(podman, &scratch, language, &program).unwrap();
+            let (said, _) =
+                crate::languages::run_program_heard(podman, &scratch, language, &program).unwrap();
             let (_, ran, cases) =
                 read_harness(&said, merge.cases.len(), matches!(name, "rust" | "go"));
             if !ran || cases.iter().any(|(held, _)| !held) {

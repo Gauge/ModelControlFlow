@@ -983,6 +983,28 @@ fn act_somewhere(desk: &Desk, wanted: &mcf_desk::Act) -> bool {
 /// Bounded because a sweep of the whole window is thousands of renders, and a
 /// test that takes a minute is one somebody stops running.
 fn act_within(desk: &Desk, wanted: &mcf_desk::Act, band: (f32, f32)) -> bool {
+    // First the controls the frame itself was asked about, pressed at their
+    // centres, one frame each; the sweep below only where none of them is
+    // the one wanted — a control hit-tested some other way.
+    let ((), asked) = mcf_desk::ui::boxes_asked(|| {
+        let Ok(mut paint) = Painter::on_paper(1180, 760, 1.0, NIGHT) else {
+            return;
+        };
+        let _act = mcf_desk::view::draw(&mut paint, desk, &Mouse::default());
+    });
+    let mut seen: Vec<(i32, i32)> = Vec::new();
+    for area in asked {
+        let at = (area.x + area.w / 2.0, area.y + area.h / 2.0);
+        #[allow(clippy::cast_possible_truncation, reason = "a pixel position")]
+        let key = (at.0 as i32, at.1 as i32);
+        if at.1 < band.0 || at.1 >= band.1 || seen.contains(&key) {
+            continue;
+        }
+        seen.push(key);
+        if pressed_at(desk, at).as_ref() == Some(wanted) {
+            return true;
+        }
+    }
     let mut y = band.0 + 6.0;
     while y < band.1 {
         let mut x = 10.0;
@@ -1067,9 +1089,15 @@ fn every_menu_entry_can_be_pressed_from_every_screen() {
     for (from, _) in Page::MENU {
         desk.page = *from;
         for (to, label) in Page::MENU {
-            assert!(
-                act_somewhere(&desk, &mcf_desk::Act::Go(*to)),
-                "{label} cannot be reached from {from:?}"
+            // Pressed where the window draws the entry, one render an entry:
+            // a sweep of the screen for Exit at the bottom was three thousand
+            // renders a page and twenty minutes a run.
+            let entry = mcf_desk::view::menu_box(*to, 760.0, desk.splits.side);
+            let at = (entry.x + entry.w / 2.0, entry.y + entry.h / 2.0);
+            assert_eq!(
+                pressed_at(&desk, at),
+                Some(mcf_desk::Act::Go(*to)),
+                "{label} cannot be reached from {from:?} at {at:?}"
             );
         }
     }
@@ -2786,64 +2814,11 @@ fn review_the_diagnostics(desk: &mut Desk) {
     review_the_coding_row(desk);
 }
 
-/// A coding suite's row: run through the command line, its readings
-/// under `coding` and when it last ran from the model's summary (B-519).
+/// The coding suites' rows: the catalogue's, run through the command
+/// line, its readings under `challenges` and when it last ran from the
+/// model's summary (B-519, B-563).
 fn review_the_coding_row(desk: &mut Desk) {
     desk.doing = mcf_desk::Doing::Nothing;
-    desk.diagnostic = mcf_desk::Diagnostic::Eval(0);
-    let coding_rows: Vec<mcf_record::readings::Reading> = ["merge-sorted", "glob-match"]
-        .iter()
-        .flat_map(|task| {
-            (0..3_i64).flat_map(move |attempt| {
-                let dims = [
-                    ("language", mcf_record::json::Value::text("python")),
-                    ("task", mcf_record::json::Value::text(*task)),
-                    ("attempt", mcf_record::json::Value::Integer(attempt)),
-                ];
-                [
-                    mcf_record::readings::Reading::new(&dims, "cases_held", 3 - attempt, "count"),
-                    mcf_record::readings::Reading::new(&dims, "cases", 3, "count"),
-                    mcf_record::readings::Reading::new(
-                        &dims,
-                        "ask_ns",
-                        2_400_000_000 + attempt * 10_000_000,
-                        "ns",
-                    ),
-                ]
-            })
-        })
-        .collect();
-    let mut coding = mcf_record::readings::run_body(
-        &desk
-            .models
-            .first()
-            .map(|held| held.path.clone())
-            .unwrap_or_default(),
-        "coding",
-        "through the daemon, run in a container",
-        vec![("tasks", mcf_record::json::Value::Integer(20))],
-        &coding_rows,
-    );
-    if let mcf_record::json::Value::Map(fields) = &mut coding {
-        let _at = fields.insert(
-            "at".to_owned(),
-            mcf_record::json::Value::text("2026-09-06T03:46:43.000000000Z (local offset +00:00)"),
-        );
-    }
-    if let Some(held) = desk.models.get_mut(0) {
-        let _was = held.readings_at.insert(
-            "coding".to_owned(),
-            "2026-09-06T03:46:43.000000000Z (local offset +00:00)".to_owned(),
-        );
-    }
-    desk.readings = Some((
-        desk.models
-            .first()
-            .map(|held| held.path.clone())
-            .unwrap_or_default(),
-        vec![coding],
-    ));
-    let _ = drawn(desk, DAY, "review-diagnostics-coding");
     review_the_challenges_row(desk);
     desk.diagnostic = mcf_desk::Diagnostic::Throughput;
     desk.readings = None;
@@ -2856,7 +2831,7 @@ fn review_the_coding_row(desk: &mut Desk) {
 fn review_the_challenges_row(desk: &mut Desk) {
     use mcf_record::json::Value;
     use mcf_record::readings::Reading;
-    desk.diagnostic = mcf_desk::Diagnostic::Eval(5);
+    desk.diagnostic = mcf_desk::Diagnostic::Eval(0);
     let mut rows: Vec<Reading> = Vec::new();
     for (challenge, tier, category, language, solved_at, attempts) in [
         (

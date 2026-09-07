@@ -1471,7 +1471,7 @@ fn the_daemon_starts_stays_up_and_stops_when_asked() {
         use std::io::BufRead as _;
         let stdout = serving.stdout.as_mut().expect("it prints where it is");
         let mut reader = std::io::BufReader::new(stdout);
-        for _ in 0..4 {
+        for _ in 0..5 {
             let mut line = String::new();
             if reader.read_line(&mut line).unwrap_or(0) == 0 {
                 break;
@@ -1480,6 +1480,13 @@ fn the_daemon_starts_stays_up_and_stops_when_asked() {
         }
     }
     assert!(said.contains("mcf is up on"), "{said}");
+    // What holds its memory is said on the banner: a cap where the session
+    // offered a scope, none where it did not, and whether the kernel agreed
+    // to take it first (B-561).
+    assert!(
+        said.contains("memory cap") && said.contains("when memory runs out"),
+        "{said}"
+    );
     // This machine has nothing provisioned, and the banner says so plainly and
     // says what would fix it. It used to say "no vendored engine yet (B-320)"
     // whatever was on the disk.

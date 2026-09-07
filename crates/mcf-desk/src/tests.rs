@@ -1531,7 +1531,7 @@ fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
     desk.page = Page::Diagnostics;
     assert_eq!(
-        desk.eval_arguments("/m.gguf", Some(5)),
+        desk.eval_arguments("/m.gguf", Some(0)),
         vec!["eval", "/m.gguf", "--only", "challenges"],
         "ten attempts is the suite's own default and is not said"
     );
@@ -1555,7 +1555,7 @@ fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
     assert_eq!(desk.challenge_window, Some(8192));
     assert!(desk.edit_refused.is_none());
     assert_eq!(
-        desk.eval_arguments("/m.gguf", Some(5)),
+        desk.eval_arguments("/m.gguf", Some(0)),
         vec![
             "eval",
             "/m.gguf",
@@ -1626,7 +1626,7 @@ fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
 fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     use crate::Diagnostic;
     let all = Diagnostic::all();
-    assert_eq!(all.len(), 4 + 9 + 47 + 6, "{all:?}");
+    assert_eq!(all.len(), 4 + 9 + 47 + 4, "{all:?}");
     let names: std::collections::BTreeSet<&str> = all.iter().map(|held| held.name()).collect();
     assert_eq!(names.len(), all.len(), "two rows share a name");
     assert_eq!(Diagnostic::Probe(2).name(), "stop-conditions");
@@ -1648,9 +1648,9 @@ fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     assert_eq!(families[1].1, Some(crate::Card::Capabilities));
     assert_eq!(families[5].1, Some(crate::Card::Coding));
     assert_eq!(families[5].2.len(), crate::SUITES.len());
-    assert_eq!(Diagnostic::Eval(2).name(), "Editing");
-    assert_eq!(Diagnostic::Eval(3).readings_method(), Some("test-writing"));
-    assert_eq!(Diagnostic::Eval(1).suite(), Some("languages"));
+    assert_eq!(Diagnostic::Eval(1).name(), "Editing");
+    assert_eq!(Diagnostic::Eval(2).readings_method(), Some("test-writing"));
+    assert_eq!(Diagnostic::Eval(0).suite(), Some("challenges"));
     assert_eq!(Diagnostic::Eval(0).card(), crate::Card::Coding);
 
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2182,15 +2182,15 @@ fn a_models_runs_are_read_from_under_runs() {
     desk.models.push(model);
     desk.chosen = Some(0);
     assert!(
-        desk.last_run(crate::Diagnostic::Eval(0)).is_some(),
-        "coding's row says when it last ran"
-    );
-    assert!(
-        desk.last_run(crate::Diagnostic::Eval(2)).is_some(),
+        desk.last_run(crate::Diagnostic::Eval(1)).is_some(),
         "editing's row says when it last ran"
     );
     assert!(
-        desk.last_run(crate::Diagnostic::Eval(3)).is_none(),
+        desk.last_run(crate::Diagnostic::Eval(0)).is_none(),
+        "the catalogue has not run; the older coding suite's time is not its own"
+    );
+    assert!(
+        desk.last_run(crate::Diagnostic::Eval(2)).is_none(),
         "test writing has not run"
     );
 }

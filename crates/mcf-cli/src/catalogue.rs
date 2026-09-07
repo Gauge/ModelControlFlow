@@ -842,7 +842,7 @@ mod tests {
         for challenge in CHALLENGES {
             let program =
                 crate::challenges::checker(&crate::challenges::PYTHON, challenge, REFERENCES);
-            let said = crate::languages::run_program(
+            let (said, _) = crate::languages::run_program_heard(
                 podman,
                 &scratch,
                 &crate::challenges::PYTHON,
