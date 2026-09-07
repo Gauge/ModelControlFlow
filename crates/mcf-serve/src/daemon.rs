@@ -1174,7 +1174,10 @@ fn counters(metrics: &str) -> Vec<(&'static str, Value)> {
 
 fn in_use(held: &Holding) -> Value {
     let mut fields: Vec<(&'static str, Value)> = Vec::new();
-    if let Some(metrics) = crate::served::metrics_on(held.settings.port) {
+    // Read the way the server is reached, key and all: a keyed hold refused
+    // its counters to a reader without the key, and the page showed a
+    // served model doing nothing (B-580).
+    if let Some(metrics) = crate::served::metrics_via(held.served.reach()) {
         fields.extend(counters(&metrics));
     }
     fields.push((

@@ -161,7 +161,9 @@ pub fn metrics_on(port: u16) -> Option<String> {
 #[must_use]
 pub fn metrics_via(reach: &Reach) -> Option<String> {
     let said = match reach {
-        Reach::Port { port, .. } => got_on(*port, "/metrics")?,
+        // A keyed server refuses its counters to a reader without the key,
+        // the same as any other request (B-580).
+        Reach::Port { port, key } => got_on_with(*port, key.as_deref(), "/metrics")?,
         Reach::Socket(socket) => got_via(socket, "/metrics")?,
     };
     let (_, body) = said.split_once("\r\n\r\n")?;
@@ -202,14 +204,22 @@ fn got_via(socket: &Path, path: &str) -> Option<String> {
 
 /// One GET on the engine's port, bounded: the status line and a short body.
 fn got_on(port: u16, path: &str) -> Option<String> {
+    got_on_with(port, None, path)
+}
+
+/// [`got_on`] presenting the key the server wants, where it wants one.
+fn got_on_with(port: u16, key: Option<&str>, path: &str) -> Option<String> {
     use std::io::{Read as _, Write as _};
     let Ok(mut connection) = std::net::TcpStream::connect((crate::hosting::LOOPBACK, port)) else {
         return None;
     };
     let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+    let bearer = key.map_or_else(String::new, |key| {
+        format!("Authorization: Bearer {key}\r\n")
+    });
     if write!(
         connection,
-        "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: localhost\r\n{bearer}Connection: close\r\n\r\n"
     )
     .and_then(|()| connection.flush())
     .is_err()

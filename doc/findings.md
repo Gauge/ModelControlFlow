@@ -9774,6 +9774,15 @@ request by hand. The settings gain a request form, the record's with
 the key beside it, and the window asks with that; the record keeps
 its form and the test that the key is never written down still holds.
 
+**Amended a third time (B-580).** Hosted open with a key and reached
+from the other device, the Server page showed the hold doing nothing.
+The daemon read the engine's counters over the port without the key,
+and a keyed server refuses that read like any other — 401 to
+`/metrics`. The counters are now read the way the server is reached,
+key and all: the 2B hosted open on a scoped daemon, one request from
+the network address, and the Hosted answer carried eight tokens
+generated at 28.6 a second, ten prompted, none processing.
+
 **What is not done.** The key travels as a bearer token over plain
 HTTP, which on a home network is the ordinary arrangement and on any
 other is not; a hold that should be reached from further than the
