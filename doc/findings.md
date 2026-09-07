@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 271 | [F271 — The ladder's pair was measuring a quarter-second tick in MCF's own path: the watcher beside every request slept in a 250 ms read and the answer waited for it; woken, and with the pair on a prefix a warm run paid for, the 2B reads 8.4 to 10.3 ms a token with spreads under a millisecond, and the engine's own clock agrees (B-428, B-589, F155, A12)](#271-f271-the-ladders-pair-was-measuring-a-quarter-second-tick-in-mcfs-own-path-the-watcher-beside-every-request-slept-in-a-250-ms-read-and-the-answer-waited-for-it-woken-and-with-the-pair-on-a-prefix-a-warm-run-paid-for-the-2b-reads-84-to-103-ms-a-token-with-spreads-under-a-millisecond-and-the-engines-own-clock-agrees-b-428-b-589-f155-a12) |
 | 270 | [F270 — Seven thousand entries and not one failure: every refusal the daemon answered went to the client and nowhere else, and now every unserved answer is a failure row with what was asked beside it (B-588, B-074, A2)](#270-f270-seven-thousand-entries-and-not-one-failure-every-refusal-the-daemon-answered-went-to-the-client-and-nowhere-else-and-now-every-unserved-answer-is-a-failure-row-with-what-was-asked-beside-it-b-588-b-074-a2) |
 | 269 | [F269 — Failures are inspectable from the window: the daemon answers the record's newest classified failures, the System page shows each with every field the taxonomy gives it, and one rendering serves all 112 categories (B-074, §3.1, §3.2)](#269-f269-failures-are-inspectable-from-the-window-the-daemon-answers-the-records-newest-classified-failures-the-system-page-shows-each-with-every-field-the-taxonomy-gives-it-and-one-rendering-serves-all-112-categories-b-074-31-32) |
 | 268 | [F268 — The citation check reaches every shipped crate but the laboratory: thirty-five sentences in the library crates, the taxonomy's meanings among them, and the one word that has a citation's shape and is not one (B-587, B-403, F264)](#268-f268-the-citation-check-reaches-every-shipped-crate-but-the-laboratory-thirty-five-sentences-in-the-library-crates-the-taxonomys-meanings-among-them-and-the-one-word-that-has-a-citations-shape-and-is-not-one-b-587-b-403-f264) |
@@ -15448,7 +15449,80 @@ mcf-serve::daemon*, the sentence, the context, and `asked: host`.
 The same ask a moment later adds nothing; a different refusal adds a
 row.
 
+## 271 · F271 — The ladder's pair was measuring a quarter-second tick in MCF's own path: the watcher beside every request slept in a 250 ms read and the answer waited for it; woken, and with the pair on a prefix a warm run paid for, the 2B reads 8.4 to 10.3 ms a token with spreads under a millisecond, and the engine's own clock agrees (B-428, B-589, F155, A12)
+
+**What B-428 asked for.** A pair whose difference stands over the
+prefill it cancels. The first change was the one the row named: each
+repeat is three runs — a warm run that reads the prompt and produces
+one token, then one token and seventeen with the prefix the engine
+kept — so the prefill is paid once and is in neither run of the pair.
+The engine's own account of each run now travels in the account beside
+MCF's wall clock: how many tokens of prompt it read, how long, how
+many it produced, how long, and how many it had kept (A12). And a
+window is asked for in powers of two, because a pair of turns sixteen
+tokens apart had needed two windows a few tokens apart, and the held
+server sized to the first was stopped and started for the second.
+
+**What the engine's clock showed.** With the prefix kept, the engine
+read one token of prompt and produced its one or seventeen in 11 ms
+and 145 ms; MCF's wall clock read 480 ms for both, and 480 ms for a
+warm run the engine spent 230 ms on. Every reading was the engine's
+time rounded up to a quarter-second tick. The difference of two such
+readings is the tick's noise, which is what F155 had measured at every
+depth: pairs that did not separate, a pair that came out negative, a
+spread wider than the figure.
+
+**Where the tick was.** Every request to an engine runs beside a
+watcher that looks at whether the client is still there and whether
+the daemon is stopping, four times a second, by a read on the client
+with a 250 ms timeout — and the request returned only when the watcher
+had been joined. The watcher now waits on a condition the request sets
+the moment its answer arrives, and looks at the client without
+blocking; the answer never waits on it.
+
+**On the 2B, after.** The same ladder, the same machine:
+
+| depth | ms a token | spread | pairs | engine's own, per token |
+|---|---|---|---|---|
+| 512 | 8.169 | 0.400 | 3 of 3 | 8.3 |
+| 1,024 | 8.179 | 0.668 | 3 of 3 | 8.6 |
+| 2,048 | 8.947 | 0.257 | 3 of 3 | 9.0 |
+| 4,096 | 10.339 | 1.054 | 3 of 3 | 10.1 |
+| 8,192 | 12.801 | 0.534 | 3 of 3 | — |
+
+The fall-off reads 0.603 ms more a token for every thousand tokens of
+depth between 512 and 8,192, and the whole ladder of five rungs, three
+repeats each, took 37 seconds. Before the tick was found, the same
+ladder read 0.08 to 0.25 ms a token with two pairs of three not
+separating at 512 — figures that were the tick and nothing else. The
+engine's own predicted time over sixteen agrees with MCF's difference
+at every rung, which is the cross-check A12 asks for and the reason
+the engine's clock is now in the record.
+
+**What remains, and is a row.** A one-token turn the engine answers in
+11 ms returns to the daemon's clock in 220 ms. The two hundred
+milliseconds between are MCF's own — the socket pair the drained
+generation runs through, the account, the readings after the turn —
+and they cancel in a pair and are paid by every single generation
+(B-589).
+
+**The 8,192 rung, refused.** The engine's words — which the rung now
+carries, where it had said *in its own words* and left the words in
+the context — were *request (8192 tokens) exceeds the available
+context size (8192 tokens)*. A measurement's window is sized to its
+turn under a ceiling, and the ceiling had become the window a hold
+defaults to (F266): 8,192 on the 2B, so the 8,192 rung could not fit
+its own prompt. The ceiling is the largest window the pair can hold
+again, which is what it was meant to be; a hold's default is a hold's.
+With the ceiling restored the rung measured: 12.801 ms a token, spread
+0.534, three pairs of three.
+
 ## Changelog
+
+### Version 193 — the ladder's pair runs on a kept prefix
+
+F271: the quarter-second tick found and woken, the pair on a kept
+prefix, the engine's clock in the record (B-428, B-589).
 
 ### Version 192 — a refusal is in the record
 

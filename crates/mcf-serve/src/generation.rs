@@ -574,6 +574,12 @@ pub(crate) fn serve_generation(
     // Whether the limit is the length: a timing's request, which the engine
     // is told to run to and the account counts (B-396).
     pinned: bool,
+    // Whether the engine may keep what it read of the prompt from the
+    // request before it. Off for every measurement but the ladder's pair,
+    // which runs on the prefix a warm run paid for, so that the difference
+    // between one token and seventeen is generation and not the jitter of
+    // two prefills (B-428, §3.12).
+    cached: bool,
     // How the caller asked the turn framed, where they asked the engine to
     // frame it from the model's own template (D47).
     turn: Option<&crate::turn::Turn>,
@@ -684,6 +690,7 @@ pub(crate) fn serve_generation(
                         tokens,
                         limit,
                         pinned,
+                        cached,
                         tail,
                         shown,
                     };
@@ -1620,9 +1627,19 @@ const TOO_WIDE: u64 = 16;
 /// for, doubled for room to work — with a floor, and never more than the
 /// machine was said to hold. A measurement then carries the window it
 /// actually ran in (§3.4).
+///
+/// **And a power of two**, because a window is asked for in them, and
+/// because a pair of turns that differ by sixteen tokens would otherwise
+/// need two windows a few tokens apart — and the held server, sized to the
+/// first, was stopped and started again for the second, which is what the
+/// ladder's pair paid a fresh prefill for at every rung (B-428).
 fn window_for(sent: usize, limit: usize, context: u64) -> u64 {
     let asked_for = u64::try_from(sent.saturating_add(limit)).unwrap_or(SMALLEST_WINDOW);
-    let needed = asked_for.saturating_mul(2).max(SMALLEST_WINDOW);
+    let needed = asked_for
+        .saturating_mul(2)
+        .max(SMALLEST_WINDOW)
+        .checked_next_power_of_two()
+        .unwrap_or(u64::MAX);
     if context == 0 {
         needed
     } else {
@@ -1660,6 +1677,7 @@ fn through_served(
         tokens,
         limit,
         pinned,
+        cached,
         tail: _,
         shown,
     } = *sent;
@@ -1699,7 +1717,15 @@ fn through_served(
         },
         _ => crate::served::Prompt::Identifiers(tokens),
     };
-    let (completed, pieces) = as_it_arrives(engine, prompt, limit, draw, pinned, waiting, writer)?;
+    let (completed, pieces) = as_it_arrives(
+        engine,
+        prompt,
+        limit,
+        draw,
+        (pinned, cached),
+        waiting,
+        writer,
+    )?;
     // Read after the turn, while the mark includes it (B-424).
     let peak_resident = engine.peak_resident_bytes();
     let ran_in = engine.window;
@@ -1819,6 +1845,11 @@ fn served_account(
                 Value::Integer(i64::try_from(prompt_tokens).unwrap_or(i64::MAX)),
             ),
             ("stopped", Value::text(completed.stop.written())),
+            // The engine's own clock beside MCF's (A12, B-428).
+            (
+                "engine_timings",
+                completed.timings.clone().unwrap_or(Value::Null),
+            ),
             (
                 "text_bytes",
                 Value::Integer(i64::try_from(text.len()).unwrap_or(i64::MAX)),
@@ -1912,7 +1943,7 @@ fn as_it_arrives(
     prompt: crate::served::Prompt<'_>,
     limit: usize,
     draw: Draw,
-    pinned: bool,
+    (pinned, cached): (bool, bool),
     waiting: crate::served::Waiting<'_>,
     writer: &mut &UnixStream,
 ) -> Result<(Completed, usize), Failure> {
@@ -1923,7 +1954,17 @@ fn as_it_arrives(
     // is watching those anyway: they are spent by a bench or a probe.
     if pinned {
         return engine
-            .complete(prompt, limit, draw, pinned, waiting)
+            .complete_with(
+                prompt,
+                limit,
+                draw,
+                pinned,
+                &crate::served::Extras {
+                    cached,
+                    ..crate::served::Extras::default()
+                },
+                waiting,
+            )
             .map(|completed| (completed, 0));
     }
     let mut arriving = Arriving::new(writer);
@@ -2061,6 +2102,9 @@ struct Sent<'a> {
     limit: usize,
     /// Whether `limit` is the length rather than a ceiling (B-396).
     pinned: bool,
+    /// Whether the engine may reuse the prefix it read for the request
+    /// before (B-428).
+    cached: bool,
     /// The rendered frame's text after the person's words, where the engine
     /// framed the turn: what the model was left inside of.
     tail: Option<&'a str>,

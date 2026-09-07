@@ -106,7 +106,7 @@ const SMALLEST_HOLD: u64 = 4_096;
 /// The rule: the largest power of two, within the largest that fits, whose
 /// cache is no larger than the weights themselves. The weights are the one
 /// size the model brings with it, and a cache within them is a hold whose
-/// memory is mostly the model. No smaller than [`SMALLEST_HOLD`] where the
+/// memory is mostly the model. No smaller than `SMALLEST_HOLD` where the
 /// machine can hold that much, because a window a program on the port cannot
 /// use is not a hold. What is chosen is on the settings surface with this
 /// reason beside it, and `--context` sets it to anything the pair holds.

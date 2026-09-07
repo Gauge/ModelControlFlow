@@ -964,9 +964,21 @@ fn failure_said(account: &Value) -> String {
             .and_then(|failure| failure.get(key))
             .and_then(Value::as_text)
     };
+    // The engine's own words, where the failure carries them: a refusal
+    // that says *in its own words* and then leaves the words in the context
+    // told a reader nothing (A7).
+    let words = failure
+        .and_then(|failure| failure.get("context"))
+        .and_then(|context| {
+            context
+                .get("engine_said")
+                .or_else(|| context.get("reason"))
+                .and_then(Value::as_text)
+        })
+        .map_or_else(String::new, |words| format!(": {words}"));
     match (said("detail"), said("category")) {
-        (Some(detail), Some(category)) => format!("{detail} ({category})"),
-        (Some(detail), None) => detail.to_owned(),
+        (Some(detail), Some(category)) => format!("{detail}{words} ({category})"),
+        (Some(detail), None) => format!("{detail}{words}"),
         (None, Some(category)) => category.to_owned(),
         (None, None) => "the account carries no failure".to_owned(),
     }
@@ -1087,8 +1099,8 @@ fn measured(
                 (
                     "method",
                     Value::text(
-                        "two runs a depth, one token and seventeen; the difference over sixteen, \
-                         so that loading and prefill cancel",
+                        "three runs a depth: a warm run that pays the prefill, then one token and \
+                         seventeen on the cached prefix; the difference over sixteen is generation",
                     ),
                 ),
                 ("loaded", Value::text("per_request")),
@@ -1365,7 +1377,72 @@ fn pair_rows(
             "bytes",
         ));
     }
+    // The engine's own clock beside MCF's, a row a figure, so that a pair
+    // meant to run on a kept prefix can be seen to have: the prompt it read
+    // is a handful of tokens where the prefix was kept, and the whole depth
+    // where it was not (A12, B-428).
+    if let Some(Value::Map(timings)) = &timed.engine_timings {
+        for (key, unit) in [
+            ("prompt_n", "tokens"),
+            ("predicted_n", "tokens"),
+            ("tokens_cached", "tokens"),
+            ("prompt_ms", "ms"),
+            ("predicted_ms", "ms"),
+        ] {
+            let Some(value) = timings.get(key) else {
+                continue;
+            };
+            let figure = match value {
+                Value::Integer(held) => Some(*held),
+                // The engine writes milliseconds with a fraction, which the
+                // record cannot carry as it is; the row keeps the
+                // microseconds, whole (A1, A6). Read from the number's own
+                // digits — a text would not parse, and is not a number.
+                other => micros_of_milliseconds(&other.to_line()),
+            };
+            let Some(figure) = figure else {
+                continue;
+            };
+            let (metric, unit) = if unit == "ms" {
+                (format!("engine_{key}").replace("_ms", "_us"), "us")
+            } else {
+                (format!("engine_{key}"), unit)
+            };
+            if figure != i64::MIN {
+                rows.push(mcf_record::readings::Reading::new(
+                    &dims, &metric, figure, unit,
+                ));
+            }
+        }
+    }
     rows
+}
+
+/// A number of milliseconds as the engine writes it — `494.1` — as whole
+/// microseconds, without passing through a float: the digits are the digits.
+fn micros_of_milliseconds(text: &str) -> Option<i64> {
+    let (sign, digits) = match text.strip_prefix('-') {
+        Some(rest) => (-1, rest),
+        None => (1, text),
+    };
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    let whole: i64 = if whole.is_empty() {
+        0
+    } else {
+        whole.parse().ok()?
+    };
+    let mut micros = 0_i64;
+    for (digit, place) in fraction.chars().zip([100_i64, 10, 1]) {
+        let digit = i64::from(digit.to_digit(10)?);
+        micros = micros.checked_add(digit.checked_mul(place)?)?;
+    }
+    if fraction.chars().any(|held| !held.is_ascii_digit()) {
+        return None;
+    }
+    whole
+        .checked_mul(1000)?
+        .checked_add(micros)?
+        .checked_mul(sign)
 }
 
 /// The rank at every position a cross-check read, raw (D54, B-514): one
@@ -1417,6 +1494,8 @@ struct Timed {
     produced: Option<u64>,
     /// Why the engine stopped, in the account's word.
     stopped: Option<String>,
+    /// The engine's own timings, where it gave them (B-428).
+    engine_timings: Option<Value>,
 }
 
 impl Timed {
@@ -1523,6 +1602,7 @@ fn rung_reading(
     });
     Value::map([
         ("depth", at_depth),
+        ("pair", Value::text(PAIR_METHOD)),
         ("ms_per_token", Value::text(as_milliseconds(per_token))),
         ("ns_per_token", as_whole(per_token)),
         (
@@ -1614,6 +1694,11 @@ fn middle(samples: &mut [u64]) -> Option<u64> {
 /// eight depths does not become a coffee break.
 const REPEATS: u32 = 3;
 
+/// How a rung's pair is taken, written on every rung so that a reading from
+/// before B-428 — two prefills a pair — is not read as one from after.
+const PAIR_METHOD: &str =
+    "a warm run pays the prefill; one token and seventeen follow on the cached prefix";
+
 /// How many tokens a reading is taken over, past the first.
 ///
 /// Sixteen: enough that the difference between the two runs is dominated by
@@ -1669,10 +1754,11 @@ fn estimated_seconds(ladder: &[u64], bytes: Option<u64>) -> (u64, u64) {
     // the rounding happens once, at the end.
     //
     // A model is read once per request at roughly half a gigabyte a second on
-    // an ordinary machine, and a rung is two requests times the repeats.
+    // an ordinary machine, and a rung is three requests times the repeats,
+    // of which one reads the prompt (B-428).
     let per_load_ms = bytes.map_or(2_000, |bytes| bytes / 500_000);
     let prefill_ms: u64 = ladder.iter().map(|depth| depth / 4).sum();
-    let runs = u64::from(REPEATS).saturating_mul(2);
+    let runs = u64::from(REPEATS).saturating_mul(3);
     let middle_ms = (ladder.len() as u64)
         .saturating_mul(per_load_ms)
         .saturating_add(prefill_ms)
@@ -3568,6 +3654,7 @@ impl Daemon {
             picked,
             system_memory_free(),
             pinned,
+            false,
             turn,
             picture,
             started,
@@ -3972,6 +4059,7 @@ impl Daemon {
                 system_memory_free(),
                 // What the model says to a prompt, ended where the model
                 // ends it: a report on the prompt is not a timing.
+                false,
                 false,
                 turn,
                 None,
@@ -4683,13 +4771,16 @@ impl Daemon {
 
     /// Times a model on this machine, at doubling depths.
     ///
-    /// **Two runs a depth, and the difference is the answer.** A single timed
-    /// generation at depth *d* measures three things at once: loading the
-    /// model, reading *d* tokens of prompt, and producing the tokens asked
-    /// for. Only the third is what *speed at depth* means. So each depth is
-    /// run twice — once producing one token, once producing seventeen — and
-    /// the per-token cost is the difference over sixteen. Whatever the load
-    /// and the prefill cost, they are in both and cancel.
+    /// **Three runs a depth, and the difference of the last two is the
+    /// answer.** A single timed generation at depth *d* measures three
+    /// things at once: loading the model, reading *d* tokens of prompt, and
+    /// producing the tokens asked for. Only the third is what *speed at
+    /// depth* means. So each depth is run three times: a warm run that reads
+    /// the prompt and produces one token, then — with the prefix the engine
+    /// kept — one token and seventeen, whose difference over sixteen is the
+    /// per-token cost. The prefill is paid once and is in neither of the pair
+    /// (B-428); it used to be in both and cancel, and at depth its jitter
+    /// did not (F155).
     ///
     /// That matters more here than it usually would: the daemon loads a model
     /// for every request and drops it after (DEC-018), so an unsubtracted
@@ -5019,7 +5110,7 @@ impl Daemon {
             crate::crosscheck::POSITIONS,
             // Not pinned: the cross-check compares what two engines say from
             // the same prefix, and where one ends its turn is part of that.
-            false,
+            (false, false),
             picked,
             // The plain load: a cross-check reads what two engines spell,
             // and a draft head changes which tokens are drawn rather than
@@ -5110,7 +5201,7 @@ impl Daemon {
         &self,
         named: &str,
     ) -> core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String> {
-        let (recommended, _) = self.recommend(named).map_err(|failure| {
+        let (recommended, _, _) = self.recommend(named).map_err(|failure| {
             failure
                 .context_value("wanted")
                 .map_or_else(|| failure.detail().to_owned(), str::to_owned)
@@ -5147,6 +5238,47 @@ impl Daemon {
     fn last_measurement(&self, model: &Path) -> Option<Value> {
         let held = self.timings.lock().ok()?;
         held.get(model).cloned()
+    }
+
+    /// One repeat's three runs: the warm run that pays the prefill, then one
+    /// token and seventeen on the prefix it left (B-428). Each is announced
+    /// before it starts.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one repeat's conditions — what, through which engine, how deep, which repeat, started with what — and who is waiting"
+    )]
+    fn rung_runs(
+        &self,
+        named: &str,
+        engine: Option<&str>,
+        depth: u64,
+        repeat: u32,
+        picked: Option<&(crate::adapters::ProvisionedLlama, u32, u64)>,
+        started: crate::declared::Started,
+        waiting: crate::served::Waiting<'_>,
+        report: &mut dyn FnMut(Value),
+    ) -> (
+        std::result::Result<Timed, String>,
+        std::result::Result<Timed, String>,
+        std::result::Result<Timed, String>,
+    ) {
+        let mut run = |produce: u32, cached: bool| {
+            report(a_run_starting(depth, produce, repeat));
+            self.timed_generation(
+                named,
+                engine,
+                depth,
+                produce,
+                cached,
+                picked.cloned(),
+                started,
+                waiting,
+            )
+        };
+        let warm = run(1, false);
+        let one = run(1, true);
+        let many = run(1 + SETTLED, true);
+        (warm, one, many)
     }
 
     /// One rung of the ladder: the repeats, the median, and what ran them.
@@ -5191,20 +5323,25 @@ impl Daemon {
         let mut pairs = Pairs::of(REPEATS);
         let mut rows: Vec<mcf_record::readings::Reading> = Vec::new();
         for repeat in 0..REPEATS {
-            report(a_run_starting(depth, 1, repeat));
-            let one =
-                self.timed_generation(named, engine, depth, 1, picked.cloned(), started, waiting);
-            report(a_run_starting(depth, 1 + SETTLED, repeat));
-            let many = self.timed_generation(
-                named,
-                engine,
-                depth,
-                1 + SETTLED,
-                picked.cloned(),
-                started,
-                waiting,
+            // **The prefill is paid once, by a warm run, and the pair runs
+            // on it** (B-428). Both runs of the pair used to read the prompt
+            // from nothing, and at 8,192 deep a 34-second prefill's jitter
+            // was larger than the 0.4 s of generation their difference
+            // measures: a pair came out negative, and a rung's spread was
+            // wider than its figure (F155). The warm run reads the prompt
+            // and produces one token — that is the prompt reading, the
+            // first token's cost — and the one and the seventeen that follow
+            // are asked with the prefix kept, so each pays generation and a
+            // handful of tokens of the prefix the engine re-checks. Their
+            // difference over sixteen is generation, and the record says so.
+            let (warm, one, many) = self.rung_runs(
+                named, engine, depth, repeat, picked, started, waiting, report,
             );
-            for (run, pinned, which) in [(&one, 1, "one"), (&many, 1 + SETTLED, "many")] {
+            for (run, pinned, which) in [
+                (&warm, 1, "warm"),
+                (&one, 1, "one"),
+                (&many, 1 + SETTLED, "many"),
+            ] {
                 match run {
                     Ok(timed) => {
                         ran_on = ran_on.take().or_else(|| timed.engine.clone());
@@ -5238,7 +5375,14 @@ impl Daemon {
                     )]
                     let per_token = (long.ns - short.ns) / u64::from(SETTLED);
                     samples.push(per_token);
-                    first_token.push(short.ns);
+                    // The first token's cost is the warm run's: the prompt
+                    // read and one token produced. The pair's own runs read
+                    // nothing, by design.
+                    if let Ok(warm) = &warm
+                        && warm.held_the_pin(1)
+                    {
+                        first_token.push(warm.ns);
+                    }
                 }
                 (Ok(short), Ok(long))
                     if short.held_the_pin(1) && long.held_the_pin(1 + SETTLED) =>
@@ -5277,6 +5421,7 @@ impl Daemon {
         engine: Option<&str>,
         depth: u64,
         produce: u32,
+        cached: bool,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
         started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
@@ -5296,7 +5441,7 @@ impl Daemon {
             engine,
             &tokens,
             usize::try_from(produce).unwrap_or(1),
-            true,
+            (true, cached),
             picked,
             started,
             waiting,
@@ -5330,6 +5475,11 @@ impl Daemon {
                 .get("stopped")
                 .and_then(Value::as_text)
                 .map(str::to_owned),
+            engine_timings: produced
+                .account
+                .get("engine_timings")
+                .filter(|held| !matches!(held, Value::Null))
+                .cloned(),
         })
     }
 
@@ -5355,7 +5505,7 @@ impl Daemon {
         engine: Option<&str>,
         tokens: &[usize],
         produce: usize,
-        pinned: bool,
+        (pinned, cached): (bool, bool),
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
         started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
@@ -5400,6 +5550,7 @@ impl Daemon {
                 picked,
                 system_memory_free(),
                 pinned,
+                cached,
                 None,
                 None,
                 started,
@@ -5699,7 +5850,7 @@ impl Daemon {
         named: &str,
         on: Option<crate::control::On>,
     ) -> core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64, String), String> {
-        let (recommended, _) = self.recommend(named).map_err(|failure| {
+        let (recommended, _, largest) = self.recommend(named).map_err(|failure| {
             failure
                 .context_value("wanted")
                 .map_or_else(|| failure.detail().to_owned(), str::to_owned)
@@ -5725,7 +5876,7 @@ impl Daemon {
                 Ok((
                     adapter(engine),
                     recommended.gpu_layers,
-                    recommended.context,
+                    largest,
                     recommended.device.clone(),
                 ))
             }
@@ -5743,7 +5894,7 @@ impl Daemon {
                     })
                     .or_else(resolved)
                     .ok_or_else(|| "no engine is provisioned".to_owned())?;
-                Ok((adapter(engine), 0, recommended.context, "CPU".to_owned()))
+                Ok((adapter(engine), 0, largest, "CPU".to_owned()))
             }
             Some(crate::control::On::Card) => {
                 let (engine, card) = held
@@ -5765,7 +5916,7 @@ impl Daemon {
                             },
                         )
                     })?;
-                Ok((adapter(engine), 999, recommended.context, card))
+                Ok((adapter(engine), 999, largest, card))
             }
         }
     }
@@ -5851,7 +6002,7 @@ impl Daemon {
     /// Nothing is started. A surface asks this to fill in a form.
     fn settings_for(&self, named: &str) -> Answer {
         match self.recommend(named) {
-            Ok((recommended, path)) => Answer::served(Value::map([
+            Ok((recommended, path, _)) => Answer::served(Value::map([
                 ("model", Value::text(named.to_owned())),
                 ("recommended", recommended.to_value()),
                 ("settings", recommended.to_value()),
@@ -6009,7 +6160,12 @@ impl Daemon {
         Some(per_token.saturating_mul(context))
     }
 
-    fn recommend(&self, named: &str) -> Result<(crate::hosting::Hosting, PathBuf)> {
+    /// What MCF recommends for a model here, where the model is, and the
+    /// largest window the pair could hold — which is the ceiling a
+    /// measurement's window is sized under, not the window a hold defaults
+    /// to (B-423, B-428): the ladder's deepest rung asks for more than a
+    /// hold's default, and a measurement is sized to its turn anyway.
+    fn recommend(&self, named: &str) -> Result<(crate::hosting::Hosting, PathBuf, u64)> {
         let path = crate::generation::resolved(&self.places.models, named);
         // **The whole set, not the part it is named by.** `metadata` here read
         // the length of the one file, and a split model's first part is a
@@ -6077,6 +6233,7 @@ impl Daemon {
                 projector.as_deref(),
             ),
             path,
+            choice.context,
         ))
     }
 
@@ -6128,7 +6285,7 @@ impl Daemon {
         reason = "one hold, each refusal named before it starts"
     )]
     fn host(&self, named: &str, asked: &Value, report: &mut dyn FnMut(Value)) -> Answer {
-        let (recommended, path) = match self.recommend(named) {
+        let (recommended, path, _) = match self.recommend(named) {
             Ok(held) => held,
             Err(failure) => return Answer::refused(&failure),
         };

@@ -572,6 +572,7 @@ fn a_cross_check_estimate_is_a_range_that_grows_with_the_model() {
 #[test]
 fn a_timed_run_holds_its_pin_or_says_how_it_fell_short() {
     let timed = |produced: Option<u64>, stopped: Option<&str>| super::Timed {
+        engine_timings: None,
         ns: 1_000,
         engine: None,
         peak_resident: None,
@@ -1504,4 +1505,17 @@ fn a_refusal_answered_is_recorded_once_a_minute_per_refusal() {
         },
     );
     let _joined = handle.join();
+}
+
+/// The engine's milliseconds become whole microseconds digit by digit.
+#[test]
+fn the_engines_milliseconds_are_kept_as_whole_microseconds() {
+    assert_eq!(super::micros_of_milliseconds("494.1"), Some(494_100));
+    assert_eq!(super::micros_of_milliseconds("0.0"), Some(0));
+    assert_eq!(super::micros_of_milliseconds("8.126"), Some(8_126));
+    assert_eq!(super::micros_of_milliseconds("8.1269"), Some(8_126));
+    assert_eq!(super::micros_of_milliseconds("130"), Some(130_000));
+    assert_eq!(super::micros_of_milliseconds("-1.5"), Some(-1_500));
+    assert_eq!(super::micros_of_milliseconds("x"), None);
+    assert_eq!(super::micros_of_milliseconds("1.2x"), None);
 }

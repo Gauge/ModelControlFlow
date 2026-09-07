@@ -111,6 +111,13 @@ pub struct Completed {
     /// part — they are writing different sentences by then — so a cross-check
     /// needs the tokens themselves to feed the other engine (B-362, F40).
     pub produced: Vec<usize>,
+    /// The engine's own account of the time: how many tokens of prompt it
+    /// read and how long, how many it produced and how long, and how many
+    /// it had kept from the request before. Carried as the engine said it,
+    /// beside MCF's wall clock, so that the two can be compared and a pair
+    /// that was meant to run on a kept prefix can be seen to have (A12,
+    /// B-428). `None` from an engine that gave none.
+    pub timings: Option<Value>,
 }
 
 impl Completed {
@@ -346,6 +353,60 @@ const GLANCE: std::time::Duration = std::time::Duration::from_millis(250);
 /// going, because it is already done.
 const TOLD_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Whether the request the watcher is beside has been answered, and the
+/// way to wake the watcher the moment it is.
+///
+/// **The watcher used to sleep in a quarter-second read, and the answer
+/// waited for it.** The request returned only when the watcher had been
+/// joined, and the watcher woke four times a second: every timing MCF took
+/// was the engine's time rounded up to the next tick — 480 ms on a wall
+/// clock for a turn the engine answered in 10 ms, and the same 480 ms for
+/// one it answered in 145 ms. The ladder's pair, one token against
+/// seventeen, was two such readings, and their difference was the tick's
+/// noise rather than sixteen tokens of generation (F155, B-428). Now the
+/// watcher waits on this and is woken when the work is done.
+struct Done {
+    flag: std::sync::Mutex<bool>,
+    wake: std::sync::Condvar,
+}
+
+impl Done {
+    const fn new() -> Self {
+        Self {
+            flag: std::sync::Mutex::new(false),
+            wake: std::sync::Condvar::new(),
+        }
+    }
+
+    fn is_set(&self) -> bool {
+        *self
+            .flag
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn set(&self) {
+        *self
+            .flag
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+        self.wake.notify_all();
+    }
+
+    /// Waits until set or until `within` has passed; whether it is set.
+    fn wait(&self, within: std::time::Duration) -> bool {
+        let held = self
+            .flag
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (held, _timed_out) = self
+            .wake
+            .wait_timeout_while(held, within, |set| !*set)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *held
+    }
+}
+
 /// Watches over one request in flight, from beside the thread that made it.
 ///
 /// Not a timer in §6.9's sense: it lives exactly as long as the request the
@@ -354,33 +415,25 @@ const TOLD_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
 /// times a second at whether the client is still there and whether the
 /// daemon is stopping, and at the engine's slot for how far it has read;
 /// tells the client every ten seconds where the engine has got to; and
-/// closes the engine's request when nobody is waiting for it any more.
-fn watched(
-    reach: &Reach,
-    request: &Link,
-    waiting: Waiting<'_>,
-    done: &AtomicBool,
-) -> Option<Closed> {
+/// closes the engine's request when nobody is waiting for it any more. It
+/// is woken the moment the answer arrives, so the answer never waits on it.
+fn watched(reach: &Reach, request: &Link, waiting: Waiting<'_>, done: &Done) -> Option<Closed> {
     let client = waiting.client.and_then(|client| client.try_clone().ok());
     if let Some(client) = &client {
-        let _timeout = client.set_read_timeout(Some(GLANCE));
+        // Looked at, never waited on: the wait is on `done`.
+        let _mode = client.set_nonblocking(true);
     }
     let began = std::time::Instant::now();
     let mut last_told: Option<std::time::Instant> = None;
     let mut byte = [0_u8; 1];
-    while !done.load(Ordering::Acquire) {
+    while !done.wait(GLANCE) {
         let gone = match client.as_ref().map(|client| (&*client).read(&mut byte)) {
             Some(Ok(0)) => true,
             Some(Err(error)) => !matches!(
                 error.kind(),
                 std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
             ),
-            Some(Ok(_)) | None => {
-                if client.is_none() {
-                    std::thread::sleep(GLANCE);
-                }
-                false
-            }
+            Some(Ok(_)) | None => false,
         };
         let closed = if gone {
             Some(Closed::ClientLeft)
@@ -409,7 +462,7 @@ fn watched(
                 progress.take(read, of, produced);
             }
             if let Some(mut told) = waiting.told
-                && !done.load(Ordering::Acquire)
+                && !done.is_set()
             {
                 let line = crate::control::Streamed::Progress {
                     read,
@@ -1707,13 +1760,13 @@ fn while_watched<T>(
     work: impl FnOnce(&Link) -> Result<T, Interrupted>,
 ) -> Result<T, Interrupted> {
     let connection = Link::open(reach).map_err(Interrupted::Connecting)?;
-    let done = AtomicBool::new(false);
+    let done = Done::new();
     let (answer, closed) = std::thread::scope(|scope| {
         let watcher = waiting
             .watches_anything()
             .then(|| scope.spawn(|| watched(reach, &connection, waiting, &done)));
         let answer = work(&connection);
-        done.store(true, Ordering::Release);
+        done.set();
         let closed = watcher.and_then(|watcher| watcher.join().ok().flatten());
         (answer, closed)
     });
@@ -2317,6 +2370,16 @@ pub fn interpret(answer: &str) -> Result<Completed, Failure> {
         // MCF has not been taught, and saying so is A7.
         None => Stop::Other("nothing".to_owned()),
     };
+    let timings = value.get("timings").and_then(|held| match held {
+        Value::Map(fields) => {
+            let mut fields = fields.clone();
+            if let Some(kept) = value.get("tokens_cached") {
+                let _added = fields.insert("tokens_cached".to_owned(), kept.clone());
+            }
+            Some(Value::Map(fields))
+        }
+        _ => None,
+    });
     Ok(Completed {
         text: value
             .get("content")
@@ -2324,6 +2387,7 @@ pub fn interpret(answer: &str) -> Result<Completed, Failure> {
             .unwrap_or_default()
             .to_owned(),
         predicted: number("tokens_predicted"),
+        timings,
         evaluated: number("tokens_evaluated"),
         stop,
         produced: match value.get("tokens") {
