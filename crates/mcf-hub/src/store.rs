@@ -116,7 +116,7 @@ impl Held {
     pub fn terms(&self) -> String {
         match &self.provenance {
             Ok(provenance) => crate::licence::describe(provenance.licence().known()),
-            Err(None) => "licence: unknown — nothing beside it states any terms (A7)".to_owned(),
+            Err(None) => "licence: unknown — nothing beside it states any terms".to_owned(),
             Err(Some(_)) => {
                 "licence: unknown — the provenance beside it could not be read".to_owned()
             }

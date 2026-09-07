@@ -34,14 +34,14 @@ taxonomy	transfer.checksum_mismatch	Bytes arrived and do not verify
 taxonomy	transfer.interrupted	Connection lost; resumable
 taxonomy	transfer.tls	Certificate or handshake failure
 taxonomy	artifact.missing	Referenced and not present
-taxonomy	artifact.corrupt	Present and fails verification (§7.49's re-check)
+taxonomy	artifact.corrupt	Present and fails verification on re-check
 taxonomy	artifact.unreadable	Present and cannot be read at all
 taxonomy	artifact.format.unsupported	A format MCF does not read
 taxonomy	artifact.format.malformed	A format MCF reads, malformed
 taxonomy	artifact.incomplete	Some shards present, others absent
 taxonomy	artifact.archive.traversal	Member escapes the extraction root
 taxonomy	artifact.archive.oversized	Expands beyond its declared size
-taxonomy	artifact.provenance.incomplete	Held, with unknown fields (§3.6)
+taxonomy	artifact.provenance.incomplete	Held, with unknown fields
 taxonomy	engine.spawn.not_found	Binary absent at spawn
 taxonomy	engine.spawn.refused	Permission or platform refusal
 taxonomy	engine.exit.immediate	Died before first output
@@ -51,9 +51,9 @@ taxonomy	engine.hang.no_output	Alive, silent, past deadline
 taxonomy	engine.protocol.malformed	Output MCF cannot parse
 taxonomy	engine.protocol.version	Incompatible engine interface
 taxonomy	engine.load.refused	Engine declines the model
-taxonomy	engine.unavailable	No vendored engine supports this artifact (D23)
+taxonomy	engine.unavailable	No vendored engine supports this artifact
 taxonomy	accel.absent	None present
-taxonomy	accel.unrecognized	Present, not characterized (§7.8)
+taxonomy	accel.unrecognized	Present, not characterized
 taxonomy	accel.driver.absent	No driver
 taxonomy	accel.driver.query_failed	Driver present, interrogation failed
 taxonomy	accel.driver.version_mismatch	Runtime and driver disagree
@@ -68,32 +68,32 @@ taxonomy	resource.disk.quota	Quota refused the write
 taxonomy	resource.memory.exhausted	Host allocation refused
 taxonomy	resource.memory.pressure	Allocatable but degraded
 taxonomy	resource.fd.exhausted	Descriptor limit
-taxonomy	resource.contended	Another process holds what was needed (B24)
+taxonomy	resource.contended	Another process holds what was needed
 taxonomy	record.unwritable	Store cannot be opened for writing
-taxonomy	record.corrupt.index	Derived database damaged; journal intact (D20)
+taxonomy	record.corrupt.index	Derived database damaged; journal intact
 taxonomy	record.corrupt.journal	Journal damaged
 taxonomy	record.replay.incomplete	Rebuilt, with a stated gap
-taxonomy	record.schema.unknown	Written by a version this one cannot read (§7.30)
-taxonomy	record.budget.exhausted	Retention limit reached (§7.5)
-taxonomy	record.content.unreadable	Content filed beside the record is there and will not be read (F105)
+taxonomy	record.schema.unknown	Written by a version this one cannot read
+taxonomy	record.budget.exhausted	Retention limit reached
+taxonomy	record.content.unreadable	Content filed beside the record is there and will not be read
 taxonomy	config.invalid	Value outside the permitted domain
 taxonomy	config.unsatisfiable	Coherent and impossible on this machine
 taxonomy	config.conflict	Two settings that cannot both hold
-taxonomy	config.unverified	Declared, never probed, and required to be (A21)
-taxonomy	config.identity.mismatch	Realized differs from declared (D23, placement)
-taxonomy	probe.inconclusive	Neither confirms nor denies (§3.18)
+taxonomy	config.unverified	Declared, never probed, and required to be
+taxonomy	config.identity.mismatch	Realized differs from declared (placement)
+taxonomy	probe.inconclusive	Neither confirms nor denies
 taxonomy	probe.timeout	No result within its bound
 taxonomy	probe.malformed_response	Output the probe cannot grade
 taxonomy	probe.unsupported	Probe does not apply to this artifact
 taxonomy	probe.divergence	Declared and verified disagree — a *finding*, not an error
 taxonomy	lab.setup.failed	Environment could not be constructed
-taxonomy	lab.teardown.failed	Residue left behind (B58)
-taxonomy	lab.gate.not_applicable	Capability verified absent (B40) — not a failure
+taxonomy	lab.teardown.failed	Residue left behind
+taxonomy	lab.gate.not_applicable	Capability verified absent — not a failure
 taxonomy	lab.gate.unknown	Capability unestablished (B40)
-taxonomy	lab.precondition.contended	Machine not quiet for a timing run (B-217)
+taxonomy	lab.precondition.contended	Machine not quiet for a timing run
 taxonomy	lab.budget.exceeded	Declared maximum duration reached
 taxonomy	lab.interrupted	Stopped by the operator; partial preserved
-taxonomy	lab.workload.ungradable	Supplied workload cannot be graded (B42)
+taxonomy	lab.workload.ungradable	Supplied workload cannot be graded
 taxonomy	lab.conditions.invalidated	Conditions moved mid-run; result unsound
 taxonomy	model.tool.malformed_call	Unparseable or missing required arguments
 taxonomy	model.tool.wrong_selection	Plausible but incorrect tool
@@ -106,25 +106,25 @@ taxonomy	model.format.violated	Correct content, wrong required format
 taxonomy	model.instruction.ignored	A stated constraint unmet
 taxonomy	model.refused	Declined the task
 taxonomy	model.output.empty	Produced nothing
-taxonomy	sandbox.escape_attempted	Reached for something absent (A14) — recorded, never permitted
+taxonomy	sandbox.escape_attempted	Reached for something absent — recorded, never permitted
 taxonomy	sandbox.quota.disk	Environment quota refused a write
 taxonomy	sandbox.quota.memory	Environment limit reached
 taxonomy	sandbox.turn_budget	Turn limit reached
 taxonomy	sandbox.construct_failed	Environment could not be built
-taxonomy	platform.unsupported	Outside §7.35's declared scope
+taxonomy	platform.unsupported	Outside the declared scope
 taxonomy	platform.privilege.denied	Elevation refused (A26)
 taxonomy	platform.privilege.unavailable	No mechanism on this platform
-taxonomy	platform.mechanism.unavailable	Boxing, pinning or yielding unsupported here (§7.43)
-taxonomy	platform.restore_failed	Something changed could not be restored (A27)
+taxonomy	platform.mechanism.unavailable	Boxing, pinning or yielding unsupported here
+taxonomy	platform.restore_failed	Something changed could not be restored
 taxonomy	time.jump.backward	Wall clock stepped back mid-measurement
 taxonomy	time.jump.forward	Large forward step
-taxonomy	time.monotonic.unavailable	No monotonic source (D9)
+taxonomy	time.monotonic.unavailable	No monotonic source
 taxonomy	exchange.identifier.malformed	Unparseable
-taxonomy	exchange.identifier.unresolvable	Names something unobtainable (§XV)
-taxonomy	exchange.reproduce.impossible	Resolvable and cannot run here — a complete answer (§6.3)
-taxonomy	exchange.reproduce.divergent	Reproduced; numbers differ — a *finding* (§6.29)
+taxonomy	exchange.identifier.unresolvable	Names something unobtainable
+taxonomy	exchange.reproduce.impossible	Resolvable and cannot run here — a complete answer
+taxonomy	exchange.reproduce.divergent	Reproduced; numbers differ — a *finding*
 taxonomy	exchange.schema.unreadable	Contribution written by an uninterpretable version
-taxonomy	exchange.terms.absent	Terms not shown before sending — a defect (D21)
+taxonomy	exchange.terms.absent	Terms not shown before sending — a defect
 taxonomy	internal.invariant_violated	A state the type system was meant to prevent
 taxonomy	internal.unclassified	A failure that fits nothing above
 attribution	mcf
@@ -1003,3 +1003,5 @@ finding	F265
 finding	F266
 register	B-586
 finding	F267
+register	B-587
+finding	F268

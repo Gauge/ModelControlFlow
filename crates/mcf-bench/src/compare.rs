@@ -593,8 +593,8 @@ pub enum Withheld {
 impl fmt::Display for Withheld {
     fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
         form.write_str(match *self {
-            Self::Confounded => "more than one condition differs (A8)",
-            Self::MixedReuse => "the trials were not alike in what they reused (§6.13)",
+            Self::Confounded => "more than one condition differs",
+            Self::MixedReuse => "the trials were not alike in what they reused",
         })
     }
 }

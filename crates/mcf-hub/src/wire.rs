@@ -195,7 +195,7 @@ impl Wire for Tcp {
                     Attribution::Machine,
                     Disposition::Refused,
                     WHERE,
-                    "a connection that cannot be given a deadline is one that can hang (B7)",
+                    "a connection that cannot be given a deadline is one that can hang",
                 )
                 .with_context("reason", error.to_string())
             })?;

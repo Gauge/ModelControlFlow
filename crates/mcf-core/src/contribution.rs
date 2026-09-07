@@ -70,7 +70,7 @@ impl fmt::Display for Workload {
     fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
         form.write_str(match self {
             Self::Declared => "a declared workload",
-            Self::Custom => "a custom workload — local, and not contributable (B42, A25)",
+            Self::Custom => "a custom workload — local, and not contributable",
         })
     }
 }

@@ -194,7 +194,7 @@ impl fmt::Display for Graded {
             ),
             Self::Unknown { why } => write!(
                 form,
-                "unknown: {why} — which is not the same as absent, and not a low score (A7)"
+                "unknown: {why} — which is not the same as absent, and not a low score"
             ),
             Self::Failed(failure) => write!(form, "failed: {failure}"),
         }
@@ -512,7 +512,7 @@ impl fmt::Display for Coverage {
         if !self.inapplicable.is_empty() {
             write!(
                 form,
-                "; inapplicable to {} (verified absent, which is not a low score — B40)",
+                "; inapplicable to {} (verified absent, which is not a low score)",
                 named(&self.inapplicable)
             )?;
         }

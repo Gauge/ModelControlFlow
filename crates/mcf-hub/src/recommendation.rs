@@ -75,7 +75,7 @@ impl Recommendation {
     pub fn describe(&self) -> String {
         match self {
             Self::Declared { sampling, fields } => format!(
-                "{sampling} — declared in {WHERE} ({}), unverified here (A21)",
+                "{sampling} — declared in {WHERE} ({}), unverified here",
                 fields.join(", ")
             ),
             Self::NothingStated => format!(

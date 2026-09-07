@@ -20,11 +20,23 @@
 use std::path::PathBuf;
 
 /// Crates whose strings a person reads.
+///
+/// Every shipped crate but the laboratory: what a library crate says in a
+/// failure's detail or a category's description reaches a person through the
+/// CLI and the window. The laboratory is left out because its text names
+/// quantizations — `Q6` — which have the shape of a citation and are not one,
+/// and telling the two apart by shape alone is not possible (F268).
 const SURFACES: &[&str] = &[
     "crates/mcf-cli",
     "crates/mcf-tui",
     "crates/mcf-serve",
     "crates/mcf-desk",
+    "crates/mcf-core",
+    "crates/mcf-bench",
+    "crates/mcf-hub",
+    "crates/mcf-record",
+    "crates/mcf-standin",
+    "crates/mcf-helper",
 ];
 
 /// Lines that may cite, because what they carry is not read by a person.

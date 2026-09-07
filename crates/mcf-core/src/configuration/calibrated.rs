@@ -103,7 +103,7 @@ impl fmt::Display for Chosen {
                  is not having measured it (A21, B60)"
             ),
             Self::MeasuredHere { sweep } => {
-                write!(form, "measured best on this machine by {sweep} (D18)")
+                write!(form, "measured best on this machine by {sweep}")
             }
             Self::PinnedByLaboratory { laboratory } => write!(
                 form,

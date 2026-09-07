@@ -295,7 +295,7 @@ impl fmt::Display for Bound {
             Self::Tokens(held) => write!(form, "{held} token(s), which count the same anywhere"),
             Self::Elapsed(held) => write!(
                 form,
-                "{} ns of wall clock, which is a bound only a timing laboratory may use (B-230)",
+                "{} ns of wall clock, which is a bound only a timing laboratory may use",
                 held.as_nanos()
             ),
         }

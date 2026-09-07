@@ -75,14 +75,14 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | Code | Meaning |
 |---|---|
 | `artifact.missing` | Referenced and not present |
-| `artifact.corrupt` | Present and fails verification (§7.49's re-check) |
+| `artifact.corrupt` | Present and fails verification on re-check |
 | `artifact.unreadable` | Present and cannot be read at all |
 | `artifact.format.unsupported` | A format MCF does not read |
 | `artifact.format.malformed` | A format MCF reads, malformed |
 | `artifact.incomplete` | Some shards present, others absent |
 | `artifact.archive.traversal` | Member escapes the extraction root |
 | `artifact.archive.oversized` | Expands beyond its declared size |
-| `artifact.provenance.incomplete` | Held, with unknown fields (§3.6) |
+| `artifact.provenance.incomplete` | Held, with unknown fields |
 
 ### 4 · `engine.*` — the supervised inference process
 | Code | Meaning |
@@ -96,13 +96,13 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | `engine.protocol.malformed` | Output MCF cannot parse |
 | `engine.protocol.version` | Incompatible engine interface |
 | `engine.load.refused` | Engine declines the model |
-| `engine.unavailable` | No vendored engine supports this artifact (D23) |
+| `engine.unavailable` | No vendored engine supports this artifact |
 
 ### 5 · `accel.*` — the accelerator
 | Code | Meaning |
 |---|---|
 | `accel.absent` | None present |
-| `accel.unrecognized` | Present, not characterized (§7.8) |
+| `accel.unrecognized` | Present, not characterized |
 | `accel.driver.absent` | No driver |
 | `accel.driver.query_failed` | Driver present, interrogation failed |
 | `accel.driver.version_mismatch` | Runtime and driver disagree |
@@ -121,18 +121,18 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | `resource.memory.exhausted` | Host allocation refused |
 | `resource.memory.pressure` | Allocatable but degraded |
 | `resource.fd.exhausted` | Descriptor limit |
-| `resource.contended` | Another process holds what was needed (B24) |
+| `resource.contended` | Another process holds what was needed |
 
 ### 7 · `record.*` — the record store
 | Code | Meaning |
 |---|---|
 | `record.unwritable` | Store cannot be opened for writing |
-| `record.corrupt.index` | Derived database damaged; journal intact (D20) |
+| `record.corrupt.index` | Derived database damaged; journal intact |
 | `record.corrupt.journal` | Journal damaged |
 | `record.replay.incomplete` | Rebuilt, with a stated gap |
-| `record.schema.unknown` | Written by a version this one cannot read (§7.30) |
-| `record.budget.exhausted` | Retention limit reached (§7.5) |
-| `record.content.unreadable` | Content filed beside the record is there and will not be read (F105) |
+| `record.schema.unknown` | Written by a version this one cannot read |
+| `record.budget.exhausted` | Retention limit reached |
+| `record.content.unreadable` | Content filed beside the record is there and will not be read |
 
 ### 8 · `config.*` — configuration
 | Code | Meaning |
@@ -140,13 +140,13 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | `config.invalid` | Value outside the permitted domain |
 | `config.unsatisfiable` | Coherent and impossible on this machine |
 | `config.conflict` | Two settings that cannot both hold |
-| `config.unverified` | Declared, never probed, and required to be (A21) |
-| `config.identity.mismatch` | Realized differs from declared (D23, placement) |
+| `config.unverified` | Declared, never probed, and required to be |
+| `config.identity.mismatch` | Realized differs from declared (placement) |
 
 ### 9 · `probe.*` — capability probing
 | Code | Meaning |
 |---|---|
-| `probe.inconclusive` | Neither confirms nor denies (§3.18) |
+| `probe.inconclusive` | Neither confirms nor denies |
 | `probe.timeout` | No result within its bound |
 | `probe.malformed_response` | Output the probe cannot grade |
 | `probe.unsupported` | Probe does not apply to this artifact |
@@ -156,13 +156,13 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | Code | Meaning |
 |---|---|
 | `lab.setup.failed` | Environment could not be constructed |
-| `lab.teardown.failed` | Residue left behind (B58) |
-| `lab.gate.not_applicable` | Capability verified absent (B40) — not a failure |
+| `lab.teardown.failed` | Residue left behind |
+| `lab.gate.not_applicable` | Capability verified absent — not a failure |
 | `lab.gate.unknown` | Capability unestablished (B40) |
-| `lab.precondition.contended` | Machine not quiet for a timing run (B-217) |
+| `lab.precondition.contended` | Machine not quiet for a timing run |
 | `lab.budget.exceeded` | Declared maximum duration reached |
 | `lab.interrupted` | Stopped by the operator; partial preserved |
-| `lab.workload.ungradable` | Supplied workload cannot be graded (B42) |
+| `lab.workload.ungradable` | Supplied workload cannot be graded |
 | `lab.conditions.invalidated` | Conditions moved mid-run; result unsound |
 
 ### 11 · `model.*` — the model under test's behaviour
@@ -186,7 +186,7 @@ failed is more informative than the pass rate.
 ### 12 · `sandbox.*` — containment
 | Code | Meaning |
 |---|---|
-| `sandbox.escape_attempted` | Reached for something absent (A14) — recorded, never permitted |
+| `sandbox.escape_attempted` | Reached for something absent — recorded, never permitted |
 | `sandbox.quota.disk` | Environment quota refused a write |
 | `sandbox.quota.memory` | Environment limit reached |
 | `sandbox.turn_budget` | Turn limit reached |
@@ -195,28 +195,28 @@ failed is more informative than the pass rate.
 ### 13 · `platform.*` — the operating system and privilege
 | Code | Meaning |
 |---|---|
-| `platform.unsupported` | Outside §7.35's declared scope |
+| `platform.unsupported` | Outside the declared scope |
 | `platform.privilege.denied` | Elevation refused (A26) |
 | `platform.privilege.unavailable` | No mechanism on this platform |
-| `platform.mechanism.unavailable` | Boxing, pinning or yielding unsupported here (§7.43) |
-| `platform.restore_failed` | Something changed could not be restored (A27) |
+| `platform.mechanism.unavailable` | Boxing, pinning or yielding unsupported here |
+| `platform.restore_failed` | Something changed could not be restored |
 
 ### 14 · `time.*` — the clock
 | Code | Meaning |
 |---|---|
 | `time.jump.backward` | Wall clock stepped back mid-measurement |
 | `time.jump.forward` | Large forward step |
-| `time.monotonic.unavailable` | No monotonic source (D9) |
+| `time.monotonic.unavailable` | No monotonic source |
 
 ### 15 · `exchange.*` — identifiers and contributions
 | Code | Meaning |
 |---|---|
 | `exchange.identifier.malformed` | Unparseable |
-| `exchange.identifier.unresolvable` | Names something unobtainable (§XV) |
-| `exchange.reproduce.impossible` | Resolvable and cannot run here — a complete answer (§6.3) |
-| `exchange.reproduce.divergent` | Reproduced; numbers differ — a *finding* (§6.29) |
+| `exchange.identifier.unresolvable` | Names something unobtainable |
+| `exchange.reproduce.impossible` | Resolvable and cannot run here — a complete answer |
+| `exchange.reproduce.divergent` | Reproduced; numbers differ — a *finding* |
 | `exchange.schema.unreadable` | Contribution written by an uninterpretable version |
-| `exchange.terms.absent` | Terms not shown before sending — a defect (D21) |
+| `exchange.terms.absent` | Terms not shown before sending — a defect |
 
 ### 16 · `internal.*` — MCF's own invariants
 | Code | Meaning |
