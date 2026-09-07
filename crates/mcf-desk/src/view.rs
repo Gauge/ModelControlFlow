@@ -153,6 +153,22 @@ fn side_bar(
     paint.rect(Box::new(0.0, 0.0, side, height), ink.sunk);
     paint.rule((side, 0.0), (side, height), ink.line, 255);
     paint.say_at(18.0, 16.0, "MCF", Weight::Bold, size::HEAD, ink.ink);
+    // **Which MCF this is, where the name is** (B-595). The window's own
+    // build, and the daemon's under it where the two differ — which is the
+    // state a person is actually asking about when they ask whether they
+    // have the latest, and the one a version alone would hide (F276).
+    let mine = crate::Desk::build_said();
+    paint.say_at(18.0, 38.0, &mine, Weight::Regular, size::SMALL, ink.faint);
+    if let Some(theirs) = desk.daemon_build.as_ref().filter(|held| **held != mine) {
+        paint.say_at(
+            18.0,
+            54.0,
+            &format!("daemon {theirs}"),
+            Weight::Regular,
+            size::SMALL,
+            ink.accent,
+        );
+    }
 
     let mut act = None;
     for (page, label) in Page::MENU {

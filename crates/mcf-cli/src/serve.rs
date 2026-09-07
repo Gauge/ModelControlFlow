@@ -528,15 +528,25 @@ fn what_is_held(models: &[Value]) -> Vec<String> {
 }
 
 /// A value on one line, for a surface that is showing rather than recording.
+/// A build as one line: the version, the revision it was built from where
+/// the build environment named one, and the target.
+///
+/// **The revision, because the version alone cannot answer *is this the
+/// latest*** (B-595). Every build between two releases says `0.1.0-m0`,
+/// and a daemon left running from this morning says it too; the revision
+/// is the field that differs (F276).
 fn one_line(value: &Value) -> String {
-    match value.get("version").and_then(Value::as_text) {
-        Some(version) => format!(
-            "{version} ({})",
-            value
-                .get("target")
-                .and_then(Value::as_text)
-                .unwrap_or("an unnamed target")
-        ),
+    let text = |key: &str| value.get(key).and_then(Value::as_text);
+    match text("version") {
+        Some(version) => {
+            let revision = text("revision").map_or_else(String::new, |held| {
+                format!(" · {}", held.chars().take(7).collect::<String>())
+            });
+            format!(
+                "{version}{revision} ({})",
+                text("target").unwrap_or("an unnamed target")
+            )
+        }
         None => value.to_line(),
     }
 }

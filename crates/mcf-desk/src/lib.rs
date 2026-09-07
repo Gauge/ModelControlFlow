@@ -434,6 +434,17 @@ pub fn loading_said(read: u64, on_card: bool, of: Option<u64>, seconds: u64) -> 
     }
 }
 
+/// A version and a revision as a surface writes them: the version, and
+/// the first seven of the revision where there is one (B-595).
+fn said_of(version: &str, revision: &str) -> String {
+    let short: String = revision.chars().take(7).collect();
+    if short.is_empty() || short == "unknown" {
+        version.to_owned()
+    } else {
+        format!("{version} · {short}")
+    }
+}
+
 /// How many failures the System page shows at most.
 pub const FAULTS_SHOWN: usize = 12;
 
@@ -2574,6 +2585,10 @@ pub struct Desk {
     pub queued_of: usize,
     /// What MCF can build, and which of it is here.
     pub components: Vec<Component>,
+    /// What the daemon says it was built from, where it has been asked
+    /// (B-595): its version and the first of its revision, as this window
+    /// would write its own. `None` before it has answered.
+    pub daemon_build: Option<String>,
     /// The newest classified failures in the record, newest first (B-074).
     pub faults: Vec<Fault>,
     /// How many failures the record holds in all.
@@ -2732,6 +2747,7 @@ impl Desk {
             queued_of: 0,
             probes_apply: false,
             components: Vec::new(),
+            daemon_build: None,
             faults: Vec::new(),
             faults_in_record: 0,
             faults_read: None,
@@ -5310,6 +5326,39 @@ impl Desk {
         }
     }
 
+    /// This window's own version and revision, as it shows them (B-595):
+    /// `0.1.0-m0 · 52b825a`, or the version alone where the build
+    /// environment named no revision, which is a real state and not a
+    /// defect (A7).
+    #[must_use]
+    pub fn build_said() -> String {
+        said_of(
+            mcf_core::build_identity::BuildIdentity::current().version,
+            &mcf_core::build_identity::BuildIdentity::current()
+                .revision
+                .to_string(),
+        )
+    }
+
+    /// Asks the daemon what it was built from, so that a window and a
+    /// daemon of different ages can be told apart (B-595).
+    ///
+    /// **They are two processes and they do not change together.** A
+    /// daemon started this morning goes on running this morning's code
+    /// while the window beside it is new, and every figure the window
+    /// draws comes from the daemon — so a window that showed only its own
+    /// version would answer *have I got the latest* with the wrong half of
+    /// the truth (F276).
+    pub fn read_build(&mut self) {
+        if let Ok(answer) = ask_within(&self.socket, &Request::Status, POLL)
+            && answer.served
+            && let Some(build) = answer.body.get("build")
+        {
+            let text = |key: &str| build.get(key).and_then(Value::as_text).unwrap_or_default();
+            self.daemon_build = Some(said_of(text("version"), text("revision")));
+        }
+    }
+
     /// Asks MCF for the newest classified failures in the record (B-074).
     ///
     /// A silence leaves what was read alone, as every other reading does:
@@ -5575,6 +5624,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     desk.read_hosted();
     desk.read_components();
     desk.read_faults();
+    desk.read_build();
 
     let mut mouse = ui::Mouse::default();
     let mut last = std::time::Instant::now();
@@ -5681,6 +5731,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                         desk.read_hosted();
                         desk.read_components();
                         desk.read_faults();
+                        desk.read_build();
                     }
                     _ => {}
                 },

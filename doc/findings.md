@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 276 | [F276 — A version cannot answer *is this the latest* and a window cannot answer it alone: every build between releases says `0.1.0-m0`, and the daemon behind the window was four commits older with nothing on screen saying so (B-595, A7, C8)](#276-f276-a-version-cannot-answer-is-this-the-latest-and-a-window-cannot-answer-it-alone-every-build-between-releases-says-010-m0-and-the-daemon-behind-the-window-was-four-commits-older-with-nothing-on-screen-saying-so-b-595-a7-c8) |
 | 275 | [F275 — Power was measured inside diagnostics and nowhere else: a served model drew 90 W with nothing recording it, and the window's run energy was a watts reading multiplied by a second nobody timed (B-593, A8, A6)](#275-f275-power-was-measured-inside-diagnostics-and-nowhere-else-a-served-model-drew-90-w-with-nothing-recording-it-and-the-windows-run-energy-was-a-watts-reading-multiplied-by-a-second-nobody-timed-b-593-a8-a6) |
 | 274 | [F274 — Closing the window let a model keep the card: the hold outlived the window by design, and now the window lets go on its way out, freeing 3.6 GB on the 2B and recording it (B-592, A27, F267)](#274-f274-closing-the-window-let-a-model-keep-the-card-the-hold-outlived-the-window-by-design-and-now-the-window-lets-go-on-its-way-out-freeing-36-gb-on-the-2b-and-recording-it-b-592-a27-f267) |
 | 273 | [F273 — The rate bar was flat because the engine's rate gauge is a bucket: nought for the whole of a request, one spike after it, emptied by whoever reads it; MCF now counts the tokens itself and the bar moves (B-591, A6, A12)](#273-f273-the-rate-bar-was-flat-because-the-engines-rate-gauge-is-a-bucket-nought-for-the-whole-of-a-request-one-spike-after-it-emptied-by-whoever-reads-it-mcf-now-counts-the-tokens-itself-and-the-bar-moves-b-591-a6-a12) |
@@ -15708,7 +15709,46 @@ the chip can move, and under load it moves faster than that. The check
 is right to compare them and wrong about how much they may differ
 while the machine is busy (B-594).
 
+## 276 · F276 — A version cannot answer *is this the latest* and a window cannot answer it alone: every build between releases says `0.1.0-m0`, and the daemon behind the window was four commits older with nothing on screen saying so (B-595, A7, C8)
+
+**What the operator asked for.** A version number, so they could be
+sure they had the latest. There was one — `mcf --version` has always
+named the version, the revision, the compiler, the target and the
+profile — but it was on the command line, and the window said nothing
+at all.
+
+**Two things a version alone cannot do.** Every build between two
+releases says `0.1.0-m0`: the version answers *which milestone* and
+never *which build*, which is what the revision is for and why the
+build record carries it (F93 goes further and takes the binary's own
+digest, because even the revision is the same across two builds of one
+commit). And a window is not the program: the daemon behind it is a
+second process that goes on running whatever it was started with. On
+this machine that was exactly the case — a window and a daemon four
+commits apart, every figure on the screen coming from the older one,
+and nothing anywhere saying so.
+
+**What was built.** Under the name in the side bar, on every page, the
+window writes its own version and the first seven of its revision —
+`0.1.0-m0 · 52b825a` — and where the daemon answers with a different
+build, a second line naming that one. The version alone where the
+build environment named no revision, which is the honest state of a
+build from an unpacked archive and not a defect (A7, C8). And `mcf
+status` names the daemon's revision, which it had been dropping:
+
+```
+  build: 0.1.0-m0 · 52b825a (x86_64-unknown-linux-gnu)
+```
+
+**What it costs.** One more ask of the daemon when the window opens and
+on a refresh, which is the ask `mcf status` makes.
+
 ## Changelog
+
+### Version 198 — which MCF this is
+
+F276: the window names its build and the daemon's where they differ;
+the status line names the revision (B-595).
 
 ### Version 197 — power is measured for a served model
 

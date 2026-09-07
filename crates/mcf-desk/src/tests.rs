@@ -2698,3 +2698,46 @@ fn closing_lets_go_of_what_is_held_and_of_nothing_else() {
     });
     assert_eq!(desk.to_let_go(), None);
 }
+
+/// A build reads as its version and the first of its revision, and as the
+/// version alone where the build environment named no revision — which is
+/// a real state and not a defect (B-595, A7).
+#[test]
+fn a_build_reads_as_its_version_and_the_first_of_its_revision() {
+    assert_eq!(
+        super::said_of("0.1.0-m0", "52b825a5d1f8685f0a048c99f034225405802c2a"),
+        "0.1.0-m0 · 52b825a"
+    );
+    assert_eq!(super::said_of("0.1.0-m0", "unknown"), "0.1.0-m0");
+    assert_eq!(super::said_of("0.1.0-m0", ""), "0.1.0-m0");
+    // This window says what it is, whatever it was built from.
+    let mine = Desk::build_said();
+    assert!(
+        mine.starts_with(env!("CARGO_PKG_VERSION")),
+        "the window does not name its own version: {mine}"
+    );
+}
+
+/// A daemon of another age is a different line, and one of the same age is
+/// not repeated: the window shows the difference, which is the thing being
+/// asked about (B-595).
+#[test]
+fn a_daemon_of_another_age_is_shown_and_one_of_the_same_age_is_not() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    assert_eq!(desk.daemon_build, None);
+    desk.daemon_build = Some(Desk::build_said());
+    assert_eq!(
+        desk.daemon_build
+            .as_ref()
+            .filter(|held| **held != Desk::build_said()),
+        None,
+        "a daemon of this window's own age is not called out"
+    );
+    desk.daemon_build = Some("0.1.0-m0 · 74ca562".to_owned());
+    assert!(
+        desk.daemon_build
+            .as_ref()
+            .is_some_and(|held| *held != Desk::build_said()),
+        "a daemon of another age is not shown as one"
+    );
+}

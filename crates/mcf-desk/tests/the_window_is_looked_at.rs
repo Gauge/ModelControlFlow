@@ -2680,6 +2680,10 @@ fn review_small_windows() {
     let _was = desk.scrolls.insert(mcf_desk::Region::Library, 120.0);
     let _was = desk.scrolls.insert(mcf_desk::Region::Page, 80.0);
     let _ = drawn_sized(&desk, DAY, "review-small-scrolled", small);
+    // A daemon older than the window says so under the name (B-595).
+    desk.daemon_build = Some("0.1.0-m0 · 74ca562".to_owned());
+    let _ = drawn(&desk, DAY, "review-older-daemon");
+    desk.daemon_build = None;
     // The System page carries the record's failures, newest first (B-074).
     desk.faults = vec![
         mcf_desk::Fault {
