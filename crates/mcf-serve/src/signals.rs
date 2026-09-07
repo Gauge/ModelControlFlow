@@ -38,8 +38,9 @@
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::os::fd::AsRawFd as _;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use crate::control::Request;
@@ -57,10 +58,16 @@ const DEFAULT: usize = 0;
 /// How long the stop request is given to be answered.
 const PATIENCE: Duration = Duration::from_secs(30);
 
-/// The descriptor the handler writes to, or `-1` while no watch is up.
+/// The descriptor the handler writes to, or `-1` until the pipe is made.
 static WRITER: AtomicI32 = AtomicI32::new(-1);
 /// The last signal the handler saw, for the reason the stop carries.
 static LAST: AtomicI32 = AtomicI32::new(0);
+/// The sockets of the daemons this process is serving. A signal to the
+/// process is a stop for every one of them — one, outside a test.
+static WATCHED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+/// The one pipe and reader thread this process has, made on the first
+/// watch and kept: a handler is process-wide, so what it writes to is too.
+static PIPE: OnceLock<Option<UnixStream>> = OnceLock::new();
 
 #[cfg(unix)]
 unsafe extern "C" {
@@ -82,65 +89,88 @@ extern "C" fn on_signal(which: i32) {
     let byte = [1_u8];
     // SAFETY: `write` is async-signal-safe by the platform's own list; the
     // buffer is one byte on this frame, and the descriptor is one this
-    // module opened and still holds, or the write fails harmlessly.
+    // module opened and keeps for the life of the process.
     let _written = unsafe { write(descriptor, byte.as_ptr(), 1) };
 }
 
 /// A watch over the stopping signals for the life of one `serve`.
 ///
-/// Dropping it restores the platform's handling, closes the handler's end
-/// of the pair so the thread wakes and ends, and joins the thread.
+/// While any watch is up the handlers are installed; dropping the last one
+/// restores the platform's handling. The pipe and its reader thread are
+/// made once and kept, asleep on a read that costs nothing until a signal
+/// comes.
 #[derive(Debug)]
 pub struct Watch {
-    /// The handler's end of the pair, held so it stays open.
-    writer: Option<UnixStream>,
-    /// The thread that turns a byte into a request.
-    thread: Option<std::thread::JoinHandle<()>>,
+    /// The socket this watch asks to stop.
+    socket: PathBuf,
 }
 
 impl Watch {
-    /// Installs the handlers and starts the thread that asks `socket` to
-    /// stop when one fires. `None` where the pair or the thread cannot be
-    /// made, in which case the daemon runs without a watch and a signal ends
-    /// it as before.
+    /// Registers `socket` as one a signal stops, installing the handlers if
+    /// this is the first. `None` where the pipe cannot be made, in which
+    /// case the daemon runs without a watch and a signal ends it as before.
     #[must_use]
     pub fn over(socket: &Path) -> Option<Self> {
-        let (writer, mut reader) = UnixStream::pair().ok()?;
-        WRITER.store(writer.as_raw_fd(), Ordering::Relaxed);
-        let socket = socket.to_path_buf();
-        let thread = std::thread::Builder::new()
-            .name("mcf-signals".to_owned())
-            .spawn(move || {
-                let mut byte = [0_u8; 1];
-                // A byte is a signal; end of stream is the watch being
-                // dropped, and nothing else is possible on this end.
-                if reader.read(&mut byte).is_ok_and(|read| read == 1) {
-                    ask_to_stop(&socket, LAST.load(Ordering::Relaxed));
-                }
-            })
-            .ok()?;
-        for which in STOPPING {
-            install(which, on_signal as *const () as usize);
+        PIPE.get_or_init(open_pipe).as_ref()?;
+        let mut watched = WATCHED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if watched.is_empty() {
+            for which in STOPPING {
+                install(which, on_signal as *const () as usize);
+            }
         }
+        watched.push(socket.to_path_buf());
         Some(Self {
-            writer: Some(writer),
-            thread: Some(thread),
+            socket: socket.to_path_buf(),
         })
     }
 }
 
 impl Drop for Watch {
     fn drop(&mut self) {
-        for which in STOPPING {
-            install(which, DEFAULT);
+        let mut watched = WATCHED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(at) = watched.iter().position(|held| *held == self.socket) {
+            watched.remove(at);
         }
-        WRITER.store(-1, Ordering::Relaxed);
-        // Closing this end is what wakes the thread with an end of stream.
-        drop(self.writer.take());
-        if let Some(thread) = self.thread.take() {
-            let _joined = thread.join();
+        if watched.is_empty() {
+            for which in STOPPING {
+                install(which, DEFAULT);
+            }
         }
     }
+}
+
+/// The sockets a signal would stop right now.
+#[must_use]
+pub fn watched() -> Vec<PathBuf> {
+    WATCHED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Makes the pipe and starts the thread that turns each byte on it into
+/// stop requests. The writer is kept in the static for the handler; the
+/// reader goes to the thread, which lives as long as the process.
+fn open_pipe() -> Option<UnixStream> {
+    let (writer, mut reader) = UnixStream::pair().ok()?;
+    std::thread::Builder::new()
+        .name("mcf-signals".to_owned())
+        .spawn(move || {
+            let mut byte = [0_u8; 1];
+            while reader.read(&mut byte).is_ok_and(|read| read == 1) {
+                let which = LAST.load(Ordering::Relaxed);
+                for socket in watched() {
+                    ask_to_stop(&socket, which);
+                }
+            }
+        })
+        .ok()?;
+    WRITER.store(writer.as_raw_fd(), Ordering::Relaxed);
+    Some(writer)
 }
 
 /// Sets a signal's handling.
