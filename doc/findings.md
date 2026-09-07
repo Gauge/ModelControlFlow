@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 257 | [F257 — The menu answered to nothing while a coding run went, and a row said *never run* after its run: the Diagnostics page and its pane shared one scroll key and clamped it against each other every frame, so a scroll act went out each frame and beat every press outside them; and the ladder, the cross-check and the prompt report never read the summary again once they finished, so their rows kept the time they had before — the page has its own key, a scroll act never beats a press, a region marks its content from its own top, and every finish reads every last-run time again (B-575, B-576, A2)](#257-f257-the-menu-answered-to-nothing-while-a-coding-run-went-and-a-row-said-never-run-after-its-run-the-diagnostics-page-and-its-pane-shared-one-scroll-key-and-clamped-it-against-each-other-every-frame-so-a-scroll-act-went-out-each-frame-and-beat-every-press-outside-them-and-the-ladder-the-cross-check-and-the-prompt-report-never-read-the-summary-again-once-they-finished-so-their-rows-kept-the-time-they-had-before-the-page-has-its-own-key-a-scroll-act-never-beats-a-press-a-region-marks-its-content-from-its-own-top-and-every-finish-reads-every-last-run-time-again-b-575-b-576-a2) |
 | 256 | [F256 — The model under test is shown as a hosted model is: the daemon answers Hosted with the server it holds for a run — the model, the engine, the window, and its counters read off its own socket — the Server page shows it under its own heading with the same tiles, and the window sums the card's power a second at a time while any run goes, saying what the run has cost in kilojoules, the tokens produced meanwhile and tokens a kilojoule (B-573, B-071, D24)](#256-f256-the-model-under-test-is-shown-as-a-hosted-model-is-the-daemon-answers-hosted-with-the-server-it-holds-for-a-run-the-model-the-engine-the-window-and-its-counters-read-off-its-own-socket-the-server-page-shows-it-under-its-own-heading-with-the-same-tiles-and-the-window-sums-the-cards-power-a-second-at-a-time-while-any-run-goes-saying-what-the-run-has-cost-in-kilojoules-the-tokens-produced-meanwhile-and-tokens-a-kilojoule-b-573-b-071-d24) |
 | 255 | [F255 — A run is watched attempt by attempt and says about how long is left: the catalogue writes a line an attempt on its stream — compiled or not, cases held, tokens, time — so a ten-attempt struggle is seen as it happens, and the strip under the list says about how long the run has left from its own pace once a twentieth is done and fifteen seconds have passed, said as an estimate (B-572, B-569, D56)](#255-f255-a-run-is-watched-attempt-by-attempt-and-says-about-how-long-is-left-the-catalogue-writes-a-line-an-attempt-on-its-stream-compiled-or-not-cases-held-tokens-time-so-a-ten-attempt-struggle-is-seen-as-it-happens-and-the-strip-under-the-list-says-about-how-long-the-run-has-left-from-its-own-pace-once-a-twentieth-is-done-and-fifteen-seconds-have-passed-said-as-an-estimate-b-572-b-569-d56) |
 | 254 | [F254 — Stop finishes the attempt in hand and closes the run; Resume goes on from what it has: a suite the window runs is asked to stop through its own input, records the pair it was on, closes its run as *stopped after k of n* and says so, a second press kills it; a row whose newest run stopped or was cut off offers Resume, which continues that run under the same conditions and skips the pairs it already has (B-571, B-570, B-569)](#254-f254-stop-finishes-the-attempt-in-hand-and-closes-the-run-resume-goes-on-from-what-it-has-a-suite-the-window-runs-is-asked-to-stop-through-its-own-input-records-the-pair-it-was-on-closes-its-run-as-stopped-after-k-of-n-and-says-so-a-second-press-kills-it-a-row-whose-newest-run-stopped-or-was-cut-off-offers-resume-which-continues-that-run-under-the-same-conditions-and-skips-the-pairs-it-already-has-b-571-b-570-b-569) |
@@ -9705,6 +9706,57 @@ a step but their rows land at the step's end; a soak's row every
 tenth request, as it is taken, is the daemon-side half of F253 and a
 row once the catalogue's has been used.
 
+## 257 · F257 — The menu answered to nothing while a coding run went, and a row said *never run* after its run: the Diagnostics page and its pane shared one scroll key and clamped it against each other every frame, so a scroll act went out each frame and beat every press outside them; and the ladder, the cross-check and the prompt report never read the summary again once they finished, so their rows kept the time they had before — the page has its own key, a scroll act never beats a press, a region marks its content from its own top, and every finish reads every last-run time again (B-575, B-576, A2)
+
+**What the operator saw.** With a coding tier running, the window
+repainted — the progress moved, the results came — but no menu entry
+answered a press, so there was no leaving the page until the run
+ended. And rows for runs that had just finished still said *never run
+on this model*.
+
+**The scroll that beat every press.** The Diagnostics page scrolls as
+a whole and its pane scrolls inside it, and both were keyed
+`Region::Diagnostics`. Each frame each clamped the shared offset to
+its own content and asked for the result, so a scroll act went out
+every frame; the page's act is taken over the menu's, so a press on
+the menu was dropped, frame after frame, whenever the pane's content
+differed from the page's — which a run filling the pane guaranteed.
+Three things hold it now: the page has a key of its own,
+`DiagnosticsPage`; a scroll act, which is the page keeping itself
+within its content and not something the person did, never beats a
+press elsewhere; and a region marks its content from its own top
+rather than from nought, so one scrolled past its content settles in
+a frame instead of walking back a screen a frame. A ceiling is whole
+points, as the offset an act carries is, so a fractional ceiling
+rounded up cannot sit above itself and ask again. The window suite
+holds that a page scrolled past its content settles within six frames
+with a pane of forty result lines under a running suite, and that the
+menu's Models entry answers while it does.
+
+**The rows that never learned.** A row's *last ran* is read off the
+model's summary from the daemon — `measured_at`, `cross_checked_at`,
+`prompt_reported_at` — and the ladder, the cross-check and the prompt
+report never asked for the summary again when they finished, only the
+coding suites did. Now every finish reads the summary again and
+copies every last-run time it carries onto the model held: the
+readings' times, the ladder's, the cross-check's and the prompt
+report's.
+
+**Seen.** The regression test fails on the code as it was — with the
+shared key, the old rule, the mark at nought and the fractional
+ceiling all put back — and passes as it is; of the four, the mark at
+nought is the one the fixture reproduces on its own, since a page
+scrolled past its content walked back a screen a frame and asked to
+scroll at every step. The window suite passes with it. The times were
+found by reading the finish paths, not by watching a run: the ladder
+and the cross-check kept their figures on the row but not the time,
+and nothing asked again until a page change happened to.
+
+**What is not done.** The pane's Run buttons on a nested display did
+not answer either, and that is not yet explained; the same test
+harness that found the scroll fight is the tool for it, and it is a
+row to open if it shows again on the real window.
+
 ## 256 · F256 — The model under test is shown as a hosted model is: the daemon answers Hosted with the server it holds for a run — the model, the engine, the window, and its counters read off its own socket — the Server page shows it under its own heading with the same tiles, and the window sums the card's power a second at a time while any run goes, saying what the run has cost in kilojoules, the tokens produced meanwhile and tokens a kilojoule (B-573, B-071, D24)
 
 **What the operator asked.** That the model a diagnostic exercises
@@ -14793,6 +14845,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 179 — the menu answers, and a row learns it ran
+
+F257: the shared scroll key that ate every press during a run, and the
+finishes that never read the summary again (B-575, B-576).
 
 ### Version 178 — watched attempt by attempt, and the model under test
 

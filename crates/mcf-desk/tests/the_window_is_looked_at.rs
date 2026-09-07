@@ -1103,6 +1103,70 @@ fn every_menu_entry_can_be_pressed_from_every_screen() {
     }
 }
 
+/// A page scrolled to its bottom, with a pane of its own inside it, asks
+/// for no scroll frame after frame, and a press on the menu still changes
+/// the page while a run fills the pane (B-575).
+///
+/// F: the Diagnostics page and its pane shared one scroll key; each frame
+/// the two clamped it to their own content, a scroll act went out every
+/// frame, and every press outside them — the menu — was lost, so the
+/// operator could not leave the page while a coding run went.
+#[test]
+fn a_scrolled_page_with_a_pane_settles_and_the_menu_still_answers() {
+    let mut desk = four_models();
+    desk.page = Page::Diagnostics;
+    desk.chosen = Some(0);
+    desk.diagnostic = mcf_desk::Diagnostic::Eval(0);
+    let mut going = mcf_desk::job::Job::already(
+        "running the Challenges: easy suite".to_owned(),
+        (0..40)
+            .map(|at| {
+                mcf_record::json::Value::map([(
+                    "line",
+                    mcf_record::json::Value::text(format!(
+                        "result:     python     line {at} of a long run"
+                    )),
+                )])
+            })
+            .collect(),
+    );
+    going.finished = false;
+    desk.doing = mcf_desk::Doing::Evaluating(going);
+    desk.evaluating = Some(0);
+    for region in [
+        mcf_desk::Region::DiagnosticsPage,
+        mcf_desk::Region::Diagnostics,
+        mcf_desk::Region::Checks,
+    ] {
+        let _was = desk.scrolls.insert(region, 5_000.0);
+    }
+    // The first frames clamp the offsets; after that, nothing.
+    let mut settled = false;
+    for _ in 0..6 {
+        match pressed_at(&desk, (f32::MIN, f32::MIN)) {
+            Some(mcf_desk::Act::Scroll(region, to)) => {
+                desk.act(mcf_desk::Act::Scroll(region, to));
+            }
+            Some(other) => panic!("a frame with no press acted: {other:?}"),
+            None => {
+                settled = true;
+                break;
+            }
+        }
+    }
+    if drawn(&desk, NIGHT, "scroll-settled").width < 2 {
+        return; // no font here
+    }
+    assert!(settled, "the page kept asking to scroll frame after frame");
+    let entry = mcf_desk::view::menu_box(Page::Models, 760.0, desk.splits.side);
+    let at = (entry.x + entry.w / 2.0, entry.y + entry.h / 2.0);
+    assert_eq!(
+        pressed_at(&desk, at),
+        Some(mcf_desk::Act::Go(Page::Models)),
+        "the menu answers while the run fills the pane"
+    );
+}
+
 /// A window holding models draws them, and one holding none looks different.
 ///
 /// F: a reading that went unanswered emptied the list, and the window said *no

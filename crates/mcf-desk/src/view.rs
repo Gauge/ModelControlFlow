@@ -82,7 +82,12 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         Page::Settings => settings(paint, main),
         Page::Exit => leaving(paint, mouse, main),
     };
-    act = went.or(act);
+    // A scroll act is the page keeping its offset within its content, not
+    // something the person did; it never beats a press on the menu (B-575).
+    act = match (went, act) {
+        (Some(Act::Scroll(..)), Some(pressed)) => Some(pressed),
+        (went, act) => went.or(act),
+    };
     // The boundary between the column and the page is dragged (B-490).
     if let Some(to) = ui::splitter(
         paint,
@@ -127,7 +132,7 @@ fn scrolled(
     );
     let seen = mouse.within(area);
     paint.clip(area);
-    paint.mark();
+    paint.mark_at(inner.y);
     let act = draw(paint, &seen, inner);
     let content = (paint.lowest() - inner.y).max(0.0);
     paint.unclip();
@@ -2703,7 +2708,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         paint,
         mouse,
         desk,
-        Region::Diagnostics,
+        Region::DiagnosticsPage,
         area,
         |paint, mouse, inner| diagnostics_body(paint, desk, mouse, inner),
     )

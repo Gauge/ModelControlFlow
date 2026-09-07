@@ -1238,6 +1238,11 @@ pub enum Region {
     Hub,
     /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
     Diagnostics,
+    /// The Diagnostics page itself, around its list and its pane. Its own
+    /// key: the page and the pane once shared one, and each frame the two
+    /// clamped it to their own content, so a scroll act went out every
+    /// frame and every press outside them — the menu — was lost (B-575).
+    DiagnosticsPage,
     /// The Diagnostics page's list of every diagnostic (D53).
     Checks,
     /// The Server page.
@@ -2829,6 +2834,13 @@ impl Desk {
         {
             self.keep_the_cross_check();
         }
+        // A prompt report's row reads when it last ran off the summary, which
+        // is read again once the report is in (B-576).
+        if let Doing::Reporting(job) = &self.doing
+            && job.finished
+        {
+            self.refresh_readings_at();
+        }
         if let Doing::Probing(job) = &self.doing
             && job.finished
         {
@@ -2902,6 +2914,7 @@ impl Desk {
             return;
         };
         mcf_tui::screens::diagnostics::keep_the_ladder(&mut self.tests, job);
+        self.refresh_readings_at();
     }
 
     /// Writes a finished cross-check onto the row that asked for it, in the
@@ -2911,6 +2924,7 @@ impl Desk {
             return;
         };
         mcf_tui::screens::diagnostics::keep_the_cross_check(&mut self.tests, job);
+        self.refresh_readings_at();
     }
 
     /// Shows one answer beside the figures, or — pressing the one already
@@ -4432,6 +4446,11 @@ impl Desk {
         let Some(path) = self.models.get(at).map(|held| held.path.clone()) else {
             return;
         };
+        // The whole summary again, and every *last ran* it carries copied
+        // onto the model held: the readings' times, and the ladder's, the
+        // cross-check's and the prompt report's, which the rows read and
+        // which stayed at *never run* after a run until something else
+        // asked (B-576).
         let fresh = answer
             .body
             .get("models")
@@ -4441,10 +4460,15 @@ impl Desk {
                     .iter()
                     .find(|entry| entry.get("path").and_then(Value::as_text) == Some(path.as_str()))
             })
-            .and_then(|entry| entry.get("runs"))
-            .map(readings_at_of);
+            .map(model_from);
         if let (Some(fresh), Some(held)) = (fresh, self.models.get_mut(at)) {
-            held.readings_at = fresh;
+            held.readings_at = fresh.readings_at;
+            held.measured_at = fresh.measured_at;
+            held.measured_body = fresh.measured_body;
+            held.cross_checked = fresh.cross_checked;
+            held.cross_checked_at = fresh.cross_checked_at;
+            held.prompt_reported = fresh.prompt_reported;
+            held.prompt_reported_at = fresh.prompt_reported_at;
         }
     }
 

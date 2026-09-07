@@ -564,7 +564,10 @@ pub fn scroll_region(
     offset: f32,
     content: f32,
 ) -> Option<f32> {
-    let most = (content - area.h).max(0.0);
+    // Whole points, as the offset an act carries is: a fractional ceiling
+    // rounded up on the way back would sit above itself and ask to be
+    // clamped again every frame (B-575).
+    let most = (content - area.h).max(0.0).floor();
     let clamp = |wanted: f32| wanted.clamp(0.0, most);
     if most <= 0.0 {
         return (offset > 0.0).then_some(0.0);

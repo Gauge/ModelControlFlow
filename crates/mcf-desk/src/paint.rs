@@ -394,6 +394,14 @@ impl Painter {
         self.lowest.set(0.0);
     }
 
+    /// Starts counting how far down things reach from `top`, which may be
+    /// above the window: a scrolled region's content begins above what
+    /// shows, and a mark at nought would read a region scrolled past its
+    /// content as one whose content is the scroll (B-575).
+    pub fn mark_at(&self, top: f32) {
+        self.lowest.set(top);
+    }
+
     /// The lowest edge anything has reached since the mark, in points.
     #[must_use]
     pub fn lowest(&self) -> f32 {
