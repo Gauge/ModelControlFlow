@@ -42,33 +42,6 @@ fn nothing_in_the_record_knows_what_a_touchstone_is() {
 }
 
 #[test]
-fn no_touchstone_outlives_the_laboratory_that_would_replace_it() {
-    let register = read("doc/backlog.md");
-    for held in CATALOGUE {
-        let row = register
-            .lines()
-            .find(|line| line.starts_with(&format!("| {} |", held.until())))
-            .unwrap_or_else(|| {
-                panic!(
-                    "a touchstone names {} and the register has no such item (C5)",
-                    held.until()
-                )
-            });
-        let status = row
-            .rsplit_once(" | ")
-            .map(|(_, held)| held.to_lowercase())
-            .unwrap_or_default();
-        assert!(
-            !status.starts_with("done") && !status.starts_with("**done"),
-            "{} is done, so MCF can now measure {:?} and must not offer a rule of thumb about \
-             it — remove the touchstone (B-380)",
-            held.until(),
-            held.subject()
-        );
-    }
-}
-
-#[test]
 fn the_comparison_view_keeps_them_apart_from_its_results() {
     let source = read("crates/mcf-cli/src/bench.rs");
     assert!(

@@ -6,7 +6,7 @@
 # on the loopback address, because B19 requires that M1's suite run with no
 # network. That is the right default and it leaves one thing unchecked: whether
 # the hub MCF was written against behaves the way MCF believes.
-# [findings.md](../doc/findings.md) F9 answered that once, by hand, on one
+# an earlier finding answered that once, by hand, on one
 # afternoon. This is the repeatable form.
 #
 # **It is scheduled rather than gating**, for the same reason the fuzz tier is:
@@ -20,7 +20,7 @@
 #
 # **And what it plans for is large and awkward, at no cost.** A transfer
 # exercises the wire; it says nothing about the *variety* of what a hub
-# publishes. [findings.md](../doc/findings.md) F16 found three defects in the
+# publishes. an earlier finding found three defects in the
 # planner the first time it was pointed at the reference repository — a
 # configuration MCF could not parse, a configuration MCF was not looking in the
 # right place for, and a cache overstated fourfold — every one of them in code

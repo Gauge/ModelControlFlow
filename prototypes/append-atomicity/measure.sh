@@ -13,7 +13,7 @@
 #
 #   ./prototypes/append-atomicity/measure.sh [directory to write in]
 #
-# Reports to doc/findings.md F13.
+# Reports a finding.
 
 set -eu
 

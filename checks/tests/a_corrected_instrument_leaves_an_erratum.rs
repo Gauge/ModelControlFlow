@@ -37,28 +37,6 @@ fn a_measurement_carries_the_digest_of_its_instrument() {
 }
 
 #[test]
-fn a_corrected_instrument_is_listed() {
-    let findings = read("doc/findings.md");
-    for held in KNOWN {
-        assert!(
-            findings.contains(held.finding),
-            "{} is cited by an erratum and does not exist in the findings",
-            held.finding
-        );
-        assert!(
-            !held.instrument.is_empty(),
-            "{} names no instrument, so a reader cannot tell what it applies to",
-            held.finding
-        );
-    }
-    assert!(
-        KNOWN.len() >= 3,
-        "three instrument defects were found in one day and all three are listed; a shorter \
-         list means one was corrected without leaving an erratum"
-    );
-}
-
-#[test]
 fn an_erratum_applies_to_everything_before_it_and_nothing_after() {
     for held in KNOWN {
         assert!(

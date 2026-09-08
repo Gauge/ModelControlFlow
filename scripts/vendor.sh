@@ -13,7 +13,7 @@
 # mentions — 95 MiB, of which about 80 is Windows import libraries and a C
 # cryptography provider that no target MCF builds ever compiles. Deleting them
 # does not work: cargo resolves the whole graph before it compiles any of it
-# ([findings.md](../doc/findings.md) F9.4). Stubbing them does: a crate keeps
+# (an earlier finding). Stubbing them does: a crate keeps
 # its manifest, its licence files and an empty `lib.rs`, and its checksum file
 # lists no files. The result is 13 MiB and both targets still build offline.
 #

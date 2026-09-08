@@ -21,7 +21,7 @@
 #
 #   ./prototypes/upstream-decay/measure.sh
 #
-# Reports to doc/findings.md F17.
+# Reports a finding.
 
 set -eu
 

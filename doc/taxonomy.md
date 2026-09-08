@@ -1,13 +1,5 @@
 # Failure Taxonomy
 
-| | |
-|---|---|
-| **Type** | Reference — the classification scheme every failure is filed under |
-| **Version** | 4 |
-| **Status** | Living. Drafted, awaiting ratification. |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v23, governed by [rules.md](rules.md) |
-| **Answers** | §7.10 · registered as DEC-010 in [backlog.md](backlog.md) |
-
 **Every failure is classified, attributed and persisted with its context** (A2).
 This file is the classification. It appears in the record, in every error type,
 in the laboratory's fault catalogue, in the recommender and in the interface, so
@@ -239,46 +231,3 @@ adding the category is the fix.
   consumers switch on.
 - A category that never fires in a year is a candidate for review, not deletion —
   §3.17 wants the rare paths exercised, and the laboratory is where that happens.
-
-## Changelog
-
-### Version 4 — `record.content.unreadable` added
-
-A25 says content lives in a store that is not the record, and the store had no
-way to hold anything, so nothing was ever put in it and the completions went
-into the record instead (F105). Filing content gives the store a read, and a
-read has a failure the taxonomy had no code for: content that is *there and
-will not open*, which must not come back as the same answer as content that was
-never kept. Added with its laboratory scenario in the same change (A13). 112
-codes.
-
-### Version 3 — `artifact.unreadable` added
-
-The re-verification path (B-301) needed a code for *the file is there and the
-read failed*, and there was not one. `artifact.corrupt` says *present and fails
-verification*, which is a claim about the bytes; a permission error or a media
-error is a claim about the machine, and filing one under the other would put
-the wrong attribution on it — B24's difference between "this model is slow" and
-"this machine was busy", one level down.
-
-Added with its laboratory scenario in the same change, as the extension policy
-requires (A13). 111 codes.
-
-### Version 2 — the classification becomes types
-
-`crates/mcf-core/src/failure/` expresses the three axes so the compiler holds
-them, and an agreement check fails the build when the document and the code
-disagree (B-003). Nothing about the classification changed; what changed is
-that it can no longer drift silently from the software that files against it.
-
-### Version 1 — drafted
-
-Created to answer §7.10, which had been recorded since version 1 of the intent
-document and was blocking M0 by appearing in every error type.
-
-The design decision worth noting is the split into three axes. A single tree
-would have had to encode what failed, whose fault it was and what MCF did, and
-the product of those is unmanageably large. Separating attribution and
-disposition keeps the tree shallow — sixteen domains, none deeper than three
-segments — and makes the two questions §3.8 and §3.2 care about answerable
-without traversing it.

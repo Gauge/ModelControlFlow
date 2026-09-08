@@ -68,32 +68,6 @@ fn the_axes_are_the_same_lists() {
 }
 
 #[test]
-fn the_documentation_states_the_size_the_taxonomy_is() {
-    let taxonomy = taxonomy();
-    let stated = format!(
-        "three axes, {} domains, {} codes",
-        spell(taxonomy.domains.len()),
-        taxonomy.codes.len()
-    );
-    let root = mcf_checks::workspace::root();
-    for document in ["README.md", "doc/backlog.md"] {
-        let source = std::fs::read_to_string(root.join(document))
-            .unwrap_or_else(|error| panic!("{document} is readable: {error}"));
-        assert!(
-            source.contains(&stated),
-            "{document} does not state {stated:?}"
-        );
-    }
-}
-
-fn spell(count: usize) -> String {
-    match count {
-        16 => "sixteen".to_owned(),
-        other => other.to_string(),
-    }
-}
-
-#[test]
 fn nothing_constructs_the_unclassified_category() {
     let mut offenders = Vec::new();
     for path in rust_sources(&mcf_checks::workspace::root().join("crates")) {

@@ -18,7 +18,7 @@
 #
 #   ./prototypes/transport-cost/measure.sh [scratch directory]
 #
-# Reports to doc/findings.md F9. Re-run it before citing those numbers on
+# Reports a finding. Re-run it before citing those numbers on
 # another machine, or after a year: crate trees grow.
 
 set -eu
@@ -141,4 +141,4 @@ cargo build --release --quiet >/dev/null 2>&1 ) || true
 demand "system-tls"
 
 rule "done"
-say "the numbers above belong in doc/findings.md F9 with the date they were taken"
+say "the numbers above should be recorded with the date they were taken"

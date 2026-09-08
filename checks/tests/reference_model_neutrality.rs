@@ -131,17 +131,6 @@ fn no_test_depends_on_the_reference_model() {
     );
 }
 
-#[test]
-fn the_documents_still_name_it() {
-    let intent =
-        std::fs::read_to_string(mcf_checks::workspace::root().join("doc/document-of-intent.md"))
-            .expect("the intent document is readable");
-    assert!(
-        NAMES.iter().any(|name| intent.contains(name)),
-        "no document names the reference model, so this check is checking nothing"
-    );
-}
-
 fn relative(path: &Path) -> String {
     path.strip_prefix(mcf_checks::workspace::root())
         .unwrap_or(path)

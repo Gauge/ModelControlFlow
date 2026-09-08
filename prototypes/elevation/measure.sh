@@ -25,7 +25,7 @@
 #
 #   ./prototypes/elevation/measure.sh
 #
-# Reports to doc/findings.md F15.
+# Reports a finding.
 
 set -eu
 

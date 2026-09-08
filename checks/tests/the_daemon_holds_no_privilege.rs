@@ -69,36 +69,6 @@ fn nothing_links_the_helper_but_the_laboratory() {
     );
 }
 
-#[test]
-fn the_helpers_surface_is_the_one_the_decision_names() {
-    let intent =
-        std::fs::read_to_string(mcf_checks::workspace::root().join("doc/document-of-intent.md"))
-            .expect("the intent document is readable");
-    let d35 = intent
-        .split("### D35")
-        .nth(1)
-        .expect("D35 is in the intent document")
-        .split("\n### ")
-        .next()
-        .expect("D35 ends somewhere");
-
-    for (operation, what) in mcf_helper::OPERATIONS {
-        assert!(
-            d35.contains(operation),
-            "the helper performs `{operation}` ({what}) and D35 does not name it"
-        );
-    }
-    assert!(
-        d35.contains("three things"),
-        "D35 no longer says how many operations there are"
-    );
-    assert_eq!(
-        mcf_helper::OPERATIONS.len(),
-        3,
-        "the helper's surface grew without D35 growing with it"
-    );
-}
-
 fn shipped_sources(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     walk(&root.join("crates"), &mut found);

@@ -24,7 +24,7 @@
 #
 #   ./prototypes/record-index/measure.sh [scratch directory]
 #
-# Reports to doc/findings.md F14.
+# Reports a finding.
 
 set -eu
 

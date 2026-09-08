@@ -24,7 +24,7 @@
 #
 #   ./prototypes/engine-cost/measure.sh [scratch directory]
 #
-# Reports to doc/findings.md F12. The build half needs several minutes of a
+# Reports a finding. The build half needs several minutes of a
 # quiet machine: where `heavy` is on PATH it takes the exclusive window, because
 # a build this size run beside somebody's measurements is a build that spoils
 # them (B35, build.md §12).
