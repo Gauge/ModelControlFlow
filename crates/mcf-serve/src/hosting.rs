@@ -5,6 +5,8 @@ pub const LOOPBACK: &str = "127.0.0.1";
 
 pub const DEFAULT_PORT: u16 = 17817;
 
+pub const ALL_LAYERS: u32 = 999;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hosting {
     pub context: u64,
@@ -20,6 +22,27 @@ pub struct Hosting {
     pub open: bool,
     pub projector: Option<String>,
     pub started: crate::declared::Started,
+    pub tensor_split: Vec<u64>,
+}
+
+fn spread(split: &[u64]) -> String {
+    if split.len() < 2 {
+        return "one device, the whole model on it".to_owned();
+    }
+    let total = split
+        .iter()
+        .fold(0_u64, |sum, free| sum.saturating_add(*free));
+    let shares: Vec<String> = split
+        .iter()
+        .map(|free| {
+            let percent = free
+                .saturating_mul(100)
+                .checked_div(total.max(1))
+                .unwrap_or(0);
+            format!("{percent}%")
+        })
+        .collect();
+    format!("{} devices, {}", split.len(), shares.join(" / "))
 }
 
 fn projector_named(projector: Option<&str>) -> String {
@@ -57,7 +80,7 @@ impl Hosting {
         Self {
             context,
             gpu_layers: if on_a_card && fits_on_the_card {
-                999
+                ALL_LAYERS
             } else {
                 0
             },
@@ -75,7 +98,27 @@ impl Hosting {
             open: false,
             projector: projector.map(|path| path.display().to_string()),
             started: crate::declared::Started::default(),
+            tensor_split: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn spread_over(mut self, free_per_device: Vec<u64>) -> Self {
+        if free_per_device.len() > 1 {
+            self.gpu_layers = ALL_LAYERS;
+            self.flash_attention = true;
+            self.tensor_split = free_per_device;
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn shares(&self) -> String {
+        self.tensor_split
+            .iter()
+            .map(|free| (free >> 20).to_string())
+            .collect::<Vec<String>>()
+            .join(",")
     }
 
     #[must_use]
@@ -96,6 +139,10 @@ impl Hosting {
             "--no-webui".to_owned(),
             "--metrics".to_owned(),
         ];
+        if self.tensor_split.len() > 1 {
+            out.push("--tensor-split".to_owned());
+            out.push(self.shares());
+        }
         if self.flash_attention {
             out.push("--flash-attn".to_owned());
             out.push("on".to_owned());
@@ -160,6 +207,14 @@ impl Hosting {
                 value: self.device.clone(),
                 recommended: against.device.clone(),
                 because: "what it runs on",
+            },
+            Setting {
+                name: "spread over",
+                value: spread(&self.tensor_split),
+                recommended: spread(&against.tensor_split),
+                because: "a model too large for any one card is divided across several, in \
+                          proportion to what each has free. One card holds the whole model \
+                          wherever it fits, because crossing between cards costs time",
             },
             Setting {
                 name: "threads",
@@ -331,6 +386,7 @@ impl Hosting {
                 Some(_) => None,
             },
             started: crate::declared::Started::from_value(value),
+            tensor_split: recommended.tensor_split.clone(),
         }
     }
 

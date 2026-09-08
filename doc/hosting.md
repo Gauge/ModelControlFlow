@@ -41,6 +41,20 @@ Every setting can be given explicitly:
 | `--rope-scaling <kind>`, `--rope-scale <n>` | Rope scaling, left to the engine unless asked for |
 | `--api-key <key>` | Require a key on the endpoint |
 
+### Across several devices
+
+Where a model is too large for any single device, MCF divides it across the
+cards it can see, in proportion to what each has free, and tells the engine the
+split. A model needing 135 GB runs on two cards holding 116 GB and 101 GB.
+
+One card holds the whole model wherever it fits — crossing between cards costs
+time, so spreading is what MCF does when it must, not by preference. The
+`spread over` setting says which it did.
+
+MCF plans to all of a device's free memory. `MCF_MEMORY_HEADROOM` lowers that
+share if you want room left for other work; see
+[configuration.md](configuration.md).
+
 A setting you give is used as given. A setting you omit is chosen, and the
 choice is shown alongside where it came from. See
 [configuration.md](configuration.md) for how to change these without passing

@@ -244,6 +244,32 @@ pub struct Choice {
     pub engine: String,
     pub device: Device,
     pub context: u64,
+    pub across: Vec<Device>,
+}
+
+impl Choice {
+    #[must_use]
+    pub fn on_one_device(engine: String, device: Device, context: u64) -> Self {
+        Self {
+            engine,
+            device,
+            context,
+            across: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_spread(&self) -> bool {
+        self.across.len() > 1
+    }
+
+    #[must_use]
+    pub fn split(&self) -> Vec<u64> {
+        self.across
+            .iter()
+            .map(|device| device.free.unwrap_or(0))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -601,20 +627,65 @@ pub fn resolve(
                         && held.device.kind == Kind::Cpu)
             });
             if better {
-                best = Some(Choice {
-                    engine: engine.name.clone(),
-                    device: device.clone(),
+                best = Some(Choice::on_one_device(
+                    engine.name.clone(),
+                    device.clone(),
                     context,
-                });
+                ));
             }
         }
     }
-    best.ok_or(Refused::DoesNotFit {
+    if let Some(held) = best {
+        return Ok(held);
+    }
+    if let Some(spread) = spread_across(engines, weights, cache_per_token, trained) {
+        return Ok(spread);
+    }
+    Err(Refused::DoesNotFit {
         largest_device,
         needs: weights
             .saturating_add(overhead_for(weights))
             .saturating_add(SMALLEST_CONTEXT.saturating_mul(cache_per_token)),
     })
+}
+
+fn spread_across(
+    engines: &[(Engine, Vec<Device>)],
+    weights: u64,
+    cache_per_token: u64,
+    trained: u64,
+) -> Option<Choice> {
+    let mut best: Option<Choice> = None;
+    for (engine, devices) in engines {
+        let cards: Vec<Device> = devices
+            .iter()
+            .filter(|device| device.kind == Kind::Gpu && device.free.is_some_and(|free| free > 0))
+            .cloned()
+            .collect();
+        if cards.len() < 2 {
+            continue;
+        }
+        let together = cards.iter().fold(0_u64, |sum, device| {
+            sum.saturating_add(device.free.unwrap_or(0))
+        });
+        let context = largest_context(weights, cache_per_token, together, trained);
+        if context == 0 {
+            continue;
+        }
+        let biggest = cards
+            .iter()
+            .max_by_key(|device| device.free.unwrap_or(0))?
+            .clone();
+        if best.as_ref().is_none_or(|held| context > held.context) {
+            best = Some(Choice {
+                engine: engine.name.clone(),
+                device: biggest,
+                context,
+                across: cards,
+            });
+        }
+    }
+    best
 }
 
 #[cfg(test)]

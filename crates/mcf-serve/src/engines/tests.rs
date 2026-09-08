@@ -641,3 +641,85 @@ fn the_power_label_is_read_from_the_file_beside_the_reading() {
     assert_eq!(sensors.power_named(), "package");
     let _gone = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn a_model_larger_than_any_one_card_is_spread_across_them() {
+    let engine = |name: &str| Engine {
+        name: name.to_owned(),
+        prefix: PathBuf::from("/nowhere"),
+        commit: "abc".to_owned(),
+    };
+    let engines = vec![(
+        engine("the card one"),
+        vec![
+            Device {
+                kind: Kind::Cpu,
+                name: "CPU".to_owned(),
+                free: Some(8_000_000_000),
+            },
+            Device {
+                kind: Kind::Gpu,
+                name: "Card A".to_owned(),
+                free: Some(116_000_000_000),
+            },
+            Device {
+                kind: Kind::Gpu,
+                name: "Card B".to_owned(),
+                free: Some(101_000_000_000),
+            },
+        ],
+    )];
+    let choice = resolve(&engines, 135_000_000_000, Some(114_688), 40_960)
+        .expect("two cards together hold it");
+    assert!(choice.is_spread(), "it was not spread: {choice:?}");
+    assert_eq!(choice.across.len(), 2, "the processor is not a card");
+    assert_eq!(choice.device.name, "Card A", "the largest card leads");
+    assert!(choice.context > 0);
+}
+
+#[test]
+fn one_card_that_holds_it_is_never_spread() {
+    let engine = |name: &str| Engine {
+        name: name.to_owned(),
+        prefix: PathBuf::from("/nowhere"),
+        commit: "abc".to_owned(),
+    };
+    let engines = vec![(
+        engine("the card one"),
+        vec![
+            Device {
+                kind: Kind::Gpu,
+                name: "Card A".to_owned(),
+                free: Some(90_000_000_000),
+            },
+            Device {
+                kind: Kind::Gpu,
+                name: "Card B".to_owned(),
+                free: Some(90_000_000_000),
+            },
+        ],
+    )];
+    let choice = resolve(&engines, 1_000_000_000, Some(114_688), 40_960).expect("runs");
+    assert!(!choice.is_spread(), "one card was enough: {choice:?}");
+}
+
+#[test]
+fn a_spread_names_a_share_for_each_card() {
+    let hosting = crate::hosting::Hosting::recommended(
+        "an engine",
+        "Card A",
+        true,
+        4096,
+        Some(8),
+        true,
+        None,
+    )
+    .spread_over(vec![116_000_000_000, 101_000_000_000]);
+    let arguments = hosting.arguments("/model.gguf", "127.0.0.1");
+    let at = arguments
+        .iter()
+        .position(|held| held == "--tensor-split")
+        .expect("the split is passed to the engine");
+    assert_eq!(arguments[at + 1], "110626,96321");
+    assert_eq!(hosting.gpu_layers, crate::hosting::ALL_LAYERS);
+}

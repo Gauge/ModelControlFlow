@@ -5079,7 +5079,17 @@ impl Daemon {
         let on_a_card = matches!(choice.device.kind, crate::engines::Kind::Gpu);
         let context = crate::engines::held_at(choice.context, bytes, cache.unwrap_or(0));
         let wanted = bytes.saturating_add(cache.unwrap_or(0).saturating_mul(context));
-        let fits = choice.device.free.is_none_or(|free| wanted <= free);
+        let together = if choice.is_spread() {
+            Some(
+                choice
+                    .split()
+                    .iter()
+                    .fold(0_u64, |sum, free| sum.saturating_add(*free)),
+            )
+        } else {
+            choice.device.free
+        };
+        let fits = together.is_none_or(|free| wanted <= free);
         let projector = crate::projector::beside(&path);
         Ok((
             crate::hosting::Hosting::recommended(
@@ -5090,7 +5100,8 @@ impl Daemon {
                 std::thread::available_parallelism().ok().map(Into::into),
                 fits,
                 projector.as_deref(),
-            ),
+            )
+            .spread_over(choice.split()),
             path,
             choice.context,
         ))
