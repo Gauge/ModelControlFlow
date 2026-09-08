@@ -1,5 +1,3 @@
-//! What verifying a bundle has to say, and what it has to refuse to say.
-
 use mcf_record::json::Value;
 
 use super::{per_cent, rerun, the_refusal, what_it_claims};
@@ -32,9 +30,6 @@ fn a_claim() -> Value {
     )])
 }
 
-/// **The sentence B-212 exists for.** A bundle that disagrees names what
-/// differs and stops: picking one of nine differences and calling it the cause
-/// is A8's confound wearing a helpful voice.
 #[test]
 fn it_refuses_to_attribute_the_gap() {
     let said = the_refusal().join("\n");
@@ -50,8 +45,6 @@ fn it_refuses_to_attribute_the_gap() {
     );
 }
 
-/// The method the bundle carries is what a re-run needs, and the command is
-/// built from it rather than from anything this machine assumes.
 #[test]
 fn the_rerun_is_built_from_the_bundles_own_method() {
     let held = rerun(&a_claim());
@@ -74,8 +67,6 @@ fn the_rerun_is_built_from_the_bundles_own_method() {
     );
 }
 
-/// A bundle that states nothing where the method should be does not have the
-/// gap filled in for it (A7).
 #[test]
 fn an_unstated_method_is_not_invented() {
     let bare = Value::map([("body", Value::map([("outcome", Value::map::<String>([]))]))]);
@@ -90,7 +81,6 @@ fn an_unstated_method_is_not_invented() {
     );
 }
 
-/// A percentage is rendered from parts per million without a float (A6).
 #[test]
 fn a_resolution_renders_without_a_float() {
     assert_eq!(per_cent(50_000), "5");
@@ -99,7 +89,6 @@ fn a_resolution_renders_without_a_float() {
     assert_eq!(per_cent(1_000_000), "100");
 }
 
-/// A bundle that is not there is refused rather than treated as empty.
 #[test]
 fn a_bundle_that_is_not_there_is_refused() {
     let response = super::run("/nonexistent/mcf-verify-test.mcf-bundle");

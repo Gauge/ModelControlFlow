@@ -1,39 +1,9 @@
-//! A statistic does not leave a measurement alone (A6, B-073, §3.4, §3.14).
-//!
-//! **A6's half that was held by nobody.** *No number without its conditions, its
-//! sample count and its spread.* `Measurement<Q>` has no constructor that omits
-//! a condition set and no rendering that drops one — B-005 made that structural
-//! and `measurement_has_one_way_in.rs` holds it. But a surface never had to use
-//! that rendering. It could ask for a percentile, get a bare `Q` back, and print
-//! it: `mcf doctor` did, reporting `p99 {} over n={}` assembled from two
-//! separate asks with **no spread at all**.
-//!
-//! So the statistic leaves in a [`mcf_core::measurement::Stated`], which renders
-//! with its sample count and its spread and has no rendering that does not. The
-//! bare number is reachable — comparing a statistic with a ceiling needs it —
-//! through `Stated::value()`, named for what calling it does, the way
-//! `Content::disclose` and `Touchstone::bare` are. This file is what makes that
-//! name load-bearing: a **surface** that calls it is formatting a number without
-//! its evidence, and that is the violation.
-//!
-//! **A test may call it.** The budget tier compares a statistic with a baseline
-//! and writes the number to a file; that is arithmetic and a record, not a view.
-//! The distinction is the one A22 draws between a surface and everything else,
-//! and it is why this check reads `src/` and not `tests/`.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used)]
 
 use std::path::PathBuf;
 
-/// The surface crate: what a person reads.
 const SURFACE: &str = "crates/mcf-cli/src";
 
-/// Ways to get a bare number out of a measurement.
-///
-/// Each is legitimate somewhere — arithmetic, a record, a comparison — and none
-/// of them is legitimate as the argument of a formatting macro on a surface,
-/// which is what A6 forbids and what this file looks for.
 const BARE: [&str; 5] = [
     ".value()",
     ".at(Percentile::",
@@ -42,7 +12,6 @@ const BARE: [&str; 5] = [
     ".spread().median",
 ];
 
-/// Where a number becomes something a person reads.
 const RENDERING: [&str; 4] = ["format!(", "write!(", "writeln!(", "push_str("];
 
 fn read(relative: &str) -> String {
@@ -51,7 +20,6 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// Every `.rs` under a directory.
 fn sources(relative: &str) -> Vec<PathBuf> {
     let root = mcf_checks::workspace::root().join(relative);
     let mut found = Vec::new();
@@ -73,12 +41,6 @@ fn sources(relative: &str) -> Vec<PathBuf> {
     found
 }
 
-/// The statements of a file, joined across the lines a formatting macro spans.
-///
-/// A `write!` argument list is written over five lines as often as one, and a
-/// check reading line by line would see `COLD_START.statistic(measured)` on its
-/// own line and conclude nothing — which is how this check would pass while the
-/// surface it watches printed bare numbers.
 fn statements(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut held = String::new();
@@ -103,7 +65,6 @@ fn statements(source: &str) -> Vec<String> {
     out
 }
 
-/// No surface formats a number it took out of a measurement.
 #[test]
 fn no_surface_renders_a_statistic_without_its_evidence() {
     let mut offenders = Vec::new();
@@ -120,8 +81,6 @@ fn no_surface_renders_a_statistic_without_its_evidence() {
             if !RENDERING.iter().any(|held| statement.contains(held)) {
                 continue;
             }
-            // A statement that renders *and* takes a statistic out of a
-            // measurement in the same breath is one that prints a bare number.
             if !statement.contains(".statistic(") {
                 continue;
             }
@@ -138,7 +97,6 @@ fn no_surface_renders_a_statistic_without_its_evidence() {
     );
 }
 
-/// The statistic a budget is about comes back with its evidence attached.
 #[test]
 fn a_budgets_statistic_cannot_be_obtained_bare() {
     let source = read("crates/mcf-core/src/self_cost.rs");
@@ -149,7 +107,6 @@ fn a_budgets_statistic_cannot_be_obtained_bare() {
     );
 }
 
-/// And `Stated` has exactly one rendering, which carries everything.
 #[test]
 fn a_stated_statistic_has_no_rendering_that_drops_its_evidence() {
     let source = read("crates/mcf-core/src/measurement/mod.rs");

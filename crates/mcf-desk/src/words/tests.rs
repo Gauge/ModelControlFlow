@@ -1,5 +1,3 @@
-//! What the translation may and may not do to a measurement.
-
 use super::{
     UNMEASURED, against_reading, does_it_fit, grouped, holds_up, remembers, size_in_words,
     speed_in_words, wakes_in,
@@ -7,8 +5,6 @@ use super::{
 
 #[test]
 fn a_measurement_becomes_a_sentence_a_person_can_use() {
-    // 155 tokens a second is what this machine's card did with an eight
-    // billion parameter model.
     assert_eq!(
         speed_in_words(Some(155.0)).as_deref(),
         Some("116 words a second")
@@ -21,8 +17,6 @@ fn a_measurement_becomes_a_sentence_a_person_can_use() {
 
 #[test]
 fn nothing_measured_produces_no_sentence_at_all() {
-    // A7: unknown is recorded as unknown. The interface must not be handed a
-    // phrase it can print, because any phrase it prints is a claim.
     assert_eq!(speed_in_words(None), None);
     assert_eq!(against_reading(None), None);
     assert_eq!(remembers(None), None);
@@ -34,8 +28,6 @@ fn nothing_measured_produces_no_sentence_at_all() {
 
 #[test]
 fn a_zero_rate_is_not_a_slow_model_but_an_absent_measurement() {
-    // The difference matters: "0 words a second" reads as a broken model, and
-    // what actually happened is that nobody timed it.
     assert_eq!(speed_in_words(Some(0.0)), None);
     assert_eq!(speed_in_words(Some(-1.0)), None);
     assert_eq!(speed_in_words(Some(f64::NAN)), None);
@@ -44,12 +36,10 @@ fn a_zero_rate_is_not_a_slow_model_but_an_absent_measurement() {
 
 #[test]
 fn a_slow_model_is_told_plainly_and_not_as_a_fraction() {
-    // Two tokens a second is 1.5 words a second, well under reading speed.
     assert_eq!(
         against_reading(Some(2.0)).as_deref(),
         Some("slower than you can read")
     );
-    // And near reading speed it does not claim a multiple either.
     assert_eq!(
         against_reading(Some(5.3)).as_deref(),
         Some("about as fast as you can read")
@@ -58,8 +48,6 @@ fn a_slow_model_is_told_plainly_and_not_as_a_fraction() {
 
 #[test]
 fn a_conversation_length_is_rounded_to_what_the_conversion_can_carry() {
-    // 32,768 tokens × 0.75 is 24,576 words, and the constant is not good to
-    // five figures. Two significant figures is what it has earned.
     assert_eq!(
         remembers(Some(32_768)).as_deref(),
         Some("about 25,000 words")
@@ -92,8 +80,6 @@ fn a_size_reads_as_a_person_would_say_it() {
 
 #[test]
 fn whether_it_fits_reads_the_same_way_either_way() {
-    // The same shape of sentence in the same place, so that nobody has to
-    // notice the absence of a warning to conclude that it fits.
     assert_eq!(
         does_it_fit(Some(5_000_000_000), Some(16_000_000_000), "graphics card"),
         "Uses 5.0 GB of your 16 GB of graphics card"
@@ -106,8 +92,6 @@ fn whether_it_fits_reads_the_same_way_either_way() {
 
 #[test]
 fn the_fall_off_is_reported_as_whether_it_matters() {
-    // Measured on this machine: 6.43 ms/token at 512 and 7.66 at 8,192 — a
-    // ratio of 1.19, which is not something a person needs to act on.
     assert_eq!(
         holds_up(Some(6.43), Some(7.66)).as_deref(),
         Some("Stays fast")
@@ -132,9 +116,6 @@ fn waking_up_is_never_reported_as_a_bare_zero() {
 
 #[test]
 fn the_conditions_of_every_conversion_can_be_shown() {
-    // A6: no number without its conditions. The interface says "29× faster
-    // than you can read", so it must be able to say how fast it thinks a
-    // person reads.
     let said = super::basis();
     assert!(
         said.contains("0.75"),

@@ -1,17 +1,7 @@
-//! `mcf failures`: the record's newest classified failures, as the window's
-//! System page shows them (B-074, A22).
-//!
-//! The daemon answers from the record's index; this prints each failure with
-//! every field the taxonomy gives it — the code and its meaning, whose doing
-//! and what MCF did about it and where, the sentence, every line of context,
-//! and the cause under it — through the one rendering the window uses, so
-//! that the two surfaces cannot say different things about one failure.
-
 use mcf_serve::control::Request;
 
 use crate::Response;
 
-/// How many are shown when no number is asked for.
 const SHOWN: usize = 12;
 
 pub(crate) fn run(last: Option<usize>) -> Response {

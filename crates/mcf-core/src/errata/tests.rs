@@ -1,5 +1,3 @@
-//! An erratum is about what an instrument did, and it applies backwards.
-
 use super::{KNOWN, affecting};
 
 #[test]
@@ -30,7 +28,6 @@ fn a_recent_measurement_is_affected_by_nothing() {
 
 #[test]
 fn an_old_measurement_is_affected_by_all_of_them() {
-    // The record on this machine begins earlier than any correction.
     assert_eq!(affecting(0).len(), KNOWN.len());
 }
 
@@ -47,8 +44,6 @@ fn every_erratum_says_what_it_did_rather_than_only_that_it_was_wrong() {
             held.finding.starts_with('F'),
             "an erratum cites the finding that establishes it: {held}"
         );
-        // A reader told only *distrust this* cannot decide what to do. The
-        // effect is what lets them judge whether it matters to them.
         assert!(
             held.effect.len() > 40,
             "{} describes its effect too thinly to act on",
@@ -57,11 +52,6 @@ fn every_erratum_says_what_it_did_rather_than_only_that_it_was_wrong() {
     }
 }
 
-/// **A19, and the defect this test was written for.** The first version of
-/// `KNOWN` carried nanoseconds two days away from the dates written beside
-/// them: computed by hand, plausible on sight, and silently wrong — so no
-/// erratum applied to any entry and the whole mechanism did nothing. Two
-/// spellings of one fact must be checked against each other.
 #[test]
 fn the_readable_moment_and_the_nanoseconds_agree() {
     for held in KNOWN {

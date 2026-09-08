@@ -1,38 +1,3 @@
-//! A source that is a hub on the other end of a wire (B-021, B-322).
-//!
-//! **What it is.** [`crate::source::Source`] asks a hub four questions; this
-//! answers them by asking a real one, over [`crate::wire`], in the shapes
-//! [findings.md](../../../doc/findings.md) F9 measured. Everything the
-//! laboratory's simulated hub has been standing in for since B-028 arrives
-//! here.
-//!
-//! **It is pointed at a base rather than at Hugging Face.** The host is a field
-//! and not a constant, which is what lets the whole path — listing, redirect,
-//! resume, digest — run against a server this repository's own tests are
-//! holding, on the loopback address, in the gating tier (B19). It is also the
-//! honest shape for a mirror: an operator on a network that cannot reach the
-//! hub has somewhere to point MCF, and *which host served these bytes* is
-//! recorded either way (§3.4).
-//!
-//! **What the hub is asked, and what it says.** Two calls before a byte of
-//! weights moves, both of them cheap:
-//!
-//! | Asked | Answers |
-//! |---|---|
-//! | `/api/models/{repository}` | the revision to pin (`sha`), whether the repository is gated, and the licence it declares |
-//! | `/api/models/{repository}/tree/{revision}?recursive=true` | every file, its size, and — for anything stored in LFS — the SHA-256 the hub declares for it |
-//!
-//! That second answer is what makes B-213's arithmetic possible before
-//! anything is downloaded, and what makes B-021's verification possible at all:
-//! a digest that arrives *with the listing* is a digest MCF can check the bytes
-//! against, rather than one the same connection could have made up to match
-//! what it sent.
-//!
-//! **A status is an outcome, never an exception.** 401, 403, 404 and 429 each
-//! become the failure `mcf_hub::credentials` and its neighbours already write,
-//! so the words an operator reads are the same whether the refusal came from a
-//! simulated hub or a real one (A6's habit, B-024).
-
 use std::path::Path;
 
 use mcf_core::digest::Sha256;
@@ -47,15 +12,8 @@ use crate::wire::{self, Wire};
 
 const WHERE: Subsystem = Subsystem::new("mcf-hub::client");
 
-/// How much of an answer to metadata MCF will read.
-///
-/// A repository's file list is kilobytes; a megabyte is room for the largest
-/// repository anybody publishes and a bound on a source that would otherwise
-/// answer for ever (§3.7, B7). The weights are not read into memory at all —
-/// they go straight to the disk — so this bounds metadata alone.
 pub const METADATA_CEILING: u64 = 1024 * 1024;
 
-/// A hub on the other end of a wire.
 pub struct Hub {
     base: Url,
     wire: Box<dyn Wire>,
@@ -63,11 +21,6 @@ pub struct Hub {
 }
 
 impl core::fmt::Debug for Hub {
-    /// Names the hub and the wire, never the credential.
-    ///
-    /// `Credential`'s own `Debug` redacts (B-024); this one does not print it at
-    /// all, because *which token* is a question a record answers through
-    /// [`Source::identity`] rather than through a struct dump.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Hub")
             .field("base", &self.base.to_string())
@@ -78,7 +31,6 @@ impl core::fmt::Debug for Hub {
 }
 
 impl Hub {
-    /// A hub at this base, reached over this wire.
     #[must_use]
     pub fn at(base: Url, wire: Box<dyn Wire>) -> Self {
         Self {
@@ -88,52 +40,28 @@ impl Hub {
         }
     }
 
-    /// The same, offering a credential.
-    ///
-    /// Held rather than sent: [`crate::wire::fetch`] refuses to carry it over a
-    /// connection that cannot keep it, and a redirect to another host leaves it
-    /// behind (B-024).
     #[must_use]
     pub fn offering(mut self, credential: Credential) -> Self {
         self.credential = Some(credential);
         self
     }
 
-    /// Where MCF looks for a model hub by default.
-    ///
-    /// # Errors
-    ///
-    /// `hub.metadata.malformed` if this constant ever stops being a URL, which
-    /// is a thing a test asserts rather than a thing that happens.
     pub fn hugging_face(wire: Box<dyn Wire>) -> Result<Self> {
         Ok(Self::at(Url::parse("https://huggingface.co/")?, wire))
     }
 
-    /// The URL for something under this hub's base.
     fn url(&self, target: &str) -> Result<Url> {
         self.base.resolve(target)
     }
 
-    /// Makes a request this hub's credential is attached to.
     fn asking(&self, url: Url) -> Request {
         let request = Request::get(url);
         match &self.credential {
-            // The one place a secret leaves its box on this path. `wire::fetch`
-            // decides whether it may travel at all.
             Some(credential) => request.offering(credential.secret().reveal()),
             None => request,
         }
     }
 
-    /// Repositories the hub lists for a word: the ones publishing GGUF
-    /// files, most downloaded first, at most twenty. A word is not a
-    /// reference, and a person who has only a word is owed the names the
-    /// hub has for it rather than a refusal (A2).
-    ///
-    /// # Errors
-    ///
-    /// The hub could not be reached, did not answer the search, or answered
-    /// with something that is not a list of repositories.
     pub fn search(&self, query: &str) -> Result<Vec<Found>> {
         use core::fmt::Write as _;
         let mut encoded = String::new();
@@ -189,7 +117,6 @@ impl Hub {
             .collect())
     }
 
-    /// Reads something small — a listing, a card — into memory.
     fn read_metadata(&self, reference: &Reference, target: &str) -> Result<(Response, Vec<u8>)> {
         let url = self.url(target)?;
         let mut body = Bounded::new(METADATA_CEILING);
@@ -209,10 +136,6 @@ impl Hub {
         Ok((exchanged.response, body.held))
     }
 
-    /// Turns a status that is not an answer into the failure it means.
-    ///
-    /// The words are `mcf_hub::credentials`' own, so an operator reads the same
-    /// sentence whether the refusal came from a real hub or a simulated one.
     fn status_is_an_answer(
         &self,
         response: &Response,
@@ -262,32 +185,10 @@ impl Hub {
         }
     }
 
-    /// The model's own configuration, where the repository publishes one.
-    ///
-    /// `config.json` is small, so this is a third cheap question rather than a
-    /// download: it is what [`crate::fitment`] needs to say whether a variant
-    /// will run here *before* twenty gigabytes are fetched (B-213, PR3).
-    ///
-    /// `Ok(None)` when the repository publishes none — a GGUF-only repository
-    /// often does — which is a state to report rather than a shape to guess
-    /// (A7).
-    ///
-    /// # Errors
-    ///
-    /// As [`Self::list`], for anything that is not a plain absence.
     pub fn configuration(&self, listing: &Listing) -> Result<Option<Value>> {
         self.metadata_file(listing, "config.json")
     }
 
-    /// Any small JSON document the repository publishes beside the weights.
-    ///
-    /// `Ok(None)` when the repository publishes none, which is a state to
-    /// report rather than a shape to guess (A7). The listing is consulted
-    /// first, so a repository that publishes no such file costs no request.
-    ///
-    /// # Errors
-    ///
-    /// As [`Self::list`], for anything that is not a plain absence.
     pub fn metadata_file(&self, listing: &Listing, named: &str) -> Result<Option<Value>> {
         if listing.entry(named).is_none() {
             return Ok(None);
@@ -307,7 +208,6 @@ impl Hub {
         }
     }
 
-    /// Where a file lives, at a stated revision.
     fn resolve_url(&self, reference: &Reference, revision: &str, path: &str) -> Result<Url> {
         self.url(&format!(
             "/{}/resolve/{revision}/{path}",
@@ -315,24 +215,6 @@ impl Hub {
         ))
     }
 
-    /// Fetches a file, appending or truncating, and digests what arrives.
-    /// The first `bytes` of a published file, without acquiring it.
-    ///
-    /// **For reading a header.** A GGUF says how a model is shaped in its own
-    /// metadata, and a repository that publishes no `config.json` — which is
-    /// most of them — leaves that the only place the answer is. Fetching the
-    /// whole file to read its first megabytes would be acquiring a model to
-    /// answer a question about it (§3.7, PR3).
-    ///
-    /// **The bound is enforced here as well as asked for.** A hub that ignores
-    /// the range answers with the whole file, and a reader that trusted the
-    /// range would then hold a forty-gigabyte model in memory. The sink stops
-    /// keeping at its ceiling, so what comes back is bounded whatever the far
-    /// end sends.
-    ///
-    /// # Errors
-    ///
-    /// What the exchange said, or that the hub's answer was not one.
     pub fn prefix_of(&self, reference: &Reference, entry: &Entry, bytes: u64) -> Result<Vec<u8>> {
         let revision = reference
             .revision
@@ -340,10 +222,6 @@ impl Hub {
             .unwrap_or_else(|| "main".to_owned());
         let url = self.resolve_url(reference, &revision, &entry.path)?;
         let request = self.asking(url.clone()).first(bytes);
-        // The bounded sink that is already here: past its ceiling it keeps
-        // counting and stops keeping, so a hub that ignores the range and
-        // answers with the whole file is noticed rather than allowed to fill
-        // this machine.
         let mut held = Bounded::new(bytes);
         let _exchanged = wire::vetted(self.wire.as_ref(), &request, &mut held, &|response| {
             self.status_is_an_answer(response, &url, reference)
@@ -391,12 +269,6 @@ impl Hub {
             into: std::io::BufWriter::new(file),
             digest: Sha256::default(),
         };
-        // Everything that could make this answer the wrong one is decided here,
-        // before a byte of it is written: a status that is not an answer, and a
-        // source that continues a transfer from somewhere other than where it
-        // was asked to. Appending first and refusing afterwards would leave a
-        // file that is its own first part twice — for a moment if the refusal
-        // is handled, and for good if the process dies in between (B-021, A1).
         let exchanged = wire::vetted(self.wire.as_ref(), &request, &mut sink, &|response| {
             self.status_is_an_answer(response, &url, reference)?;
             let Some(offset) = from else {
@@ -441,11 +313,6 @@ impl Source for Hub {
     }
 
     fn identity(&self) -> Identity {
-        // *Offered*, never *confirmed*: MCF has not asked the hub who this is,
-        // and naming an account it was never told would be inventing the one
-        // thing identity establishes. `/api/whoami-v2` is where a confirmation
-        // would come from, and asking for one is a decision about what MCF
-        // sends rather than a detail (§XIV).
         match &self.credential {
             None => Identity::Anonymous,
             Some(credential) => Identity::Offered {
@@ -461,8 +328,6 @@ impl Source for Hub {
         )?;
         let card = read_json(&card)?;
 
-        // The revision the hub says this is, rather than the branch that was
-        // asked for: "main" is not a thing anybody can pin (A7, B-019).
         let revision = reference
             .revision
             .clone()
@@ -506,12 +371,6 @@ impl Source for Hub {
     }
 }
 
-/// The files a repository publishes, from the hub's own tree.
-///
-/// The digest is the LFS object's, which is the SHA-256 of the file. A file
-/// that is not in LFS — a config, a card — has no declared digest here, and
-/// that is recorded as absent rather than filled in with the git blob hash,
-/// which is a hash of something else (A7, A21).
 fn read_tree(tree: &Value) -> Result<Vec<Entry>> {
     let rows = tree
         .as_list()
@@ -545,24 +404,10 @@ fn read_tree(tree: &Value) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-/// What the repository says its terms are.
-///
-/// From the card's own field where there is one, and from the `license:` tag
-/// otherwise — the hub publishes both and a repository sometimes has only the
-/// second. `None` when neither is there, which `inspect::terms_are_legible`
-/// turns into `hub.metadata.absent` (B-023).
-/// How a repository says it is gated, in its own word.
-///
-/// The hub writes `false` when it is not gated and a word — `"auto"`,
-/// `"manual"` — when it is, so a boolean and a string mean different things in
-/// one field. `false` reads as *not gated*; anything else is kept as written
-/// (F17).
 fn gate_of(value: &Value) -> Option<String> {
     match value {
         Value::Bool(true) => Some("gated".to_owned()),
         Value::Text(how) => Some(how.clone()),
-        // `false` is *not gated*, and anything else is a shape MCF does not
-        // read as a gate rather than one it guesses at (A7).
         Value::Bool(false)
         | Value::Null
         | Value::ForeignNumber(_)
@@ -590,13 +435,6 @@ fn declared_licence(card: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// What the repository says these weights were made from.
-///
-/// The hub publishes it as a tag: `base_model:owner/name` for the link, and
-/// `base_model:quantized:owner/name` — or `finetune`, `merge`, `adapter` — when
-/// the publisher says what was done. Both are read, and the relation is left
-/// absent when only the plain form is there: a link nobody described is still a
-/// link (A7, §XII).
 fn lineage(card: &Value) -> Option<Lineage> {
     let tags: Vec<&str> = card
         .get("tags")
@@ -610,13 +448,10 @@ fn lineage(card: &Value) -> Option<Lineage> {
     let mut relation = None;
     for tag in tags {
         match tag.split_once(':') {
-            // `base_model:quantized:owner/name`: the publisher's own word for
-            // what they did, and where they did it from.
             Some((what, from)) if from.contains('/') => {
                 relation = Some(what.to_owned());
                 base = Some(from.to_owned());
             }
-            // `base_model:owner/name`: the link with nothing said about it.
             _ if tag.contains('/') => base = base.or_else(|| Some(tag.to_owned())),
             _ => {}
         }
@@ -624,21 +459,15 @@ fn lineage(card: &Value) -> Option<Lineage> {
     base.map(|base| Lineage { base, relation })
 }
 
-/// One repository the hub listed for a word.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
-    /// `owner/name`, as the hub names it.
     pub id: String,
-    /// Downloads the hub counts, where it says.
     pub downloads: Option<u64>,
-    /// Likes the hub counts, where it says.
     pub likes: Option<u64>,
-    /// When it last changed, as the hub wrote it.
     pub updated: Option<String>,
 }
 
 impl Found {
-    /// The record's shape.
     #[must_use]
     pub fn to_value(&self) -> Value {
         let count = |held: Option<u64>| {
@@ -677,11 +506,6 @@ fn malformed(wanted: &str, found: &str) -> Failure {
     .with_context("found", kept)
 }
 
-/// A sink that keeps what it is given, up to a stated ceiling.
-///
-/// Past the ceiling it keeps counting and stops keeping, so a source that
-/// answers a small question with a large answer is *noticed* rather than
-/// allowed to fill this machine (§3.7).
 struct Bounded {
     held: Vec<u8>,
     ceiling: u64,
@@ -715,11 +539,6 @@ impl std::io::Write for Bounded {
     }
 }
 
-/// A sink that digests what passes through it.
-///
-/// The digest is of what actually arrived on this disk, computed here rather
-/// than taken from the source: a checksum a hostile source supplies is a
-/// checksum of what it wishes it had sent (§3.7, B-021).
 struct Digesting<W: std::io::Write> {
     into: W,
     digest: Sha256,

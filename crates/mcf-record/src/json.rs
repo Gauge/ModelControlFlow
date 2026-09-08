@@ -1,104 +1,28 @@
-//! The record's line format: a small, complete JSON codec.
-//!
-//! §3.3 requires the record be *structured and machine-readable first, human-
-//! readable second*, and D20 makes the journal the record itself. That needs a
-//! serialization, and §7.30 makes it a public interface the moment §XIV ships —
-//! a format other machines and other versions of MCF have to read.
-//!
-//! **Why this is written rather than depended on.** B15 admits weight only
-//! against a stated cost, and the cost here is unusually legible. The data
-//! model is closed: MCF's own records, no user-defined shapes, no dynamic
-//! typing, no schema anyone else supplies. A general serialization framework
-//! would bring derive macros, a trait hierarchy and a compile-time cost for a
-//! generality this format will never use, and it would put a third party in
-//! charge of an interface §7.30 makes MCF's to keep stable for ever. What it
-//! would buy is correctness, and correctness here is a testable property of
-//! about three hundred lines — so it is bought with tests instead (A19).
-//!
-//! **What it claims.** RFC 8259 JSON. Every quantity MCF *writes* is an
-//! integer, because [`Quantity`] requires `Ord` and no floating point reaches a
-//! record at all — and anything it cannot represent it refuses rather than
-//! approximating, since a record that silently rounded would be a record that
-//! lied.
-//!
-//! **Reading is a wider job than writing, and that is not a contradiction.**
-//! This reader is also how MCF reads documents it did not write — a
-//! repository's `config.json`, which is untrusted input (§3.7) and legitimately
-//! contains fractions and exponents. A reader that refused them would refuse
-//! real models: the reference model's own configuration carries `1e-06`, and
-//! MCF could not plan for it ([findings.md](../../../doc/findings.md) F16).
-//!
-//! So a number this format does not carry is read as [`Value::ForeignNumber`],
-//! **kept exactly as it was written** — not rounded, not converted, and not
-//! usable as a quantity. Nothing MCF encodes ever produces one, and
-//! `checks/tests/no_float_reaches_the_record.rs` holds that: the record stays
-//! integral because nothing writes anything else into it, rather than because
-//! the reader cannot spell it.
-//!
-//! [`Quantity`]: mcf_core::measurement::Quantity
-
 use core::fmt;
 use std::collections::BTreeMap;
 
-/// A JSON value, as a record uses them.
-///
-/// No floating-point variant, and that is the point rather than an omission:
-/// A6's `Quantity` is `Ord`, so every measured value MCF holds is integral, and
-/// a format with no way to write a float is a format through which a rounded
-/// value cannot travel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
-    /// `null` — which in a record means *unknown*, never *zero* (A7).
     Null,
-    /// `true` or `false`.
     Bool(bool),
-    /// An integer.
     Integer(i64),
-    /// A number this format does not carry, exactly as it was written.
-    ///
-    /// A fraction or an exponent, from a document MCF did not write. It is text
-    /// rather than a float on purpose: A1 forbids losing what was there, A6
-    /// forbids a quantity that cannot be ordered, and a value nobody can do
-    /// arithmetic on cannot become a measurement by accident. [`Value::as_integer`]
-    /// is `None` for it, which is what makes a caller notice.
-    ///
-    /// **MCF never writes one.** Every encoder in this workspace produces
-    /// integers, text, lists and maps; this variant exists so that reading
-    /// somebody else's JSON does not require a second parser (§3.7, F16).
     ForeignNumber(String),
-    /// A string.
     Text(String),
-    /// An array.
     List(Vec<Value>),
-    /// An object. Ordered by key, so that two encodings of one record are the
-    /// same bytes — which is what lets a record be checksummed and compared
-    /// (§3.12).
     Map(BTreeMap<String, Value>),
 }
 
 impl Value {
-    /// A string value.
     #[must_use]
     pub fn text(value: impl Into<String>) -> Self {
         Self::Text(value.into())
     }
 
-    /// A decimal in thousandths, written exactly, for a request to an engine
-    /// whose API takes one.
-    ///
-    /// **The one number MCF writes that is not an integer, and it goes to an
-    /// engine, not to a record.** `llama.cpp` takes a temperature as a JSON
-    /// number, and a caller who stated `0.7` is owed `0.700` on the wire and
-    /// not a float that was near it: the value is rendered from the integer,
-    /// so nothing is rounded on the way (A1). `checks` keeps this out of
-    /// every encoder but the request that needs it, which is what keeps the
-    /// record integral (A6, §3.3).
     #[must_use]
     pub fn exact_thousandths(held: mcf_core::configuration::Thousandths) -> Self {
         Self::ForeignNumber(held.to_string())
     }
 
-    /// An object, from pairs.
     #[must_use]
     pub fn map<K: Into<String>>(pairs: impl IntoIterator<Item = (K, Self)>) -> Self {
         Self::Map(
@@ -109,7 +33,6 @@ impl Value {
         )
     }
 
-    /// The value at a key, if this is an object that has one.
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&Self> {
         match self {
@@ -118,7 +41,6 @@ impl Value {
         }
     }
 
-    /// The string, if this is one.
     #[must_use]
     pub fn as_text(&self) -> Option<&str> {
         match self {
@@ -127,7 +49,6 @@ impl Value {
         }
     }
 
-    /// The integer, if this is one.
     #[must_use]
     pub const fn as_integer(&self) -> Option<i64> {
         match self {
@@ -136,7 +57,6 @@ impl Value {
         }
     }
 
-    /// The boolean, if this is one.
     #[must_use]
     pub const fn as_bool(&self) -> Option<bool> {
         match self {
@@ -145,7 +65,6 @@ impl Value {
         }
     }
 
-    /// The elements, if this is an array.
     #[must_use]
     pub fn as_list(&self) -> Option<&[Self]> {
         match self {
@@ -154,11 +73,6 @@ impl Value {
         }
     }
 
-    /// Writes the value as one line of JSON, with no insignificant whitespace.
-    ///
-    /// One line because the journal is line-delimited: a torn write is then a
-    /// torn *line*, which replay can identify and report rather than being
-    /// unable to find the boundary at all (B62).
     #[must_use]
     pub fn to_line(&self) -> String {
         let mut out = String::new();
@@ -172,9 +86,6 @@ impl Value {
             Self::Bool(true) => out.push_str("true"),
             Self::Bool(false) => out.push_str("false"),
             Self::Integer(value) => out.push_str(&value.to_string()),
-            // As it was written, byte for byte: this variant exists to carry a
-            // number this format does not have, and rewriting it would be the
-            // rounding the format refuses (A1).
             Self::ForeignNumber(written) => out.push_str(written),
             Self::Text(value) => write_string(value, out),
             Self::List(values) => {
@@ -209,11 +120,6 @@ impl fmt::Display for Value {
     }
 }
 
-/// Writes a JSON string, escaping exactly what RFC 8259 requires.
-///
-/// Control characters below `0x20` are escaped, because a raw one inside a
-/// string is invalid JSON and — more to the point here — a raw newline would
-/// end the journal line early and turn one record into two unreadable ones.
 fn write_string(value: &str, out: &mut String) {
     out.push('"');
     for character in value.chars() {
@@ -226,9 +132,6 @@ fn write_string(value: &str, out: &mut String) {
             '\u{08}' => out.push_str("\\b"),
             '\u{0c}' => out.push_str("\\f"),
             control if control < '\u{20}' => {
-                // The four hexadecimal digits, written out. `write!` into a
-                // `String` cannot fail, and `format!` would allocate a second
-                // one for four characters.
                 const HEX: [u8; 16] = *b"0123456789abcdef";
                 let code = u32::from(control);
                 out.push_str("\\u00");
@@ -247,12 +150,9 @@ fn write_string(value: &str, out: &mut String) {
     out.push('"');
 }
 
-/// What a line could not be read as, and where.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
-    /// The byte offset within the line.
     pub at: usize,
-    /// What was expected there.
     pub expected: &'static str,
 }
 
@@ -264,14 +164,6 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Reads one JSON value.
-///
-/// # Errors
-///
-/// Returns a [`ParseError`] naming the offset and what was expected. A2: a line
-/// that cannot be read says where it stopped, so replay can report the exact
-/// extent of what it could not recover (B62) rather than only that something
-/// was lost.
 pub fn parse(text: &str) -> Result<Value, ParseError> {
     let bytes = text.as_bytes();
     let mut at = 0;
@@ -334,11 +226,6 @@ fn parse_integer(bytes: &[u8], at: &mut usize) -> Result<Value, ParseError> {
             expected: "an integer",
         });
     }
-    // A fraction or an exponent is a number this format does not carry. It is
-    // kept as written rather than rounded (A7, A1): a document MCF did not
-    // write may legitimately contain one, and the reference model's own
-    // configuration does — `1e-06`, which used to make the whole file
-    // unreadable and every plan for that model impossible (F16).
     if matches!(peek(bytes, *at), Some(b'.' | b'e' | b'E')) {
         return foreign_number(bytes, at, start);
     }
@@ -356,12 +243,6 @@ fn parse_integer(bytes: &[u8], at: &mut usize) -> Result<Value, ParseError> {
         })
 }
 
-/// The rest of a number this format does not carry, kept as written.
-///
-/// The grammar is RFC 8259's: an optional fraction, then an optional exponent.
-/// It is read strictly — `1e`, `1.` and `1e+` are refused — because a number
-/// MCF cannot make sense of should be a refusal rather than a string that looks
-/// like one (§3.7).
 fn foreign_number(bytes: &[u8], at: &mut usize, start: usize) -> Result<Value, ParseError> {
     if peek(bytes, *at) == Some(b'.') {
         *at += 1;
@@ -511,9 +392,6 @@ fn parse_unicode_escape(bytes: &[u8], at: &mut usize) -> Result<char, ParseError
         });
     };
     *at = start + 4;
-    // Surrogate halves are refused rather than replaced. MCF never writes one,
-    // and substituting the replacement character would be a silent alteration
-    // of evidence.
     char::from_u32(code).ok_or(ParseError {
         at: start,
         expected: "a character, not an unpaired surrogate",
@@ -567,10 +445,6 @@ fn parse_map(bytes: &[u8], at: &mut usize) -> Result<Value, ParseError> {
         }
         *at += 1;
         let value = parse_value(bytes, at)?;
-        // A duplicate key is refused. RFC 8259 permits it and leaves the
-        // meaning to the reader, which is exactly the kind of ambiguity a
-        // record cannot carry: two readers would disagree about what the
-        // record says.
         if entries.insert(key, value).is_some() {
             return Err(ParseError {
                 at: *at,

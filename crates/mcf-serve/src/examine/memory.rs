@@ -1,27 +1,13 @@
-//! Memory as predicted: what the engine holds against what MCF said it
-//! would (B-495, D52, B-058).
-//!
-//! MCF says whether a model fits by arithmetic on the header — the
-//! weights, an allowance over them, and a cache the header's widths give
-//! a token — and a person reads *fits here* off that. Here the engine is
-//! started at several windows, made to touch every weight, and asked
-//! what it holds: its resident bytes from the kernel, and what the card
-//! gained while it was up. A difference is a divergence between what
-//! was declared and what was observed, and it is reported as one.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, filler, gigabytes, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "memory-as-predicted";
 
-/// The windows tried, in tokens; each is capped at the trained context.
 const WINDOWS: [u64; 3] = [2048, 8192, 32768];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -148,7 +134,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// The engine's peak resident bytes and what the card gained, at one window.
 fn at_window(site: &Site<'_>, window: u64) -> Result<(u64, Option<u64>), String> {
     let before = crate::engines::card_memory_used();
     let engine = site.server(&Startup {
@@ -156,8 +141,6 @@ fn at_window(site: &Site<'_>, window: u64) -> Result<(u64, Option<u64>), String>
         ..site.startup()
     })?;
     let prompt = filler(64);
-    // A short generation touches every weight; a server that has only
-    // loaded has mapped the file and read little of it.
     let _touched = engine
         .complete(
             Prompt::Identifiers(&prompt),

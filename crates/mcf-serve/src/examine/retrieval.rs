@@ -1,37 +1,17 @@
-//! Retrieval by depth: whether a fact planted in a long prompt comes back
-//! (B-497, D52, B-055).
-//!
-//! The usable-context probe says a prompt of some length is *accepted*.
-//! Whether the model then uses what is in it is a different question, and
-//! this puts it mechanically: a random run of digits — made fresh each
-//! run, so nothing is remembered from training — is planted at a stated
-//! fraction of a stated length of filler, the model is asked for it
-//! through its own template, and the answer either carries those digits
-//! or does not. Exact match, no rater. What comes back is a grid: depth
-//! by placement, found or missed.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "retrieval-by-depth";
 
-/// The depths tried, in tokens; each is capped at the server's window
-/// less room for the question and the answer.
 const DEPTHS: [usize; 3] = [1024, 4096, 16384];
 
-/// Where the fact is planted, as hundredths of the filler.
 const PLACEMENTS: [usize; 3] = [10, 50, 90];
 
-/// How many tokens the answer may take: enough for a model that thinks
-/// first to reach the digits.
 const BUDGET: usize = 200;
 
-/// What the prompt is padded with, repeated: plain prose that says
-/// nothing about numbers.
 pub const FILLER: &str = "The path along the shore turns inland where the cliff has fallen, and \
 the walkers who use it know to look for the cairn before the turn. In spring the gorse covers \
 the slope and the smell of it reaches the road. The fishermen keep their boats in the cove \
@@ -39,18 +19,14 @@ below, drawn up above the tide line on rollers cut from old telegraph poles. Nob
 from here for a living in forty years, but the boats are painted every winter all the same. \
 The school closed, then the shop, and the bus comes twice a day if the road is open. ";
 
-/// The room kept for the template, the question and the answer.
 const ROOM: usize = 320;
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
     reason = "one measurement read straight through: what it started, what it read, the rows it kept"
 )]
 pub fn measure(site: &Site<'_>) -> Found {
-    // The window the deepest depth needs, where the model holds it: the
-    // depth, the room around it and the answer.
     let deepest = DEPTHS.iter().copied().max().unwrap_or(0);
     let wanted =
         u64::try_from(deepest.saturating_add(ROOM).saturating_add(BUDGET)).unwrap_or(u64::MAX);
@@ -172,8 +148,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// One placement asked: whether the digits came back, how long the
-/// prompt was, and how many tokens the answer took.
 fn asked_back(
     site: &Site<'_>,
     engine: &crate::served::Served,
@@ -199,8 +173,6 @@ fn asked_back(
     ))
 }
 
-/// The filler repeated, the fact planted at the placement, and the
-/// question after it.
 pub(crate) fn planted(repeats: usize, placement: usize, digits: &str) -> String {
     #[expect(
         clippy::integer_division,
@@ -222,8 +194,6 @@ pub(crate) fn planted(repeats: usize, placement: usize, digits: &str) -> String 
     text
 }
 
-/// Six digits nothing has seen before this run: from the clock, so that
-/// no run asks for a number a model could have been trained to say.
 fn fresh_digits() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

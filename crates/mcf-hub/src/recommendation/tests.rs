@@ -1,5 +1,3 @@
-//! What reading a repository's recommendation has to get right.
-
 use mcf_core::attested::Attested;
 use mcf_core::configuration::Thousandths;
 
@@ -11,7 +9,6 @@ fn json(text: &str) -> mcf_record::json::Value {
     parse(text).expect("the fixture is JSON")
 }
 
-/// A real `generation_config.json`, in the shape publishers write.
 #[test]
 fn a_real_generation_config_is_read() {
     let held = from_json(&json(
@@ -32,9 +29,6 @@ fn a_real_generation_config_is_read() {
     );
 }
 
-/// A file that is published and states no sampler parameter is a different
-/// fact from a file that is not published: one publisher looked and said
-/// nothing, the other did not look.
 #[test]
 fn a_config_with_no_sampler_parameter_is_not_the_same_as_no_config() {
     let stated = from_json(&json(r#"{"bos_token_id":1,"eos_token_id":2}"#));
@@ -52,9 +46,6 @@ fn a_config_with_no_sampler_parameter_is_not_the_same_as_no_config() {
     );
 }
 
-/// **The finding this module is shaped by** (F63): a conversion repository
-/// publishes no recommendation, and the sentence says where the recommendation
-/// actually lives rather than leaving a reader to wonder.
 #[test]
 fn an_absent_config_says_where_the_recommendation_would_be() {
     let text = Recommendation::NoneDeclared.describe();
@@ -62,9 +53,6 @@ fn an_absent_config_says_where_the_recommendation_would_be() {
     assert!(text.contains("conversion repository"), "{text}");
 }
 
-/// Decimals are read without a float, because the record has none and a value
-/// that arrived through one would not compare equal to itself across two
-/// parses (D18's reason for thousandths).
 #[test]
 fn a_decimal_is_read_exactly() {
     for (written, expected) in [
@@ -85,9 +73,6 @@ fn a_decimal_is_read_exactly() {
     }
 }
 
-/// **Every byte untrusted** (§3.7). More precision than the unit holds is
-/// refused rather than rounded, because silently dropping a digit is deciding
-/// a value the publisher stated (A7).
 #[test]
 fn more_precision_than_the_unit_holds_is_refused() {
     for hostile in ["0.7001", "-0.5", "abc", "1e9", "0.7.7", ""] {
@@ -100,7 +85,6 @@ fn more_precision_than_the_unit_holds_is_refused() {
     }
 }
 
-/// A top-k that is not a whole number, or will not fit one, is not read.
 #[test]
 fn a_top_k_that_is_not_a_count_is_not_read() {
     for hostile in [r#""fifty""#, "-3", "9999999999999"] {
@@ -109,7 +93,6 @@ fn a_top_k_that_is_not_a_count_is_not_read() {
     }
 }
 
-/// The generation budget is read under the name publishers actually use.
 #[test]
 fn the_generation_budget_is_read_under_the_publishers_name() {
     let held = from_json(&json(r#"{"max_new_tokens":2048}"#));

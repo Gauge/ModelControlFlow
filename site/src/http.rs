@@ -1,48 +1,17 @@
-//! Just enough HTTP/1.1 to answer a browser, written rather than depended on.
-//!
-//! The workspace has no external dependencies and the reason is P3: every crate
-//! is a condition of a measurement, and a dependency tree is a set of
-//! conditions nobody restates. A server that answers `GET` and `POST` on a
-//! loopback socket is a small enough thing to write, and writing it keeps the
-//! lockfile the shape §3.12 asks for.
-//!
-//! Everything hostile is decided here rather than deeper in (§3.7): a request
-//! longer than MCF will read, a header block that never ends, a method or a
-//! path this build does not know. Nothing read from the socket reaches the
-//! control plane without passing a match on a known route first.
-
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 
-/// The longest request line and header block MCF will read.
-///
-/// Sixty-four kibibytes. A browser's request is a few hundred bytes; the limit
-/// is here so that a client that never sends a blank line is disconnected
-/// rather than read forever.
 const HEADERS_LIMIT: usize = 64 << 10;
 
-/// The longest body. Requests carry a reason for stopping and nothing larger.
 const BODY_LIMIT: usize = 64 << 10;
 
-/// What a client asked for, once it is known to be something MCF reads.
 #[derive(Debug, Clone)]
 pub struct Incoming {
-    /// The method, uppercase as the client sent it.
     pub method: String,
-    /// The path, exactly as sent — matched against a known set, never joined
-    /// to a filesystem path.
     pub path: String,
-    /// The body, empty where there was none.
     pub body: String,
 }
 
-/// Reads one request, or says why it will not.
-///
-/// # Errors
-///
-/// A string naming what was wrong, which the caller turns into a status. The
-/// text is for MCF's own log, never echoed to the client: a reflected error is
-/// a way to make a server repeat an attacker's bytes.
 pub fn read(stream: &TcpStream) -> Result<Incoming, String> {
     let mut reader = BufReader::new(stream);
     let mut head = String::new();
@@ -72,8 +41,6 @@ pub fn read(stream: &TcpStream) -> Result<Incoming, String> {
         return Err("a request line that is not one".to_owned());
     }
 
-    // Only the length is read from the headers. Nothing else in them changes
-    // what MCF does, so nothing else is parsed.
     let length = lines
         .filter_map(|line| line.split_once(':'))
         .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
@@ -96,7 +63,6 @@ pub fn read(stream: &TcpStream) -> Result<Incoming, String> {
     })
 }
 
-/// Writes one response. `kind` is a complete content type.
 pub fn respond(mut stream: &TcpStream, status: u16, kind: &str, body: &[u8]) {
     let reason = match status {
         200 => "OK",
@@ -107,10 +73,6 @@ pub fn respond(mut stream: &TcpStream, status: u16, kind: &str, body: &[u8]) {
         502 => "Bad Gateway",
         _ => "Error",
     };
-    // No caching, because every answer is a reading of a live daemon and a
-    // stale one would be a number presented as current (A20's habit applied to
-    // a screen). The security headers are the small ones that cost nothing: the
-    // page loads no third-party anything, so a strict policy is free.
     let head = format!(
         "HTTP/1.1 {status} {reason}\r\n\
          Content-Type: {kind}\r\n\

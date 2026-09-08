@@ -1,17 +1,3 @@
-//! A paired comparison is reconstructible from the record alone.
-//!
-//! B-270's second condition, and D16's reason for keeping raw trials: *§6.17
-//! needs the shape of a bimodal distribution, §3.27 needs the pairing, and
-//! §7.7 has not decided what statistic matters, so a frozen summary is a
-//! question that can never be re-asked.*
-//!
-//! This writes a session's trials to a journal, throws the trials away, reads
-//! the journal back, and asks §3.27's question of what came out. If the pairing
-//! were not reconstructible the record would be holding numbers rather than
-//! evidence.
-//!
-//! B19 keeps it hermetic: a temporary directory, removed when the test ends.
-
 #![allow(clippy::panic, clippy::expect_used)]
 
 use std::path::PathBuf;
@@ -47,7 +33,6 @@ impl Drop for Scratch {
     }
 }
 
-/// Eight trials, interleaved A, B, A, B — the shape B53 requires.
 fn a_session() -> Trials<Count> {
     let session = SessionId::new("2026-08-25T10-00-00Z");
     let (a, b) = (Arm::new("Q4_K_M"), Arm::new("Q5_K_M"));
@@ -87,7 +72,6 @@ fn a_pairing_survives_a_round_trip_through_the_journal() {
             .expect("the trials append");
     }
 
-    // Everything in memory is gone; what follows uses only the file.
     drop(written);
 
     let replayed = replay(&scratch.journal()).expect("the journal replays");
@@ -99,14 +83,11 @@ fn a_pairing_survives_a_round_trip_through_the_journal() {
     assert_eq!(rebuilt.all().len(), 8);
     assert!(rebuilt.is_balanced());
 
-    // §3.27's question, asked of what came out of the file.
     let paired = rebuilt.paired_with(&Arm::new("Q4_K_M"), &Arm::new("Q5_K_M"));
     assert_eq!(paired.len(), 4);
     assert_eq!(paired.unpaired, 0);
     assert_eq!(paired.left_was_smaller(), [true, true, true, true]);
 
-    // And the interleaving order survived, so drift over the session is still
-    // visible in the record rather than only in the process that wrote it.
     let positions: Vec<(u32, u32)> = paired
         .pairs
         .iter()
@@ -115,8 +96,6 @@ fn a_pairing_survives_a_round_trip_through_the_journal() {
     assert_eq!(positions, [(0, 1), (2, 3), (4, 5), (6, 7)]);
 }
 
-/// The conditions travel with the session, so a reader can tell whether two
-/// sessions are comparable at all (A6, A8).
 #[test]
 fn the_conditions_are_in_the_record_beside_the_trials() {
     let body = encode::trials(&a_session(), &conditions(), |Count(n)| {
@@ -134,7 +113,6 @@ fn the_conditions_are_in_the_record_beside_the_trials() {
     );
 }
 
-/// Rebuilds trials from a recorded body, using nothing but the file's contents.
 fn read_trials(body: &Value) -> Trials<Count> {
     let rows = body
         .get("trials")
@@ -159,9 +137,6 @@ fn read_trials(body: &Value) -> Trials<Count> {
             Arm::new(arm),
             Position(u32::try_from(position).unwrap_or(0)),
             SessionId::new(session),
-            // B-290: a trial read back without what it drew is a trial whose
-            // spread nobody can tell from an artefact, so the decoder refuses
-            // rather than inventing one.
             mcf_record::decode::draw(row).expect("a trial records what it drew"),
         )
     }))

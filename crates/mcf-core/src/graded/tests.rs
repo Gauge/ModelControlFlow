@@ -1,5 +1,3 @@
-//! Four outcomes, no total, and no number out of the three that have none.
-
 use crate::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 
 use super::{Graded, LabId, Profile, Score};
@@ -100,8 +98,6 @@ fn an_empty_profile_says_so_rather_than_reading_as_zero() {
     );
 }
 
-/// A field refuses rather than ranking what is not a field (B-127), and its
-/// numbers can only have come from here (B-167).
 mod fields {
     use crate::graded::{Candidate, Field, Graded, LabId, NoRecommendation, Profile, Score};
     use crate::origin::LocallyMeasured;
@@ -200,7 +196,6 @@ mod fields {
     }
 }
 
-/// A ranking says what it rested on and what it did not (B-202).
 mod coverage {
     use crate::graded::{Candidate, Field, Graded, LabId, Profile, Score};
     use crate::origin::LocallyMeasured;

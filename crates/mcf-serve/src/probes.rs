@@ -1,32 +1,5 @@
-//! Asking a model to do the thing (B-051, B-052, B-056, D42, §3.18).
-//!
-//! **The one probe here, and why it is first.** Every instruct model in the
-//! corpus carries `tokenizer.chat_template`, and MCF sends raw text to all of
-//! them. A model trained to see `<|im_start|>user` and given a bare sentence
-//! completes it instead of answering it — which is §3.8's misconfiguration, in
-//! the place §X says to look for it.
-//!
-//! **The signal needs no judgement.** A model addressed the way it was trained
-//! emits its own end-of-turn token and stops; addressed raw it runs to the
-//! budget. That is mechanically checkable, it is the same observation B-056
-//! wants for stop conditions, and it lets the probe be an experiment rather
-//! than somebody reading output and forming an impression (A19, F25).
-//!
-//! **The template is read as a declaration and never executed.** A21: the file
-//! says what wrapping it wants, and MCF does not believe it. What MCF does is
-//! try each *addressing* its vocabulary can express — the control tokens are
-//! in the vocabulary, and which ones are there is a fact — and observe which
-//! makes the model stop. The declaration is used only to order the candidates,
-//! so that the likeliest is tried first; the answer comes from the model.
-
 use std::path::Path;
 
-/// How long a probe's connection may hear nothing before the daemon is
-/// called gone. Not how long a trial may take: a trial that was asked for is
-/// waited for, and the daemon says every ten seconds how far the engine has
-/// got (D48). The usable-context probe on a 27B model on a processor was
-/// reported *inconclusive* at twenty minutes by the bound this replaces,
-/// with the engine a third of the way through a turn it went on to finish.
 const SILENCE: std::time::Duration = std::time::Duration::from_secs(3600);
 
 use mcf_core::measurement::{ConditionValue, Conditions, Floor};
@@ -34,14 +7,6 @@ use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
 use mcf_standin::tokenizer::{Piece, Tokens};
 
-/// Role words a template *assigns*, in the order it assigns them.
-///
-/// Lexical and deliberately narrow: the text after `set <name> =` up to the
-/// closing quote, for a single- or double-quoted literal. It recognises the
-/// one shape that matters — a template deciding what word to write — and
-/// recognises nothing else, which is the honest extent of reading a program
-/// without running it. Where it finds nothing the caller falls back to the
-/// words the template mentions.
 fn assigned_roles(template: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for after in template.split("set ").skip(1) {
@@ -69,27 +34,14 @@ fn assigned_roles(template: &str) -> Vec<String> {
     found
 }
 
-/// One way of putting a question to a model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addressing {
-    /// What to call it in a result.
     pub name: String,
-    /// What goes before the question.
     pub pieces_before: Vec<Piece>,
-    /// What goes after it, up to where the model should begin.
     pub pieces_after: Vec<Piece>,
 }
 
 impl Addressing {
-    /// The question, wrapped, as the markers and text the engine will read.
-    ///
-    /// Pieces rather than identifiers: which identifiers a marker and a text
-    /// become is the reading of whichever tokenizer generates, and the daemon
-    /// reads them through that one — so an addressing built from a
-    /// vocabulary MCF's own tokenizer refuses still reaches the engine that
-    /// can read it (B-442, F158). That every marker is one token of the
-    /// vocabulary is checked there, because the alternative is sending
-    /// something else and calling it this (F37).
     #[must_use]
     pub fn wrap(&self, question: &str) -> Vec<Piece> {
         let mut pieces = self.pieces_before.clone();
@@ -98,9 +50,6 @@ impl Addressing {
         pieces
     }
 
-    /// The question wrapped the way an addressing found for this model asks,
-    /// or bare where none was found: the text alone, which the engine that
-    /// answers reads with its own beginning convention (B-442).
     #[must_use]
     pub fn wrapped(addressing: Option<&Self>, question: &str) -> Vec<Piece> {
         addressing.map_or_else(
@@ -109,7 +58,6 @@ impl Addressing {
         )
     }
 
-    /// The turn as text, for a reader — never for sending.
     #[must_use]
     pub fn shown(&self, question: &str) -> String {
         let show = |pieces: &[Piece]| -> String {
@@ -138,11 +86,6 @@ pub mod thinking;
 pub mod tools;
 pub mod vision;
 
-/// The bracketed markers in a piece of text, in order of first appearance.
-///
-/// Used on a template, where they appear as string literals among the logic:
-/// finding them is reading, and none of the logic around them is evaluated
-/// (D46).
 pub(crate) fn markers_in(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     let characters: Vec<char> = text.chars().collect();
@@ -177,18 +120,6 @@ pub(crate) fn markers_in(text: &str) -> Vec<String> {
     found
 }
 
-/// Every addressing this model can be given, likeliest first (D46).
-///
-/// **The candidates come from the model's own file.** Its template is text:
-/// the marker strings it emits and the order it emits them in are readable
-/// without evaluating one conditional, which is reading a declaration rather
-/// than running a program (§3.18, §3.7). A built-in list of known shapes is a
-/// *fallback* only — for a file with no template, or one nothing could be read
-/// from — so a family nobody has seen yet needs no change here as long as it
-/// ships a template naming its markers and a vocabulary holding them.
-///
-/// `raw` is always last and always present, because it is what MCF does today
-/// and the probe has to be able to say that it is better.
 #[must_use]
 pub fn addressings(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
     let mut found = from_template(file, tokens);
@@ -203,7 +134,6 @@ pub fn addressings(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
     found
 }
 
-/// What the file's own template says, read as data.
 fn from_template(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
     let Some(template) = file
         .get("tokenizer.chat_template")
@@ -212,39 +142,20 @@ fn from_template(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
         return Vec::new();
     };
 
-    // Markers the template mentions that are really tokens of this model.
-    // Both halves matter: a template naming a marker the vocabulary lacks is a
-    // divergence (Llama-160M's names ChatML markers it does not have), and a
-    // spelling that segments into several tokens cannot be sent as a marker.
     let mut markers: Vec<String> = Vec::new();
     for marker in markers_in(template) {
         if tokens.has_token(&marker) && !markers.contains(&marker) {
             markers.push(marker);
         }
     }
-    // The closer is the model's *own* end-of-turn token, which the file states
-    // outright — not "the second marker the template mentions", which picked
-    // `<start_of_image>` out of gemma's template and would have addressed it
-    // with a marker for pictures (F38).
     let Some(close) = tokens
         .ending
         .and_then(|ending| tokens.token(ending))
         .map(str::to_owned)
         .filter(|ending| markers.contains(ending))
     else {
-        // A template that never writes the end-of-turn token has no closer
-        // to read: GLM's writes `<|user|>` and `<|assistant|>` and nothing
-        // between the turns, because the next role's marker *is* the turn
-        // boundary. That shape is read by its roles instead (F171).
         return role_named(template, &markers, tokens);
     };
-    // **The opener is the marker the template writes a role after.** The
-    // first marker that is not the closer picked `[]` out of Qwen3-Coder's
-    // template — Jinja's empty list, which that vocabulary holds as one
-    // token — and the addressing put on file wrapped every prompt as
-    // `[]user … []assistant` with nothing on the page to say so (F160). A
-    // turn opener is followed by a role in the template's own text; a
-    // marker that is not is a marker for something else.
     let Some(open) = markers
         .iter()
         .filter(|marker| **marker != close)
@@ -256,28 +167,8 @@ fn from_template(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
     };
     let (open, close) = (&open, &close);
 
-    // Which word names the answering side.
-    //
-    // Reading the template for the word it *emits*, not for the words it
-    // mentions. Mentioning is not meaning: gemma's template names `assistant`
-    // exactly once and does it to rename it —
-    //
-    //     {%- if (message['role'] == 'assistant') -%}
-    //     {%- set role = "model" -%}
-    //
-    // — so a bag-of-words read produced a candidate the template explicitly
-    // rejects, and then the probe could not tell the two apart because
-    // *ending a turn* does not (F48, B-375). A word assigned to the role is
-    // what gets written out; a word compared against is an input name being
-    // translated away.
-    //
-    // This reads the template's shape and does not execute it: a template is
-    // a program in somebody else's language, and running one is a door §3.7
-    // keeps shut.
     let assigned = assigned_roles(template);
     let mut roles: Vec<String> = if assigned.is_empty() {
-        // Nothing assigned: the template emits the role it was given, so the
-        // ordinary names are the candidates and the model decides between them.
         ["assistant", "model"]
             .into_iter()
             .filter(|role| template.contains(role))
@@ -308,18 +199,6 @@ fn from_template(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
         .collect()
 }
 
-/// The shape whose markers are the roles: `<|user|>` question
-/// `<|assistant|>`, with no end-of-turn marker written between.
-///
-/// GLM-4.7-Flash's template writes its turns this way, and its file names
-/// `<|endoftext|>` as the ending — a token the template never mentions — so
-/// reading the template for an opener and a closer found nothing, and the
-/// chat-template probe had no addressing to try against raw (F171). Here the
-/// opener is the marker spelled *user* and what follows the question is the
-/// marker spelled *assistant*; where the template writes `<think>` after
-/// that as a token of its own, the turn ends with it, as the template's own
-/// default rendering does — and not with the bare role, which it never
-/// writes.
 fn role_named(template: &str, markers: &[String], tokens: &Tokens) -> Vec<Addressing> {
     const THINKING_OPEN: &str = "<think>";
     const THINKING_CLOSED: &str = "</think>";
@@ -336,15 +215,6 @@ fn role_named(template: &str, markers: &[String], tokens: &Tokens) -> Vec<Addres
             pieces_after: vec![Piece::Marker(assistant)],
         }];
     }
-    // The template writes a thinking marker after the answering role, and
-    // `<|assistant|>` alone is a form it never writes: asked that way
-    // GLM-4.7-Flash thinks without a marker, at length, and nothing on the
-    // page could tell the thought from the answer (F171). The candidate is
-    // the form the template writes when nobody has switched anything —
-    // `<think>` where it writes one, the closed form where closing is all
-    // it does. Thinking off is a switch a person throws on the turn, not a
-    // second addressing: offered as one, the two forms ended the turn
-    // equally often and the probe could not choose between them.
     let (marker, how) = if writes(THINKING_OPEN) {
         (THINKING_OPEN, "open")
     } else {
@@ -357,16 +227,6 @@ fn role_named(template: &str, markers: &[String], tokens: &Tokens) -> Vec<Addres
     }]
 }
 
-/// Whether the template writes a role right after this marker, somewhere:
-/// `'<|im_start|>' + message['role']`, `"<|im_start|>system\n"`, or
-/// `<start_of_turn>` before `role`.
-///
-/// *Right after* is the first word the template writes after the marker,
-/// past quotes, operators and a newline — not a role word anywhere in the
-/// next line. Qwen3-Coder's template says `{%- set tools = [] %}` a line
-/// before `{%- if system_message is defined`, and a check that looked for
-/// *system* within forty-eight characters of `[]` found it, so the probe
-/// wrote `[]user` a second time after the first fix (F160, B-447).
 fn opens_a_role(template: &str, marker: &str) -> bool {
     const ROLE_WORDS: [&str; 4] = ["role", "user", "system", "assistant"];
     const ACCESSORS: [&str; 4] = ["", "message", "messages", "m"];
@@ -391,7 +251,6 @@ fn opens_a_role(template: &str, marker: &str) -> bool {
     })
 }
 
-/// The shapes MCF knows without being told, for a file that says nothing.
 fn known_shapes(tokens: &Tokens) -> Vec<Addressing> {
     let turn = |open: &str, close: &str, role: &str| Addressing {
         name: format!("{}…{} as {role}", trim(open), trim(close)),
@@ -431,48 +290,23 @@ fn known_shapes(tokens: &Tokens) -> Vec<Addressing> {
     found
 }
 
-/// A marker without its brackets, for a name a person reads.
 pub(crate) fn trim(marker: &str) -> &str {
     marker
         .trim_start_matches(['<', '|', '['])
         .trim_end_matches(['>', '|', ']'])
 }
 
-/// What the chat-template probe observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addressed {
-    /// The addressing under which the model most often answered and *then*
-    /// ended its turn.
     pub best: String,
-    /// Every candidate, and how many of its trials ended at the model's own
-    /// end-of-turn token having first said something.
     pub stopped: Vec<(String, usize)>,
-    /// Every candidate, and how many of its trials ended at that same token
-    /// having said *nothing at all*.
-    ///
-    /// Kept rather than folded into the failures because it is a different
-    /// fact: the model recognised the stop token and declined the turn. A1 —
-    /// and the reason F38 was found at all.
     pub silent: Vec<(String, usize)>,
-    /// Every candidate, and how long each of its finished turns ran.
-    ///
-    /// The lengths are already observed — a trial cannot tell a finished turn
-    /// from a refusal without them (F38) — so throwing them away would be
-    /// discarding a measurement MCF already paid for (A1). They are what a
-    /// stop-condition question is asked of (B-056), and the first candidate
-    /// for separating addressings that tie on *did the turn end* (B-375).
     pub lengths: Vec<(String, Vec<usize>)>,
-    /// How many trials each candidate had.
     pub of: usize,
-    /// What the file *declared*, for the divergence (B-058) — never used to
-    /// decide, only to disagree with.
     pub declared_a_template: bool,
-    /// The winning addressing itself, so that applying it needs no second
-    /// search and cannot pick a different one than was reported (D43).
     pub best_addressing: Option<Addressing>,
 }
 
-/// The method, written where the result can carry it.
 pub const CHAT_TEMPLATE: Method = Method {
     name: "chat-template",
     asks: "a set of short questions through each addressing the model's vocabulary can \
@@ -483,20 +317,6 @@ pub const CHAT_TEMPLATE: Method = Method {
               verified half of a capability and never a default (D42)",
 };
 
-/// Runs the chat-template probe.
-///
-/// `generate` is how a trial is run: it takes the wrapped question as markers
-/// and text and a token budget, and answers with how many identifiers were
-/// produced and whether generation ended because the model emitted a stop
-/// token. Passing it in is what keeps this crate's probe independent of
-/// *which* engine ran it — the engine is a condition, and the caller states
-/// it — and the turn goes as pieces so that the engine's own tokenizer reads
-/// them (B-442).
-///
-/// # Errors
-///
-/// Never: a probe that cannot decide reports [`Outcome::Inconclusive`] with the
-/// reason, which is D42's third state and not a failure.
 #[allow(
     clippy::too_many_lines,
     reason = "one experiment is one sequence — read the model, decide which addressings can be \
@@ -522,16 +342,9 @@ pub fn chat_template(
         );
     };
     let declared_a_template = file.get("tokenizer.chat_template").is_some();
-    // The token list and not the tokenizer: which markers the file holds is
-    // a fact about the file, readable whatever segments it, and the
-    // segmenting is the engine's (B-442).
     let Ok(tokens) = Tokens::read(&file) else {
         return Probed::inconclusive(CHAT_TEMPLATE, "the file lists no tokens", 0, 0, conditions);
     };
-    // Every candidate is built from this vocabulary's own tokens, so each one
-    // can be sent as itself. The check that it *can* is still made when the
-    // turn is read, because the alternative is sending something else and
-    // calling it this (F37).
     let candidates = addressings(&file, &tokens);
     let only_raw = candidates.len() == 1;
     if only_raw && declared_a_template {
@@ -557,21 +370,11 @@ pub fn chat_template(
         let mut said_nothing = 0_usize;
         let mut ran_for: Vec<usize> = Vec::new();
         for trial in 0..trials {
-            // A different question each trial. MCF samples greedily from a
-            // fixed seed, so five trials of one question are one trial
-            // written down five times — the repetition looked like evidence
-            // and was arithmetic (F38, A19). Five questions are five
-            // observations of the same thing: does this addressing get an
-            // answer out of this model.
             let question = QUESTIONS
                 .get(trial % QUESTIONS.len())
                 .copied()
                 .unwrap_or(QUESTION);
             match generate(&addressing.wrap(question), budget) {
-                // Stopping counts only if the model spoke first. Ending a
-                // turn having said nothing is a refusal to speak, and the
-                // whole of F38 is that the two are opposite observations
-                // wearing the same stop token.
                 Trial::Stopped { after: 0, .. } => {
                     ran = ran.saturating_add(1);
                     spent = spent.saturating_add(budget);
@@ -587,9 +390,6 @@ pub fn chat_template(
                     ran = ran.saturating_add(1);
                     spent = spent.saturating_add(budget);
                 }
-                // The reason travels: "could not tell" that says why is the
-                // difference between a probe somebody can act on and one that
-                // only says no (D42, A2).
                 Trial::CouldNotTell(because) => {
                     return Probed::inconclusive(
                         CHAT_TEMPLATE,
@@ -607,12 +407,6 @@ pub fn chat_template(
         lengths.push((addressing.name.clone(), ran_for));
     }
 
-    // The best is the one that answered-then-stopped most, earliest first —
-    // `max_by_key` answers with the *last* maximum, which handed every tie to
-    // `raw`. `max_by_key` is not used here for that reason.
-    // (the comment below is kept for the second half of the same lesson)
-    // The best is the one that stopped most, earliest first — `max_by_key`
-    // answers with the *last* maximum, which handed every tie to `raw`.
     let most = stopped.iter().map(|(_, ended)| *ended).max().unwrap_or(0);
     let best = stopped
         .iter()
@@ -620,18 +414,8 @@ pub fn chat_template(
         .map(|(name, _)| name.clone());
     let all_zero = most == 0;
 
-    // Every addressing doing equally well means this observation cannot tell
-    // them apart — which is *could not decide*, not *raw is fine*. Preferring
-    // a wrapping on a tie would be MCF choosing where it has no evidence, and
-    // preferring raw would be reading its own default back as a finding
-    // (D42, §3.15).
     let ties = stopped.iter().filter(|(_, ended)| *ended == most).count();
     if ties > 1 && !all_zero {
-        // The turn lengths go with the tie. They are the first candidate for
-        // the sharper question (B-375), and this branch is exactly where they
-        // would otherwise be thrown away — an inconclusive result that
-        // discards the measurement that might resolve it is the shape A1
-        // forbids.
         let spans: Vec<String> = stopped
             .iter()
             .filter(|(_, ended)| *ended == most)
@@ -665,16 +449,10 @@ pub fn chat_template(
         );
     }
     let outcome = match (best, all_zero) {
-        // Nothing stopped anywhere: the budget may simply be too small to
-        // reach a turn's end. That is *could not tell*, not *no addressing
-        // works* (D42, §3.18's third state).
         (_, true) => {
             return Probed::inconclusive(
                 CHAT_TEMPLATE,
                 {
-                    // Which addressings went silent is the whole content of
-                    // this negative, and dropping it would throw away the
-                    // observation that found F38 (A1).
                     let refused: Vec<String> = silent
                         .iter()
                         .filter(|(_, times)| *times > 0)
@@ -732,11 +510,6 @@ pub fn chat_template(
     }
 }
 
-/// The question every trial asks.
-///
-/// Short, ordinary, and answerable in a sentence: what is being observed is
-/// whether the model *finishes a turn*, so a question that invites an essay
-/// would make every addressing run to the budget and tell nothing.
 pub const QUESTIONS: [&str; 5] = [
     "What is the capital of France?",
     "How many days are in a week?",
@@ -745,17 +518,8 @@ pub const QUESTIONS: [&str; 5] = [
     "Which planet do we live on?",
 ];
 
-/// The first of them, for callers that need one question rather than a set.
 pub const QUESTION: &str = QUESTIONS[0];
 
-/// The conditions a probe result holds under (D42, §3.4).
-/// The conditions a probe's result carries.
-///
-/// The method is a parameter and not `CHAT_TEMPLATE`. It was the constant once,
-/// and the second probe's result then said it was the first probe's — a
-/// condition naming the wrong experiment, which is the exact provenance
-/// failure B-059 exists to prevent and would have been believed because it is
-/// printed in the same place as the true ones (§3.4, A21).
 fn conditions(method: &Method, model: &Path, engine: &str) -> Conditions {
     Conditions::new(
         mcf_core::build_identity::BuildIdentity::current(),
@@ -770,81 +534,29 @@ fn conditions(method: &Method, model: &Path, engine: &str) -> Conditions {
     )
 }
 
-/// What one trial did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Trial {
-    /// It ended because the model emitted its own stop token, after saying
-    /// this many tokens.
-    ///
-    /// The count is not decoration. A model addressed in a way it does not
-    /// recognise can end its turn *immediately* — nothing said, then its stop
-    /// token — and counting that as a turn scored the silent addressing best
-    /// and the fluent one worst (F38).
-    Stopped {
-        /// How many tokens the model produced before its stop token.
-        after: usize,
-        /// How many of those it spent inside a marker before its answer
-        /// began, where the account says the marker was closed. A budget set
-        /// from `after` alone on a model that thinks is a budget set to the
-        /// size of the thought, and it runs out inside the marker on the
-        /// first longer question (F172); the share travels so that whoever
-        /// sets the budget can say what it was set against.
-        before: Option<usize>,
-    },
-    /// It ended because the budget ran out.
+    Stopped { after: usize, before: Option<usize> },
     RanOut,
-    /// It could not be told apart, and why.
-    ///
-    /// The third case is not a failure of the model: an engine that prints
-    /// text and exits does not say *why* it stopped, and a probe that read
-    /// that silence as "it did not stop" would be inventing an observation
-    /// (A7, D42).
     CouldNotTell(String),
 }
 
-/// One trial, and what the model actually said in it.
-///
-/// The chat-template probe needs only how a turn *ended*; a probe that reads
-/// what came out — whether a tool call is well formed (B-053), whether a
-/// structured answer parses (B-054) — needs the text as well. It was always
-/// being read out of the account and thrown away.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spoken {
-    /// How the turn ended.
     pub trial: Trial,
-    /// What the model said, as the engine reported it.
-    ///
-    /// Empty where the model said nothing, which both engines agree on even
-    /// where they disagree about the token count (F39).
     pub text: String,
-    /// What followed the model's thinking, where the turn was inside a
-    /// marker and closed it: the answer, as the account separates it. A
-    /// probe that reads a call or a shape out of the turn reads it here,
-    /// or it would read the model's draft of one out of its thought (F171).
-    /// `None` where nothing was closed, and the text is the whole answer.
     pub answer: Option<String>,
-    /// The engine the daemon ran it on, as the account names it, so that
-    /// a reading taken through the daemon can say what answered (B-542).
     pub engine_ran: Option<String>,
-    /// The window the turn ran in, in tokens, as the account's conditions
-    /// say it (B-564).
     pub window_ran: Option<u64>,
 }
 
 impl Spoken {
-    /// The answer as such: what followed a closed marker where there was
-    /// one, and everything otherwise.
     #[must_use]
     pub fn answered(&self) -> &str {
         self.answer.as_deref().unwrap_or(&self.text)
     }
 }
 
-/// One trial through a running daemon: the wrapped question in, the answer
-/// out, and what ended it.
-///
-/// Where the text matters, [`spoken`] returns it; this is that with the text
-/// dropped, so the two cannot drift apart.
 #[must_use]
 pub fn trial(
     socket: &Path,
@@ -857,10 +569,6 @@ pub fn trial(
     spoken(socket, model, prompt, pieces, budget, engine).trial
 }
 
-/// The same trial, keeping what the model said.
-///
-/// The turn goes as markers and text where the probe built one, and the
-/// daemon reads it through the tokenizer of the engine that answers (B-442).
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -885,9 +593,6 @@ pub fn spoken(
     )
 }
 
-/// [`spoken`] with what the engine is started with beyond the plain load
-/// — a window the asker named, a rope scaling — so that a suite can ask
-/// every turn in the window the person set (B-564).
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
@@ -909,9 +614,6 @@ pub fn spoken_as(
     };
     let _deadline = connection.set_read_timeout(Some(SILENCE));
     let request = crate::control::Request::Generate {
-        // A probe's question is MCF's own constant and the answer is to that
-        // question, so this is fixture data rather than the operator's (§6.8,
-        // B-146).
         whose: mcf_record::content::Whose::Fixture,
         model: model.display().to_string(),
         prompt: prompt.to_owned(),
@@ -938,12 +640,6 @@ pub fn spoken_as(
             return could_not_tell("the stream ended before its account".to_owned());
         };
         match crate::control::Streamed::read(line.trim_end()) {
-            // Deliberately not counted. MCF's own engine streams one line per
-            // token and the provisioned server streams the whole answer as
-            // one, so counting lines here measures the engine's chunking and
-            // calls it the model's output — which made every addressing look
-            // like a one-token turn through the server (F39). The count comes
-            // from the account, which both engines fill in the same units.
             Ok(
                 crate::control::Streamed::Token { .. } | crate::control::Streamed::Progress { .. },
             ) => {}
@@ -965,18 +661,6 @@ pub fn spoken_as(
                             .to_owned(),
                     );
                 };
-                // The two engines disagree by one at exactly the boundary this
-                // probe turns on: asked a question it does not recognise, a
-                // model emits its end-of-turn token and nothing else, and MCF's
-                // own engine calls that nought tokens while the provisioned
-                // server calls it one — it counts the end-of-turn token itself
-                // (F39). Neither is wrong, and a probe that took either
-                // literally would report *said nothing* on one engine and
-                // *said something* on the other for one behaviour.
-                //
-                // The text is the form both agree on: it is empty on both. So
-                // the count is what was said, and having said nothing is nought
-                // whatever the engine calls it.
                 let wordless = account
                     .get("text")
                     .and_then(mcf_record::json::Value::as_text)
@@ -987,9 +671,6 @@ pub fn spoken_as(
                     .and_then(|before| before.get("closed"))
                     .and_then(mcf_record::json::Value::as_bool)
                     .unwrap_or(false);
-                // Measured by the engine that counted the turn, and only where
-                // the marker closed: a count of a thought still open when the
-                // turn ended is the budget's size, not the thought's.
                 let inside = before
                     .filter(|_| closed)
                     .and_then(|before| before.get("tokens"))
@@ -1040,7 +721,6 @@ pub fn spoken_as(
     could_not_tell("the stream ended before its account".to_owned())
 }
 
-/// A trial that could not be told apart, with nothing said.
 fn could_not_tell(because: impl Into<String>) -> Spoken {
     Spoken {
         trial: Trial::CouldNotTell(because.into()),
@@ -1051,7 +731,6 @@ fn could_not_tell(because: impl Into<String>) -> Spoken {
     }
 }
 
-/// Which engine a running daemon would use, for the conditions (D42).
 #[must_use]
 pub fn describe_engine(socket: &Path) -> Option<String> {
     use std::io::{BufRead as _, BufReader, Write as _};
@@ -1067,12 +746,6 @@ pub fn describe_engine(socket: &Path) -> Option<String> {
     let version = build
         .and_then(|build| build.get("version"))
         .and_then(mcf_record::json::Value::as_text);
-    // The digest as well as the version, for the reason F93 established and
-    // F104 found a second instance of: the version is the same string for
-    // every build, so a probe recorded against *whatever the daemon chooses*
-    // could not say which daemon, and a daemon is a different binary from the
-    // one that asked. `Null` where the platform would not let it read itself,
-    // which stays `unknown` rather than becoming a plausible digest (A7).
     let instrument = build
         .and_then(|build| build.get("instrument"))
         .and_then(mcf_record::json::Value::as_text)
@@ -1086,14 +759,6 @@ pub fn describe_engine(socket: &Path) -> Option<String> {
     ))
 }
 
-/// One text counted by a running daemon, through the tokenizer of the engine
-/// that would answer for the model (B-442).
-///
-/// # Errors
-///
-/// Nothing listening, a daemon that refused, or an answer that did not carry
-/// a count — each in a sentence, since a probe reports why it could not read
-/// rather than reading nothing (A7).
 pub fn counted(
     socket: &Path,
     model: &Path,
@@ -1109,8 +774,6 @@ pub fn counted(
         model: model.display().to_string(),
         text: text.to_owned(),
         engine: engine.map(str::to_owned),
-        // A sentence, not a turn: the beginning marker would add one to every
-        // sample and change every ratio.
         beginning: false,
     };
     writeln!(connection, "{}", request.to_line())
@@ -1149,51 +812,30 @@ pub fn counted(
     Ok(Counted { tokens, by })
 }
 
-/// A count of identifiers, and whose reading it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Counted {
-    /// How many identifiers the text cost.
     pub tokens: usize,
-    /// The tokenizer that counted, in the daemon's words.
     pub by: String,
 }
 
 #[cfg(test)]
 pub(crate) mod tests;
 
-/// What the engine did with a prompt of a stated length.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Accepted {
-    /// It read this many of the identifiers it was sent.
-    ///
-    /// Equal to what was sent is the ordinary case. *Fewer* is silent
-    /// truncation, which is the failure this probe exists to catch: a prompt
-    /// quietly shortened is a measurement of a different prompt (§3.8, D46).
     Read(usize),
-    /// It refused, in its own words.
     Refused(String),
-    /// Something else, and why.
     CouldNotTell(String),
 }
 
-/// The context length the file declares, against the longest prompt the engine
-/// will actually take.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Context {
-    /// What the file says.
     pub declared: usize,
-    /// The longest prompt that was on the table: one under the declared
-    /// length, or less where the caller asked for less (B-461). Where this
-    /// is under the declaration, the file's claim itself was not asked.
     pub ceiling: usize,
-    /// The longest prompt accepted whole, with one token left to generate.
     pub accepted: usize,
-    /// What the engine said where it refused, kept because a refusal for an
-    /// unrelated reason would otherwise be reported as a short context (A1).
     pub because: Option<String>,
 }
 
-/// The method.
 pub const USABLE_CONTEXT: Method = Method {
     name: "usable-context",
     asks: "for a prompt of the length the file declares, and then — only if that is refused — \
@@ -1204,17 +846,6 @@ pub const USABLE_CONTEXT: Method = Method {
               default (D42)",
 };
 
-/// The usable context, by asking.
-///
-/// The declared length is asked for first, so the ordinary case — a file whose
-/// claim holds — costs one trial rather than fifteen. Only a refusal starts
-/// the search, and the search is a halving between the largest length known to
-/// work and the smallest known to fail.
-///
-/// One token is left for the model to produce, because a context is the whole
-/// budget and not the prompt's share of it: `llama.cpp` refuses a prompt of
-/// exactly the declared length for that reason, and reporting *the declared
-/// context is wrong by one* would be reporting arithmetic as a divergence.
 #[allow(
     clippy::too_many_lines,
     reason = "one search, written as the search: ask the claim, then halve. Splitting it would \
@@ -1240,11 +871,6 @@ pub fn usable_context(
         );
     }
 
-    // Ask the *instrument* before asking the model, and ask it the cheapest
-    // question there is. MCF's own engine does not report how many identifiers
-    // it read, so it can never answer this probe — and finding that out by
-    // sending it the whole declared context first cost eight thousand forward
-    // passes to learn nothing (F44). One token learns the same thing.
     if let Accepted::CouldNotTell(said) = ask(1) {
         return inconclusive(said, 1, 1);
     }
@@ -1252,8 +878,6 @@ pub fn usable_context(
     let mut trials = 1_usize;
     let mut spent = 1_usize;
     let mut because: Option<String> = None;
-    // Whole is the length asked for; read is what came back. They differ only
-    // under truncation, and that difference is the finding.
     let mut works = 0_usize;
 
     let mut attempt = |length: usize,
@@ -1284,7 +908,6 @@ pub fn usable_context(
         }
     };
 
-    // The claim itself, first — or as far as the caller asked (B-461).
     let full = ceiling_of(declared, up_to);
     match attempt(full, &mut trials, &mut spent, &mut because) {
         Some(true) => {
@@ -1311,7 +934,6 @@ pub fn usable_context(
         }
     }
 
-    // It refused, so find where it stops refusing.
     let mut fails = full;
     while fails.saturating_sub(works) > 1 {
         let middle = works.saturating_add(fails.saturating_sub(works).wrapping_div(2));
@@ -1354,37 +976,20 @@ pub fn usable_context(
     }
 }
 
-/// The longest prompt the probe asks for: one under the declared length,
-/// because the context is the whole budget and one token is the answer; or
-/// what the caller asked for, where that is less.
 #[must_use]
 pub fn ceiling_of(declared: usize, up_to: Option<usize>) -> usize {
     let full = declared.saturating_sub(1);
     up_to.map_or(full, |asked| asked.min(full))
 }
 
-/// What a trial of the ceiling is projected to take, from a short prompt
-/// timed first (B-461, D48).
-///
-/// Said *before* the trial, because the person who is about to wait six
-/// hours is owed the six hours in advance: a twenty-minute patience nobody
-/// chose used to turn that trial into *inconclusive*, and a client that
-/// waits as long as it takes has to say how long that is. A projection is
-/// named as one and both its factors are on the page, so that the sentence
-/// reads as arithmetic and never as a measurement (A20, A21).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Projection {
-    /// How many identifiers the short prompt had.
     pub sample: usize,
-    /// How long the engine took over it, in nanoseconds.
     pub nanos: u64,
-    /// How many identifiers the trial will ask for.
     pub target: usize,
 }
 
 impl Projection {
-    /// The trial's projected length in nanoseconds, at the sample's rate.
-    /// `None` where the sample was empty or the arithmetic does not fit.
     #[must_use]
     pub fn nanos_at_the_rate(&self) -> Option<u64> {
         let sample = u128::try_from(self.sample).ok()?;
@@ -1399,9 +1004,6 @@ impl Projection {
             .and_then(|projected| u64::try_from(projected).ok())
     }
 
-    /// The sentence a person is told before the trial. Reading slows as the
-    /// prompt deepens, so the rate over a short prompt puts a floor under
-    /// the trial rather than a figure on it, and the sentence says so.
     #[must_use]
     pub fn sentence(&self) -> String {
         let sample_seconds = spelled_seconds(self.nanos);
@@ -1424,8 +1026,6 @@ impl Projection {
     }
 }
 
-/// A span in whole seconds, minutes or hours, for a sentence about how long
-/// something is going to take: nobody plans around tenths.
 fn spelled_seconds(nanos: u64) -> String {
     const SECOND: u64 = 1_000_000_000;
     let seconds = nanos.checked_div(SECOND).unwrap_or(0);
@@ -1440,12 +1040,6 @@ fn spelled_seconds(nanos: u64) -> String {
     }
 }
 
-/// One length, asked of a running daemon.
-///
-/// The prompt is one identifier repeated. What is being asked is how many the
-/// engine will take, and a filler that means something would invite the reply
-/// that the answer depends on what was said — it does not, and the identifiers
-/// are counted rather than read.
 #[must_use]
 pub fn accepts(
     socket: &Path,
@@ -1461,9 +1055,6 @@ pub fn accepts(
     };
     let _deadline = connection.set_read_timeout(Some(SILENCE));
     let request = crate::control::Request::Generate {
-        // A probe's question is MCF's own constant and the answer is to that
-        // question, so this is fixture data rather than the operator's (§6.8,
-        // B-146).
         whose: mcf_record::content::Whose::Fixture,
         model: model.display().to_string(),
         prompt: String::new(),
@@ -1495,9 +1086,6 @@ pub fn accepts(
             ) => {}
             Ok(crate::control::Streamed::Done(account)) => {
                 if let Some(failure) = account.get("failure") {
-                    // The engine's own sentence, not the whole classified
-                    // record: a reader wants to know that the context was
-                    // exceeded, and the record is on the journal either way.
                     return Accepted::Refused(
                         failure
                             .get("context")
@@ -1513,9 +1101,6 @@ pub fn accepts(
                     .and_then(|read| usize::try_from(read).ok())
                 {
                     Some(read) => Accepted::Read(read),
-                    // MCF's own engine does not report this, and guessing that
-                    // it read everything would be inventing the observation
-                    // the probe is for (A7).
                     None => Accepted::CouldNotTell(
                         "this engine does not say how many identifiers it read, so a prompt \
                          taken whole cannot be told from one quietly shortened (B-376)"
@@ -1531,19 +1116,10 @@ pub fn accepts(
     Accepted::CouldNotTell("the stream ended before its account".to_owned())
 }
 
-/// The model file, for a caller that has the bytes and needs the fields.
-///
-/// # Errors
-///
-/// Whatever reading the file reports.
 pub fn gguf_of(bytes: &[u8]) -> Result<gguf::Model, mcf_core::Failure> {
     gguf::parse(bytes)
 }
 
-/// The context length the file declares, whatever family wrote it.
-///
-/// The key is prefixed by the architecture the file states, which is a field
-/// GGUF exists to carry and not a family MCF recognises (DEC-053).
 #[must_use]
 pub fn declared_context(file: &gguf::Model) -> Option<usize> {
     let architecture = match file.get("general.architecture") {
@@ -1556,12 +1132,6 @@ pub fn declared_context(file: &gguf::Model) -> Option<usize> {
     }
 }
 
-/// One identifier to repeat, for a question that is about length.
-///
-/// The lowest ordinary token in the vocabulary: not a marker, not a byte
-/// fallback, and present in every file MCF reads. What it *means* is beside
-/// the point — the engine is being asked how many identifiers it will take,
-/// and it counts them.
 #[must_use]
 pub fn a_filler_token(file: &gguf::Model) -> Option<usize> {
     let tokens = Tokens::read(file).ok()?;
@@ -1572,28 +1142,16 @@ pub fn a_filler_token(file: &gguf::Model) -> Option<usize> {
     })
 }
 
-/// How long this model's turns run, and whether it ends them at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stopping {
-    /// The longest turn that ended at the model's own stop token.
     pub longest: usize,
-    /// The most any of those turns spent inside a marker before its answer,
-    /// where the engine's account said so. On a model that thinks the
-    /// longest turn is mostly this, and a budget read as *the answer's size*
-    /// would be read wrongly (F172).
     pub before: Option<usize>,
-    /// How many trials ended that way.
     pub stopped: usize,
-    /// How many were asked.
     pub of: usize,
-    /// The largest budget any trial was given.
     pub ceiling: usize,
-    /// MCF's default budget, for the divergence — what a caller gets if they
-    /// say nothing.
     pub default_budget: usize,
 }
 
-/// The method.
 pub const STOP_CONDITIONS: Method = Method {
     name: "stop-conditions",
     asks: "the same short questions, doubling the budget until the model ends its turn or a \
@@ -1604,17 +1162,6 @@ pub const STOP_CONDITIONS: Method = Method {
               probe writes the verified half of a capability and never a default (D42)",
 };
 
-/// The turn lengths a model actually needs.
-///
-/// **Doubling rather than one large budget.** A budget large enough for the
-/// worst case is spent on every trial including the ones that end in ten
-/// tokens, and tokens are what a probe costs (B49). Doubling pays for the
-/// answer that was needed and one wasted step at most.
-///
-/// **A ceiling that is reported.** Reaching it is not *the model never stops* —
-/// it is *not within this many tokens*, which is a different claim and the only
-/// one the trials support (A7). The number travels so that a reader can decide
-/// whether it was large enough.
 #[must_use]
 pub fn stop_conditions(
     model: &Path,

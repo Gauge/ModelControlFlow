@@ -1,20 +1,3 @@
-//! Text in, tokens out, text back: the stand-in engine end to end (B-360, D31).
-//!
-//! Everything below runs the shipped code — the model-file reader, the
-//! vocabulary, the forward pass, the sampler and the generation loop — against
-//! a model this test constructs. The model is small and degenerate on purpose:
-//! its answer is something a person can state, which is the only way a test of
-//! arithmetic this size says anything the arithmetic did not (A19).
-//!
-//! **What this establishes and what it does not.** It establishes that the
-//! pieces fit: a prompt becomes identifiers, identifiers become logits, logits
-//! become a token, and the token becomes text again, with the result carrying
-//! the mark A5 requires. It does not establish agreement with a vendored engine
-//! on a real model — that is B-362's cross-check laboratory, and nothing short
-//! of it can.
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::expect_used, clippy::panic)]
 
 use mcf_standin::llama::{Cache, load};
@@ -23,15 +6,6 @@ use mcf_standin::session::{Request, Stopped, generate};
 use mcf_standin::tokenizer::Vocabulary;
 use mcf_standin::{gguf, ops};
 
-/// The vocabulary this model speaks: three space-prefixed words, every piece
-/// they are built from, and a beginning-of-text marker.
-///
-/// The ladder matters. A real vocabulary reaches `▁yes` by merging `▁` with
-/// `y`, then with `e`, then with `s`, and one holding only the whole word
-/// cannot be tokenized at all by the algorithm the models actually use. This
-/// fixture held only whole words, which is part of why the tokenizer ran for
-/// months on an algorithm no model is tokenized by
-/// ([findings.md](../../../doc/findings.md) F19).
 const TOKENS: [&str; 20] = [
     "<s>",
     "\u{2581}",
@@ -55,12 +29,8 @@ const TOKENS: [&str; 20] = [
     "\u{2581}maybe",
 ];
 
-/// The width of everything: one dimension per token, one head, one block.
 const WIDTH: usize = TOKENS.len();
 
-/// Builds a GGUF holding both a vocabulary and the weights of a one-block model
-/// whose embedding table is one-hot — so the logits for a token are that
-/// token's own row, and greedy decoding repeats whatever it is given.
 fn scores() -> Vec<f32> {
     TOKENS
         .iter()
@@ -71,7 +41,6 @@ fn scores() -> Vec<f32> {
         .collect()
 }
 
-/// The fixture's width, as a dimension is written.
 fn wide() -> u64 {
     u64::try_from(WIDTH).unwrap_or(0)
 }
@@ -87,8 +56,6 @@ fn a_model() -> Vec<u8> {
         integer("llama.context_length", 16),
         integer("tokenizer.ggml.bos_token_id", 0),
         token_list("tokenizer.ggml.tokens", &TOKENS),
-        // Longer pieces score better, so a merge that can reach a whole word
-        // does — the ordering a real vocabulary has.
         score_list("tokenizer.ggml.scores", &scores()),
     ];
 
@@ -189,7 +156,6 @@ fn write(metadata: &[(String, u32, Vec<u8>)], tensors: &[(String, Vec<u64>, Vec<
     out
 }
 
-/// The whole path: text in, a token out, text back, and the mark on the way.
 #[test]
 fn text_goes_in_and_text_comes_out_marked() {
     let bytes = a_model();
@@ -198,7 +164,6 @@ fn text_goes_in_and_text_comes_out_marked() {
     let model = load(&file, &bytes).expect("the model loads");
 
     let prompt = vocabulary.encode("yes", true).expect("it segments");
-    // `<s>` and the whole word, whose identifier is wherever the ladder put it.
     let yes = TOKENS
         .iter()
         .position(|token| *token == "\u{2581}yes")
@@ -218,8 +183,6 @@ fn text_goes_in_and_text_comes_out_marked() {
     )
     .expect("it runs");
 
-    // The mark is not optional and cannot be dropped: `Degraded` has no way out
-    // that returns a bare value (A5, B-008).
     assert!(
         marked.degradation().to_string().contains("engine"),
         "the result does not say which engine produced it"
@@ -228,12 +191,10 @@ fn text_goes_in_and_text_comes_out_marked() {
     assert_eq!(generated.prompt_length, 2);
     assert_eq!(generated.stopped, Stopped::AtLimit);
 
-    // A one-hot model answers a token with itself.
     assert_eq!(generated.tokens, vec![yes, yes, yes]);
     assert_eq!(vocabulary.decode(&generated.tokens), " yes yes yes");
 }
 
-/// A stop token ends it, and the text before it is what was said.
 #[test]
 fn a_generation_stops_where_it_is_told_to() {
     let bytes = a_model();
@@ -241,8 +202,6 @@ fn a_generation_stops_where_it_is_told_to() {
     let vocabulary = Vocabulary::read(&file).expect("reads");
     let model = load(&file, &bytes).expect("loads");
 
-    // The stop token is the word itself: a one-hot model answers a token with
-    // itself, so asking it for `no` and stopping on `no` stops immediately.
     let no = TOKENS
         .iter()
         .position(|token| *token == "\u{2581}no")
@@ -266,8 +225,6 @@ fn a_generation_stops_where_it_is_told_to() {
     assert_eq!(vocabulary.decode(&generated.tokens), "");
 }
 
-/// The logits a caller can see directly agree with what the generation
-/// produced, which is what a cross-check laboratory would compare (B-362).
 #[test]
 fn the_logits_and_the_generation_agree() {
     let bytes = a_model();

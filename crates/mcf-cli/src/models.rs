@@ -1,24 +1,3 @@
-//! `mcf list` and `mcf rm`: what this machine is holding, and how something
-//! stops being held (B-029, B-027, §III).
-//!
-//! **Where models live.** `$XDG_DATA_HOME/mcf/models`, falling back to
-//! `$HOME/.local/share/mcf/models` — beside the record, by the same rule, and
-//! `None` when neither is set. A7 applied to a path: MCF does not invent a
-//! place to keep somebody's models any more than it invents a place to write
-//! their evidence.
-//!
-//! **`rm` is two commands and looks like one.** Run without `--because`, it
-//! previews: it says exactly what would go, how much it weighs, and whether it
-//! could be brought back, and it removes nothing. Run with a reason, it
-//! authorizes that plan and moves the artifact to a shelf beside the store.
-//! Neither form deletes anything: §3.11 makes reclaiming space a decision, and
-//! `--purge` is where somebody makes it.
-//!
-//! **Nothing here pulls.** `mcf pull` needs a transport, and the vendoring
-//! decision a network stack requires has not been made (B-021, DEC-011). The
-//! usage text says so rather than omitting the command, because an operator who
-//! cannot find `pull` should learn why it is absent rather than wonder.
-
 use std::path::{Path, PathBuf};
 
 use mcf_hub::store::{self, Authorization, Held, Plan};
@@ -26,29 +5,8 @@ use mcf_record::journal::Journal;
 
 use crate::Response;
 
-/// The variable that says where models go.
-///
-/// A list of absolute paths separated the way every path list on this platform
-/// is separated, in preference order: the **first** is where a new acquisition
-/// goes unless one is named, and **all** of them are searched for what is held.
-///
-/// An environment variable rather than a configuration file, and one variable
-/// rather than a set of them, because §5 refuses MCF a configuration language
-/// and a list in a variable is the platform's own idiom rather than a language.
-/// Where a machine wants this to persist, the shell profile is where a machine
-/// persists an environment variable.
 pub(crate) const STORES: &str = "MCF_MODELS";
 
-/// Everywhere this machine keeps models, in preference order.
-///
-/// `MCF_MODELS` when it is set, and the platform's data home otherwise. A
-/// relative path in the list is **dropped and named** rather than resolved
-/// against whatever directory MCF happened to be started in: a data path that
-/// depends on the caller's working directory is a data path that moves (A7).
-///
-/// Empty when nothing says where to put anything — neither the variable nor
-/// `XDG_DATA_HOME` nor `HOME` — which is the same refusal the record makes in
-/// the same situation rather than an invented location.
 #[must_use]
 pub(crate) fn stores() -> Vec<PathBuf> {
     if let Some(named) = std::env::var_os(STORES) {
@@ -62,10 +20,6 @@ pub(crate) fn stores() -> Vec<PathBuf> {
     platform_store().into_iter().collect()
 }
 
-/// Any relative path in the list, which MCF will not resolve for the caller.
-///
-/// Returned rather than logged, so the surface that has an operator's attention
-/// is the one that tells them a store they named is being ignored (A2).
 #[must_use]
 pub(crate) fn ignored_stores() -> Vec<PathBuf> {
     match std::env::var_os(STORES) {
@@ -76,16 +30,11 @@ pub(crate) fn ignored_stores() -> Vec<PathBuf> {
     }
 }
 
-/// Where a new acquisition goes when nobody names a store.
 #[must_use]
 pub(crate) fn default_root() -> Option<PathBuf> {
     stores().into_iter().next()
 }
 
-/// The store the platform would put models in, ignoring what anybody asked for.
-///
-/// `None` when neither `XDG_DATA_HOME` nor `HOME` is set, which is the same
-/// answer `mcf_record::journal::default_path` gives and for the same reason.
 #[must_use]
 pub(crate) fn platform_store() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
@@ -99,11 +48,6 @@ pub(crate) fn platform_store() -> Option<PathBuf> {
     Some(base.join("mcf").join("models"))
 }
 
-/// Everything held, across every store, in the order the stores are searched.
-///
-/// A model in two stores appears twice, which is the honest answer: A1 forbids
-/// dropping the second, and an operator with two copies has a fact worth
-/// knowing rather than a duplicate MCF should quietly resolve.
 #[must_use]
 pub(crate) fn held_everywhere() -> Vec<(PathBuf, Vec<Held>)> {
     stores()
@@ -113,22 +57,15 @@ pub(crate) fn held_everywhere() -> Vec<(PathBuf, Vec<Held>)> {
         .collect()
 }
 
-/// Which store a path is in, if it is in one.
 fn store_holding(path: &Path) -> Option<PathBuf> {
     stores().into_iter().find(|store| path.starts_with(store))
 }
 
-/// Where a removal shelves what it removes.
-///
-/// Beside the store rather than inside it, so that a shelved artifact is not
-/// listed as held — and on the same filesystem, so that shelving is a rename
-/// and putting something back costs nothing.
 #[must_use]
 fn shelf_beside(root: &Path) -> PathBuf {
     root.with_file_name("removed")
 }
 
-/// What this machine is holding, across every store it keeps models in.
 pub(crate) fn list() -> Response {
     let stores = stores();
     if stores.is_empty() {
@@ -146,9 +83,6 @@ pub(crate) fn list() -> Response {
     let mut unaccounted = 0_usize;
     for root in &stores {
         if !root.exists() {
-            // The same sentence `mcf check` uses for the same state: a store
-            // nobody has created is not an empty one, and two surfaces saying
-            // it differently is two answers to one situation (A6).
             lines.push(format!(
                 "no models: {} does not exist yet\n\
                  \x20 nothing has been acquired there",
@@ -177,8 +111,6 @@ pub(crate) fn list() -> Response {
         }
     }
 
-    // A store the operator named and MCF will not use, said where they are
-    // looking rather than in a log nobody reads (A2).
     for ignored in ignored_stores() {
         lines.push(format!(
             "\n{STORES} names {}, which is not an absolute path: MCF will not resolve a store \
@@ -206,17 +138,7 @@ pub(crate) fn list() -> Response {
     }
 }
 
-/// What a listing says.
-///
-/// Every artifact, with what is known about where it came from and what is not.
-/// A7 in the surface: *nothing beside it says where it came from* is a
-/// different line from a repository name, and an operator reading a list should
-/// be able to see which of their models MCF can account for.
 fn render(root: &Path, holding: &[Held]) -> String {
-    // Counted apart, because a projector is not a model: counting it among
-    // them said sixteen where there were fifteen and a companion, and every
-    // sweep of *every model on this machine* had one entry that could only
-    // ever fail (A7).
     let companions = holding.iter().filter(|held| held.companion).count();
     let mut lines = vec![match companions {
         0 => format!("{} model(s) in {}", holding.len(), root.display()),
@@ -229,18 +151,11 @@ fn render(root: &Path, holding: &[Held]) -> String {
     }];
     for held in holding {
         lines.push(format!("  {}", held.describe()));
-        // §III asks that terms be legible *before use*, and this is where an
-        // operator sees a model before using it (B-023).
         lines.push(format!("    {}", held.terms()));
     }
     lines.join("\n")
 }
 
-/// Removes an artifact, or says what removing it would do.
-///
-/// `reason` is the authorization: without one this previews and removes
-/// nothing. `purge` deletes what was shelved, in the same authorized act, which
-/// is the only way anything in MCF is destroyed.
 #[allow(
     clippy::too_many_lines,
     reason = "one removal, in the four acts B-027 requires — resolve, preview, \
@@ -258,9 +173,6 @@ pub(crate) fn remove(names: &[&str], reason: Option<&str>, purge: bool) -> Respo
         };
     };
     let paths: Vec<PathBuf> = names.iter().map(|name| resolve(&root, name)).collect();
-    // The shelf sits beside the store the artifact is *in*, not beside the
-    // default one: shelving is a rename, and a rename across filesystems is a
-    // copy that can half-happen (B-027, A4).
     let shelf = paths
         .first()
         .and_then(|path| store_holding(path))
@@ -362,10 +274,6 @@ pub(crate) fn remove(names: &[&str], reason: Option<&str>, purge: bool) -> Respo
     }
 }
 
-/// The record a removal is written to, opened before anything moves.
-///
-/// A removal nobody recorded is one nobody can account for, so this failing is
-/// a reason not to remove rather than a detail to report afterwards (A1).
 fn the_record() -> std::result::Result<(Journal, PathBuf), Response> {
     let Some(path) = mcf_record::journal::default_path() else {
         return Err(Response {
@@ -388,7 +296,6 @@ fn the_record() -> std::result::Result<(Journal, PathBuf), Response> {
     }
 }
 
-/// What an operator sees before they have decided anything.
 fn preview_text(plan: &Plan, purge: bool) -> String {
     let ending = if purge {
         "nothing was removed. --purge deletes what a removal shelves, and it needs the same \
@@ -399,21 +306,6 @@ fn preview_text(plan: &Plan, purge: bool) -> String {
     format!("{}\n{ending}", plan.describe())
 }
 
-/// A name the operator gave, as a path.
-///
-/// An absolute path is taken as given — an operator who names a file means that
-/// file. Anything else is under the store, which is where `mcf list` said it
-/// was.
-/// Where a name to be removed is, across every store.
-///
-/// An absolute path is itself. A relative one is looked for in each store in
-/// order, and the **first that exists** is what is removed — with the whole
-/// list searched rather than only the default store, since a removal that could
-/// not find what `mcf list` had just shown would be the surfaces disagreeing
-/// about what this machine holds (A6).
-///
-/// A name in no store resolves against the first, so that what a preview says
-/// would be removed is a path an operator can read and correct.
 fn resolve(root: &Path, name: &str) -> PathBuf {
     let given = Path::new(name);
     if given.is_absolute() {

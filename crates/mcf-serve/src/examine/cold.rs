@@ -1,14 +1,3 @@
-//! Cold start: the first token with the file not yet in memory, against
-//! the same with it there, and the read bandwidth the difference implies
-//! (B-501, D52).
-//!
-//! The ladder's start-up figure is warm and says so: the file is in the
-//! page cache after the first load and nothing evicts it. This evicts
-//! it — the kernel lets a process drop the clean pages of a file it can
-//! open — confirms the eviction by asking which of the file's pages are
-//! resident before and after, and times a start twice. A file that stays
-//! resident after being told to go is mapped by another process, and the
-//! reading says so rather than timing a warm start under a cold name.
 #![allow(
     unsafe_code,
     reason = "the page cache is asked and advised through the C interface, which has no safe form"
@@ -24,18 +13,10 @@ use super::{Found, Reading, Site, as_ms, filler, gigabytes, per_second, timed, w
 use crate::generation::Draw;
 use crate::served::Prompt;
 
-/// The measurement's name.
 pub const NAME: &str = "cold-start";
 
-/// How far apart two loads have to be before a read rate is read off
-/// their difference: a start is noticed ready at the tenth of a second
-/// it is looked for, so a difference under half a second is inside the
-/// looking (A7).
 const RESOLVED_NS: u64 = 500_000_000;
 
-/// The share of pages that may remain resident for an eviction to count,
-/// in parts per million: a page or two the kernel keeps for its own
-/// reasons is not another process holding the file.
 const STILL_RESIDENT_ALLOWED_PPM: i64 = 50_000;
 
 unsafe extern "C" {
@@ -56,7 +37,6 @@ const POSIX_FADV_DONTNEED: c_int = 4;
 const PROT_NONE: c_int = 0;
 const MAP_SHARED: c_int = 1;
 
-/// How many of a file's pages are resident, of how many.
 fn resident_pages(path: &Path) -> Option<(u64, u64)> {
     let file = std::fs::File::open(path).ok()?;
     let len = usize::try_from(file.metadata().ok()?.len()).ok()?;
@@ -66,9 +46,6 @@ fn resident_pages(path: &Path) -> Option<(u64, u64)> {
     let page = 4096_usize;
     let pages = len.div_ceil(page);
     let mut vector = vec![0_u8; pages];
-    // SAFETY: a mapping of the file with no access rights, asked only
-    // which of its pages are resident, and unmapped before the file is
-    // closed. `vector` is as long as the mapping has pages.
     let counted = unsafe {
         let mapped = mmap(
             std::ptr::null_mut(),
@@ -95,17 +72,13 @@ fn resident_pages(path: &Path) -> Option<(u64, u64)> {
     ))
 }
 
-/// Tells the kernel this process has no further use for the file's pages.
 fn evict(path: &Path) -> bool {
     let Ok(file) = std::fs::File::open(path) else {
         return false;
     };
-    // SAFETY: advice on an open descriptor over its whole length; the
-    // call reads nothing and writes nothing of ours.
     unsafe { posix_fadvise(file.as_raw_fd(), 0, 0, POSIX_FADV_DONTNEED) == 0 }
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -219,14 +192,11 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// Nanoseconds as whole milliseconds.
 #[expect(clippy::integer_division, reason = "nanoseconds to whole milliseconds")]
 fn to_ms(ns: u64) -> u64 {
     ns / 1_000_000
 }
 
-/// How long a start takes until the engine says it is ready, and how
-/// long the first token takes after that.
 fn start_and_first_token(site: &Site<'_>) -> Result<(u64, u64), String> {
     let (engine, load) = timed(|| site.server(&site.startup()));
     let engine = engine?;

@@ -1,6 +1,5 @@
 use super::*;
 
-/// A device line from a real engine parses into a device.
 #[test]
 fn a_reported_device_parses() {
     let device =
@@ -10,16 +9,12 @@ fn a_reported_device_parses() {
     assert_eq!(device.free, Some(13_773 << 20));
 }
 
-/// A line with no free-memory figure gives a device with unknown memory, not
-/// a device with none (A7).
 #[test]
 fn a_device_that_does_not_say_its_memory_is_unknown_not_zero() {
     let device = parse_device("CUDA0: Some Card").expect("parses");
     assert_eq!(device.free, None, "unknown memory must not become zero");
 }
 
-/// The window is always a power of two, never above what the model was
-/// trained for, and never larger than the memory holds.
 #[test]
 fn the_window_is_a_power_of_two_within_both_limits() {
     let weights = 5_000_000_000;
@@ -48,7 +43,6 @@ fn the_window_is_a_power_of_two_within_both_limits() {
     }
 }
 
-/// A device that cannot hold the weights gets no window at all.
 #[test]
 fn weights_that_do_not_fit_give_no_window() {
     assert_eq!(
@@ -57,8 +51,6 @@ fn weights_that_do_not_fit_give_no_window() {
     );
 }
 
-/// An architecture with no growing cache is bounded only by what it was
-/// trained for.
 #[test]
 fn no_cache_means_the_model_is_the_only_limit() {
     assert_eq!(
@@ -67,8 +59,6 @@ fn no_cache_means_the_model_is_the_only_limit() {
     );
 }
 
-/// The card wins a tie, because it is the same window and will be quicker —
-/// the only thing MCF can say about speed before measuring any.
 #[test]
 fn a_tie_goes_to_the_card() {
     let engine = Engine {
@@ -95,8 +85,6 @@ fn a_tie_goes_to_the_card() {
     assert_eq!(choice.context, 8_192, "both could hold the trained context");
 }
 
-/// The larger window wins over the faster device, because capacity is
-/// arithmetic MCF always has and speed is a measurement it may not.
 #[test]
 fn the_larger_window_beats_the_card() {
     let engine = |name: &str| Engine {
@@ -127,7 +115,6 @@ fn the_larger_window_beats_the_card() {
     assert_eq!(choice.engine, "the processor one");
 }
 
-/// Nothing provisioned is its own refusal, and it offers the way out.
 #[test]
 fn no_engine_says_what_to_do() {
     let refusal = resolve(&[], 1, Some(1), 1).expect_err("nothing runs it");
@@ -135,7 +122,6 @@ fn no_engine_says_what_to_do() {
     assert!(refusal.says().contains("build one"), "{}", refusal.says());
 }
 
-/// A model too big for every device says how big and how much there is.
 #[test]
 fn a_model_that_does_not_fit_says_by_how_much() {
     let engines = vec![(
@@ -152,11 +138,6 @@ fn a_model_that_does_not_fit_says_by_how_much() {
     )];
     let refusal = resolve(&engines, 20_000_000_000, Some(114_688), 40_960).expect_err("too big");
     let said = refusal.says();
-    // **What it needs, which is more than what it weighs.** Twenty gigabytes
-    // of weights, the engine's overhead beside them, and the smallest window
-    // worth opening: about thirty. The figure a reader needs is what running
-    // it costs, and quoting the weights alone was the shape of the error that
-    // had MCF proposing windows the engine could not hold (F144).
     assert!(said.contains("30.0"), "{said}");
     assert!(said.contains("2.00 GB"), "{said}");
     assert!(
@@ -165,8 +146,6 @@ fn a_model_that_does_not_fit_says_by_how_much() {
     );
 }
 
-/// Every refusal is written for a person: no rule identifiers, no clause
-/// numbers, nothing that sends somebody to a document they have never seen.
 #[test]
 fn no_refusal_cites_a_document() {
     let refusals = [
@@ -189,7 +168,6 @@ fn no_refusal_cites_a_document() {
     }
 }
 
-/// A size a person reads is exact, and never a rounded float.
 #[test]
 fn a_size_is_exact() {
     assert_eq!(gigabytes(5_020_000_000), "5.02 GB");
@@ -197,16 +175,11 @@ fn a_size_is_exact() {
     assert_eq!(gigabytes(0), "0.00 GB");
 }
 
-/// Discovery finds nothing where there is nothing, rather than failing.
 #[test]
 fn discovery_of_an_empty_home_is_empty() {
     assert!(discover(Path::new("/nowhere/at/all")).is_empty());
 }
 
-/// Not a check — a look at what this machine actually resolves to.
-///
-/// Ignored by default because it reads the operator's own store, which no tier
-/// may depend on. Run with `--ignored --nocapture` to see it.
 #[test]
 #[ignore = "reads this machine's store"]
 fn what_this_machine_resolves() {
@@ -271,12 +244,6 @@ fn what_this_machine_resolves() {
     }
 }
 
-/// A model that keeps no growing cache costs nothing per token, rather than
-/// being unreadable.
-///
-/// Its header states no attention geometry because it has none. Read as a
-/// missing field that is *the file does not say how it is shaped* — true of the
-/// fields, false about the model, which runs perfectly well.
 #[test]
 fn a_state_space_model_has_no_cache_rather_than_no_answer() {
     for architecture in NO_GROWING_CACHE {
@@ -285,25 +252,15 @@ fn a_state_space_model_has_no_cache_rather_than_no_answer() {
             "an empty architecture would match every file with no header"
         );
     }
-    // The window such a model gets is bounded by what it was trained for and
-    // by nothing else.
     assert_eq!(
         largest_context(300_000_000, 0, 90_000_000_000, 4_096),
         4_096
     );
 }
 
-/// A model's shape comes out of its own header.
-///
-/// **Because most repositories publish no configuration.** `config.json` is
-/// where the fitness judgement looks first and nearly every repository that
-/// publishes GGUFs has none — so *will this run here* came back as *MCF cannot
-/// say* for almost everything somebody would try to download (B-413, F16).
 #[test]
 fn a_shape_is_read_from_a_header() {
     let Some(path) = a_model_on_this_machine() else {
-        // No model here is a fact about the machine, not a failure of the
-        // check (A9). It is announced rather than passing silently.
         eprintln!("skipped: this machine holds no model to read");
         return;
     };
@@ -320,13 +277,8 @@ fn a_shape_is_read_from_a_header() {
     assert!(shape.blocks > 0, "a model with no blocks");
     assert!(shape.key_value_heads > 0, "a model with no key/value heads");
     assert!(shape.per_head > 0, "a model with heads that keep nothing");
-    // Half precision, the same parameter a configuration is read with, so the
-    // two sources give comparable answers.
     assert_eq!(shape.bytes_per_element, 2);
 
-    // And the shape agrees with what the cache arithmetic says independently:
-    // both read the same header, so a disagreement would mean one of them is
-    // reading it wrong.
     if let Some(per_token) = super::cache_bytes_per_token(&model) {
         let from_shape = shape
             .blocks
@@ -340,11 +292,6 @@ fn a_shape_is_read_from_a_header() {
     }
 }
 
-/// A hybrid's cache is sized by the blocks that attend, not by the header's
-/// block count.
-///
-/// Three recurrent blocks to every one that attends put the cache at four
-/// times its size, which refused contexts that fit (F150).
 #[test]
 fn a_hybrid_caches_only_in_the_blocks_that_attend() {
     use mcf_standin::gguf::{Model, Tensor, TensorKind, Value};
@@ -380,7 +327,6 @@ fn a_hybrid_caches_only_in_the_blocks_that_attend() {
         data_offset: 0,
         alignment: 32,
     };
-    // 2 heads × (16 + 16) × 2 bytes, in the ONE block that attends.
     assert_eq!(cache_bytes_per_token(&model), Some(2 * 32 * 2));
     assert_eq!(shape_of(&model).map(|held| held.blocks), Some(1));
 
@@ -388,8 +334,6 @@ fn a_hybrid_caches_only_in_the_blocks_that_attend() {
     only_recurrent.tensors.truncate(3);
     assert_eq!(cache_bytes_per_token(&only_recurrent), Some(0));
 
-    // A latent-attention model keeps the latent as its key and no value:
-    // 1 head × 16 × the one block that attends × 2 bytes (F151).
     let mut latent = model;
     for (key, value) in [
         ("hybrid.attention.kv_lora_rank", 12),
@@ -403,15 +347,11 @@ fn a_hybrid_caches_only_in_the_blocks_that_attend() {
     assert_eq!(cache_bytes_per_token(&latent), Some(16 * 2));
 }
 
-/// A header that says nothing yields no shape, and never a zero.
 #[test]
 fn a_header_that_says_nothing_yields_no_shape() {
-    // Not a GGUF at all: what comes back is `None`, which is *MCF cannot say*
-    // and not *a model with no layers* (A7).
     assert!(mcf_standin::gguf::parse(b"not a gguf at all").is_err());
 }
 
-/// The first model file this machine is holding, if any.
 fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
     let root = home.join(".local/share/mcf/models");
@@ -424,16 +364,6 @@ fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
                 looking.push(path);
                 continue;
             }
-            // **A shard is not a model.** A multi-part GGUF names itself
-            // `...-00001-of-00004.gguf`, and the first part carries the
-            // header for the whole set — so its declared tensor bytes describe
-            // four files and its own length describes one. Picking one here
-            // made this test assert that a header must accept a file it does
-            // not describe, which is the opposite of the claim.
-            //
-            // Skipped rather than accommodated: MCF has no concept of a
-            // sharded model yet (B-422), and a test that quietly worked around
-            // that would hide it.
             let is_a_shard = path
                 .file_stem()
                 .and_then(|held| held.to_str())
@@ -453,7 +383,6 @@ fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
     None
 }
 
-/// A model's header, from a bounded prefix of the file.
 fn read_header(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
     use std::io::Read as _;
     let held = std::fs::metadata(path).map_or(0, |about| about.len());
@@ -473,17 +402,6 @@ fn read_header(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
     None
 }
 
-/// A header that is not describing the file it came with is refused.
-///
-/// **A shape fetched from a hub is a claim, and this is the one part of it MCF
-/// can check without the file.** The header's own tensor table says where the
-/// last tensor ends, and that has to be inside the published file and account
-/// for nearly all of it — measured across seven architectures on this machine,
-/// the declared extent is between 96.2% and 100.0% of the published size.
-///
-/// The deception that matters is a small shape against a large file: it makes
-/// a forty-gigabyte model look like it needs almost nothing, and MCF would
-/// answer *fits* about something that does not (§3.7, B-022, A21).
 #[test]
 fn a_header_that_does_not_describe_its_file_is_refused() {
     let Some(path) = a_model_on_this_machine() else {
@@ -503,22 +421,17 @@ fn a_header_that_does_not_describe_its_file_is_refused() {
         return;
     };
 
-    // Against the file it actually came with: accepted.
     assert!(
         crate::daemon::header_describes_this_file(&model, held),
         "a header was refused for the file it is actually describing"
     );
 
-    // The deception: the same truthful header, offered for a file a thousand
-    // times larger. Every number in it is correct and none is about that file.
     assert!(
         !crate::daemon::header_describes_this_file(&model, held.saturating_mul(1_000)),
         "a header describing a fraction of the published file was accepted, so a large model \
          can be made to look small by publishing a small model's header"
     );
 
-    // And a header claiming more data than the file holds, which cannot be
-    // true of any file.
     assert!(
         !crate::daemon::header_describes_this_file(&model, declared.saturating_sub(1)),
         "a header claiming more data than the file has was accepted"
@@ -526,15 +439,6 @@ fn a_header_that_does_not_describe_its_file_is_refused() {
     assert!(!crate::daemon::header_describes_this_file(&model, 0));
 }
 
-/// An engine is named by what it is, not by what its family is called.
-///
-/// **Every generation recorded `provisioned llama.cpp` however it was built.**
-/// A run on the CUDA build and a run on the processor build wrote the same
-/// engine name, and the path printed beside it said otherwise — so the record
-/// held two engines under one identity while contradicting itself in the same
-/// sentence. `engine_ran` is the field a timing's honesty rests on (B65, D31),
-/// and a comparison between two names for one engine reports a moved
-/// condition that did not move (F45, A6, B-420).
 #[test]
 fn an_engine_records_its_own_component_name() {
     let Some(home) = std::env::var_os("HOME") else {
@@ -548,9 +452,6 @@ fn an_engine_records_its_own_component_name() {
         return;
     }
     for engine in &engines {
-        // The name is the component's, and the prefix is named for it: a
-        // prefix that does not carry its own component's name would mean the
-        // two came from different places.
         let prefix = engine.prefix.display().to_string();
         assert!(
             prefix.contains(&engine.name),
@@ -559,8 +460,6 @@ fn an_engine_records_its_own_component_name() {
             engine.name
         );
     }
-    // And where two are provisioned, their names differ — which is the whole
-    // point: one recorded identity for two engines is what this prevents.
     if engines.len() > 1 {
         let mut names: Vec<&str> = engines.iter().map(|engine| engine.name.as_str()).collect();
         names.sort_unstable();
@@ -574,9 +473,6 @@ fn an_engine_records_its_own_component_name() {
     }
 }
 
-/// The engine a machine needs is decided by its driver: the accelerator
-/// build where one is loaded, the processor build otherwise — and both are
-/// components MCF knows how to build.
 #[test]
 fn the_required_engine_follows_the_driver() {
     let cuda = super::required(super::Backend::Cuda).expect("the table names the CUDA build");
@@ -599,9 +495,6 @@ fn the_required_engine_follows_the_driver() {
     );
 }
 
-/// Which back end a card is driven through is read from the kernel's driver
-/// and the loader's table, both of which have to be there: a Radeon without
-/// its Vulkan driver is a card an engine built for Vulkan would not find.
 #[test]
 fn a_card_is_driven_through_what_the_system_installed_for_it() {
     let root = std::env::temp_dir().join(format!("mcf-backend-{}", std::process::id()));
@@ -638,9 +531,6 @@ fn a_card_is_driven_through_what_the_system_installed_for_it() {
     let _cleared = std::fs::remove_dir_all(&root);
 }
 
-/// The card's sensors are read from the kernel's hardware-monitor files
-/// under the first card, in the units the kernel writes them; a card
-/// with no such files answers with nothing rather than nought (B-530).
 #[test]
 fn a_cards_sensors_are_read_from_its_hardware_monitor() {
     let root = std::env::temp_dir().join(format!("mcf-sensors-{}", std::process::id()));
@@ -670,9 +560,6 @@ fn a_cards_sensors_are_read_from_its_hardware_monitor() {
     assert!(!CardSensors::default().any());
 }
 
-/// The card's free memory and whether that memory is the host's own are
-/// read from the kernel's files: a small carve-out is an integrated card,
-/// whose free memory is not memory beside the host's (B-560).
 #[test]
 fn a_cards_free_memory_and_whether_it_is_the_hosts_are_read() {
     let root = std::env::temp_dir().join(format!("mcf-cardmem-{}", std::process::id()));
@@ -701,31 +588,17 @@ fn a_cards_free_memory_and_whether_it_is_the_hosts_are_read() {
     );
 }
 
-/// The window a hold defaults to keeps the cache within the weights: the
-/// two-billion model that was held with a cache eighteen times its size is
-/// held at 8,192, and the twenty-seven-billion model whose cache at its whole
-/// trained context is under its weights is held there.
 #[test]
 fn a_hold_defaults_to_the_window_whose_cache_stays_within_the_weights() {
     use super::held_at;
-    // 1.5 GB of weights, 112 KiB of cache a token, 262,144 fits.
     assert_eq!(held_at(262_144, 1_500_000_000, 112 * 1024), 8_192);
-    // 29 GB of weights, 68 KiB a token: 262,144 costs 17 GiB, within them.
     assert_eq!(held_at(262_144, 29_000_000_000, 68 * 1024), 262_144);
-    // Within the largest that fits, whatever the weights would allow.
     assert_eq!(held_at(32_768, 29_000_000_000, 68 * 1024), 32_768);
-    // Never below the smallest hold where the machine can hold that much...
     assert_eq!(held_at(262_144, 10_000_000, 112 * 1024), 4_096);
-    // ...and the largest that fits where that is smaller still.
     assert_eq!(held_at(2_048, 10_000_000, 112 * 1024), 2_048);
-    // No growing cache: the largest is the answer.
     assert_eq!(held_at(262_144, 1_500_000_000, 0), 262_144);
 }
 
-/// Whose draw the power figure is comes from the driver's own label, not
-/// from what MCF would like it to be: `PPT` is the whole processor
-/// package on a chip whose graphics are part of it, and anything else is
-/// the graphics device (B-596, F277, A8).
 #[test]
 fn whose_draw_it_is_comes_from_the_drivers_own_label() {
     let package = CardSensors {
@@ -744,8 +617,6 @@ fn whose_draw_it_is_comes_from_the_drivers_own_label() {
     assert_eq!(card.power_named(), "card");
     assert_eq!(card.power_is(), "the graphics device");
 
-    // No label is no claim that it is a card's, but a card is what a
-    // discrete driver publishes and the honest default here.
     let unlabelled = CardSensors {
         power_uw: Some(90_000_000),
         ..CardSensors::default()
@@ -753,7 +624,6 @@ fn whose_draw_it_is_comes_from_the_drivers_own_label() {
     assert_eq!(unlabelled.power_named(), "card");
 }
 
-/// The label is read from the file beside the reading (B-596).
 #[test]
 fn the_power_label_is_read_from_the_file_beside_the_reading() {
     let root = std::env::temp_dir().join(format!("mcf-label-{}", std::process::id()));

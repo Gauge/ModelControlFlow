@@ -1,5 +1,3 @@
-//! A fraction of capacity, judged against a band that says where it came from.
-
 use super::{Band, Headroom, MEASURED};
 
 fn on(competing: u64, capacity: u64) -> Headroom {
@@ -12,9 +10,6 @@ fn on(competing: u64, capacity: u64) -> Headroom {
 
 #[test]
 fn the_same_busy_thread_count_is_different_on_two_machines() {
-    // F95's result is a fraction and not a count: sixteen busy threads is half
-    // of a thirty-two-thread machine and a sixteenth of a large one, and the
-    // two do not behave alike.
     let small = on(16_000, 32_000);
     let large = on(16_000, 256_000);
     assert!(
@@ -89,8 +84,6 @@ fn a_machine_with_no_capacity_reported_does_not_divide_by_it() {
             measured_on: "a test",
         },
     };
-    // Saturating rather than panicking: a machine that reports no parallelism
-    // is a platform limitation, not a reason to crash mid-measurement.
     assert!(held.fraction() > 0);
 }
 

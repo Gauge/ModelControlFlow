@@ -1,24 +1,3 @@
-//! What a model is made of, as the daemon says it.
-//!
-//! **One counting, every surface.** `mcf explain` counts a model's directory
-//! and sets its header against it; the window has had none of that, and a
-//! window that counted for itself would be a second implementation of what
-//! the command line already does (B-072). The counting is
-//! [`mcf_standin::anatomy`]; this module writes it down as the value a
-//! client reads, and says nothing the counting did not.
-//!
-//! **The sentences travel with the figures.** Where the counting says
-//! something in words — what a block is made of, how a number is written,
-//! why a cache is not sized — the words are the counting's own
-//! (`Shape::said`, `Vocabulary::digits_said`, …) and go on the wire beside
-//! the figures they are said from, so that a client draws them rather than
-//! composing its own (B-072).
-//!
-//! **Nothing here is a measurement** (A20). Every figure is read off the
-//! file — its header, its tensor directory — or is arithmetic on what was
-//! read, and a client is told which by the shape of the value: `declared`
-//! beside `observed`, and a cost under `work` rather than under a reading.
-
 use mcf_record::json::Value;
 use mcf_standin::anatomy::blocks::{Feed, Mixing, ranges};
 use mcf_standin::anatomy::vocabulary::{self, Vocabulary};
@@ -26,17 +5,14 @@ use mcf_standin::anatomy::work::Cache;
 use mcf_standin::anatomy::{self, Agreement, Share};
 use mcf_standin::gguf::Model;
 
-/// A count, as the wire carries one.
 fn count(held: u64) -> Value {
     Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
 }
 
-/// A count that may be unknown — `null`, never zero (A7).
 fn maybe(held: Option<u64>) -> Value {
     held.map_or(Value::Null, count)
 }
 
-/// A share of the model: tensors, elements, and bytes where sized.
 fn share(held: &Share) -> Vec<(&'static str, Value)> {
     vec![
         ("tensors", count(held.tensors)),
@@ -45,7 +21,6 @@ fn share(held: &Share) -> Vec<(&'static str, Value)> {
     ]
 }
 
-/// Header against directory, one figure.
 fn agreement(held: &Agreement) -> Value {
     Value::map([
         ("what", Value::text(held.what)),
@@ -65,7 +40,6 @@ fn agreement(held: &Agreement) -> Value {
     ])
 }
 
-/// The cache, sized or not.
 fn cache(held: &Cache) -> Value {
     match held {
         Cache::Sized {
@@ -98,7 +72,6 @@ fn cache(held: &Cache) -> Value {
     }
 }
 
-/// What a model is made of, written down.
 #[must_use]
 pub fn encode(named: &str, model: &Model) -> Value {
     let body = anatomy::of(model);
@@ -173,9 +146,6 @@ pub fn encode(named: &str, model: &Model) -> Value {
     ])
 }
 
-/// The vocabulary: what the token list holds, and what the header names in
-/// it, with each sentence the counting says beside the figures it says it
-/// from.
 fn spoken(held: &Vocabulary) -> Value {
     let text = |held: &str| Value::text(held.to_owned());
     let named: Vec<Value> = held
@@ -256,7 +226,6 @@ fn spoken(held: &Vocabulary) -> Value {
     ])
 }
 
-/// One shape of block: which blocks, what they are made of, what they hold.
 fn family(held: &anatomy::blocks::Family) -> Value {
     let mut fields = vec![
         (
@@ -306,28 +275,21 @@ fn family(held: &anatomy::blocks::Family) -> Value {
     Value::map(fields)
 }
 
-/// A count read back off the wire: absent, or not a count, is `None`.
 fn read_count(held: &Value, key: &str) -> Option<u64> {
     held.get(key)
         .and_then(Value::as_integer)
         .and_then(|held| u64::try_from(held).ok())
 }
 
-/// A string read back off the wire.
 fn read_text(held: &Value, key: &str) -> Option<String> {
     held.get(key).and_then(Value::as_text).map(str::to_owned)
 }
 
-/// A share read back: what it is, and what it holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaidShare {
-    /// The part, the encoding — whatever this is a share of.
     pub name: String,
-    /// How many tensors.
     pub tensors: u64,
-    /// How many elements.
     pub elements: u64,
-    /// How many bytes, where sized.
     pub bytes: Option<u64>,
 }
 
@@ -342,157 +304,90 @@ impl SaidShare {
     }
 }
 
-/// One shape of block read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaidFamily {
-    /// Which blocks, ascending.
     pub blocks: Vec<u64>,
-    /// What they are made of, in the words every surface uses.
     pub said: String,
-    /// Which blocks, as ranges — `0–2, 4` — in the words every surface uses.
     pub ranged: String,
-    /// What they hold together.
     pub share: SaidShare,
-    /// The least and most finely encoded, in hundredths of a bit.
     pub bits: Option<(u64, u64)>,
 }
 
-/// Header against directory, read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaidAgreement {
-    /// What is compared.
     pub what: String,
-    /// What the header says.
     pub declared: Option<String>,
-    /// What the directory shows.
     pub observed: Option<String>,
-    /// Whether they agree; `None` where either is missing.
     pub agrees: Option<bool>,
 }
 
-/// The cache, read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SaidCache {
-    /// Sized from the header's widths.
     Sized {
-        /// Bytes per token.
         per_token: u64,
-        /// How many heads keep it.
         key_heads: u64,
-        /// What each keeps, in the words every surface uses.
         kept: String,
-        /// The declared context and what a full window holds.
         at_context: Option<(u64, u64)>,
-        /// A sliding window the header declares.
         sliding_window: Option<u64>,
-        /// How many blocks keep keys, of how many there are.
         attending: (u64, u64),
-        /// How many keep a recurrent state instead.
         recurrent: u64,
     },
-    /// Not sized, and why.
     Unsized(String),
 }
 
-/// A token the header names by number, read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaidNamed {
-    /// What the header calls it.
     pub what: String,
-    /// The number the header gives.
     pub identifier: i64,
-    /// How the list spells it, where the list reaches it.
     pub spelled: Option<String>,
-    /// What is wrong where it does not, in the words every surface uses.
     pub beyond: Option<String>,
 }
 
-/// The chat template, read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaidTemplate {
-    /// Its length.
     pub bytes: u64,
-    /// The variables and tags it was found to use.
     pub mentions: Vec<String>,
-    /// The control tokens spelled in it, or why none is shown.
     pub markers: Result<Vec<String>, String>,
 }
 
-/// The vocabulary, read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaidVocabulary {
-    /// How many tokens the list holds.
     pub tokens: u64,
-    /// The segmentation, in the words every surface uses.
     pub segmentation: String,
-    /// How many merges a byte-pair vocabulary lists.
     pub merges: Option<u64>,
-    /// Each kind's count, where the file types its tokens.
     pub kinds: Option<Vec<(String, u64)>>,
-    /// How many tokens carry the word-start mark.
     pub word_starts: u64,
-    /// How a number is written, in the words every surface uses.
     pub digits: String,
-    /// The longest token and its length in bytes.
     pub longest: Option<(String, u64)>,
-    /// The tokens the header names.
     pub named: Vec<SaidNamed>,
-    /// Whether a beginning token is put in front, in the words every surface
-    /// uses.
     pub beginning: String,
-    /// The chat template, or what is said of a file without one.
     pub template: Result<SaidTemplate, String>,
 }
 
-/// What the daemon said a model is made of, read back off the wire.
-///
-/// The desk draws this and counts nothing itself, so that the window and
-/// `mcf explain` cannot disagree about one file (B-072).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Said {
-    /// The model, as it was asked for.
     pub model: String,
-    /// Every element in the file.
     pub elements: u64,
-    /// Every byte of weights, where every tensor's encoding is sized.
     pub bytes: Option<u64>,
-    /// How many tensors are not sized.
     pub unsized_tensors: u64,
-    /// How many blocks.
     pub blocks: u64,
-    /// Whether the output head reuses the embedding table.
     pub output_tied: bool,
-    /// Elements a token passes, and the experts of which it visits how many
-    /// — for a mixture.
     pub active: Option<(u64, u64, u64)>,
-    /// By part.
     pub parts: Vec<SaidShare>,
-    /// By encoding.
     pub encodings: Vec<SaidShare>,
-    /// By block.
     pub families: Vec<SaidFamily>,
-    /// How many blocks attend, and how many keep a state.
     pub attending: u64,
-    /// How many blocks keep a recurrent state.
     pub recurrent: u64,
-    /// Header against directory.
     pub agreements: Vec<SaidAgreement>,
-    /// Multiply-adds per token.
     pub multiply_adds: u64,
-    /// One head's width.
     pub head_width: Option<u64>,
-    /// Query heads per key head.
     pub queries_per_key: Option<u64>,
-    /// What attention over a full context adds per token.
     pub attention_at_context: Option<u64>,
-    /// The cache.
     pub cache: SaidCache,
-    /// The vocabulary.
     pub vocabulary: SaidVocabulary,
 }
 
 impl Said {
-    /// Reads what [`encode`] wrote. `None` where the value is not that.
     #[must_use]
     pub fn from_value(held: &Value) -> Option<Self> {
         let counted = held.get("counted")?;
@@ -555,7 +450,6 @@ impl Said {
     }
 }
 
-/// The vocabulary, read back.
 fn read_vocabulary(held: &Value) -> Option<SaidVocabulary> {
     let texts = |held: &Value, key: &str| -> Option<Vec<String>> {
         held.get(key)?
@@ -609,7 +503,6 @@ fn read_vocabulary(held: &Value) -> Option<SaidVocabulary> {
     })
 }
 
-/// One shape of block, read back.
 fn read_family(held: &Value) -> Option<SaidFamily> {
     let counts = |key: &str| -> Option<Vec<u64>> {
         held.get(key)?
@@ -630,7 +523,6 @@ fn read_family(held: &Value) -> Option<SaidFamily> {
     })
 }
 
-/// The cache, read back.
 fn read_cache(held: &Value) -> Option<SaidCache> {
     if held.get("sized") != Some(&Value::Bool(true)) {
         return Some(SaidCache::Unsized(read_text(held, "why")?));

@@ -1,24 +1,10 @@
-//! Tokenizer round trip: whether text survives being read and spelled
-//! back, and whether two tokenizers count it the same (B-502, D52).
-//!
-//! A template that eats a leading space or a run of tabs corrupts every
-//! answer it frames, and it does so invisibly: the text still reads.
-//! A bundled corpus — prose, code, whitespace runs, tabs, scripts that
-//! are not Latin, symbols — is encoded and decoded by the engine, and
-//! what came back is compared byte for byte with what went in. Beside
-//! it, MCF's own tokenizer counts each text, since a prompt counted by
-//! one tokenizer and served by another is charged a figure nobody
-//! measured (B-441).
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer};
 use crate::served::Startup;
 
-/// The measurement's name.
 pub const NAME: &str = "tokenizer-round-trip";
 
-/// The texts, each named for what it tries.
 pub const CORPUS: [(&str, &str); 13] = [
     ("plain prose", "The keeper counted the steps to the door."),
     ("two spaces", "a  b"),
@@ -35,7 +21,6 @@ pub const CORPUS: [(&str, &str); 13] = [
     ("no-break space", "a\u{a0}b"),
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -160,7 +145,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// What changed between a text and what came back, in a phrase.
 pub(crate) fn changed(text: &str, back: &str) -> String {
     if back.trim() == text.trim() {
         if back.len() < text.len() {

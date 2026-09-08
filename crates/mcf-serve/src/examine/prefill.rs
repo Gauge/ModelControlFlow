@@ -1,31 +1,17 @@
-//! Prefill saturation: prompt-reading tokens a second across batch sizes
-//! (B-493, D52).
-//!
-//! **The batch was a constant, and a constant is a condition nobody
-//! measured.** The engine reads a prompt so many tokens at a time; past
-//! some size, reading more at once buys nothing, and below it every
-//! prompt is slower than it need be. Four sizes, the same prompt, the
-//! same depth, and the reading says where it stops getting faster.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, as_ms, filler, median, per_second, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "prefill-saturation";
 
-/// How deep the prompt is, in identifiers.
 const DEPTH: usize = 1024;
 
-/// The batch sizes tried.
 const BATCHES: [u32; 4] = [64, 256, 1024, 2048];
 
-/// How many timings each size takes; the median is read.
 const REPEATS: usize = 3;
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let mut lines = vec![format!(
@@ -81,8 +67,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     let Some(&(fastest, best)) = rates.iter().max_by_key(|(_, rate)| *rate) else {
         return Found::could_not_tell("no batch size could be measured");
     };
-    // The smallest batch within a tenth of the fastest: where reading
-    // more at once stops buying anything a person would notice.
     let enough = rates
         .iter()
         .find(|(_, rate)| rate.saturating_mul(10) >= best.saturating_mul(9))
@@ -103,7 +87,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// Every timing of reading the prompt at one batch size, raw (D16).
 fn at_batch(site: &Site<'_>, batch: u32) -> Result<Vec<u64>, String> {
     let engine = site.server(&Startup {
         batch: Some(batch),

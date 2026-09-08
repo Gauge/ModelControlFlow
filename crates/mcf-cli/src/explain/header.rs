@@ -1,20 +1,5 @@
-//! What the file declares about itself, row by row (A21: declared, not
-//! verified).
-//!
-//! Every row here is a key the header carries, read and laid out; none is
-//! checked. The section that follows it in `mcf explain` sets the figures a
-//! directory can bear out against the directory. What that section cannot
-//! check — a rope base, a scaling scheme, a norm epsilon, who quantized it and
-//! on what — is still worth an operator's eye, because it is what the engine
-//! will run under, and this is the only place MCF shows it.
-//!
-//! A row the file does not carry is left out, except the handful every file
-//! of this kind carries, which say *the file does not say* — the absence of a
-//! block count is news; the absence of a sliding window is not.
-
 use mcf_standin::gguf::{Model, Value};
 
-/// Rows every file is expected to carry, so that a missing one is shown.
 const EXPECTED: [(&str, &str); 6] = [
     ("block_count", "blocks"),
     ("embedding_length", "embedding width"),
@@ -24,7 +9,6 @@ const EXPECTED: [(&str, &str); 6] = [
     ("feed_forward_length", "feed-forward width"),
 ];
 
-/// GGUF's `general.file_type` numbering, by name.
 const FILE_TYPES: [(i64, &str); 36] = [
     (0, "F32"),
     (1, "F16"),
@@ -64,7 +48,6 @@ const FILE_TYPES: [(i64, &str); 36] = [
     (38, "MXFP4"),
 ];
 
-/// The rows, in the order they are shown.
 pub(crate) fn declared(file: &Model) -> Vec<(&'static str, String)> {
     let architecture = file.architecture().unwrap_or("unstated").to_owned();
     let under = |suffix: &str| file.get(&format!("{architecture}.{suffix}")).map(shown);
@@ -114,8 +97,6 @@ pub(crate) fn declared(file: &Model) -> Vec<(&'static str, String)> {
     rows
 }
 
-/// The rows that describe the shape the engine will run: attention, experts,
-/// position encoding — each only where the header carries it.
 fn shape(file: &Model, architecture: &str) -> Vec<(&'static str, String)> {
     let under = |suffix: &str| file.get(&format!("{architecture}.{suffix}")).map(shown);
     let mut rows = Vec::new();
@@ -177,7 +158,6 @@ fn shape(file: &Model, architecture: &str) -> Vec<(&'static str, String)> {
     rows
 }
 
-/// The importance matrix the quantizer used, where the file names one.
 fn imatrix(file: &Model) -> Option<String> {
     let dataset = file
         .get("quantize.imatrix.dataset")
@@ -189,7 +169,6 @@ fn imatrix(file: &Model) -> Option<String> {
     Some(format!("{dataset}{chunks}"))
 }
 
-/// The model this one was converted from, where the file names one.
 fn base_model(file: &Model) -> Option<String> {
     let text = |key: &str| {
         file.get(&format!("general.base_model.0.{key}"))
@@ -202,22 +181,14 @@ fn base_model(file: &Model) -> Option<String> {
     })
 }
 
-/// A header value, as a row shows it.
 fn shown(value: &Value) -> String {
     match value {
         Value::Integer(number) => number.to_string(),
         Value::Text(text) => text.clone(),
         Value::Bool(flag) => if *flag { "yes" } else { "no" }.to_owned(),
-        // The file's own number, printed whole: a rope base or an epsilon is
-        // a figure the engine reads verbatim, and nothing here rounds it. An
-        // epsilon is written in exponent form because *0.0000009999999974752427*
-        // is a figure nobody can read and *9.999999974752427e-7* is the same
-        // figure.
         Value::Float(held) if held.abs() < 0.001 && *held != 0.0 => format!("{held:e}"),
         Value::Float(held) => format!("{held}"),
         Value::List(items) => format!("a list of {}", items.len()),
-        // `Value` is non-exhaustive: a shape added later is one this row has
-        // not been taught to show (A7).
         other => format!("{other:?}"),
     }
 }

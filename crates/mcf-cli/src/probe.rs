@@ -1,9 +1,3 @@
-//! `mcf probe`: the probes on one model, as the daemon carries them (B-478,
-//! D50). The command names the model and what to ask, and prints each probe's
-//! finding as it lands — the same stream the window's capabilities card
-//! reads (A22). What the probes are, and what each finds, is
-//! `mcf_serve::probes::run`.
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 
@@ -13,7 +7,6 @@ use mcf_serve::control::{Answer, Request};
 use crate::Response;
 use crate::run::{ambiguous, resolve};
 
-/// Runs the probes and prints what each found as it lands.
 pub(crate) fn run(
     model: &str,
     engine: Option<&str>,
@@ -99,9 +92,6 @@ pub(crate) fn run(
     }
     println!("probed {}", path.display());
     println!();
-    // **Printed as it comes.** A probe run is minutes, and the daemon says
-    // which probe it is on before each and what it found after; the closing
-    // lines end the run.
     let Some(answer) = the_findings_as_they_come(&connection) else {
         return Response {
             text: "mcf: MCF did not answer".to_owned(),
@@ -123,8 +113,6 @@ pub(crate) fn run(
     }
 }
 
-/// Reads the daemon's lines, printing each probe's step as it is announced
-/// and its finding as it lands; returns the line that ends the run.
 fn the_findings_as_they_come(connection: &UnixStream) -> Option<Answer> {
     for read in BufReader::new(connection).lines() {
         let read = read.ok()?;
@@ -150,7 +138,6 @@ fn the_findings_as_they_come(connection: &UnixStream) -> Option<Answer> {
     None
 }
 
-/// The lines an answer carries.
 fn lines_of(body: &Value) -> Vec<String> {
     body.get("lines")
         .and_then(Value::as_list)
@@ -161,7 +148,6 @@ fn lines_of(body: &Value) -> Vec<String> {
         .collect()
 }
 
-/// A step as one line: *probe 3 of 9: stop-conditions*.
 fn step_said(body: &Value) -> Option<String> {
     let step = body.get("step")?;
     let figure = |key: &str| step.get(key).and_then(Value::as_integer);

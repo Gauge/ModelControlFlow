@@ -1,29 +1,5 @@
-//! Every generalized statement resolves to what it rests on (B55, B-252,
-//! §3.28, §3.15).
-//!
-//! B55: *generalization happens in the rendering only — the record keeps the
-//! precise measurement, and any generalized statement expands on demand into
-//! the measurements, conditions and spread behind it.* Its violation is *"41.2
-//! vs 38.4 tok/s" offered as a recommendation*, and the other half of the same
-//! failure is a generalization with no way back to the numbers.
-//!
-//! Three things hold it, and each is one edit from not holding it:
-//!
-//! 1. `mcf log` prints one generalized line an event, and `mcf show` expands
-//!    any of them **without leaving the interface** (A22);
-//! 2. the expansion is of what the record holds, unfolded rather than
-//!    summarized — a nested value printed as one line of JSON would be a
-//!    machine's answer given to a person;
-//! 3. `null` survives the expansion, because a question asked and unanswered
-//!    is not a question nobody asked (A7).
-//!
-//! A source check rather than a compile-fail harness, for the reason given in
-//! `measurement_has_one_way_in.rs`.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
-/// There is a way from a statement to its evidence, and it is a command.
 #[test]
 fn a_statement_can_be_expanded_from_the_interface() {
     let source = code_only(&read("crates/mcf-cli/src/main.rs"));
@@ -38,7 +14,6 @@ fn a_statement_can_be_expanded_from_the_interface() {
     );
 }
 
-/// The expansion is of what the record holds, and unfolds it.
 #[test]
 fn the_expansion_unfolds_rather_than_summarizes() {
     let source = code_only(&read("crates/mcf-cli/src/show.rs"));
@@ -54,11 +29,6 @@ fn the_expansion_unfolds_rather_than_summarizes() {
     }
 }
 
-/// An unanswered condition survives the expansion.
-///
-/// A7: what MCF did not read comes back unknown. An expansion that dropped the
-/// nulls would turn *eleven questions, nine unanswered* into *two conditions*,
-/// which is the strongest claim in the file made by omission.
 #[test]
 fn an_unanswered_condition_survives_the_expansion() {
     let source = code_only(&read("crates/mcf-cli/src/show.rs"));
@@ -72,12 +42,6 @@ fn an_unanswered_condition_survives_the_expansion() {
     );
 }
 
-/// And the record kept full precision to expand *from*.
-///
-/// B55's second half: the record keeps the precise measurement. A comparison
-/// keeps every pair's two raw durations, so the expansion has something to
-/// show — a record of verdicts would leave `mcf show` with nothing under the
-/// summary but the summary again.
 #[test]
 fn the_record_kept_what_there_is_to_expand() {
     let source = code_only(&read("crates/mcf-bench/src/record.rs"));
@@ -89,8 +53,6 @@ fn the_record_kept_what_there_is_to_expand() {
     }
 }
 
-/// The source with its documentation comments removed, so that a sentence
-/// quoting a forbidden shape is not read as the shape itself.
 fn code_only(source: &str) -> String {
     source
         .lines()

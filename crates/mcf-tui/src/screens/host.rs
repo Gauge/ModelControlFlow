@@ -1,61 +1,26 @@
-//! Choosing a model to host: a short list, and everything known about one.
-//!
-//! **The list stays out of the way.** It is the screen with the most to say,
-//! so five rows and a count is all the left column gets, and the buttons go
-//! directly beneath it — leaving the whole right side and every remaining row
-//! for detail.
-//!
-//! **Unknown is a value.** A figure nothing has measured says so and says what
-//! would find out. It is never a zero and never a plausible guess (A7).
-
 use crate::screen::{Ink, Screen};
 use crate::screens::{UNKNOWN, columns, gigabytes};
 
-/// One model, as the screen needs it.
 #[derive(Debug, Clone)]
 pub struct Held {
-    /// The file's name.
     pub name: String,
-    /// Where it is, as the daemon named it: what a request names it by.
     pub path: String,
-    /// Its size.
     pub bytes: Option<u64>,
-    /// What the header says it is.
     pub architecture: Option<String>,
-    /// The window it was trained for.
     pub trained: Option<u64>,
-    /// Cache per token of context.
     pub cache_per_token: Option<u64>,
-    /// The engine MCF worked out, or why there is none.
     pub engine: Result<Resolved, String>,
-    /// What the ladder measured, where it has run.
     pub measured: Measured,
 }
 
-/// The ends of a measured ladder, in the daemon's own figures.
-///
-/// **Text, not numbers.** Each is the string the daemon put on the wire —
-/// milliseconds to three places — shown as it came, so that no surface
-/// rounds a measurement its own way (B-072). `None` is not measured, which
-/// the card says in those words and never as a zero (A7).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Measured {
-    /// The shallowest depth that separated, and milliseconds a token there.
     pub shallowest: Option<(u64, String)>,
-    /// The same at the deepest — of the latest ladder, which is as deep as
-    /// it was asked to climb and not the model's window: the row is
-    /// labelled with the depth, because a Quick Run's 1,024 said *at the
-    /// largest window* until the label came from the reading (A20).
     pub deepest: Option<(u64, String)>,
-    /// Milliseconds to the first token at the shallowest rung, warm.
     pub start_up: Option<String>,
 }
 
 impl Measured {
-    /// The three rows of the card: what each is, the figure, and its unit.
-    ///
-    /// A row that was not measured is labelled with what it would be — the
-    /// ladder starts at 512 by design — and `None` where the figure goes.
     #[must_use]
     pub fn rows(&self) -> [(String, Option<&str>, &'static str); 3] {
         let at = |end: &Option<(u64, String)>, or: &str| {
@@ -84,22 +49,15 @@ impl Measured {
     }
 }
 
-/// What MCF worked out about running it.
 #[derive(Debug, Clone)]
 pub struct Resolved {
-    /// The engine's component name.
     pub engine: String,
-    /// The device it would use.
     pub device: String,
-    /// The largest window the pair can hold.
     pub context: u64,
 }
 
-/// The buttons, and which is under the cursor.
 pub const BUTTONS: [&str; 3] = [" Host this model ", " Run diagnostics ", " Back "];
 
-/// Draws the screen. `at` is the highlighted model, `button` the highlighted
-/// button, and `on_buttons` says which column the cursor is in.
 pub fn draw(
     into: &mut Screen,
     from: usize,
@@ -115,7 +73,6 @@ pub fn draw(
     detail(into, from, models, at, right);
 }
 
-/// The left column: five rows of models and the buttons beneath them.
 #[allow(
     clippy::too_many_arguments,
     reason = "one column's geometry, passed once"
@@ -167,7 +124,6 @@ fn list_and_buttons(
         );
     }
 
-    // ── the buttons, directly beneath ───────────────────────────────────
     let mut row = from + 7;
     into.put(left, row, "ACTIONS", Ink::Heading);
     row += 1;
@@ -181,7 +137,6 @@ fn list_and_buttons(
     }
 }
 
-/// The right column: everything known about the highlighted model.
 fn detail(into: &mut Screen, from: usize, models: &[Held], at: usize, right: usize) {
     let last = into.height().saturating_sub(1);
     let Some(model) = models.get(at) else {
@@ -246,7 +201,6 @@ fn detail(into: &mut Screen, from: usize, models: &[Held], at: usize, right: usi
     engine_and_measured(into, row + 2, model, right, last);
 }
 
-/// One label and its value, in the detail panel's two columns.
 fn pair(into: &mut Screen, right: usize, row: usize, label: &str, value: &str, ink: Ink) {
     columns(
         into,
@@ -256,7 +210,6 @@ fn pair(into: &mut Screen, right: usize, row: usize, label: &str, value: &str, i
     );
 }
 
-/// Where it runs, and what has been measured of it.
 fn engine_and_measured(into: &mut Screen, from: usize, model: &Held, right: usize, last: usize) {
     let mut row = from;
     match &model.engine {
@@ -289,7 +242,6 @@ fn engine_and_measured(into: &mut Screen, from: usize, model: &Held, right: usiz
     }
     row += 2;
 
-    // Measured figures, and what has not been.
     if row + 3 < last {
         columns(
             into,

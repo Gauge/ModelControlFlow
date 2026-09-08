@@ -1,14 +1,3 @@
-//! Multi-turn memory: a value stated in the first turn asked back after
-//! two, five and ten distractor turns, and a correction given in the
-//! second turn honoured later (B-547, D55, B-520).
-//!
-//! A conversation is a prompt that grows, and what a model does with a
-//! fact it was told twenty turns ago is a figure a person choosing a
-//! model for conversation wants. The turns are fixed: the fact, the
-//! distractors — short questions with short answers, the model's own
-//! replies kept in the transcript — and the ask. Every answer is read by
-//! the paraphrase measurement's rule.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::answer_in;
@@ -17,16 +6,12 @@ use super::{Found, Reading, Site, as_integer, timed};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "recall";
 
-/// How many distractor turns lie between the fact and the ask.
 pub const DISTANCES: [usize; 3] = [2, 5, 10];
 
-/// How many tokens a reply may take.
 const BUDGET: usize = 60;
 
-/// The distractor questions, in turn.
 const DISTRACTORS: [&str; 10] = [
     "What colour is the sky on a clear day? One word.",
     "How many legs does a spider have? Number only.",
@@ -40,7 +25,6 @@ const DISTRACTORS: [&str; 10] = [
     "Is water a solid, a liquid or a gas at room temperature? One word.",
 ];
 
-/// The facts, each with the ask that wants it back and the answer.
 pub const FACTS: &[(&str, &str, &str, i64)] = &[
     (
         "locker",
@@ -62,7 +46,6 @@ pub const FACTS: &[(&str, &str, &str, i64)] = &[
     ),
 ];
 
-/// The correction: a value stated, then corrected, then asked.
 pub const CORRECTION: (&str, &str, &str, i64, i64) = (
     "The meeting is in room 302. Reply with just OK.",
     "Correction: the meeting has moved to room 415. Reply with just OK.",
@@ -71,7 +54,6 @@ pub const CORRECTION: (&str, &str, &str, i64, i64) = (
     415,
 );
 
-/// One turn of a transcript.
 fn turn(role: &str, content: &str) -> Value {
     Value::map([
         ("role", Value::text(role)),
@@ -79,7 +61,6 @@ fn turn(role: &str, content: &str) -> Value {
     ])
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -94,8 +75,6 @@ pub fn measure(site: &Site<'_>) -> Found {
         Err(why) => return Found::could_not_tell(&why),
     };
     let said = |failure: mcf_core::Failure| failure.detail().to_owned();
-    // One turn of the conversation: the transcript rendered through the
-    // model's own template, the reply and how long it took.
     let reply = |messages: &[Value]| -> Result<(String, usize, u64), String> {
         let rendered = engine
             .render_with_tools(Value::List(messages.to_vec()), Value::Null)
@@ -191,7 +170,6 @@ pub fn measure(site: &Site<'_>) -> Found {
         }
         lines.push(format!("  {name:<10} {}", said_at.join("   ")));
     }
-    // The correction: told, corrected, three distractors, asked.
     if site.asker_gone() {
         return Found::could_not_tell(crate::served::CLIENT_LEFT);
     }

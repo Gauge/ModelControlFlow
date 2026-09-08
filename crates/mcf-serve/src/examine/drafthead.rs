@@ -1,13 +1,3 @@
-//! The draft head's gain: the same generation with and without the
-//! model's own draft head — tokens a second each way, and whether the
-//! outputs agree (B-533, D55, B-456).
-//!
-//! A file that carries a draft head carries a promise of speed, and an
-//! engine told to use it draws several tokens a step and keeps those the
-//! model would have drawn. Whether it is faster here, and whether what
-//! comes out is the same, are two measurements, and a file that carries
-//! no draft head has neither: this says so and measures nothing.
-
 use mcf_record::json::Value;
 
 use super::determinism::divergence_at;
@@ -16,20 +6,15 @@ use crate::declared::{Declared, Started};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "draft-head";
 
-/// How many tokens each generation produces, at most.
 const PRODUCE: usize = 384;
 
-/// How many generations each way.
 const REPEATS: usize = 3;
 
-/// What is generated from.
 const ASK: &str = "Explain, in plain prose and at some length, how a bicycle's gears let a rider \
 climb a hill and then go fast on the flat.";
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -128,7 +113,6 @@ pub fn measure(site: &Site<'_>) -> Found {
                 .unwrap_or_default()
         ));
     }
-    // Agreement: the first generation each way, token for token.
     let (plain, drafted) = (
         outputs.first().and_then(|held| held.first()),
         outputs.get(1).and_then(|held| held.first()),

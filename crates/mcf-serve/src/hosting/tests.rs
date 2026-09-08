@@ -1,5 +1,3 @@
-//! What a hosting settings may and may not do.
-
 use super::{DEFAULT_PORT, Hosting, LOOPBACK};
 use mcf_record::json::Value;
 
@@ -15,12 +13,6 @@ fn on_a_card() -> Hosting {
     )
 }
 
-/// The recommendation puts the model on the card when it fits.
-///
-/// **This is the defect that made the check worth writing.** The engine was
-/// started with `-ngl 0` written into the source, so MCF resolved a model to a
-/// graphics card, said *runs on NVIDIA*, and ran it on the processor. Measured
-/// on this machine the difference was 158 against 770 tokens a second (F133).
 #[test]
 fn a_model_that_fits_on_the_card_is_put_on_the_card() {
     let recommended = on_a_card();
@@ -40,10 +32,6 @@ fn a_model_that_fits_on_the_card_is_put_on_the_card() {
     );
 }
 
-/// A model that does not fit stays on the processor.
-///
-/// Not a failure and not a warning: a model too large for the card runs, and
-/// where it runs is a fact about this machine rather than a fault (A9).
 #[test]
 fn a_model_that_does_not_fit_stays_on_the_processor() {
     let recommended = Hosting::recommended(
@@ -59,7 +47,6 @@ fn a_model_that_does_not_fit_stays_on_the_processor() {
     assert!(!recommended.flash_attention);
 }
 
-/// Every setting is listed, with what MCF recommended beside it.
 #[test]
 fn every_setting_is_shown_with_what_was_recommended() {
     let recommended = on_a_card();
@@ -78,15 +65,9 @@ fn every_setting_is_shown_with_what_was_recommended() {
             setting.name
         );
     }
-    // Nothing has been moved, so nothing is reported as moved.
     assert!(recommended.differs_from(&recommended).is_empty());
 }
 
-/// A setting somebody changed is reported as changed.
-///
-/// §3.15 and A6: a run under a changed setting is not a run under the
-/// recommended one, and the record carries both so the two can disagree in
-/// writing.
 #[test]
 fn a_setting_that_was_moved_says_so() {
     let recommended = on_a_card();
@@ -105,10 +86,6 @@ fn a_setting_that_was_moved_says_so() {
     );
 }
 
-/// A key is a condition, and never a value the record holds.
-///
-/// A25 and §3.20: a record is something MCF publishes, and a secret in a
-/// published record is a secret nobody meant to publish.
 #[test]
 fn a_key_is_recorded_as_present_and_never_as_itself() {
     let mut chosen = on_a_card();
@@ -119,7 +96,6 @@ fn a_key_is_recorded_as_present_and_never_as_itself() {
         "the key itself reached the record: {written}"
     );
     assert!(written.contains("api_key_set"), "{written}");
-    // And the interface says only that one is set.
     let listed = chosen.listed(&chosen);
     let key = listed
         .iter()
@@ -128,10 +104,6 @@ fn a_key_is_recorded_as_present_and_never_as_itself() {
     assert_eq!(key.value, "set");
 }
 
-/// A client that mentioned nothing gets the recommendation, not a zero.
-///
-/// A7 and D43: a caller who said nothing has not asked for a setting's lowest
-/// value, and MCF never changes a value under somebody who set one.
 #[test]
 fn an_unmentioned_setting_keeps_its_recommendation() {
     let recommended = on_a_card();
@@ -139,7 +111,6 @@ fn an_unmentioned_setting_keeps_its_recommendation() {
     let read = Hosting::from_value(&Value::map(nothing), &recommended);
     assert_eq!(read, recommended);
 
-    // And one that was mentioned is taken as said, including a zero.
     let asked = Value::map([("gpu_layers", Value::Integer(0))]);
     let read = Hosting::from_value(&asked, &recommended);
     assert_eq!(read.gpu_layers, 0, "an explicit zero was overridden");
@@ -149,10 +120,6 @@ fn an_unmentioned_setting_keeps_its_recommendation() {
     );
 }
 
-/// A hosted model is reachable on this computer and nowhere else.
-///
-/// §3.7: a model bound to every interface is a model on the network, and that
-/// is a decision somebody makes rather than one MCF makes for them.
 #[test]
 fn a_hosted_model_is_on_this_computer_only() {
     let recommended = on_a_card();
@@ -170,10 +137,6 @@ fn a_hosted_model_is_on_this_computer_only() {
     assert_eq!(arguments.get(at + 1).map(String::as_str), Some(LOOPBACK));
 }
 
-/// A hold open to the network binds every address and names the
-/// machine's own beside the loopback one; one on this computer alone
-/// binds the loopback address and names no network address; the switch
-/// round-trips and is off unless asked for (B-577).
 #[test]
 fn a_hold_open_to_the_network_binds_every_address_and_names_its_own() {
     let recommended = on_a_card();
@@ -208,9 +171,6 @@ fn a_hold_open_to_the_network_binds_every_address_and_names_its_own() {
     );
 }
 
-/// A hold asked for over the control plane carries the key itself, since
-/// the engine is started with it; the record's form never does, and a
-/// hold read back from the request has the key (B-579).
 #[test]
 fn a_hold_asked_for_carries_its_key_and_the_record_does_not() {
     let mut chosen = on_a_card();

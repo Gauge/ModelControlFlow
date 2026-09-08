@@ -1,13 +1,3 @@
-//! `mcf cross-check <model>` — MCF's engine against the one it provisioned.
-//!
-//! **The command the window's checkbox runs.** A22 asks that everything a
-//! surface can do, the headless path can do; this is that path for the
-//! cross-check, and both send the same control request to the same daemon.
-//! Nothing is compared here — the daemon does it, because the daemon is
-//! where the model and both engines are, and the sentences printed are the
-//! daemon's, so that no surface can say the same figures in different words
-//! (B-072, B-424).
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 
@@ -18,7 +8,6 @@ use crate::Response;
 use crate::run::{ambiguous, resolve};
 use crate::say::refused_because;
 
-/// Compares the two engines on one model and says whether they agree.
 pub(crate) fn run(model: &str) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
@@ -61,9 +50,6 @@ pub(crate) fn run(model: &str) -> Response {
             };
         }
     };
-    // No read timeout: MCF's own engine pays a forward pass per position, and
-    // a deadline here would turn a slow model into a lie about a broken
-    // daemon.
     let line = Request::CrossCheck {
         model: path.display().to_string(),
     }
@@ -107,7 +93,6 @@ pub(crate) fn run(model: &str) -> Response {
     }
 }
 
-/// One answer, as a line or two of terminal output.
 fn said(body: &Value) -> Vec<String> {
     let text = |key: &str| body.get(key).and_then(Value::as_text).map(str::to_owned);
     let number = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);

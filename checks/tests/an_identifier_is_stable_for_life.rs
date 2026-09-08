@@ -1,47 +1,7 @@
-//! Every published identifier still means what it meant (C5, C6, B16, A1,
-//! §7.30, F108).
-//!
-//! **Two rules rested on review and now do not.** C5: *identifiers are stable
-//! for life — never reused, never renamed, deprecated only in favour of a named
-//! successor.* C6: *nothing is deleted; dropped work keeps its reasoning.* Both
-//! are about the same thing from two sides, and both were checked by somebody
-//! remembering.
-//!
-//! **Why it matters more than it sounds.** These identifiers are not internal
-//! names. A taxonomy code appears in the record, in an export and — once §XIV
-//! ships — in another machine's copy of this one's evidence. A record entry's
-//! *kind* is stored in the derived index **as its position in `EntryKind::ALL`**,
-//! so reordering that list silently reinterprets every entry ever written. A
-//! backlog identifier is what a finding, a rule and a commit message cite. None
-//! of these can be renamed by a careful edit; they can only be renamed by an
-//! edit nobody noticed.
-//!
-//! **The ledger is the mechanism.** `checks/identifiers.tsv` holds every
-//! published identifier as it stands. This check recomputes the set from the
-//! source and the documents and compares:
-//!
-//! * an identifier in the ledger and not in the tree has been **removed or
-//!   renamed** — C5 and C6, and the check fails;
-//! * an entry kind at a different **position** has been reordered, which
-//!   changes what every existing index entry means;
-//! * a taxonomy code whose **meaning** changed has been reused, which is the
-//!   one thing C5 calls out by name;
-//! * a format version that moved is a schema change, which §7.30 makes an
-//!   interface event rather than an edit;
-//! * an identifier in the tree and not in the ledger is an **addition**, and
-//!   the check fails with the lines to add. That friction is the point: a new
-//!   entry in a published namespace is a deliberate act, and its diff is that
-//!   namespace's changelog.
-//!
-//! The ledger's own diff is therefore the only place a reader can see what this
-//! project has promised to keep, and it is one line per promise.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used)]
 
 use std::collections::BTreeSet;
 
-/// Where the ledger lives.
 const LEDGER: &str = "checks/identifiers.tsv";
 
 fn read(relative: &str) -> String {
@@ -50,15 +10,9 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// The identifiers as the tree has them now, one line each.
-///
-/// The same shape the ledger is written in, so that the comparison is a set
-/// difference and the failure message is the lines somebody has to add.
 fn current() -> BTreeSet<String> {
     let mut found = BTreeSet::new();
 
-    // Entry kinds, with their position: the derived index stores a kind as its
-    // index into `ALL`, so the order is part of the record's format (D20).
     let entry = read("crates/mcf-record/src/journal/entry.rs");
     let names: Vec<(String, String)> = entry
         .lines()
@@ -90,8 +44,6 @@ fn current() -> BTreeSet<String> {
         }
     }
 
-    // Taxonomy codes with their meanings, read from the document that is the
-    // classification rather than from the types generated out of it.
     for line in read("doc/taxonomy.md").lines() {
         let line = line.trim();
         let Some(rest) = line.strip_prefix("| `") else {
@@ -108,7 +60,6 @@ fn current() -> BTreeSet<String> {
         }
     }
 
-    // The other two axes of a classified failure, which travel with it.
     let axes = read("crates/mcf-core/src/failure/axes.rs");
     let (attribution, disposition) = axes
         .split_once("pub enum Disposition")
@@ -121,7 +72,6 @@ fn current() -> BTreeSet<String> {
         }
     }
 
-    // What a bundle says it is, and the two schema versions.
     let export = read("crates/mcf-record/src/export.rs");
     for line in export.lines() {
         if let Some(name) = written_name(line) {
@@ -134,7 +84,6 @@ fn current() -> BTreeSet<String> {
         format_version(&read("crates/mcf-record/src/journal.rs"))
     ));
 
-    // The register's own identifiers, which every citation depends on.
     for line in read("doc/backlog.md").lines() {
         for prefix in ["B-", "DEC-"] {
             if let Some(id) = row_identifier(line, prefix) {
@@ -143,7 +92,6 @@ fn current() -> BTreeSet<String> {
         }
     }
 
-    // Findings and rules, cited across every document.
     for line in read("doc/findings.md").lines() {
         if let Some(id) = finding_identifier(line) {
             found.insert(format!("finding\t{id}"));
@@ -158,12 +106,10 @@ fn current() -> BTreeSet<String> {
     found
 }
 
-/// `Self::Whatever => "written_name",` → `written_name`
 fn written_name(line: &str) -> Option<String> {
     let rest = line.trim().strip_prefix("Self::")?;
     let (_, rest) = rest.split_once(" => \"")?;
     let (name, tail) = rest.split_once('"')?;
-    // A name, not a sentence: the arms that build prose are not identifiers.
     if !tail.starts_with(',') || name.contains(' ') || name.contains('.') {
         return None;
     }
@@ -178,7 +124,6 @@ fn format_version(source: &str) -> String {
         .expect("a format version is declared")
 }
 
-/// `| B-001 | …` → `B-001`
 fn row_identifier(line: &str, prefix: &str) -> Option<String> {
     let rest = line.strip_prefix("| ")?;
     let (first, _) = rest.split_once(" |")?;
@@ -189,7 +134,6 @@ fn row_identifier(line: &str, prefix: &str) -> Option<String> {
     Some(format!("{prefix}{digits}"))
 }
 
-/// `## 80 · F80 — …` → `F80`
 fn finding_identifier(line: &str) -> Option<String> {
     let (_, after) = line.strip_prefix("## ")?.split_once(" · ")?;
     let (token, _) = after.split_once(' ')?;
@@ -200,7 +144,6 @@ fn finding_identifier(line: &str) -> Option<String> {
     Some(token.to_owned())
 }
 
-/// `### A6 — …` → `A6`
 fn rule_identifier(line: &str) -> Option<String> {
     let (token, _) = line.strip_prefix("### ")?.split_once(" — ")?;
     let (letter, digits) = token.split_at(1);
@@ -213,7 +156,6 @@ fn rule_identifier(line: &str) -> Option<String> {
     Some(token.to_owned())
 }
 
-/// Nothing published has been renamed, reordered, reused or removed.
 #[test]
 fn every_identifier_in_the_ledger_still_means_what_it_meant() {
     let ledger: BTreeSet<String> = read(LEDGER)
@@ -249,8 +191,6 @@ fn every_identifier_in_the_ledger_still_means_what_it_meant() {
     );
 }
 
-/// The ledger is a ledger: one identifier a line, sorted within its kind, no
-/// duplicates.
 #[test]
 fn the_ledger_is_readable_by_a_person_and_a_diff() {
     let text = read(LEDGER);

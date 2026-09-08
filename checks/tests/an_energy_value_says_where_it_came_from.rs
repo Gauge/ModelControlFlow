@@ -1,29 +1,5 @@
-//! Energy carries its provenance and its rate; a timing knows what watched it
-//! (B-188, B-163, B-164, B39, B30, B31, D11, A20, A7, §3.4, §6.25).
-//!
-//! **B39's violation, in one sentence:** a platform with no power interface
-//! yields a number derived from processor utilization. Multiplying a
-//! percentage by a nameplate wattage produces a figure with a unit and nothing
-//! behind it, which is the most convincing kind of wrong — it has the right
-//! shape, the right magnitude, and no measurement in it at all.
-//!
-//! **And B31's:** a timing taken while a profiler was attached is a timing of
-//! the profiler as much as of the model. The condition floor has recorded an
-//! instrumentation profile as free text since it was written, which is enough
-//! to note it and not enough to refuse on it.
-//!
-//! Both are guarded by shape. What this file checks is what a compiler cannot:
-//! that no escape hatch is added, and that the sentences a reader meets say
-//! the thing the type is enforcing.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
-/// The code of a module, without the prose that describes it.
-///
-/// F87's pattern: a rule and the sentence explaining the rule cannot be told
-/// apart by substring search, and every one of these modules names its
-/// forbidden thing in order to say it is absent.
 fn code_of(relative: &str) -> String {
     let path = mcf_checks::workspace::root().join(relative);
     std::fs::read_to_string(&path)
@@ -37,7 +13,6 @@ fn code_of(relative: &str) -> String {
         .join("\n")
 }
 
-/// A number leaves an energy figure only where one was read.
 #[test]
 fn no_energy_number_escapes_without_a_reading_behind_it() {
     let held = code_of("crates/mcf-core/src/energy.rs");
@@ -46,9 +21,6 @@ fn no_energy_number_escapes_without_a_reading_behind_it() {
         "the only way out must be an `Option`, so a caller meets the modelled and unknown \
          cases where they were about to flatten them (A20, B39)"
     );
-    // `utilization` appears once, inside the sentence that refuses it. More
-    // than once would mean it had become an implementation and not only a
-    // warning.
     assert_eq!(
         held.matches("utilization").count(),
         1,
@@ -69,7 +41,6 @@ fn no_energy_number_escapes_without_a_reading_behind_it() {
     }
 }
 
-/// The rate is in the type, not in a comment.
 #[test]
 fn the_sampling_rate_cannot_be_dropped() {
     let held = code_of("crates/mcf-core/src/energy.rs");
@@ -84,7 +55,6 @@ fn the_sampling_rate_cannot_be_dropped() {
     );
 }
 
-/// A timing cannot be built from a run it cannot account for.
 #[test]
 fn a_deep_instrumentation_run_produces_no_timing() {
     let held = code_of("crates/mcf-core/src/instrumentation.rs");
@@ -103,7 +73,6 @@ fn a_deep_instrumentation_run_produces_no_timing() {
     );
 }
 
-/// A profile is a required argument, not an optional one.
 #[test]
 fn a_result_without_its_profile_cannot_be_constructed() {
     let held = code_of("crates/mcf-core/src/instrumentation.rs");
@@ -114,7 +83,6 @@ fn a_result_without_its_profile_cannot_be_constructed() {
     );
 }
 
-/// Nothing declares an overhead acceptable on somebody else's behalf.
 #[test]
 fn the_residual_is_characterized_rather_than_thresholded() {
     let held = code_of("crates/mcf-core/src/instrumentation.rs");

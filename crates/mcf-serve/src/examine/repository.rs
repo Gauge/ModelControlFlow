@@ -1,14 +1,3 @@
-//! Every quantization of a repository in one run: the fidelity
-//! measurement over every file of the model here, with each file's size
-//! and speed beside it — one table a repository (B-538, D55, B-491, D51).
-//!
-//! A person choosing a quantization has the files' sizes from the hub
-//! and nothing else. Here every file of the repository on this machine
-//! reads the same reference tokens, and each is a row set: its bytes, the
-//! positions it agreed at, the bits it spent, and the tokens a second it
-//! generated at. The reference is the most precise file here and reads
-//! against itself, which is the nought the others are measured from.
-
 use mcf_record::json::Value;
 
 use super::fidelity::{
@@ -18,13 +7,10 @@ use super::{Found, Reading, Site, as_integer, framed_ids, gigabytes, per_second,
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "repository";
 
-/// How many tokens each file generates for its speed.
 const PRODUCE: usize = 128;
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -103,7 +89,6 @@ pub fn measure(site: &Site<'_>) -> Found {
         };
         let per_token = super::bits::per(read.spent, reference_tokens.len());
         let (worst_rank, worst_at) = read.worst.unwrap_or((1, 0));
-        // Its speed: a short generation on its own server.
         let speed = site
             .server_for(
                 file,

@@ -1,23 +1,11 @@
-//! Long output under a constraint: so many distinct items, exactly so
-//! many lines, none repeated — the count and the duplicates read by a
-//! parser (B-546, D55, B-526).
-//!
-//! Instructions that count are easy at ten and hard at forty: a model
-//! asked for fifty distinct animals repeats itself, stops early or runs
-//! on. Each ask names a count; the answer's non-empty lines are counted,
-//! their items compared case aside and trimmed of numbering, and the
-//! duplicates counted. Greedy, one trial an ask.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "listing";
 
-/// The asks: name, what is listed, how many.
 pub const ASKS: &[(&str, &str, usize)] = &[
     ("animals-10", "animals", 10),
     ("animals-25", "animals", 25),
@@ -29,10 +17,8 @@ pub const ASKS: &[(&str, &str, usize)] = &[
     ("tools-20", "hand tools", 20),
 ];
 
-/// How many tokens an answer may take: room for fifty lines.
 const BUDGET: usize = 700;
 
-/// What is asked.
 #[must_use]
 pub fn ask_for(what: &str, count: usize) -> String {
     format!(
@@ -41,8 +27,6 @@ pub fn ask_for(what: &str, count: usize) -> String {
     )
 }
 
-/// An item as it is compared: the line trimmed, numbering and bullets
-/// dropped, lowercased.
 #[must_use]
 pub fn item_of(line: &str) -> String {
     let trimmed = line.trim();
@@ -56,7 +40,6 @@ pub fn item_of(line: &str) -> String {
         .to_lowercase()
 }
 
-/// The lines, the distinct items and the duplicates of an answer.
 #[must_use]
 pub fn counted(said: &str) -> (usize, usize, usize) {
     let items: Vec<String> = said
@@ -72,7 +55,6 @@ pub fn counted(said: &str) -> (usize, usize, usize) {
     )
 }
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {

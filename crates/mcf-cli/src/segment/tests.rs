@@ -1,5 +1,3 @@
-//! A segmentation shows where text breaks, and rates nothing.
-
 use super::{Fragment, whole_or_shattered};
 
 fn fragment(text: &str, byte: bool) -> Fragment {
@@ -59,13 +57,6 @@ fn text_with_no_words_says_so_rather_than_dividing_by_nothing() {
     assert!(whole_or_shattered("   ", &[]).contains("No whitespace-separated words"));
 }
 
-/// **The bug the Japanese case found.** A byte-level vocabulary spells one
-/// character across several tokens, so the decode of *k* tokens is not the
-/// decode of *k-1* with something appended: the replacement mark standing in
-/// for an incomplete character is *replaced* by the character. A prefix strip
-/// fails there, and with a fallback it reports the whole text as one token's
-/// contribution — the last token of a Japanese phrase appearing to have
-/// produced the entire phrase.
 mod contributions {
     use super::super::added_by;
 
@@ -76,16 +67,11 @@ mod contributions {
 
     #[test]
     fn a_token_that_completes_a_character_contributes_the_character() {
-        // The first token left an incomplete sequence, which decodes as a
-        // replacement mark; the second completes it.
         assert_eq!(added_by("日本語の\u{fffd}", "日本語のテ"), "テ");
     }
 
     #[test]
     fn nothing_is_ever_reported_as_the_whole_text() {
-        // The failing case, pinned: before B-381's byte comparison this
-        // returned "日本語のテキスト" for a token that contributed one
-        // character.
         assert_eq!(added_by("日本語のテキス\u{fffd}", "日本語のテキスト"), "ト");
     }
 
@@ -95,7 +81,6 @@ mod contributions {
     }
 }
 
-/// Markers are found by shape and then asked about, never by a table.
 mod markers {
     use super::super::marker_shaped;
 
@@ -115,7 +100,6 @@ mod markers {
 
     #[test]
     fn ordinary_prose_containing_a_less_than_is_not_a_marker() {
-        // An unbounded scan would call half a sentence a marker.
         assert!(marker_shaped("a < b and c > d").is_empty());
         assert!(marker_shaped("if x < y then").is_empty());
     }
@@ -136,8 +120,6 @@ mod markers {
     }
 }
 
-/// What a prompt spends is stated against a context that says where it came
-/// from (B-382, A21).
 mod cost {
     use super::super::what_it_spends;
 
@@ -199,8 +181,6 @@ mod cost {
 
     #[test]
     fn a_declared_zero_is_treated_as_no_declaration() {
-        // A file declaring zero has declared nothing usable, and dividing by
-        // it would be the arithmetic deciding what the sentence says.
         assert!(
             what_it_spends(10, Some(0), None).contains("unknown rather than unlimited"),
             "a zero context must not become a division"
@@ -208,7 +188,6 @@ mod cost {
     }
 }
 
-/// The engine spells a raw byte one way, and only that way is a byte.
 mod pieces {
     use super::super::is_a_byte_piece;
 
@@ -228,8 +207,6 @@ mod pieces {
     }
 }
 
-/// The marker section is written from two answers about the tokenizer that
-/// read, whichever that was, and never lets typed text become a marker.
 mod fidelity {
     use super::super::marker_fidelity;
 

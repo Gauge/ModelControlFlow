@@ -1,27 +1,13 @@
-//! Load time by offload: from the server started to its first token, at
-//! each share of the layers on the card (B-555, D55, B-491, D11).
-//!
-//! The offload curve says what each layer count runs at; nothing said
-//! what each takes to become ready, and a model that answers in three
-//! seconds after a forty-second load is a different tool from one ready
-//! in five. Each layer count is a server started cold from the daemon's
-//! point of view — the page cache is whatever it is, and the cold-start
-//! measurement is the one that controls it — timed to the first token
-//! of a one-token ask.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, as_ms, filler, timed};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "load-time";
 
-/// The shares of the layers put on the card, in hundredths.
 pub const SHARES: [u32; 5] = [0, 25, 50, 75, 100];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -50,8 +36,6 @@ pub fn measure(site: &Site<'_>) -> Found {
         }
         #[expect(clippy::integer_division, reason = "a share of the layers, floored")]
         let layers = if share == 100 {
-            // Every layer, and the output past the blocks, as the offload
-            // curve counts it.
             all.saturating_add(1)
         } else {
             all.saturating_mul(share) / 100

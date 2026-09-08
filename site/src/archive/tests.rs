@@ -18,8 +18,6 @@ fn the_arms_are_read_by_the_words_between_them() {
     assert_eq!(arms_in(ABSOLUTE), vec!["example-a.gguf"]);
 }
 
-/// A row whose shape MCF did not write yields nothing, rather than yielding
-/// rubbish that would then be displayed as a model's name.
 #[test]
 fn a_row_of_another_shape_yields_nothing() {
     for held in [
@@ -33,7 +31,6 @@ fn a_row_of_another_shape_yields_nothing() {
     }
 }
 
-/// MCF's own trailing count is a summary of the rows, and the rows are there.
 #[test]
 fn the_count_line_is_not_a_row() {
     let held = Held {
@@ -50,8 +47,6 @@ fn the_count_line_is_not_a_row() {
     }
 }
 
-/// Bytes are kept exactly as they arrived: a reader is shown what was
-/// submitted, not what the site understood.
 #[test]
 fn what_arrives_is_what_is_kept() {
     let archive = Archive::at(scratch("verbatim"));
@@ -64,8 +59,6 @@ fn what_arrives_is_what_is_kept() {
     let _cleared = std::fs::remove_dir_all(root_of(&archive));
 }
 
-/// The same file submitted twice is one entry. Publication cannot be undone,
-/// so it also cannot be done twice.
 #[test]
 fn the_same_file_twice_is_one_entry() {
     let archive = Archive::at(scratch("twice"));
@@ -77,7 +70,6 @@ fn the_same_file_twice_is_one_entry() {
     let _cleared = std::fs::remove_dir_all(root_of(&archive));
 }
 
-/// A file with nothing MCF could contribute is refused, and says why.
 #[test]
 fn a_file_with_no_rows_is_refused() {
     let archive = Archive::at(scratch("empty"));
@@ -90,11 +82,6 @@ fn a_file_with_no_rows_is_refused() {
     let _cleared = std::fs::remove_dir_all(root_of(&archive));
 }
 
-/// A name that is not a name never becomes a path.
-///
-/// The digest is what addresses a submission, and it arrives in a URL. Anything
-/// that is not thirty-two hexadecimal characters is refused before it can be
-/// joined to a directory.
 #[test]
 fn a_name_that_is_not_one_never_becomes_a_path() {
     let archive = Archive::at(scratch("traversal"));
@@ -112,7 +99,6 @@ fn a_name_that_is_not_one_never_becomes_a_path() {
     let _cleared = std::fs::remove_dir_all(root_of(&archive));
 }
 
-/// Different bytes get different names, and the same bytes get the same one.
 #[test]
 fn a_name_follows_the_bytes() {
     assert_eq!(digest_of("a"), digest_of("a"));

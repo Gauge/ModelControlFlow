@@ -1,5 +1,3 @@
-//! What attribution has to get right.
-
 use crate::attested::Attested;
 use crate::configuration::{Sampling, Thousandths};
 
@@ -12,9 +10,6 @@ fn warm() -> Sampling {
     }
 }
 
-/// **B60's rule, in one assertion.** There is no way to hold a sampling
-/// configuration without saying whose choice it is — every constructor names a
-/// source, and there is no other constructor.
 #[test]
 fn every_way_in_names_a_source() {
     for held in [
@@ -31,9 +26,6 @@ fn every_way_in_names_a_source() {
     }
 }
 
-/// An artifact's recommendation is adopted *and* marked, and the mark says
-/// where it was read — because *the artifact says so* is not checkable and
-/// *this file says so* is (A21).
 #[test]
 fn a_recommendation_is_adopted_and_marked_with_where_it_was_read() {
     let held = Calibrated::declared_by_artifact(warm(), "generation_config.json");
@@ -49,9 +41,6 @@ fn a_recommendation_is_adopted_and_marked_with_where_it_was_read() {
     assert!(text.contains("generation_config.json"), "{text}");
 }
 
-/// **The state B60 is most wary of, named rather than absent.** A house choice
-/// that says it is a house choice is a condition a reader can weigh; one that
-/// does not is a hidden default (§3.15).
 #[test]
 fn mcfs_own_choice_says_it_is_mcfs_and_why() {
     let held = Calibrated::mcfs_own(warm(), "the artifact recommends nothing");
@@ -65,8 +54,6 @@ fn mcfs_own_choice_says_it_is_mcfs_and_why() {
     assert!(!held.chosen().is_measured());
 }
 
-/// **Kept apart** (B60): a laboratory's pinned method is quarantined from
-/// anything that inherited the artifact's recommendation, in both directions.
 #[test]
 fn a_pinned_laboratory_method_stays_apart() {
     let pinned = Calibrated::pinned_by_laboratory(warm(), "L26");
@@ -80,7 +67,6 @@ fn a_pinned_laboratory_method_stays_apart() {
     assert!(pinned.chosen().is_pinned());
 }
 
-/// And two laboratories that each pinned their own are two methods, not one.
 #[test]
 fn two_laboratories_that_each_pinned_are_two_methods() {
     let one = Calibrated::pinned_by_laboratory(warm(), "L26");
@@ -92,9 +78,6 @@ fn two_laboratories_that_each_pinned_are_two_methods() {
     );
 }
 
-/// Everything that did not pin is comparable: a recommendation, a measurement
-/// and MCF's own choice are all answers to *how should this be sampled*, and
-/// A8 already refuses the case where the answers differ.
 #[test]
 fn what_did_not_pin_stays_comparable() {
     let declared = Calibrated::declared_by_artifact(warm(), "the file's metadata");
@@ -105,9 +88,6 @@ fn what_did_not_pin_stays_comparable() {
     assert!(ours.comparable_with(&declared));
 }
 
-/// Attribution is not identity (D17, D18). Two configurations with the same
-/// values are the same runnable thing however each arrived at them, which is
-/// exactly why the attribution has to travel separately.
 #[test]
 fn where_a_value_came_from_is_not_part_of_the_value() {
     let declared = Calibrated::declared_by_artifact(warm(), "the file's metadata");

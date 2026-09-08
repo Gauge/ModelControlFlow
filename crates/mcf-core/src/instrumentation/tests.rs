@@ -1,5 +1,3 @@
-//! A timing knows what was watching, and refuses what it cannot account for.
-
 use crate::measurement::PartsPerMillion;
 
 use super::{Profile, Timed};
@@ -45,13 +43,6 @@ fn a_deep_profile_cannot_produce_a_timing() {
 
 #[test]
 fn nothing_here_declares_an_overhead_negligible() {
-    // B31 asks that the overhead be characterized, not that it be small. A
-    // threshold would be MCF deciding how much perturbation is acceptable for
-    // somebody else's measurement.
-    // The code, without the prose — which names `negligible` in order to say
-    // MCF does not declare it. F87's pattern, met for the fourth time: a rule
-    // and the sentence describing the rule cannot be told apart by substring
-    // search.
     let source: String = include_str!("../instrumentation.rs")
         .lines()
         .filter(|line| {

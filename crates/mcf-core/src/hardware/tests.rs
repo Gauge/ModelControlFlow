@@ -1,22 +1,11 @@
-//! Tests for the hardware profiler.
-//!
-//! B19 requires the suite pass on a laptop with no accelerator, so every test
-//! here has to hold on a machine with one and on a machine without. What is
-//! asserted is therefore never *what* the machine is — that varies — but that
-//! whatever MCF says about it is well-formed, honest about what it could not
-//! read, and consistent between the routes that answered.
-
 use super::{Characterization, Machine, Missing, Reading, Route as _, routes};
 use crate::attested::Attested;
 use crate::measurement::Bytes;
 
-/// A19: the profiler is checked against an independently known value — the
-/// kernel's own accounting, read a second way.
 #[test]
 fn the_thread_count_matches_the_kernel() {
     let machine = Machine::read();
     let Attested::Known(threads) = machine.processor.threads else {
-        // No `/proc`. The suite must still pass, and B19 is why.
         return;
     };
     let available = std::thread::available_parallelism().map_or(0, std::num::NonZeroUsize::get);
@@ -26,9 +15,6 @@ fn the_thread_count_matches_the_kernel() {
     );
 }
 
-/// A7: what MCF cannot read stays unknown. Reading a machine never fails and
-/// never invents — a machine with no `/proc`, no governor and no accelerator
-/// produces a complete profile in which almost everything is `unknown`.
 #[test]
 fn reading_a_machine_never_fails_and_never_invents() {
     let machine = Machine::read();
@@ -41,9 +27,6 @@ fn reading_a_machine_never_fails_and_never_invents() {
     }
 }
 
-/// Available memory never exceeds total. A profile that said otherwise would be
-/// a reading nobody could act on, and the two come from different lines of the
-/// same file — which is exactly where a parsing error would show.
 #[test]
 fn available_memory_does_not_exceed_total() {
     let memory = Machine::read().memory;
@@ -52,9 +35,6 @@ fn available_memory_does_not_exceed_total() {
     }
 }
 
-/// D25: a device is characterized when all four readings are present, and
-/// otherwise names which are missing. Both outcomes are correct; what is
-/// asserted is that the verdict and the reading agree.
 #[test]
 fn the_verdict_agrees_with_the_reading() {
     for device in Machine::read().accelerators {
@@ -76,8 +56,6 @@ fn the_verdict_agrees_with_the_reading() {
     }
 }
 
-/// A8: two routes that both claim to know a field and disagree is a finding
-/// about a route, and it is surfaced rather than resolved by preferring one.
 #[test]
 fn routes_that_disagree_are_reported() {
     for device in Machine::read().accelerators {
@@ -89,8 +67,6 @@ fn routes_that_disagree_are_reported() {
     }
 }
 
-/// A9: no accelerator is a result. The profile says so and the machine is
-/// still fully described.
 #[test]
 fn a_machine_with_no_accelerator_says_so() {
     let machine = Machine::read();
@@ -100,9 +76,6 @@ fn a_machine_with_no_accelerator_says_so() {
     }
 }
 
-/// Every route declares what it can supply, and the declaration is not empty.
-/// A21's shape: a route that *should* have supplied a reading and did not is a
-/// different thing from one that never claimed to.
 #[test]
 fn every_route_declares_its_coverage() {
     let routes = routes();
@@ -115,9 +88,6 @@ fn every_route_declares_its_coverage() {
             route.name()
         );
         for reading in route.probe() {
-            // A route may fail to supply something it covers — the driver may
-            // be loaded and refuse a query — but it may never supply something
-            // it does not claim to.
             let supplied = supplied_by(&reading);
             for what in supplied {
                 assert!(
@@ -137,9 +107,6 @@ fn supplied_by(reading: &Reading) -> Vec<Missing> {
         .collect()
 }
 
-/// Merging fills gaps and never overwrites. A route that ran second must not
-/// be able to replace a reading the first one took, because that would hide a
-/// disagreement instead of reporting it.
 #[test]
 fn merging_fills_gaps_and_never_overwrites() {
     let first = Reading {
@@ -157,16 +124,11 @@ fn merging_fills_gaps_and_never_overwrites() {
     assert_eq!(first.disagreements_with(&second), ["model"]);
 }
 
-/// A reading that knows nothing is missing all four, which is what makes a
-/// file-only machine report *attempted, uncharacterized* rather than silently
-/// passing D25's bar.
 #[test]
 fn a_reading_that_knows_nothing_is_missing_everything() {
     assert_eq!(Reading::nothing_known().missing(), Missing::ALL.to_vec());
 }
 
-/// An unknown field is never a disagreement. Two routes, one of which did not
-/// look, have not contradicted each other.
 #[test]
 fn silence_is_not_disagreement() {
     let known = Reading {
@@ -180,14 +142,6 @@ fn silence_is_not_disagreement() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// B-015 — the seam, and what it lets the suite check on the wrong machine.
-// ---------------------------------------------------------------------------
-
-/// B19: *the suite runs on a laptop, offline, with no accelerator.* On a
-/// machine that has one, that is otherwise unverifiable — so the seam is used
-/// to produce the no-accelerator machine and the profile is checked for
-/// honesty rather than for silence.
 #[test]
 fn a_machine_with_no_route_reports_no_accelerator_and_stays_complete() {
     let machine = Machine::read_through(&[]);
@@ -199,22 +153,16 @@ fn a_machine_with_no_route_reports_no_accelerator_and_stays_complete() {
         rendered.contains("accelerators: none present"),
         "{rendered}"
     );
-    // Everything else is still reported: a machine with no accelerator is a
-    // machine MCF describes fully, not a degraded case it says less about.
     assert!(rendered.contains("processor:"), "{rendered}");
     assert!(rendered.contains("memory:"), "{rendered}");
     assert!(rendered.contains("load, one minute:"), "{rendered}");
 }
 
-/// The seam takes routes rather than reading ambient state, so a test can ask
-/// a question about a different machine without changing this one. B2: nothing
-/// that could change a result is undeclared.
 #[test]
 fn the_seam_is_a_parameter_and_changes_nothing_ambient() {
     let without = Machine::read_through(&[]);
     let with = Machine::read();
     assert!(without.accelerators.is_empty());
-    // Reading through no routes did not disturb the real reading.
     assert_eq!(
         with.accelerators.len(),
         Machine::read().accelerators.len(),
@@ -222,13 +170,6 @@ fn the_seam_is_a_parameter_and_changes_nothing_ambient() {
     );
 }
 
-/// A Radeon is read from the files its driver writes, laid out here the way
-/// the kernel lays them out, so the route is checked on a machine with no
-/// such card (B-015).
-///
-/// The chip carves its memory out of the system's — the driver's `uma` group
-/// says so — and the pool a model lands in is then the system memory the
-/// card may address, not the carve-out.
 #[test]
 fn a_radeon_is_read_from_the_files_its_driver_writes() {
     let root = std::env::temp_dir().join(format!("mcf-amdgpu-{}", std::process::id()));
@@ -301,7 +242,6 @@ fn a_radeon_is_read_from_the_files_its_driver_writes() {
     assert_eq!(reading.temperature_c, Attested::Known(72));
     assert!(reading.missing().is_empty(), "characterized: {reading:?}");
 
-    // Without the table, the id stands rather than a name MCF made up.
     let unnamed = super::route_amdgpu::Amdgpu {
         pci_ids: root.join("no-table"),
         ..route
@@ -314,9 +254,6 @@ fn a_radeon_is_read_from_the_files_its_driver_writes() {
     let _cleared = std::fs::remove_dir_all(&root);
 }
 
-/// Two routes each numbering their first device nought are not describing
-/// one device when they name different vendors: the first Radeon and the
-/// first NVIDIA card are two accelerators, not one with a disagreement on it.
 #[test]
 fn two_vendors_at_index_nought_are_two_devices() {
     struct Fixed(&'static str, Vec<Reading>);

@@ -1,14 +1,3 @@
-//! Arithmetic by size: sums, differences and products of two, four, six,
-//! eight, ten and twelve digits, exact — where the digits run out
-//! (B-544, D55, A19).
-//!
-//! A model that adds three-digit numbers is not one that adds nine-digit
-//! numbers, and the digit count at which it stops is a figure a person
-//! can compare. The operands are drawn from a fixed generator so every
-//! run puts the same sums to every model; the answer is read by the
-//! paraphrase measurement's rule, so a reply that works the sum out and
-//! ends with it is read at its end.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::answer_in;
@@ -16,20 +5,14 @@ use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "arithmetic";
 
-/// The digit counts tried.
 pub const DIGITS: [u32; 6] = [2, 4, 6, 8, 10, 12];
 
-/// How many sums a digit count an operation.
 pub const EACH: usize = 3;
 
-/// How many tokens an answer may take: room to work a product out.
 const BUDGET: usize = 160;
 
-/// An operand of so many digits from the generator, the leading digit
-/// never nought.
 fn operand(seed: &mut u64, digits: u32) -> i64 {
     *seed = seed
         .wrapping_mul(6_364_136_223_846_793_005)
@@ -40,7 +23,6 @@ fn operand(seed: &mut u64, digits: u32) -> i64 {
     span.saturating_add(below)
 }
 
-/// The sums put, in order: operation, digits, left, right, answer.
 #[must_use]
 pub fn sums() -> Vec<(&'static str, u32, i64, i64, i64)> {
     let mut seed = 20_260_906_u64;
@@ -55,9 +37,6 @@ pub fn sums() -> Vec<(&'static str, u32, i64, i64, i64)> {
             let (high, low) = (a.max(b), a.min(b));
             out.push(("subtract", digits, high, low, high - low));
         }
-        // A product's digits double: the operands are held to what an
-        // i64 multiplies without overflow, so past nine digits the
-        // product is of a shorter pair and says so by its dimension.
         let factor_digits = digits.min(9);
         for _ in 0..EACH {
             let (a, b) = (
@@ -70,7 +49,6 @@ pub fn sums() -> Vec<(&'static str, u32, i64, i64, i64)> {
     out
 }
 
-/// What is asked for one sum.
 #[must_use]
 pub fn ask_for(operation: &str, a: i64, b: i64) -> String {
     let words = match operation {
@@ -81,7 +59,6 @@ pub fn ask_for(operation: &str, a: i64, b: i64) -> String {
     format!("{words} Answer with the number only.")
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -181,7 +158,6 @@ pub fn measure(site: &Site<'_>) -> Found {
             .collect();
         lines.push(format!("  {digits:>2} digit(s)   {}", said.join("   ")));
     }
-    // The widest digit count at which every sum of a kind held.
     for operation in ["add", "subtract", "multiply"] {
         let widest = DIGITS
             .iter()

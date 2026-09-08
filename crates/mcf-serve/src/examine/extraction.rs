@@ -1,16 +1,3 @@
-//! Structured extraction: fixed texts with dates, amounts, names and
-//! lists pulled into JSON, checked field by field by exact match
-//! (B-525, D55, A19).
-//!
-//! The grammar measurement asks whether JSON comes out; this asks
-//! whether the right JSON does. Five short texts — an invoice line, a
-//! meeting note, a shipping note, a job listing, a weather line — each
-//! with the keys wanted and the form each value must take: dates as
-//! `YYYY-MM-DD`, amounts as whole cents or grams, lists as arrays of
-//! strings. The answer is read by a parser and each field compared with
-//! what the text says, exactly; a field is a row, and nothing here judges
-//! whether a wrong answer was close.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, timed};
@@ -18,43 +5,29 @@ use crate::generation::{Draw, Truncation};
 use crate::served::{Prompt, Startup};
 use mcf_core::configuration::Thousandths;
 
-/// The measurement's name.
 pub const NAME: &str = "extraction";
 
-/// How many trials a text: the first greedy, the rest drawn.
 pub const TRIALS: usize = 3;
 
-/// The temperature of the drawn trials, in thousandths.
 const TEMPERATURE: u32 = 700;
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 220;
 
-/// One text and what is to be pulled out of it.
 #[derive(Debug)]
 pub struct Text {
-    /// Its name.
     pub name: &'static str,
-    /// The text.
     pub text: &'static str,
-    /// The keys wanted, each with the form its value must take, in words.
     pub wants: &'static str,
-    /// The fields as they should come back.
     pub fields: &'static [(&'static str, Expected)],
 }
 
-/// What a field should hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Expected {
-    /// A whole number.
     Number(i64),
-    /// Text, matched exactly.
     Words(&'static str),
-    /// A list of texts, in order, matched exactly.
     List(&'static [&'static str]),
 }
 
-/// The texts.
 pub const TEXTS: &[Text] = &[
     Text {
         name: "invoice",
@@ -146,7 +119,6 @@ pub const TEXTS: &[Text] = &[
     },
 ];
 
-/// What one text is asked.
 #[must_use]
 pub fn ask_for(text: &Text) -> String {
     format!(
@@ -156,7 +128,6 @@ pub fn ask_for(text: &Text) -> String {
     )
 }
 
-/// The JSON object in an answer, if any.
 #[must_use]
 pub fn object_in(said: &str) -> Option<Value> {
     let (open, close) = (said.find('{')?, said.rfind('}')?);
@@ -164,7 +135,6 @@ pub fn object_in(said: &str) -> Option<Value> {
     matches!(held, Value::Map(_)).then_some(held)
 }
 
-/// Whether a field holds what was expected, exactly.
 #[must_use]
 pub fn field_matches(held: Option<&Value>, expected: Expected) -> bool {
     match (held, expected) {
@@ -182,7 +152,6 @@ pub fn field_matches(held: Option<&Value>, expected: Expected) -> bool {
     }
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

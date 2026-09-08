@@ -1,5 +1,3 @@
-//! Outcomes leave; artifacts, custom workloads and bare numbers do not.
-
 use crate::attested::Attested;
 use crate::build_identity::BuildIdentity;
 use crate::measurement::{ConditionValue, Conditions, Floor, PartsPerMillion};
@@ -47,9 +45,6 @@ fn comparison(workload: Workload) -> Comparison {
 
 #[test]
 fn a_comparison_travels_without_a_complete_floor() {
-    // §3.27: both arms met the same afternoon, so what differs between them
-    // is the arm — which is why a ratio survives travel where a bare number
-    // does not.
     let held = Contribution::empty()
         .and_comparison(comparison(Workload::Declared))
         .expect("a declared workload is contributable");
@@ -103,9 +98,6 @@ fn a_custom_workload_cannot_be_contributed_by_either_route() {
 
 #[test]
 fn the_marking_is_on_the_row_rather_than_applied_at_export() {
-    // B-203: the marking exists before export, not at it. A row carries where
-    // its workload came from, so the refusal is a consequence of what the row
-    // already says.
     assert!(!Workload::Custom.is_contributable());
     assert!(Workload::Declared.is_contributable());
     assert!(
@@ -129,11 +121,6 @@ fn the_terms_say_what_leaves_and_that_it_cannot_be_undone() {
     );
 }
 
-/// A contribution renders **the rows**, not a description of them (A24, B-160).
-///
-/// This asserted the count alone, because that was all there was to render. A24
-/// requires that a person deciding whether to publish something irreversible be
-/// shown what it says — and a count is exactly the substitute the rule names.
 #[test]
 fn a_contribution_shows_the_rows_it_would_send_and_then_counts_them() {
     let held = Contribution::empty()
@@ -145,23 +132,18 @@ fn a_contribution_shows_the_rows_it_would_send_and_then_counts_them() {
         );
     let rendered = held.to_string();
 
-    // The rows themselves: both arms, the direction, the size and the pairs.
     assert!(
         rendered.contains("comparison · a quicker than b by 12.0%, over 40 pair(s)"),
         "{rendered}"
     );
     assert!(rendered.contains("absolute · a took 1 ns"), "{rendered}");
-    // Each row says where its workload came from, because a row from somebody's
-    // own workload is one nobody else can interpret (B42).
     assert_eq!(rendered.matches("· workload ").count(), 2, "{rendered}");
-    // And the count, after them rather than instead of them.
     assert!(
         rendered.ends_with("2 row(s): 1 comparison(s) and 1 absolute(s)"),
         "{rendered}"
     );
 }
 
-/// An import is a claim until this machine measures it (B-166, B-172).
 mod imports {
     use crate::contribution::{Imported, Reproduction};
     use crate::origin::{FromCorpus, LocallyMeasured};

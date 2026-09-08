@@ -1,18 +1,3 @@
-//! What a model's own vocabulary makes of a piece of text (B-365, A19).
-//!
-//! A diagnostic rather than a surface: when a model produces nonsense, the
-//! first question is whether it was asked the right question, and that means
-//! seeing the tokens rather than inferring them from the answer.
-//!
-//!   cargo run -p mcf-standin --example tokenize -- <model.gguf> "some text"
-//!   cargo run -p mcf-standin --example tokenize -- <model.gguf> "some text" --ids
-//!
-//! `--ids` prints nothing but the identifiers, space-separated, on one line —
-//! which is what a comparison against another implementation reads (B-368).
-//! Identifiers are integers and two tokenizers either agree about them or do
-//! not; there is no tolerance to argue about, which makes this the one part of
-//! an engine that can be checked against a reference exactly.
-
 fn main() -> std::process::ExitCode {
     let mut arguments = std::env::args().skip(1);
     let (Some(path), Some(text)) = (arguments.next(), arguments.next()) else {

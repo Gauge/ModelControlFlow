@@ -1,23 +1,3 @@
-//! A declined modality is a statement about today, and the register says so.
-//!
-//! [`mcf_serve::probes::declined`] says it outright: *"this list is a statement
-//! about today rather than a permanent refusal. When that item lands, the entry
-//! is removed in the same change — the discipline `mcf_core::touchstone` uses
-//! for the same reason (B-380)."*
-//!
-//! That discipline was held by a machine for touchstones
-//! ([`no_touchstone_outlives_the_laboratory_that_would_replace_it`]) and by
-//! nobody for declined modalities — so the list drifted. `reasoning modes`
-//! waited on B-054, B-054 was finished, and the entry stayed: a modality that
-//! will never be revisited, because the thing it waits for already happened.
-//!
-//! A refusal pointed at finished work is worse than no refusal at all. It reads
-//! as *not yet* and means *never*, and the reader cannot tell the difference —
-//! which is the silence A7 forbids, aimed at MCF's own plan.
-//!
-//! [`no_touchstone_outlives_the_laboratory_that_would_replace_it`]: ../a_touchstone_is_never_a_result.rs
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 fn read(relative: &str) -> String {
@@ -31,20 +11,11 @@ fn register() -> String {
     read("doc/backlog.md")
 }
 
-/// One declined modality, as the table spells it.
 struct Declined {
     modality: String,
     until: String,
 }
 
-/// Every declined modality, read from the table that defines them.
-///
-/// Read from the source rather than linked: the checks take `mcf-core` and
-/// nothing else, because a check that pulled in the thing it checks would be
-/// one more edge in the layering the workspace shape exists to keep flat. The
-/// same reading `nothing_is_found_by_its_name` does of the component
-/// catalogue, and for the same reason — a list copied into a check goes stale
-/// the week an entry is added.
 fn declined() -> Vec<Declined> {
     let source = read("crates/mcf-serve/src/probes/declined.rs");
     let mut found = Vec::new();
@@ -73,7 +44,6 @@ fn declined() -> Vec<Declined> {
     found
 }
 
-/// Every declined modality names an item the register actually holds.
 #[test]
 fn every_declined_modality_names_an_item_the_register_holds() {
     let register = register();
@@ -94,11 +64,6 @@ fn every_declined_modality_names_an_item_the_register_holds() {
     }
 }
 
-/// No declined modality outlives the work that would make it answerable.
-///
-/// When the item lands, the entry goes — either because the probe now exists,
-/// or because a different open item is what it is really waiting for. Either
-/// way the list keeps describing today.
 #[test]
 fn no_declined_modality_outlives_the_work_that_would_answer_it() {
     let register = register();
@@ -127,7 +92,6 @@ fn no_declined_modality_outlives_the_work_that_would_answer_it() {
     }
 }
 
-/// Each entry says what it looked for and why, so *declined* is an observation.
 #[test]
 fn every_declined_modality_says_what_it_looked_for_and_why() {
     for held in declined() {

@@ -1,10 +1,3 @@
-//! Every way of naming a model, and every way of getting it wrong.
-//!
-//! B7's commitment is *no unhandled outcomes*, so the interesting half of this
-//! file is the refusals: each one is a string somebody could plausibly type or
-//! paste, and each reaches a named answer rather than a panic, a hang or a
-//! silent reinterpretation.
-
 use super::{Reference, parse};
 use mcf_core::failure::Category;
 
@@ -12,7 +5,6 @@ fn read(written: &str) -> Reference {
     parse(written).unwrap_or_else(|failure| panic!("{written:?} should read: {failure}"))
 }
 
-/// The three shapes a person types.
 #[test]
 fn the_shapes_people_type() {
     let plain = read("meta-llama/Llama-3.1-8B");
@@ -36,7 +28,6 @@ fn the_shapes_people_type() {
     );
 }
 
-/// A revision and a file together, which is the fully specified form.
 #[test]
 fn a_revision_and_a_file_together() {
     let both = read("owner/name@abc123:models/weights.gguf");
@@ -46,7 +37,6 @@ fn a_revision_and_a_file_together() {
     assert_eq!(both.repository(), "owner/name");
 }
 
-/// The shapes people paste.
 #[test]
 fn the_shapes_people_paste() {
     for written in [
@@ -74,14 +64,11 @@ fn the_shapes_people_paste() {
     );
 }
 
-/// Surrounding whitespace is a paste, not a different reference.
 #[test]
 fn whitespace_around_a_reference_is_ignored() {
     assert_eq!(read("  owner/name\t").repository(), "owner/name");
 }
 
-/// Everything that is not a reference reaches a named refusal. None of these
-/// is exotic: each is something a person types or a script produces.
 #[test]
 fn everything_else_is_refused_by_name() {
     for written in [
@@ -126,25 +113,13 @@ fn everything_else_is_refused_by_name() {
     }
 }
 
-/// An owner cannot contain a dot, which is what tells an owner from a host.
-///
-/// The fuzz tier found the consequence of leaving that implicit:
-/// `hf.co/name.co/repo` was accepted with `name.co` as the owner, and the
-/// rendered reference then read back as a reference to another host.
 #[test]
 fn an_owner_with_a_dot_in_it_is_refused() {
     assert!(parse("hf.co/name.co/repo").is_err());
     assert!(parse("owner.co/name").is_err());
-    // A repository name may contain dots — most published models do.
     assert_eq!(read("meta/Llama-3.1-8B").name, "Llama-3.1-8B");
 }
 
-/// A file whose name contains the written form's separators is refused, because
-/// a reference MCF cannot write back is one it cannot record.
-///
-/// The fuzz tier found this: a URL can carry such a name, and the rendered
-/// reference then would not re-read. C5's habit is that a written identifier is
-/// one somebody can type again.
 #[test]
 fn a_name_that_cannot_be_written_back_is_refused() {
     assert!(parse("https://huggingface.co/o/n/resolve/main/we:ird.gguf").is_err());
@@ -152,9 +127,6 @@ fn a_name_that_cannot_be_written_back_is_refused() {
     assert!(parse("https://huggingface.co/o/n/resolve/main/we@ird.gguf").is_err());
 }
 
-/// A control character in a name is refused rather than carried into a path or
-/// a request. §3.7: the reference is untrusted input, and this is the first
-/// place it is stopped.
 #[test]
 fn control_characters_are_refused() {
     assert!(parse("owner/na\u{7}me").is_err());
@@ -162,8 +134,6 @@ fn control_characters_are_refused() {
     assert!(parse("owner/name:fi\u{1b}le.gguf").is_err());
 }
 
-/// The refusal says what it saw, so an operator can see which part of what they
-/// typed was the problem (A2).
 #[test]
 fn a_refusal_carries_what_it_saw() {
     let failure = parse("https://example.com/owner/name").expect_err("not the hub");
@@ -176,9 +146,6 @@ fn a_refusal_carries_what_it_saw() {
     );
 }
 
-/// Reading a reference and rendering it produces the same reference again,
-/// which is what makes the rendered form usable in a record (C5's habit: a
-/// written identifier is one somebody can type back).
 #[test]
 fn a_reference_round_trips_through_its_rendering() {
     for written in [
@@ -194,8 +161,6 @@ fn a_reference_round_trips_through_its_rendering() {
     }
 }
 
-/// A URL and the typed form of the same thing are the same reference, which is
-/// what "without special-casing" means in practice (§6.3).
 #[test]
 fn the_spellings_agree() {
     assert_eq!(

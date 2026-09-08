@@ -1,11 +1,7 @@
-//! What a client can say, and what MCF does about the rest.
-
 use super::{Answer, REQUEST_CEILING, Request, VERSION};
 use mcf_core::failure::Category;
 use mcf_record::json::Value;
 
-/// Every request survives the trip: a client writes it, a daemon reads it, and
-/// what arrives is what was sent.
 #[test]
 fn every_request_round_trips() {
     for request in [
@@ -22,8 +18,6 @@ fn every_request_round_trips() {
     }
 }
 
-/// A request names the protocol it speaks, so a client from another version is
-/// told rather than half-understood (C5, §7.30).
 #[test]
 fn a_protocol_this_build_does_not_speak_is_said_rather_than_guessed() {
     let later = Value::map([
@@ -45,7 +39,6 @@ fn a_protocol_this_build_does_not_speak_is_said_rather_than_guessed() {
     );
 }
 
-/// Everything else a stranger could send.
 #[test]
 fn what_is_not_a_request_is_refused_by_name() {
     for rubbish in [
@@ -61,8 +54,6 @@ fn what_is_not_a_request_is_refused_by_name() {
     }
 }
 
-/// A request MCF does not have says which one it saw — including `serve`, which
-/// is the one somebody will try first and the one MCF cannot do yet (A19).
 #[test]
 fn a_request_mcf_does_not_have_names_it() {
     let asked = Value::map([
@@ -80,8 +71,6 @@ fn a_request_mcf_does_not_have_names_it() {
     );
 }
 
-/// A client cannot make MCF read an unbounded line, and cannot write a
-/// megabyte into its output either (§3.7, A1).
 #[test]
 fn a_request_larger_than_the_ceiling_is_refused_and_not_quoted_whole() {
     let enormous = format!(
@@ -98,8 +87,6 @@ fn a_request_larger_than_the_ceiling_is_refused_and_not_quoted_whole() {
     assert!(quoted < 500, "the refusal carries {quoted} characters back");
 }
 
-/// An answer says whether it is one, so a client never has to infer success
-/// from the shape of what came back (A2).
 #[test]
 fn an_answer_says_whether_it_is_one() {
     let served = Answer::served(Value::map([("up", Value::Bool(true))]));
@@ -111,19 +98,12 @@ fn an_answer_says_whether_it_is_one() {
     let refused = Answer::refused(&failure);
     let read = Answer::read(&refused.to_line()).expect("it reads back");
     assert!(!read.served);
-    // The refusal arrives in the record's own shape, so a client reads the same
-    // structure a record holds (C1).
     assert_eq!(
         read.body.get("category").and_then(Value::as_text),
         Some("config.invalid")
     );
 }
 
-/// The three requests the window added survive the wire unchanged.
-///
-/// A request that reads back as something else is a request that does
-/// something else, and the three added here carry a repository name, a file
-/// name and a depth — each of which changes what happens (B-412).
 #[test]
 fn the_new_requests_survive_the_wire() {
     let asked = [
@@ -228,9 +208,6 @@ fn the_new_requests_survive_the_wire() {
     }
 }
 
-/// A turn sent as markers and text, and a request to count some, survive
-/// the wire unchanged: which piece is a marker is the whole safety property
-/// (D46), and a marker read back as text would be a turn nobody sent (B-442).
 #[test]
 fn a_turn_of_pieces_and_a_count_survive_the_wire() {
     let asked = [
@@ -276,10 +253,6 @@ fn a_turn_of_pieces_and_a_count_survive_the_wire() {
     );
 }
 
-/// A measurement with no depth is refused rather than given one.
-///
-/// A ladder with no ceiling runs until the machine runs out, which is not a
-/// diagnostic but an accident. The caller says how deep, always (A7).
 #[test]
 fn a_measurement_must_say_how_deep() {
     let line = r#"{"protocol":1,"ask":"measure","model":"a-model.gguf"}"#;
@@ -289,11 +262,6 @@ fn a_measurement_must_say_how_deep() {
     );
 }
 
-/// An acquisition names both a repository and a file.
-///
-/// Which variant to fetch is the operator's choice, not MCF's: `Offered` said
-/// what each costs and choosing between them is §3.15's business, so a request
-/// that named only a repository would be asking MCF to decide.
 #[test]
 fn an_acquisition_must_name_the_file() {
     let line = r#"{"protocol":1,"ask":"acquire","reference":"owner/repository"}"#;
@@ -303,9 +271,6 @@ fn an_acquisition_must_name_the_file() {
     );
 }
 
-/// A generation from a client that predates the pin asked for a ceiling,
-/// which is what every generation was: absent reads as unpinned, never as
-/// pinned (B-396).
 #[test]
 fn a_generation_that_does_not_say_is_not_pinned() {
     let line = Value::map([
@@ -325,8 +290,6 @@ fn a_generation_that_does_not_say_is_not_pinned() {
     }
 }
 
-/// A prompt report taken apart by something MCF does not know, or removing
-/// nothing at most, is refused rather than defaulted (B-430).
 #[test]
 fn a_prompt_report_by_an_unknown_unit_is_refused() {
     let by_letter =
@@ -348,8 +311,6 @@ fn a_prompt_report_by_an_unknown_unit_is_refused() {
     );
 }
 
-/// Where a measurement puts the model travels as a word, and a word MCF does
-/// not place on is refused rather than read as *wherever*.
 #[test]
 fn a_measurement_says_where_the_model_goes() {
     let asked = super::Request::Measure {
@@ -374,9 +335,6 @@ fn a_measurement_says_where_the_model_goes() {
     );
 }
 
-/// A probe request carries which probes, whether to apply, the engine and
-/// the cap, and reads back as itself; a line naming no model is refused
-/// (B-478).
 #[test]
 fn a_probe_request_round_trips() {
     let asked = Request::Probe {
@@ -404,8 +362,6 @@ fn a_probe_request_round_trips() {
     assert!(Request::read(r#"{"protocol":1,"ask":"probe"}"#).is_err());
 }
 
-/// An examination carries which measurements and the engine, and reads
-/// back as itself; a line naming no model is refused (D52).
 #[test]
 fn an_examine_request_round_trips() {
     let asked = Request::Examine {
@@ -424,8 +380,6 @@ fn an_examine_request_round_trips() {
     assert!(Request::read(r#"{"protocol":1,"ask":"examine"}"#).is_err());
 }
 
-/// A readings request names a model and, where asked, one method, and
-/// reads back as itself (D54).
 #[test]
 fn a_readings_request_round_trips() {
     let asked = Request::Readings {
@@ -442,8 +396,6 @@ fn a_readings_request_round_trips() {
     assert_eq!(method, None);
 }
 
-/// A search and a listing carry whether the hub is to be asked again, and
-/// a line without the flag reads as not (B-488).
 #[test]
 fn a_hub_request_carries_whether_it_wants_the_hub_asked_again() {
     let asked = Request::Search {

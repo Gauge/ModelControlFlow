@@ -1,9 +1,5 @@
-//! What is declared, what is asked for, and which pairs of the two are
-//! refused before an engine is started.
-
 use super::{Declared, Rope, Scaling, Started};
 
-/// Nothing is on unless somebody turned it on.
 #[test]
 fn nothing_is_asked_for_by_default() {
     let nothing = Started::default();
@@ -12,7 +8,6 @@ fn nothing_is_asked_for_by_default() {
     assert_eq!(nothing.said(), "nothing beyond the plain load");
 }
 
-/// The switches the engine is started with, in the engine's own spelling.
 #[test]
 fn the_switches_are_the_engines_own() {
     let asked = Started {
@@ -35,7 +30,6 @@ fn the_switches_are_the_engines_own() {
     assert_eq!(asked.said(), "the draft head, rope scaling yarn ×4");
 }
 
-/// What the control plane carries comes back as what was asked.
 #[test]
 fn what_was_asked_survives_the_wire() {
     for asked in [
@@ -69,7 +63,6 @@ fn what_was_asked_survives_the_wire() {
     }
 }
 
-/// A client that said nothing has not asked for anything.
 #[test]
 fn silence_on_the_wire_asks_for_nothing() {
     assert_eq!(
@@ -78,8 +71,6 @@ fn silence_on_the_wire_asks_for_nothing() {
     );
 }
 
-/// A draft head asked of a file that has none is refused, and named as the
-/// file's shortfall rather than the asker's mistake.
 #[test]
 fn a_draft_head_no_file_declares_is_refused() {
     let asked = Started {
@@ -104,8 +95,6 @@ fn a_draft_head_no_file_declares_is_refused() {
     assert!(asked.against(&declares_one).is_ok());
 }
 
-/// A scaling with no factor anywhere would stretch by one, so it is refused
-/// rather than started and reported.
 #[test]
 fn a_scaling_that_stretches_nothing_is_refused() {
     let asked = Started {
@@ -113,7 +102,6 @@ fn a_scaling_that_stretches_nothing_is_refused() {
         ..Started::default()
     };
     assert!(asked.against(&Declared::default()).is_err());
-    // The file's own factor is a factor.
     let declares_one = Declared {
         rope: Some(Rope {
             kind: "yarn".to_owned(),
@@ -123,13 +111,11 @@ fn a_scaling_that_stretches_nothing_is_refused() {
         ..Declared::default()
     };
     assert!(asked.against(&declares_one).is_ok());
-    // So is one somebody asked for.
     let with_factor = Started {
         factor: Some(4),
         ..asked
     };
     assert!(with_factor.against(&Declared::default()).is_ok());
-    // Turning the file's own scaling off needs no factor at all.
     let off = Started {
         rope: Some(Scaling::Off),
         ..Started::default()
@@ -137,7 +123,6 @@ fn a_scaling_that_stretches_nothing_is_refused() {
     assert!(off.against(&declares_one).is_ok());
 }
 
-/// A factor with nothing to apply it to is the asker's to fix.
 #[test]
 fn a_factor_with_no_scaling_is_refused() {
     let asked = Started {
@@ -150,9 +135,6 @@ fn a_factor_with_no_scaling_is_refused() {
     assert_eq!(refusal.attribution(), mcf_core::failure::Attribution::User);
 }
 
-/// The sentence the account carries for a model hosted without a feature
-/// its file declares — and nothing where the feature was started, or where
-/// the file declares none.
 #[test]
 fn what_was_left_in_the_file_is_said() {
     let declares_one = Declared {
@@ -181,7 +163,6 @@ fn what_was_left_in_the_file_is_said() {
     assert!(said.contains("2 layers"), "{said}");
 }
 
-/// A file MCF cannot read declares nothing, and nothing is claimed about it.
 #[test]
 fn a_file_that_is_not_a_model_declares_nothing() {
     let directory = std::env::temp_dir().join(format!("mcf-declared-{}", std::process::id()));
@@ -193,7 +174,6 @@ fn a_file_that_is_not_a_model_declares_nothing() {
     let _gone = std::fs::remove_file(&path);
 }
 
-/// The three words the engine takes, and nothing else.
 #[test]
 fn only_the_engines_own_words_are_scalings() {
     assert_eq!(Scaling::from_word("yarn"), Some(Scaling::Yarn));

@@ -1,15 +1,6 @@
-//! Tests for where a number came from.
-//!
-//! The separation itself is the compiler's to enforce; what is tested is that
-//! neither type hides what it is on a surface, and that the sample count B44
-//! requires is not something a caller can forget.
-
 use super::{FromCorpus, LocallyMeasured};
 use crate::measurement::Count;
 
-/// B43: a corpus statement is labelled, carries its sample count, and is
-/// visibly distinguishable from a local measurement. All three in one line,
-/// because a label that lives only in the type is a label nobody sees.
 #[test]
 fn a_corpus_value_says_what_it_is_and_what_it_rests_on() {
     let advice = FromCorpus::new(Count(41), 400);
@@ -19,8 +10,6 @@ fn a_corpus_value_says_what_it_is_and_what_it_rests_on() {
     assert_eq!(advice.reports(), 400);
 }
 
-/// B44: a claim resting on two reports reads differently from one resting on
-/// four hundred, and one resting on nothing says so.
 #[test]
 fn a_thin_claim_reads_differently_from_a_thick_one() {
     assert!(
@@ -43,8 +32,6 @@ fn a_thin_claim_reads_differently_from_a_thick_one() {
     );
 }
 
-/// A local value says it was measured here, so the two never read alike on a
-/// surface even when they hold the same number.
 #[test]
 fn a_local_value_and_a_corpus_value_never_read_alike() {
     let here = LocallyMeasured::new(Count(41));
@@ -54,9 +41,6 @@ fn a_local_value_and_a_corpus_value_never_read_alike() {
     assert!(!here.to_string().contains("corpus"));
 }
 
-/// Transforming a value keeps what it is. A `map` that dropped the origin
-/// would be the silent promotion B43 exists to prevent, wearing a combinator —
-/// the same shape A5's degradation mark has.
 #[test]
 fn transforming_keeps_the_origin() {
     let doubled = LocallyMeasured::new(Count(21)).map(|Count(n)| Count(n * 2));
@@ -68,8 +52,6 @@ fn transforming_keeps_the_origin() {
     assert_eq!(advice.reports(), 7);
 }
 
-/// The corpus accessor is named for what the corpus may do. B43: arithmetic
-/// may refuse; the corpus may only advise.
 #[test]
 fn the_corpus_accessor_is_named_for_what_it_permits() {
     let advice = FromCorpus::new(Count(3), 5);

@@ -1,43 +1,3 @@
-//! Artifacts leave this machine because somebody said so (B-027, §3.11).
-//!
-//! **The failure this exists against is a helpful one.** A disk fills, and a
-//! tool that wants to keep working deletes the oldest thing it can find. MCF
-//! will not: §3.11 makes disk arbitration a decision rather than a surprise,
-//! and an artifact is not a cache entry — it is what a measurement was made
-//! against, and re-acquiring it is not always possible (§XII's chain can be
-//! withdrawn, gated or relicensed between one week and the next, DEC-038).
-//!
-//! So there is no path from *space is short* to *bytes are gone*. Removal takes
-//! three separate acts, and each one is a type:
-//!
-//! 1. [`preview`] says exactly what would go, how much it weighs, and whether
-//!    it could be brought back. Nothing is touched.
-//! 2. [`Authorization::given`] is somebody deciding, with a reason, about *that
-//!    plan* — a plan that has since changed is refused rather than applied to
-//!    files nobody looked at.
-//! 3. [`remove`] writes the record first and then **moves** the artifact to a
-//!    shelf. It deletes nothing at all.
-//!
-//! Deleting is [`purge`], which is a fourth act with an authorization of its
-//! own. That is what *reversible where reasonable* buys: a rename inside one
-//! filesystem is free, so the reversible case costs nothing and the operator
-//! who moved the wrong model has an afternoon to notice.
-//!
-//! **What is on the disk is what MCF knows.** An artifact's provenance lives
-//! beside it in a sidecar rather than in an index, because an index is a second
-//! copy that drifts: a model moved by hand, a directory restored from a backup,
-//! a machine that lost its journal — in each case the sidecar is still there and
-//! still true, and §3.6's *provenance travels with the artifact* is a statement
-//! about the artifact rather than about MCF's bookkeeping. [`held`] reads what
-//! is there, and an artifact whose provenance is missing or unreadable is
-//! listed as exactly that (A7).
-//!
-//! **The record is written before the artifact moves.** A1: after a removal the
-//! artifact is gone and the record is all there is, so a record written
-//! afterwards is one that a crash can lose along with the thing it describes.
-//! Written first, the worst case is a record of a removal that did not finish —
-//! which is exactly what the shelf will show.
-
 use std::path::{Path, PathBuf};
 
 use mcf_core::digest::Sha256;
@@ -49,48 +9,16 @@ use mcf_record::json::Value;
 
 const WHERE: Subsystem = Subsystem::new("mcf-hub::store");
 
-/// What MCF is holding: an artifact, and whatever can be said about where it
-/// came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Held {
-    /// Where the artifact is.
-    ///
-    /// For a model published in parts, the first of them — which is what an
-    /// engine is pointed at, and what the others are found from.
     pub path: PathBuf,
-    /// How many bytes it is, or how many the whole set is.
-    ///
-    /// **The set, for a model published in parts.** One part's length is not
-    /// the model's: the first part carries the header for all of them, so its
-    /// declared tensor bytes describe every file and its own length describes
-    /// one. Reporting the part made every sharded model fail the check that a
-    /// header describes its file, and made a 70 GiB model look like a 50 GiB
-    /// one (B-422).
     pub bytes: u64,
-    /// How many files this model is published in. One, for most.
     pub parts: u32,
-    /// Whether this file belongs to a model rather than being one.
-    ///
-    /// **A projector is half of a multimodal artifact and is not a model.** It
-    /// carries no transformer and answers no prompt: pointed at one, an engine
-    /// loads it and produces nothing. MCF listed it among the models, counted
-    /// it among them, and offered it to be hosted — so `mcf list` said sixteen
-    /// where there were fifteen and a companion, and a sweep of every model on
-    /// the machine had one entry that could only ever fail.
-    ///
-    /// Kept and marked rather than hidden: the vision probe needs to find it,
-    /// and a file MCF holds and does not mention is the silence A7 forbids.
     pub companion: bool,
-    /// Where it came from, if the sidecar beside it can be read.
-    ///
-    /// The failure is kept rather than flattened to `None`: *there is no
-    /// provenance here* and *there is one and MCF cannot read it* are different
-    /// states, and an operator can act on the second (A7, A2).
     pub provenance: std::result::Result<Provenance, Option<Failure>>,
 }
 
 impl Held {
-    /// What a surface says about it, in one line.
     #[must_use]
     pub fn describe(&self) -> String {
         let origin = match &self.provenance {
@@ -101,17 +29,6 @@ impl Held {
         format!("{} ({} bytes) — {origin}", self.path.display(), self.bytes)
     }
 
-    /// What its terms are, as far as anything beside it says (B-023, §III).
-    ///
-    /// §III asks that a licence be surfaced *before use*, and the place an
-    /// operator sees a model before using it is the list of what they hold. The
-    /// three states are kept apart here exactly as `mcf_hub::licence` keeps
-    /// them: an identifier MCF recognized, terms that are present and
-    /// unidentified, and nothing declared — none of which is a default (A7).
-    ///
-    /// An artifact with no readable provenance has no *stated* terms either,
-    /// and that is what it says: MCF does not go looking for a licence file to
-    /// guess from.
     #[must_use]
     pub fn terms(&self) -> String {
         match &self.provenance {
@@ -124,11 +41,6 @@ impl Held {
     }
 }
 
-/// Where an artifact's provenance is written.
-///
-/// Beside it, under its own name plus a suffix, so that moving the artifact and
-/// forgetting the sidecar is visible rather than silent: what is left is an
-/// artifact with no provenance, which [`held`] reports as exactly that.
 #[must_use]
 pub fn provenance_path(artifact: &Path) -> PathBuf {
     let mut name = artifact.file_name().unwrap_or_default().to_os_string();
@@ -136,17 +48,8 @@ pub fn provenance_path(artifact: &Path) -> PathBuf {
     artifact.with_file_name(name)
 }
 
-/// The suffix a provenance sidecar carries.
 const PROVENANCE_SUFFIX: &str = ".mcf-provenance.json";
 
-/// Writes an artifact's provenance beside it.
-///
-/// # Errors
-///
-/// `resource.disk.readonly` when the sidecar cannot be written. Failing to
-/// record provenance is not a partial success to be shrugged at: an artifact
-/// whose origin was never written down is one §3.6 says MCF should not be
-/// holding, and the caller is told so it can decide (A2).
 pub fn record_provenance(artifact: &Path, provenance: &Provenance) -> Result<PathBuf> {
     let path = provenance_path(artifact);
     let line = mcf_record::encode::provenance(provenance).to_line();
@@ -164,15 +67,6 @@ pub fn record_provenance(artifact: &Path, provenance: &Provenance) -> Result<Pat
     Ok(path)
 }
 
-/// Reads an artifact's provenance from beside it.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` when the sidecar is there and cannot be
-/// read — malformed JSON, a field absent, a link in the chain unreadable.
-/// `artifact.missing` when there is no sidecar at all, which is a state rather
-/// than a defect: a model an operator put there by hand has no provenance and
-/// saying so is the honest answer (A7).
 pub fn provenance_of(artifact: &Path) -> Result<Provenance> {
     let path = provenance_path(artifact);
     let text = std::fs::read_to_string(&path).map_err(|error| {
@@ -205,18 +99,6 @@ pub fn provenance_of(artifact: &Path) -> Result<Provenance> {
         .map_err(|failure| failure.with_context("path", path.display().to_string()))
 }
 
-/// Everything MCF is holding under a directory, and what is known about each.
-///
-/// Reads the disk rather than an index. Directories are walked in the order the
-/// filesystem gives them and the result is sorted by path, so two runs on one
-/// machine list the same things in the same order (§3.17).
-///
-/// # Errors
-///
-/// `artifact.unreadable` when the directory itself cannot be read. An artifact
-/// inside it that cannot be measured is *listed* with what went wrong rather
-/// than dropped: a list that silently shortened itself is the one thing a list
-/// must not do (A1, A4).
 pub fn held(root: &Path) -> Result<Vec<Held>> {
     let mut found = Vec::new();
     walk(root, &mut found)?;
@@ -224,14 +106,6 @@ pub fn held(root: &Path) -> Result<Vec<Held>> {
     Ok(gathered(found))
 }
 
-/// Whether this file belongs to a model rather than being one.
-///
-/// `mmproj` is what every publisher of a vision projector calls it, and
-/// `--mmproj` is how the reference implementation is handed one — so the name
-/// is what the engine goes by, as it is for the parts of a split model. What
-/// the file declares (`clip.has_vision_encoder`) is what *confirms* it, and
-/// that reading belongs where there is a parser: this crate holds the store and
-/// deliberately depends on no engine.
 #[must_use]
 pub fn is_a_companion(path: &Path) -> bool {
     path.file_stem()
@@ -239,15 +113,6 @@ pub fn is_a_companion(path: &Path) -> bool {
         .is_some_and(|held| held.to_ascii_lowercase().starts_with("mmproj"))
 }
 
-/// What a file's name says about the set it belongs to.
-///
-/// A model too large for one file is published as
-/// `<name>-00001-of-00004.gguf`, and the reference implementation finds the
-/// other parts from exactly this pattern — `llama_split_prefix` reads the
-/// name, not the metadata, when it goes looking. So matching the name here is
-/// matching what the engine will do, rather than guessing at a convention.
-///
-/// Returns the shared prefix and which part this is, counting from one.
 #[must_use]
 pub fn part_of_a_set(path: &Path) -> Option<(String, u32)> {
     let stem = path.file_stem()?.to_str()?;
@@ -260,33 +125,9 @@ pub fn part_of_a_set(path: &Path) -> Option<(String, u32)> {
         return None;
     }
     let at: u32 = number.parse().ok()?;
-    // Part zero is not a part: the numbering starts at one, and a name that
-    // says otherwise is not the pattern this recognises.
     (at > 0).then(|| (prefix.to_owned(), at))
 }
 
-/// What the model at this path weighs, counting every part of its set.
-///
-/// **A part is not a model, and its length is not the model's length.** An
-/// engine pointed at the first part of a split GGUF loads all of them, so
-/// sizing the model by the file named is sizing it by a fraction. On one
-/// four-part model held here the first part is 10.9 MB of a 111 GB set — four
-/// orders of magnitude — and anything planning memory from that figure plans
-/// against a model that does not exist (B-422, B-072, F138).
-///
-/// [`held`] already gathers a set when it walks the whole store. This answers
-/// the same question for one path, so that a caller with a model in hand does
-/// not have to walk the store to find out what it costs, and does not reach
-/// for `metadata` and get a part.
-///
-/// A file that is not part of a set is its own length. A set whose directory
-/// cannot be read falls back to the file itself: a figure that is too small is
-/// bad, and refusing to say anything at all about a model that is sitting
-/// right there is worse (A7).
-///
-/// # Errors
-///
-/// `artifact.missing` where the path itself cannot be measured.
 pub fn bytes_of_the_whole(path: &Path) -> Result<u64> {
     let own = std::fs::metadata(path)
         .map_err(|error| {
@@ -319,27 +160,11 @@ pub fn bytes_of_the_whole(path: &Path) -> Result<u64> {
             total = total.saturating_add(about.len());
         }
     }
-    // Nothing matched, which cannot happen while this path is one of them, but
-    // a zero would be a worse answer than the part in hand.
     Ok(if total == 0 { own } else { total })
 }
 
-/// Gathers the parts of a model into the model.
-///
-/// **A part is not a model.** Left ungathered, a four-part model was four
-/// entries: the store offered each to be hosted, `mcf explain` could not size
-/// one, and the check that a header describes its file refused every first
-/// part — correctly, since that header describes four files and the part is one
-/// (B-422).
-///
-/// What is kept is the first part, because that is what an engine is pointed
-/// at, carrying the whole set's length. A set missing its first part is left as
-/// it is: MCF has no model to name, and inventing one from the parts that did
-/// arrive would be reporting an artifact nobody has (A7).
 fn gathered(found: Vec<Held>) -> Vec<Held> {
     let mut out: Vec<Held> = Vec::with_capacity(found.len());
-    // The set each entry belongs to, so the total can be added up before any
-    // of it is emitted.
     let mut totals: std::collections::BTreeMap<(PathBuf, String), (u64, u32)> =
         std::collections::BTreeMap::new();
     for held in &found {
@@ -419,16 +244,12 @@ fn walk(directory: &Path, into: &mut Vec<Held>) -> Result<()> {
     Ok(())
 }
 
-/// One file a plan would remove.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Doomed {
-    /// Where it is.
     pub path: PathBuf,
-    /// How many bytes it is, read at preview time.
     pub bytes: u64,
 }
 
-/// What a removal would do, before anything is done.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     doomed: Vec<Doomed>,
@@ -438,14 +259,11 @@ pub struct Plan {
 }
 
 impl Plan {
-    /// Everything that would go.
     #[must_use]
     pub fn doomed(&self) -> &[Doomed] {
         &self.doomed
     }
 
-    /// How much would be freed, or `None` if the sizes do not add up — a total
-    /// MCF will not state wrongly (A6).
     #[must_use]
     pub fn bytes(&self) -> Option<u64> {
         self.doomed
@@ -453,29 +271,16 @@ impl Plan {
             .try_fold(0_u64, |total, doomed| total.checked_add(doomed.bytes))
     }
 
-    /// Whether what this removes could be brought back.
-    ///
-    /// Measured rather than assumed: the shelf and the artifact are on the same
-    /// filesystem or they are not, and a rename across filesystems is a copy
-    /// nobody asked for. False is not a refusal — it is the fact an operator
-    /// authorizes against.
     #[must_use]
     pub const fn reversible(&self) -> bool {
         self.reversible
     }
 
-    /// Which plan this is.
-    ///
-    /// A digest of what it would remove and how big those things were, so that
-    /// an authorization is for *this* removal. A file that changed between the
-    /// looking and the deciding produces a different identity, and the removal
-    /// is refused rather than performed on something nobody previewed.
     #[must_use]
     pub fn identity(&self) -> &str {
         &self.identity
     }
 
-    /// What an operator reads before deciding.
     #[must_use]
     pub fn describe(&self) -> String {
         let mut lines = Vec::new();
@@ -509,14 +314,6 @@ impl Plan {
     }
 }
 
-/// Looks at what a removal would do, and touches nothing.
-///
-/// # Errors
-///
-/// `artifact.missing` when one of the paths is not there: a plan that quietly
-/// dropped it would be a plan an operator reads as *this is everything*, and
-/// the missing file is a thing to explain rather than to skip (A1, A7).
-/// `artifact.unreadable` when a path cannot be measured, for the same reason.
 pub fn preview(paths: &[PathBuf], shelf: &Path) -> Result<Plan> {
     let mut doomed: Vec<Doomed> = Vec::new();
     let mut wanted: Vec<PathBuf> = Vec::new();
@@ -524,12 +321,6 @@ pub fn preview(paths: &[PathBuf], shelf: &Path) -> Result<Plan> {
         if !wanted.contains(path) {
             wanted.push(path.clone());
         }
-        // An artifact's provenance goes where the artifact goes. Leaving the
-        // sidecar behind would strand a record of something that is no longer
-        // there and shelve an artifact that can no longer say where it came
-        // from — and §3.6 makes the two one thing. It is named in the plan
-        // rather than moved quietly, because a preview that hid a file is not a
-        // preview.
         let sidecar = provenance_path(path);
         if sidecar.exists() && !wanted.contains(&sidecar) {
             wanted.push(sidecar);
@@ -567,16 +358,6 @@ pub fn preview(paths: &[PathBuf], shelf: &Path) -> Result<Plan> {
     })
 }
 
-/// Somebody deciding, about one plan, for a stated reason.
-///
-/// It carries no capability of its own: it is a claim that a human looked at a
-/// particular list of files at particular sizes and said yes. [`remove`] checks
-/// that the plan in front of it is still that list.
-///
-/// It holds the list rather than a digest of it so that a refusal can say
-/// *which* file changed and *by how much*. A refusal that printed two hex
-/// strings would be correct and useless, and §3.1 asks a refusal to be
-/// actionable rather than merely right.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Authorization {
     doomed: Vec<Doomed>,
@@ -584,14 +365,6 @@ pub struct Authorization {
 }
 
 impl Authorization {
-    /// Authorizes this plan.
-    ///
-    /// # Errors
-    ///
-    /// `config.invalid` when the reason is blank. The reason is not decoration:
-    /// §3.11's requirement is that a removal be a decision, and *because the
-    /// disk was full* and *because I replaced it with the Q6 quantization* are
-    /// different decisions that a record with no reason cannot tell apart.
     pub fn given(plan: &Plan, reason: &str) -> Result<Self> {
         let reason = reason.trim();
         if reason.is_empty() {
@@ -610,19 +383,11 @@ impl Authorization {
         })
     }
 
-    /// What was authorized: the files, at the sizes they were looked at.
     #[must_use]
     pub fn doomed(&self) -> &[Doomed] {
         &self.doomed
     }
 
-    /// Whether this authorization is for the removal in front of it.
-    ///
-    /// # Errors
-    ///
-    /// `config.invalid`, naming every difference: a file that changed size, one
-    /// that has appeared, one that has gone. Each is a reason the removal about
-    /// to happen is not the one somebody looked at.
     pub fn covers(&self, plan: &Plan) -> Result<()> {
         let differences = differences_between(&self.doomed, &plan.doomed);
         if differences.is_empty() {
@@ -642,53 +407,27 @@ impl Authorization {
         ))
     }
 
-    /// Why.
     #[must_use]
     pub fn reason(&self) -> &str {
         &self.reason
     }
 }
 
-/// What a removal did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed {
-    /// Where each artifact went, in the order the plan named them.
     pub shelved: Vec<PathBuf>,
-    /// Anything that could not be moved, and what stopped it.
-    ///
-    /// A4: a removal that moved four files of five is an outcome, not an
-    /// error. Both halves are in the record and both halves are here.
     pub refused: Vec<(PathBuf, String)>,
-    /// How many bytes are now on the shelf.
     pub bytes: u64,
-    /// Whether what is on the shelf can be moved back.
     pub reversible: bool,
 }
 
 impl Removed {
-    /// Whether everything the plan named was moved.
     #[must_use]
     pub fn complete(&self) -> bool {
         self.refused.is_empty()
     }
 }
 
-/// Performs an authorized removal: records it, then moves the artifacts to the
-/// shelf.
-///
-/// Nothing is deleted here. The shelf is where an artifact waits for [`purge`],
-/// which is a separate decision — and on a machine where the shelf is on
-/// another filesystem, where it waits is a copy nobody made, so the plan says
-/// so and the operator authorizes that fact.
-///
-/// # Errors
-///
-/// `config.invalid` when the authorization is for a different plan than the one
-/// supplied — including the same files after one of them changed size, which is
-/// a different removal from the one somebody looked at.
-/// `record.unwritable` when the record cannot be written, in which case nothing
-/// is moved: an artifact that vanished without a record is the one outcome A1
-/// forbids outright.
 pub fn remove(
     plan: &Plan,
     authorization: &Authorization,
@@ -697,8 +436,6 @@ pub fn remove(
 ) -> Result<Removed> {
     authorization.covers(plan)?;
 
-    // Before anything moves. A record written afterwards is one a crash can
-    // lose along with the artifact it describes (A1).
     journal.append(&Entry::new(
         EntryKind::ArtifactRemoved,
         at,
@@ -739,18 +476,6 @@ pub fn remove(
     })
 }
 
-/// Deletes what is on the shelf, for a reason, having been asked to.
-///
-/// The only function in MCF that destroys an artifact, and it takes an
-/// authorization naming the plan whose shelf it is emptying. Reclaiming space
-/// is a thing an operator does, never a thing MCF does while nobody is looking
-/// (§3.11).
-///
-/// # Errors
-///
-/// `config.invalid` when the authorization is for a different plan.
-/// `resource.disk.readonly` when something on the shelf will not go — reported
-/// with what did (A4).
 pub fn purge(removed: &Removed, authorization: &Authorization, plan: &Plan) -> Result<u64> {
     authorization.covers(plan)?;
 
@@ -779,15 +504,6 @@ pub fn purge(removed: &Removed, authorization: &Authorization, plan: &Plan) -> R
     }
 }
 
-/// Puts an artifact back where it came from.
-///
-/// The reason the shelf exists. It is not an undo of the record — the record
-/// says a removal happened, and it did — it is the artifact returning, which is
-/// a second event and the caller's to record.
-///
-/// # Errors
-///
-/// `resource.disk.readonly` when a file will not move back, naming which.
 pub fn restore(removed: &Removed, plan: &Plan) -> Result<Vec<PathBuf>> {
     let mut back = Vec::new();
     let mut stuck = Vec::new();
@@ -812,10 +528,6 @@ pub fn restore(removed: &Removed, plan: &Plan) -> Result<Vec<PathBuf>> {
     }
 }
 
-/// What the record says about a removal.
-///
-/// Everything needed to say what left and on whose word, because after this the
-/// artifact is gone and this is all there is (A1).
 fn record_of(plan: &Plan, authorization: &Authorization) -> Value {
     let removed: Vec<Value> = plan
         .doomed
@@ -842,10 +554,6 @@ fn record_of(plan: &Plan, authorization: &Authorization) -> Value {
     ])
 }
 
-/// What is different between what was authorized and what is planned.
-///
-/// Every difference, not the first: A1 keeps what was found, and an operator
-/// told about one changed file out of three will look at one file.
 fn differences_between(authorized: &[Doomed], planned: &[Doomed]) -> Vec<String> {
     let mut differences = Vec::new();
     for one in authorized {
@@ -874,12 +582,6 @@ fn differences_between(authorized: &[Doomed], planned: &[Doomed]) -> Vec<String>
     differences
 }
 
-/// Where on the shelf a doomed file goes.
-///
-/// Named by a digest of its original path rather than by its basename: two
-/// repositories both publishing `model.gguf` would otherwise land on top of
-/// each other, and a removal that destroyed the artifact it was preserving
-/// would be the worst possible way to fail.
 fn shelf_place(shelf: &Path, original: &Path) -> PathBuf {
     let mut hasher = Sha256::default();
     hasher.update(original.display().to_string().as_bytes());
@@ -892,7 +594,6 @@ fn shelf_place(shelf: &Path, original: &Path) -> PathBuf {
     shelf.join(format!("{short}-{name}"))
 }
 
-/// A digest of what a plan would remove.
 fn identify(doomed: &[Doomed]) -> String {
     let mut hasher = Sha256::default();
     for one in doomed {
@@ -905,17 +606,6 @@ fn identify(doomed: &[Doomed]) -> String {
     digest.chars().take(16).collect()
 }
 
-/// Whether everything a plan names lives on the same filesystem as the shelf.
-///
-/// Read from the device the kernel reports rather than guessed from the paths:
-/// a bind mount, a separate `/home` and a FUSE mount all look like ordinary
-/// directories, and F5 already cost MCF a day to a filesystem nobody had
-/// noticed. Where the shelf does not exist yet, its nearest existing ancestor
-/// answers — that is where it will be made.
-///
-/// Unknown answers `false`, which is the direction that cannot mislead: an
-/// operator told a removal is irreversible loses nothing but an afternoon of
-/// convenience, and one told it is reversible when it is not loses the model.
 fn same_filesystem(paths: &[PathBuf], shelf: &Path) -> bool {
     use std::os::unix::fs::MetadataExt as _;
 

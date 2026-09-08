@@ -1,25 +1,3 @@
-//! Tool use: a fixed set of tasks, each offering one to three tools and
-//! asking one thing, the call checked by exact match; then the call's
-//! result fed back and the answer checked for it (B-517, D54, D52).
-//!
-//! **What the tool probe asks, and what this asks.** The probe asks
-//! whether a well-formed call comes out at all, under several ways of
-//! telling the model about one tool. This declares the tools the way a
-//! caller of the hosted server declares them — through the model's own
-//! template, which renders them in its own place and form — and asks
-//! what a person choosing a model for tool use wants counted: did it
-//! call when it should, the right tool, with the arguments the request
-//! stated, in the types the tool declared; did it hold back when no tool
-//! fit; and once the tool answered, did the answer carry what the tool
-//! said. Every one of those is a parser's question (A19), and every
-//! trial is a row.
-//!
-//! **Exact match, stated.** The arguments the request states are compared
-//! after trimming, case aside for text and with spaces removed where the
-//! tool takes an expression; a number is a number, and a number written
-//! as text is a mismatch of type, counted as such. A key beyond the ones
-//! asked is counted, not condemned.
-
 use std::collections::BTreeMap;
 
 use mcf_record::json::Value;
@@ -29,57 +7,41 @@ use crate::generation::{Draw, Truncation};
 use crate::served::{Prompt, Served, Startup};
 use mcf_core::configuration::Thousandths;
 
-/// The measurement's name.
 pub const NAME: &str = "tool-use";
 
-/// How many trials each task has: one greedy, then two drawn.
 pub const TRIALS: usize = 3;
 
-/// The temperature the drawn trials use, in thousandths.
 pub(crate) const TEMPERATURE: u32 = 700;
 
-/// How many tokens a call may take.
 const CALL_BUDGET: usize = 200;
 
-/// How many tokens the answer after the tool's result may take.
 const ANSWER_BUDGET: usize = 160;
 
-/// One tool as it is declared to the model.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Tool {
     pub(crate) name: &'static str,
     pub(crate) description: &'static str,
-    /// Each parameter: its name, its JSON type, and whether it is required.
     pub(crate) parameters: &'static [(&'static str, &'static str, bool)],
 }
 
-/// What a task expects of the model.
 #[derive(Debug, Clone, Copy)]
 enum Expect {
-    /// A call to this tool with these arguments, and, once the tool has
-    /// answered with `result`, an answer carrying `carries`.
     Call {
         tool: &'static str,
         arguments: &'static [(&'static str, Arg)],
         result: &'static str,
         carries: &'static str,
     },
-    /// No call: nothing offered fits.
     NoCall,
 }
 
-/// An expected argument.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Arg {
-    /// Text, compared trimmed and case aside.
     Text(&'static str),
-    /// Text with every space removed before comparing: an expression.
     Expression(&'static str),
-    /// A whole number, compared as one.
     Integer(i64),
 }
 
-/// One task.
 #[derive(Debug, Clone, Copy)]
 struct Task {
     name: &'static str,
@@ -123,7 +85,6 @@ const EVENT: Tool = Tool {
     parameters: &[("title", "string", true), ("date", "string", true)],
 };
 
-/// The tasks, in order.
 const TASKS: [Task; 8] = [
     Task {
         name: "one-tool",
@@ -217,7 +178,6 @@ const TASKS: [Task; 8] = [
     },
 ];
 
-/// A tool as the engine's template takes it.
 pub(crate) fn tool_value(tool: &Tool) -> Value {
     let properties: Vec<(String, Value)> = tool
         .parameters
@@ -255,17 +215,12 @@ pub(crate) fn tool_value(tool: &Tool) -> Value {
     ])
 }
 
-/// A call as read from what the model said.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Call {
-    /// What it named.
     pub(crate) name: String,
-    /// Its arguments, as the model wrote them.
     pub(crate) arguments: BTreeMap<String, Value>,
 }
 
-/// Every call in what the model said, in order, in either form a
-/// template writes: the calls a turn made at once (B-520).
 pub(crate) fn calls_in(said: &str) -> Vec<Call> {
     let mut found = Vec::new();
     let mut rest = said
@@ -273,8 +228,6 @@ pub(crate) fn calls_in(said: &str) -> Vec<Call> {
         .and_then(|at| said.get(at + "</think>".len()..))
         .unwrap_or(said);
     while let Some(call) = call_in(rest) {
-        // Past this call: the function block's close or the object's end,
-        // whichever the call was read from.
         let past = if let Some(at) = rest.find("</function>") {
             at + "</function>".len()
         } else if let Some(object) = crate::probes::tools::first_object(rest) {
@@ -293,11 +246,7 @@ pub(crate) fn calls_in(said: &str) -> Vec<Call> {
     found
 }
 
-/// The first call in what the model said, in either form a template
-/// writes — a JSON object naming a tool, or a function block — or none.
 pub(crate) fn call_in(said: &str) -> Option<Call> {
-    // The answer, not the thought before it: a model that drafts its call
-    // inside its thinking is read where it made the call.
     let said = said
         .rfind("</think>")
         .and_then(|at| said.get(at + "</think>".len()..))
@@ -313,7 +262,6 @@ pub(crate) fn call_in(said: &str) -> Option<Call> {
         .or_else(|| value.get("parameters"))
         .cloned()
         .unwrap_or(Value::Map(BTreeMap::new()));
-    // Arguments written as a string holding JSON are read as JSON.
     let arguments = match arguments {
         Value::Text(text) => mcf_record::json::parse(&text).unwrap_or(Value::Text(text)),
         other => other,
@@ -327,8 +275,6 @@ pub(crate) fn call_in(said: &str) -> Option<Call> {
     Some(Call { name, arguments })
 }
 
-/// A `<function=name>` block with its `<parameter=key>value</parameter>`
-/// children, as several templates write a call.
 fn function_block(said: &str) -> Option<Call> {
     let at = said.find("<function=")?.checked_add("<function=".len())?;
     let rest = said.get(at..)?;
@@ -352,7 +298,6 @@ fn function_block(said: &str) -> Option<Call> {
         };
         let value_end = after.find("</parameter>").unwrap_or(after.len());
         let raw = after.get(..value_end).unwrap_or_default().trim();
-        // A whole number written bare is a number; anything else is text.
         let value = raw
             .parse::<i64>()
             .map_or_else(|_| Value::text(raw.to_owned()), Value::Integer);
@@ -362,7 +307,6 @@ fn function_block(said: &str) -> Option<Call> {
     Some(Call { name, arguments })
 }
 
-/// Whether one argument the model gave matches the one expected.
 pub(crate) fn argument_matches(given: &Value, expected: Arg) -> bool {
     match expected {
         Arg::Text(want) => given
@@ -378,7 +322,6 @@ pub(crate) fn argument_matches(given: &Value, expected: Arg) -> bool {
     }
 }
 
-/// What one trial of one task read: each a whole number a row holds.
 #[derive(Debug, Default, Clone, Copy)]
 #[allow(
     clippy::struct_excessive_bools,
@@ -390,8 +333,6 @@ struct Trial {
     keys_match: bool,
     args_match: bool,
     extra_keys: usize,
-    /// `None` where the task expects no call, or the call was not right
-    /// enough to answer.
     result_carried: Option<bool>,
     call_tokens: usize,
     call_ns: u64,
@@ -399,7 +340,6 @@ struct Trial {
     answer_ns: u64,
 }
 
-/// Reads a call against what a task expects.
 fn judged(call: Option<&Call>, expects: Expect) -> (bool, bool, bool, bool, usize) {
     let called = call.is_some();
     let Expect::Call {
@@ -429,7 +369,6 @@ fn judged(call: Option<&Call>, expects: Expect) -> (bool, bool, bool, bool, usiz
     (called, right_tool, keys_match, args_match, extra_keys)
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -575,8 +514,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// One trial: the call, judged, and where it was right enough, the tool's
-/// result fed back and the answer read for it.
 fn one_trial(site: &Site<'_>, engine: &Served, task: &Task, trial: usize) -> Result<Trial, String> {
     let said = |failure: mcf_core::Failure| failure.detail().to_owned();
     let tools = Value::List(task.tools.iter().map(tool_value).collect());
@@ -662,9 +599,6 @@ fn one_trial(site: &Site<'_>, engine: &Served, task: &Task, trial: usize) -> Res
     Ok(read)
 }
 
-/// The second turn's messages: the request, the model's own call, then
-/// the tool's result, as a caller of the hosted server would send them
-/// back.
 fn second_turn(user: Value, tool: &str, call: &Call, result: &str) -> Value {
     let arguments = Value::Map(call.arguments.clone()).to_line();
     let assistant = Value::map([
@@ -694,8 +628,6 @@ fn second_turn(user: Value, tool: &str, call: &Call, result: &str) -> Value {
     Value::List(vec![user, assistant, answer])
 }
 
-/// A rendered prompt as the engine reads it: its markers as markers, its
-/// beginning as the model's convention.
 pub(crate) fn as_read(engine: &Served, rendered: &str) -> Result<Vec<usize>, String> {
     engine
         .tokenize(rendered, true, true)

@@ -1,9 +1,3 @@
-//! The simulated hub does what it says it does.
-//!
-//! A hub written to misbehave is only useful if its misbehaviour is exact, so
-//! these check the simulator itself: each declared behaviour produces the
-//! failure it names, and the well-formed case serves what it listed.
-
 use super::{Behaviour, FakeHub, Repository};
 use crate::world::World;
 use mcf_core::failure::Category;
@@ -40,8 +34,6 @@ fn a_repository_that_is_not_there_is_not_found() {
     assert_eq!(failure.category(), Category::HubRefNotFound);
 }
 
-/// Credentials change the answer, which is what makes *ask again with
-/// credentials* a thing MCF can do rather than a thing it hopes for.
 #[test]
 fn credentials_change_what_a_repository_says() {
     let hub = FakeHub::new().with(
@@ -61,8 +53,6 @@ fn credentials_change_what_a_repository_says() {
     assert!(with_credentials.list(&reference).is_ok());
 }
 
-/// Gated is not the same as unauthenticated: credentials are present and the
-/// terms are not accepted, and the two need different actions from a user.
 #[test]
 fn gated_is_its_own_answer_and_says_what_to_do() {
     let hub = FakeHub::new()
@@ -101,8 +91,6 @@ fn throttling_carries_the_hint_a_hub_gives() {
     );
 }
 
-/// A truncated transfer *writes* what it truncated, because the artifact on the
-/// disk is what B-021 has to notice.
 #[test]
 fn a_truncated_transfer_leaves_a_partial_file() {
     let world = World::for_scenario("hub-truncates");
@@ -128,8 +116,6 @@ fn a_truncated_transfer_leaves_a_partial_file() {
     );
 }
 
-/// The same length, different bytes: a file that changed under the fetch, which
-/// a size check cannot see and a digest can.
 #[test]
 fn a_file_that_changed_under_the_fetch_has_a_different_digest() {
     let world = World::for_scenario("hub-mutates");
@@ -160,8 +146,6 @@ fn a_file_that_changed_under_the_fetch_has_a_different_digest() {
     assert_ne!(one.digest, other.digest, "and the contents are not");
 }
 
-/// The digest is computed from what arrived, not reported by the source — a
-/// checksum a hostile hub supplies is a checksum of what it wishes it had sent.
 #[test]
 fn the_digest_is_of_what_arrived() {
     let world = World::for_scenario("hub-digest");
@@ -180,8 +164,6 @@ fn the_digest_is_of_what_arrived() {
     assert_eq!(fetched.digest, mcf_core::digest::sha256(&bytes).hex());
 }
 
-/// A source says what it is, because that becomes a condition the moment
-/// something acquired through it is measured (§3.4).
 #[test]
 fn a_source_describes_itself() {
     let described = hub().describe();
@@ -189,7 +171,6 @@ fn a_source_describes_itself() {
     assert!(described.contains("credentials absent"), "{described}");
 }
 
-/// A repository with no licence declares none, rather than a plausible one.
 #[test]
 fn an_undeclared_licence_is_absent_rather_than_guessed() {
     let hub = FakeHub::new().with(
@@ -202,8 +183,6 @@ fn an_undeclared_licence_is_absent_rather_than_guessed() {
     assert_eq!(listing.declared_licence, None);
 }
 
-/// Continuing a transfer appends where it left off, which is what makes a
-/// resumption a resumption rather than a second copy of the beginning.
 #[test]
 fn a_continued_transfer_appends_from_the_offset() {
     let world = World::for_scenario("hub-resumes");
@@ -232,8 +211,6 @@ fn a_continued_transfer_appends_from_the_offset() {
     );
 }
 
-/// A hub without ranges says so rather than starting again and reporting
-/// progress that did not happen.
 #[test]
 fn a_hub_without_ranges_says_so() {
     let world = World::for_scenario("hub-no-ranges");
@@ -254,8 +231,6 @@ fn a_hub_without_ranges_says_so() {
     assert_eq!(failure.category(), Category::HubUnreachable);
 }
 
-/// A listing carries the digest the hub declares, and a hub that declares none
-/// says nothing rather than something plausible.
 #[test]
 fn a_listing_carries_the_digest_a_hub_declares() {
     let declaring =

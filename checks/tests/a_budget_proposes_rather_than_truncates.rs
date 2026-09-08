@@ -1,17 +1,3 @@
-//! A time budget names what it excluded, or refuses (B-226, B47, §3.1).
-//!
-//! **The failure.** An operator gives a budget, the run quietly does six of
-//! the twenty things it would have done, and reports the six. Nothing on the
-//! page is false and the reader is still misled: they are looking at a sixth
-//! of an experiment believing it is the experiment. §3.1's rule is that *ran 6
-//! of 20* always arrives with the fourteen.
-//!
-//! The excluded half is therefore part of the type — `Proposal::Fewer` cannot
-//! be built without it — and this file checks the two things a type cannot:
-//! that the excluded half reaches the page, and that the paths where no
-//! proposal is possible refuse rather than running something smaller.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use mcf_bench::planned::{Proposal, Work};
@@ -34,7 +20,6 @@ fn each(low: u64, high: u64) -> Estimate<Duration<Monotonic>> {
     )
 }
 
-/// Six of twenty is never rendered without the fourteen.
 #[test]
 fn what_was_excluded_is_on_the_page() {
     let held = Proposal::within(twenty(), &each(500, 1_000), Duration::from_nanos(12_000), 2);
@@ -54,8 +39,6 @@ fn what_was_excluded_is_on_the_page() {
     );
 }
 
-/// A budget below a comparison refuses, rather than answering a smaller
-/// question quietly.
 #[test]
 fn too_small_a_budget_is_a_refusal() {
     let held = Proposal::within(twenty(), &each(500, 1_000), Duration::from_nanos(1), 2);
@@ -70,11 +53,6 @@ fn too_small_a_budget_is_a_refusal() {
     );
 }
 
-/// The plan is made against the slow edge of the band.
-///
-/// Against the fast edge a run would go over budget about as often as under
-/// it, which makes the budget decorative. Under-spending is the harmless
-/// direction.
 #[test]
 fn planning_is_conservative() {
     let held = Proposal::within(twenty(), &each(1, 1_000), Duration::from_nanos(12_000), 2);
@@ -85,7 +63,6 @@ fn planning_is_conservative() {
     );
 }
 
-/// The command refuses a budget it has no measured rate to plan against.
 #[test]
 fn an_unplannable_budget_refuses_in_the_command() {
     let source =

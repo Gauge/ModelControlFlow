@@ -1,21 +1,3 @@
-//! The console's screens, drawn in pixels.
-//!
-//! **The layout is the terminal's; the drawing is not.** The console's three
-//! screens — the machine live, a model with everything known about it, and a
-//! measurement being set up — are what an operator asked for and worked
-//! through, and a window that invented its own arrangement of the same facts
-//! threw that away. So this draws *those* screens: the same sections in the
-//! same order, the same columns, the same words.
-//!
-//! **What the window adds is room and type, not a different idea.** A cell
-//! grid can right-align a column; it cannot set a heading in a lighter weight,
-//! give a table a hairline, or put a button under a list at the size a pointer
-//! wants. Those are the differences and they are the only ones.
-//!
-//! **Where the console says `Unknown`, so does this.** A7 is not a terminal
-//! convention: a figure nobody measured is absent on every surface, and the
-//! two say so in the same word.
-
 #![allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -36,27 +18,17 @@ use crate::{Act, Card, Caret, Desk, Doing, Model, Page, Picker, Region, Splitter
 use mcf_record::json::Value;
 use mcf_serve::anatomy::SaidVocabulary;
 
-/// The column down the left, in points.
-/// The breathing room around a screen's content.
 const PAD: f32 = 26.0;
 
-/// The type scale.
 mod size {
-    /// A column heading: small, spaced, quiet.
     pub(super) const LABEL: f32 = 9.5;
-    /// A caption or a unit.
     pub(super) const SMALL: f32 = 12.0;
-    /// A table row.
     pub(super) const BODY: f32 = 13.5;
-    /// A section heading.
     pub(super) const HEAD: f32 = 17.0;
 }
 
-/// What the console prints where it has no figure. The same word, because it
-/// is the same absence (A7).
 pub const UNKNOWN: &str = "Unknown";
 
-/// Draws everything, and returns what the click meant.
 pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     let (width, height) = paint.size();
     paint.begin();
@@ -82,13 +54,10 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         Page::Settings => settings(paint, main),
         Page::Exit => leaving(paint, mouse, main),
     };
-    // A scroll act is the page keeping its offset within its content, not
-    // something the person did; it never beats a press on the menu (B-575).
     act = match (went, act) {
         (Some(Act::Scroll(..)), Some(pressed)) => Some(pressed),
         (went, act) => went.or(act),
     };
-    // The boundary between the column and the page is dragged (B-490).
     if let Some(to) = ui::splitter(
         paint,
         mouse,
@@ -102,7 +71,6 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     act
 }
 
-/// A position in whole points, for an act to carry.
 fn whole(at: f32) -> i32 {
     #[allow(
         clippy::cast_possible_truncation,
@@ -112,9 +80,6 @@ fn whole(at: f32) -> i32 {
     rounded
 }
 
-/// A region drawn scrolled: its content from `offset` points up, clipped
-/// to the region, with a bar at its right edge where the content is taller
-/// than the region, moved by the wheel over it or the thumb (B-490).
 fn scrolled(
     paint: &mut Painter,
     mouse: &Mouse,
@@ -140,8 +105,6 @@ fn scrolled(
     act.or(moved.map(|to| Act::Scroll(region, whole(to))))
 }
 
-/// The column down the left: the four places and Exit, and under them
-/// what MCF is doing right now, on every page (D49).
 fn side_bar(
     paint: &mut Painter,
     desk: &Desk,
@@ -153,10 +116,6 @@ fn side_bar(
     paint.rect(Box::new(0.0, 0.0, side, height), ink.sunk);
     paint.rule((side, 0.0), (side, height), ink.line, 255);
     paint.say_at(18.0, 16.0, "MCF", Weight::Bold, size::HEAD, ink.ink);
-    // **Which MCF this is, where the name is** (B-595). The window's own
-    // build, and the daemon's under it where the two differ — which is the
-    // state a person is actually asking about when they ask whether they
-    // have the latest, and the one a version alone would hide (F276).
     let mine = crate::Desk::build_said();
     paint.say_at(18.0, 38.0, &mine, Weight::Regular, size::SMALL, ink.faint);
     if let Some(theirs) = desk.daemon_build.as_ref().filter(|held| **held != mine) {
@@ -180,8 +139,6 @@ fn side_bar(
             act = Some(Act::Go(*page));
         }
     }
-    // What MCF is doing, where a person's eye rests between pages: the job
-    // and its clock, or nothing.
     let said = desk.state_word();
     let lines = paint.wrap(&said, Weight::Regular, size::SMALL, side - 28.0);
     #[allow(clippy::cast_precision_loss, reason = "at most three lines")]
@@ -208,11 +165,6 @@ fn side_bar(
     act
 }
 
-/// Where one entry of the menu column sits, in a window of this height
-/// with a side bar this wide: the entries from the top in `Page::MENU`'s
-/// order, Exit at the bottom. One place for the layout, so that a test
-/// pressing an entry presses where the window draws it rather than
-/// sweeping the screen for it.
 #[must_use]
 pub fn menu_box(page: Page, height: f32, side: f32) -> Box {
     if page == Page::Exit {
@@ -227,28 +179,18 @@ pub fn menu_box(page: Page, height: f32, side: f32) -> Box {
     Box::new(10.0, 56.0 + 36.0 * at, side - 20.0, 32.0)
 }
 
-/// A column in a table: where it ends, and whether its figures are flush right.
 struct Column {
-    /// The heading.
     head: &'static str,
-    /// Where the column ends, in points from the table's left edge.
     at: f32,
-    /// Whether the value is set flush against `at`.
     right: bool,
 }
 
-/// The width a table's columns were laid out for; a wider table spreads
-/// them in proportion, so a wide window is used and not left empty at
-/// the right (B-510). A narrower one keeps them where they are, since
-/// the figures need their room, and the page scrolls.
 const TABLE_DESIGNED_FOR: f32 = 700.0;
 
-/// Where a column's edge falls in a table of this width.
 fn column_edge(area: Box, at: f32) -> f32 {
     area.x + at * (area.w / TABLE_DESIGNED_FOR).max(1.0)
 }
 
-/// Draws a table's heading row and returns the row below it.
 fn heads(paint: &mut Painter, area: Box, first: &str, columns: &[Column]) -> f32 {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, first, ink.faint);
@@ -277,7 +219,6 @@ fn heads(paint: &mut Painter, area: Box, first: &str, columns: &[Column]) -> f32
     under + 10.0
 }
 
-/// One row of a table.
 fn row(paint: &mut Painter, area: Box, y: f32, first: &str, cells: &[(&Column, String)]) {
     let ink = paint.ink;
     let room = cells.first().map_or(area.w, |(column, _)| {
@@ -293,8 +234,6 @@ fn row(paint: &mut Painter, area: Box, y: f32, first: &str, cells: &[(&Column, S
         ink.quiet,
     );
     for (column, value) in cells {
-        // An absent figure is drawn quietly and a present one is not, so that
-        // a table of unknowns reads as an absence rather than as data (A7).
         let colour = if value == UNKNOWN || value == "—" {
             ink.faint
         } else {
@@ -309,8 +248,6 @@ fn row(paint: &mut Painter, area: Box, y: f32, first: &str, cells: &[(&Column, S
     }
 }
 
-/// A heading in small capitals with a little tracking, as the console sets its
-/// column headings — by hand, because a run of glyphs has no such thing.
 fn spaced(paint: &mut Painter, x: f32, y: f32, text: &str, colour: Rgb) {
     let shouted = text.to_uppercase();
     let mut pen = x;
@@ -321,7 +258,6 @@ fn spaced(paint: &mut Painter, x: f32, y: f32, text: &str, colour: Rgb) {
     }
 }
 
-/// How wide [`spaced`] will draw something.
 fn spaced_width(paint: &mut Painter, text: &str) -> f32 {
     text.to_uppercase()
         .chars()
@@ -329,30 +265,12 @@ fn spaced_width(paint: &mut Painter, text: &str) -> f32 {
         .sum()
 }
 
-// ── Monitor ──────────────────────────────────────────────────────────────────
-
-/// **The machine, live.** Three tables and a line saying what MCF is doing, in
-/// the console's order.
-/// What is being served, and where a caller reaches it.
-///
-/// Returns the bottom of the card, so what follows does not need to know how
-/// tall it was.
-/// What a context window of this size costs, in bytes of cache and with the
-/// weights beside it.
-///
-/// **The window is the part somebody chooses, and it was the part nobody
-/// could see.** A model's weights are what they are; the context is a setting,
-/// and on a large machine MCF's recommendation is the whole trained window —
-/// which reserved three times the model's own size on one held here. A setting
-/// whose cost only appears in `free -h` after the fact is a decision made
-/// blind (§3.15).
 #[must_use]
 pub fn reserve_of(held: &Model, context: u64) -> Option<(u64, Option<u64>)> {
     let cache = held.cache_per_token?.saturating_mul(context);
     Some((cache, held.bytes.map(|held| held.saturating_add(cache))))
 }
 
-/// Bytes as a figure a person reads.
 #[must_use]
 pub fn gigabytes(bytes: u64) -> String {
     #[expect(
@@ -363,7 +281,6 @@ pub fn gigabytes(bytes: u64) -> String {
     format!("{held:.1} GB")
 }
 
-/// What one context window reserves, as a line.
 #[must_use]
 pub fn reserve_line(held: &Model, context: u64) -> Option<String> {
     let (cache, total) = reserve_of(held, context)?;
@@ -377,7 +294,6 @@ pub fn reserve_line(held: &Model, context: u64) -> Option<String> {
     })
 }
 
-/// What the engine said it takes, on one line.
 fn takes_line(hosting: &crate::Hosted) -> String {
     let projector = hosting.projector.as_ref().map_or_else(
         || "no projector".to_owned(),
@@ -407,13 +323,10 @@ fn monitor(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     )
 }
 
-/// The System page's content, from the top of its region.
 fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let wide = area.w;
 
-    // The machine's own figures, then its engines; what is held is on
-    // Running (D49).
     spaced(paint, area.x, area.y, "system", ink.faint);
     let mut y = area.y + 20.0;
     y = processors_table(paint, Box::new(area.x, y, wide, 0.0), desk);
@@ -428,8 +341,6 @@ fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         ),
         desk,
     );
-    // The engines: what MCF has built here and what it can build, each a
-    // card with its build button, on the page about the machine.
     y += 18.0;
     spaced(paint, area.x, y, "engines", ink.faint);
     y += 20.0;
@@ -450,9 +361,6 @@ fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         y += tall + 10.0;
     }
 
-    // The failures: what went wrong, classified, newest first, each with
-    // the fields the taxonomy gives it, on the page about the machine
-    // (B-074).
     y += 18.0;
     let heading = match desk.faults_in_record {
         0 => "failures — none in the record".to_owned(),
@@ -474,8 +382,6 @@ fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         y += tall + 8.0;
     }
 
-    // The divider and the state line sit against the bottom, as the console
-    // has them, so the tables above can grow without moving them.
     let divider = area.bottom() - 64.0;
     paint.rule((area.x, divider), (area.x + wide, divider), ink.line, 255);
     let (word, said) = desk.state_line();
@@ -498,8 +404,6 @@ fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act
 }
 
-/// One classified failure: when and what, in bold, then every line the
-/// taxonomy gives it, wrapped rather than cut (B-074).
 fn fault_card(paint: &mut Painter, fault: &crate::Fault, lines: &[String], card: Box) {
     let ink = paint.ink;
     ui::card(paint, card, false);
@@ -528,7 +432,6 @@ fn fault_card(paint: &mut Painter, fault: &crate::Fault, lines: &[String], card:
     }
 }
 
-/// The processor and every card, with what each is doing.
 fn processors_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
     let reading = &desk.reading;
     let dash = || "—".to_owned();
@@ -620,7 +523,6 @@ fn processors_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
     y
 }
 
-/// System memory and each card's, used against total.
 fn memory_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
     let reading = &desk.reading;
     let dash = || "—".to_owned();
@@ -686,7 +588,6 @@ fn memory_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
     y
 }
 
-/// Every disk with traffic worth showing.
 fn storage_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
     let reading = &desk.reading;
     let dash = || "—".to_owned();
@@ -735,20 +636,12 @@ fn storage_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
     y
 }
 
-// ── Host, and Models, which is the same screen ───────────────────────────────
-
-/// **A model and everything known about it.** A narrow list on the left with
-/// the actions under it, and every statistic on the right — the console's
-/// arrangement, and the reason it is this way round: the list is what you move
-/// through, the detail is what you read.
 fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    // The list gives way before the page does in a narrow window (B-510).
     let list = desk.splits.list.min((area.w - 300.0).max(150.0));
     let right = area.x + list + 40.0;
     let mut act = None;
     let actions_at = area.bottom() - 200.0;
-    // The boundary between the library and the page is dragged (B-490).
     if let Some(to) = ui::splitter(
         paint,
         mouse,
@@ -776,7 +669,6 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     .or(act);
 
     let pane = Box::new(right, area.y, area.right() - right, area.h);
-    // A filter's list drops over the library, last, so it is on top.
     let boxes = filter_boxes(Box::new(area.x, area.y, list, actions_at - area.y));
     let filter_menu = match desk.open {
         Some(Picker::Architecture) if desk.filters.open => Some((Picker::Architecture, boxes[0])),
@@ -827,9 +719,6 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     model_page(paint, desk, mouse, pane, held).or(act)
 }
 
-/// The page of a quantization picked that is not here: what the hub says
-/// of it, the quantization row to pick another, and a way to get it (D51,
-/// B-486; the button that downloads and runs is B-487).
 fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let pending = desk.pending.as_ref()?;
@@ -903,8 +792,6 @@ fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act
 }
 
-/// Under a subject not here: the download going, or the buttons — the one
-/// that downloads and starts the server, and Download alone (B-487).
 fn pending_actions(
     paint: &mut Painter,
     desk: &Desk,
@@ -931,8 +818,6 @@ fn pending_actions(
             ink.quiet,
         );
     } else {
-        // The download goes first and the server follows on the file
-        // once it is here (B-487); Download alone is the second button.
         let (start, drawn) = ui::fitted(
             paint,
             mouse,
@@ -960,10 +845,6 @@ fn pending_actions(
     act
 }
 
-/// A hub repository's page: its files with their sizes and whether each
-/// would run here, each with a way to get it; the look-up's progress or
-/// refusal before that, and a download's progress while one goes (D51,
-/// B-485).
 fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let id = desk
@@ -1006,8 +887,6 @@ fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
         _ => {}
     }
     let job = desk.doing.job()?;
-    // The files come before any complaint about the stream: a listing that
-    // arrived whole and then closed is the answer, not a death (F194).
     let files = job
         .conclusion()
         .or_else(|| job.latest())
@@ -1035,7 +914,6 @@ fn hub_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
     }
 }
 
-/// Why there are no settings, and what Host will do about it where it can.
 fn no_settings(paint: &mut Painter, desk: &Desk, area: Box, why: &str) {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "settings", ink.faint);
@@ -1045,9 +923,6 @@ fn no_settings(paint: &mut Painter, desk: &Desk, area: Box, why: &str) {
         paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.warn);
         y += 16.0;
     }
-    // What Host will do about it, said before it is pressed: a build is
-    // minutes and a container image, and a button that started one without
-    // saying so would be a hidden choice (§3.15, B-367).
     if let Some(engine) = &desk.needs_engine {
         let said = format!(
             "Host builds {engine} first — a pinned source compiled in a container, recorded — \
@@ -1064,17 +939,6 @@ fn no_settings(paint: &mut Painter, desk: &Desk, area: Box, why: &str) {
     }
 }
 
-/// Every setting the chosen model would be hosted under, with what MCF
-/// recommended beside anything somebody has moved.
-///
-/// **These were not shown before, and one of them was wrong.** The engine was
-/// started with the layer count written into the source as zero, so a model
-/// resolved to a graphics card ran on the processor and nothing said so. A
-/// default nobody can see is a decision nobody made (§3.15, F133).
-/// The chosen model's own page: its name, three tabs, and the tab that is
-/// open. Configure is every setting a hold takes with a control on each,
-/// Statistics everything measured or read about it, Contents what the file
-/// holds (D49).
 fn model_page(
     paint: &mut Painter,
     desk: &Desk,
@@ -1126,15 +990,8 @@ fn model_page(
     drawn.or(act)
 }
 
-/// Everything measured or read about the model, in one place: the file's
-/// figures, the ladder and what was read off it, the cross-check, the
-/// prompt report, and what the probes applied and found (D49). Nothing here
-/// is pressed: the actions are in the left column.
 fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
     let ink = paint.ink;
-    // The detail block draws the throughput table and the chart itself.
-    // A narrow pane stacks the column under the figures; the page scrolls
-    // (B-490).
     let stacked = area.w < 700.0;
     let left = Box::new(
         area.x,
@@ -1147,8 +1004,6 @@ fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
         area.h,
     );
     let after = detail(paint, left, held);
-    // The right column: what was read off the ladder, then the rest, each
-    // a short heading and the daemon's own sentences under it.
     let right = if stacked {
         Box::new(area.x, after + 24.0, area.w, 4000.0)
     } else {
@@ -1184,14 +1039,8 @@ fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
             if known { ink.quiet } else { ink.faint },
         );
     }
-    // No button and no *Last served* here: the left column's actions say
-    // both for the same model, and the column had grown past the window's
-    // foot repeating them (F187).
 }
 
-/// Every section of the Statistics tab's right column, in order: its
-/// heading, its lines, and whether there is a figure there or only where
-/// one would come from (A7).
 fn statistic_sections(held: &Model) -> Vec<(&'static str, Vec<String>, bool)> {
     let not_yet = |_what: &str| vec!["Not run — see Diagnostics".to_owned()];
     let mut sections = Vec::new();
@@ -1239,9 +1088,6 @@ fn statistic_sections(held: &Model) -> Vec<(&'static str, Vec<String>, bool)> {
     sections
 }
 
-/// What the probes found, one line a probe: its name and the first line
-/// that says what it observed, leaving out what it asks and decides and
-/// the conditions it ran under, which are on the record.
 fn probed_said(probed: &[crate::Finding]) -> Vec<String> {
     probed
         .iter()
@@ -1262,8 +1108,6 @@ fn probed_said(probed: &[crate::Finding]) -> Vec<String> {
         .collect()
 }
 
-/// What the last measurement said, section by section: where it was taken,
-/// then what was read off the ladder, in the daemon's own sentences.
 fn timing_said(body: &Value) -> Vec<(&'static str, Vec<String>)> {
     let conditions = body.get("conditions");
     let on = conditions
@@ -1296,8 +1140,6 @@ fn timing_said(body: &Value) -> Vec<(&'static str, Vec<String>)> {
     ]
 }
 
-/// What the file holds, read and not measured: the tensor directory or the
-/// vocabulary, one at a time, with a switch between them (D49).
 fn contents_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
@@ -1348,18 +1190,11 @@ fn contents_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act
 }
 
-/// One row of the Configure tab: the setting's name at the left, its
-/// control at the column, and — where the mouse is over it — what it does,
-/// kept for the foot of the tab.
 struct Row {
-    /// The setting's name, as `Hosting::listed` names it.
     name: &'static str,
-    /// What the row is for, shown at the foot while the mouse is over it.
     because: &'static str,
 }
 
-/// Every setting a hold takes, each with the control its value wants, then
-/// what the hold will take of what is free, and Host last (D49, §3.15).
 #[expect(
     clippy::too_many_lines,
     reason = "one row per setting a hold takes, in order"
@@ -1373,8 +1208,6 @@ fn configure_tab(
 ) -> Option<Act> {
     let ink = paint.ink;
     let mut y = area.y;
-    // A model that will not run says why first, in the refusal colour, and
-    // nothing below pretends it can be configured into running (A2).
     if let Some(why) = &held.refused {
         for line in paint
             .wrap(why, Weight::Regular, size::BODY, area.w)
@@ -1388,10 +1221,6 @@ fn configure_tab(
     }
     let (Some(settings), Some(recommended)) = (desk.settings.as_ref(), desk.recommended.as_ref())
     else {
-        // Nothing to configure yet: MCF has not said what this model would
-        // run under, or said why it cannot. The reason is here, and Host is
-        // still here — pressing it says why in words rather than doing
-        // nothing (§3.15).
         if let Some(why) = &desk.no_settings {
             no_settings(paint, desk, Box::new(area.x, y, area.w, 0.0), why);
             y += 90.0;
@@ -1501,9 +1330,6 @@ fn configure_tab(
         mouse.clicked(Box::new(column, y - 6.0, 90.0, 28.0))
     };
 
-    // Where it goes.
-    // Which quantization of the repository: the files here, then what the
-    // hub publishes, once asked (D51, B-486).
     if desk.subject_repository().is_some() {
         label(
             paint,
@@ -1556,7 +1382,6 @@ fn configure_tab(
     y += 34.0;
     recommends(paint, &mut y, "put it on");
 
-    // The window, with what it reserves as it is typed.
     label(
         paint,
         y,
@@ -1585,7 +1410,6 @@ fn configure_tab(
     }
     recommends(paint, &mut y, "context window");
 
-    // Numbers.
     for (name, field, now) in [
         (
             "Threads",
@@ -1616,7 +1440,6 @@ fn configure_tab(
         recommends(paint, &mut y, name);
     }
 
-    // Switches.
     for (name, which, on) in [
         (
             "Flash attention",
@@ -1650,7 +1473,6 @@ fn configure_tab(
         recommends(paint, &mut y, name);
     }
 
-    // The key.
     label(
         paint,
         y,
@@ -1673,7 +1495,6 @@ fn configure_tab(
     }
     y += 34.0;
 
-    // What the file declares and whether to start it.
     label(
         paint,
         y,
@@ -1762,7 +1583,6 @@ fn configure_tab(
     }
     y += 34.0;
 
-    // The projector.
     label(
         paint,
         y,
@@ -1804,12 +1624,10 @@ fn configure_tab(
     }
     y += 34.0;
 
-    // A typed value that was not taken, said where it was typed.
     if let Some(why) = &desk.edit_refused {
         paint.say_at(area.x, y, why, Weight::Regular, size::SMALL, ink.warn);
         y += 18.0;
     }
-    // What the hold will take of what is free, then the buttons.
     let (pressed, _after) = configure_foot(
         paint,
         desk,
@@ -1830,9 +1648,6 @@ fn configure_tab(
     act
 }
 
-/// The foot of the Configure tab: what the hovered row is for, what the
-/// hold will take, what the probes applied, and the buttons — Back to
-/// recommended, and Host last.
 fn configure_foot(
     paint: &mut Painter,
     desk: &Desk,
@@ -1870,7 +1685,6 @@ fn configure_foot(
         );
         y += 24.0;
     }
-    // What the probes applied: a hold runs under these too (§3.15).
     for (what, applied) in [
         ("Chat template (probed)", held.applied_addressing.as_deref()),
         ("Token budget (probed)", held.applied_budget.as_deref()),
@@ -1896,8 +1710,6 @@ fn configure_foot(
         }
         x += drawn.w + 12.0;
     }
-    // What it was last held under, where that is not what is set now: one
-    // press puts the settings back the way they were (B-475).
     if let Some((last, _)) = &desk.last_settings
         && !settings.differs_from(last).is_empty()
     {
@@ -1926,7 +1738,6 @@ fn configure_foot(
     (act, y + 40.0)
 }
 
-/// The words for one placement in the list.
 fn placement_label(placement: &crate::Placement) -> String {
     let where_ = match placement.on.as_str() {
         "resolved" => "Auto",
@@ -1937,7 +1748,6 @@ fn placement_label(placement: &crate::Placement) -> String {
     format!("{where_} — {} on {}", placement.engine, placement.device)
 }
 
-/// The words for one rope choice in the list.
 fn rope_label(at: usize) -> &'static str {
     match at {
         1 => "Off",
@@ -1947,7 +1757,6 @@ fn rope_label(at: usize) -> &'static str {
     }
 }
 
-/// Whichever of the Configure tab's lists is open, and what was picked.
 fn configure_menu(
     paint: &mut Painter,
     desk: &Desk,
@@ -1990,8 +1799,6 @@ fn configure_menu(
     }
 }
 
-/// One quantization as the picker lists it: the file, its size, and
-/// whether it is here or on the hub and would run here (A7).
 fn quant_label(quant: &crate::Quant) -> String {
     let size = quant
         .bytes
@@ -2005,9 +1812,6 @@ fn quant_label(quant: &crate::Quant) -> String {
     format!("{}{size} · {where_}", quant.file)
 }
 
-/// The build, as it goes: what is being built and for what, how long so far,
-/// and the last line the compiler printed — which is what tells a person that
-/// minutes of silence are minutes of work (A2).
 fn building(paint: &mut Painter, job: &crate::job::Job, x: f32, mut y: f32, wide: f32) {
     let ink = paint.ink;
     let printed = job
@@ -2042,14 +1846,6 @@ fn building(paint: &mut Painter, job: &crate::job::Job, x: f32, mut y: f32, wide
     }
 }
 
-/// What can be done with the model on the left, and where it is reachable
-/// when it is being held.
-/// The buttons for the chosen model: ask and stop where it is held; else
-/// Host — and a build as its own button, said as one, because minutes of
-/// container build is not what a person pressing Host expects Host to do
-/// (§3.15, B-367). Where no engine here runs the model at all, the build
-/// comes first and Host waits on it; where a card's build is missing, it
-/// is offered beside Host.
 fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(String, Kind, Act)> {
     if this_one {
         return vec![
@@ -2057,8 +1853,6 @@ fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(Strin
             (stop_label, Kind::Ordinary, Act::StopHosting),
         ];
     }
-    // Host is the last button on the Configure tab, after the settings are
-    // read whole (D49); the builds stay here, said as builds.
     let mut listed = Vec::new();
     if let Some(engine) = &desk.needs_engine {
         listed.push((
@@ -2081,7 +1875,6 @@ fn action_buttons(desk: &Desk, this_one: bool, stop_label: String) -> Vec<(Strin
     listed
 }
 
-/// What was last held, in a line, and a button that holds it again.
 fn last_hold_offer(
     paint: &mut Painter,
     mouse: &Mouse,
@@ -2113,23 +1906,13 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
     let list = area.w;
     let actions_at = area.y;
     let mut act = None;
-    // The actions, under the list, where they were asked to be.
     spaced(paint, area.x, actions_at, "actions", ink.faint);
     let mut y = actions_at + 26.0;
-    // Whether *this* model is the one being held, rather than whether
-    // anything is: a person looking at one model and told *stop hosting* when
-    // a different one is up has been told something false about what they are
-    // looking at.
     let this_one = desk
         .hosted
         .as_ref()
         .zip(desk.chosen.and_then(|at| desk.models.get(at)))
         .is_some_and(|(hosting, held)| hosting.model == held.path);
-    // *What is in it* on both: it reads the file and runs nothing, so a model
-    // being held can be counted as well as one that is not.
-    // What a stop gives back, said on the button: the weights and the
-    // cache the hold reserved, which is what the daemon will be asked to
-    // free (§3.15).
     let stop_label = desk
         .hosted_model()
         .zip(desk.hosted.as_ref().and_then(|hosting| hosting.context))
@@ -2148,8 +1931,6 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
     for (label, kind, what) in actions {
         let where_ = Box::new(area.x, y, list - 20.0, 30.0);
         let needs_one = true;
-        // Host waits on a build where none of the engines here can run
-        // the model: the button is drawn quiet and does nothing.
         let waits = what == Act::HostIt && desk.needs_engine.is_some();
         if ui::button(paint, mouse, where_, &label, kind)
             && (!needs_one || desk.chosen.is_some())
@@ -2159,9 +1940,6 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         }
         y += 36.0;
     }
-    // Where a caller reaches it. The one fact an API is for.
-    // What was last held, where nothing is now and nothing is loading: one
-    // line and one press to hold it again (A1).
     if desk.hosted.is_none()
         && !desk.doing.busy()
         && let Some(last) = &desk.last_hold
@@ -2189,11 +1967,6 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
     } else if let Doing::Provisioning(job) = &desk.doing {
         building(paint, job, area.x, y + 6.0, list - 16.0);
     } else if let Doing::Hosting(job) = &desk.doing {
-        // **How long it has been going, rather than a promise about how long
-        // it will take.** This said "a moment", and a seventy-gigabyte model
-        // takes minutes: an operator who has been told *a moment* and waits
-        // five is an operator who reasonably concludes it has failed. What MCF
-        // knows is how long it has waited, so that is what it says (A7).
         let said = job
             .refused
             .clone()
@@ -2218,7 +1991,6 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
     act
 }
 
-/// The models this machine holds, one row each.
 fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let list = area.w;
@@ -2226,8 +1998,6 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
     let mut act = None;
     spaced(paint, area.x, area.y, "models", ink.faint);
     let mut y = area.y + 24.0;
-    // The search field: what is typed narrows the list as it is typed, and
-    // is the words the hub is asked for (D51).
     let _pressed = ui::field(
         paint,
         mouse,
@@ -2250,7 +2020,6 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
         paint.say_at(area.x, y, note, Weight::Regular, size::BODY, ink.faint);
         y += 24.0;
     }
-    // The rows scroll under the field, with the hub's under them (B-490).
     let rows = Box::new(
         area.x - 6.0,
         y - 4.0,
@@ -2268,8 +2037,6 @@ fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
     rolled.or(act)
 }
 
-/// The library's rows from the top of a region: one a repository, then the
-/// hub's rows. Returns what was pressed.
 fn library_rows(
     paint: &mut Painter,
     desk: &Desk,
@@ -2298,8 +2065,6 @@ fn library_rows(
     act
 }
 
-/// How tall the filters are under the field: the toggle's line, and the
-/// three pickers when open (B-489).
 fn filters_height(desk: &Desk) -> f32 {
     if desk.filters.open {
         22.0 + 3.0 * 32.0
@@ -2308,7 +2073,6 @@ fn filters_height(desk: &Desk) -> f32 {
     }
 }
 
-/// Where each filter's picker sits, for drawing it and its list alike.
 fn filter_boxes(area: Box) -> [Box; 3] {
     let top = area.y + 24.0 + 38.0 + 22.0;
     let x = area.x + 88.0;
@@ -2320,7 +2084,6 @@ fn filter_boxes(area: Box) -> [Box; 3] {
     ]
 }
 
-/// The word the toggle shows: *Filters*, with how many are set.
 fn filters_word(desk: &Desk) -> String {
     let set = [
         desk.filters.architecture.is_some(),
@@ -2338,9 +2101,6 @@ fn filters_word(desk: &Desk) -> String {
     }
 }
 
-/// The filters under the search field: a toggle, and when open three
-/// pickers — architecture, fits here, size — each *any* until set (D51,
-/// B-489).
 fn filter_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let y = area.y + 24.0 + 38.0;
@@ -2399,7 +2159,6 @@ fn filter_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     act
 }
 
-/// The *fits here* choice's word.
 fn fits_label(fits: Option<bool>) -> &'static str {
     match fits {
         None => "any",
@@ -2408,7 +2167,6 @@ fn fits_label(fits: Option<bool>) -> &'static str {
     }
 }
 
-/// The size choice's word.
 fn size_label(size: Option<u64>) -> String {
     size.map_or_else(
         || "any".to_owned(),
@@ -2416,8 +2174,6 @@ fn size_label(size: Option<u64>) -> String {
     )
 }
 
-/// The row that searches the hub for the words in the field, quiet while
-/// a search goes.
 fn search_row(
     paint: &mut Painter,
     desk: &Desk,
@@ -2459,9 +2215,6 @@ fn search_row(
     (pressed && !searching).then_some(Act::SearchHub)
 }
 
-/// Under what is here: the row that searches the hub for the words in the
-/// field, and what the hub answered for them, one row a repository with its
-/// downloads, most downloaded first (D51, B-485).
 fn hub_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let words = desk.filter.trim();
@@ -2528,10 +2281,6 @@ fn hub_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
     act
 }
 
-/// One entry of the library: the repository's name, or the file's where
-/// no repository is known, with the figures that decide a choice under it
-/// and how many quantizations are here (D51, B-486). Pressing it makes the
-/// entry's chosen member the subject, or its first.
 fn group_row(
     paint: &mut Painter,
     desk: &Desk,
@@ -2603,8 +2352,6 @@ fn group_row(
     mouse.clicked(where_).then_some(Act::Choose(member))
 }
 
-/// One model's figures in a line: architecture, trained window, device
-/// kind, measured speed — each only where it is known (A7).
 fn chooses_by(held: &Model) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(architecture) = &held.architecture {
@@ -2629,7 +2376,6 @@ fn chooses_by(held: &Model) -> String {
     }
 }
 
-/// Everything known about one model, as the console lists it.
 fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     let ink = paint.ink;
     let name = paint.elide(&held.name, Weight::Bold, size::HEAD, area.w);
@@ -2703,12 +2449,9 @@ fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     what_was_measured(paint, Box::new(area.x, y, area.w, area.h), held)
 }
 
-/// The MEASURED table, and under it the shape the table cannot carry.
 fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     let ink = paint.ink;
     let mut y = area.y;
-    // What has been measured, which for most models is nothing — and the
-    // console says so in this many words, so this does too (A7, A9).
     let wide = area.w;
     let speed = Column {
         head: "speed",
@@ -2743,8 +2486,6 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
         return y + 20.0;
     }
 
-    // The shape, which the table above cannot carry. Two readings are a line
-    // and one is a point, so nothing is drawn until there are two (A11).
     if held.ladder.len() >= 2 {
         y += 12.0;
         paint.say_at(
@@ -2769,14 +2510,6 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     y
 }
 
-/// **The Diagnostics page: one card per run** (D50, B-477). Each card names
-/// the run, says in one line what it answers, shows the controls the run
-/// takes with MCF's recommendation as the default, states what it will cost
-/// before its own Run, and shows its step and a Stop while it goes. When a
-/// run is done the card says so, and the figures are on the model's
-/// Statistics tab. No control here stands for a thing a run does not
-/// separately do: the checkbox rows that were one run's results drawn as
-/// five choices are gone.
 fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     scrolled(
         paint,
@@ -2788,15 +2521,11 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     )
 }
 
-/// The Diagnostics page: the model it runs on, the list of every
-/// diagnostic down the left with when each last ran, and the one chosen
-/// shown whole to the right (D53).
 fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
     let mut menu: Option<(Picker, Box)> = None;
 
-    // The model every diagnostic runs on, first.
     let chosen_model = desk.pending.as_ref().map_or_else(
         || {
             desk.chosen
@@ -2833,19 +2562,15 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
     }
     let top = area.y + 44.0;
 
-    // The list down the left, the boundary dragged (B-490), the chosen
-    // diagnostic whole to the right.
     let list_w = desk.splits.diagnostics.min((area.w - 260.0).max(160.0));
     let list = Box::new(area.x, top, list_w, area.bottom() - top);
     spaced(paint, list.x, list.y, "diagnostics", ink.faint);
-    // Every diagnostic in turn, from one press (B-508).
     let a_run = a_run_is_going(desk);
     let run_all = Box::new(list.right() - 78.0, list.y - 7.0, 72.0, 26.0);
     let kind = if a_run { Kind::Quiet } else { Kind::Primary };
     if ui::button(paint, mouse, run_all, "Run all", kind) && !a_run {
         act = Some(download_then(desk, Act::RunAll));
     }
-    // The strip under the list: what runs, how far, how long, Stop (B-509).
     let strip = Box::new(list.x, list.bottom() - STRIP, list.w, STRIP);
     if let Some(pressed) = progress_strip(paint, desk, mouse, strip) {
         act = Some(pressed);
@@ -2893,14 +2618,8 @@ fn diagnostics_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
     act
 }
 
-/// How tall the strip under the list is.
 const STRIP: f32 = 74.0;
 
-/// The strip under the list: which diagnostic is running and, while a
-/// Run all goes, which run of how many; a bar that is the run's own
-/// progress where its stream says, or the sequence's; the elapsed time;
-/// and a Stop. *Nothing running* otherwise, so the list keeps its shape
-/// (B-509, A7).
 fn progress_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Option<Act> {
     let ink = paint.ink;
     paint.rule((at.x, at.y), (at.right(), at.y), ink.line, 255);
@@ -2935,8 +2654,6 @@ fn progress_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> O
         size::SMALL,
         ink.ink,
     );
-    // The time run, and about how long is left at this run's own pace,
-    // said as an estimate (B-572).
     let elapsed = match desk.time_left() {
         Some(left) => format!("{} · about {} left", clock(job.ran()), clock(left)),
         None => clock(job.ran()),
@@ -2950,8 +2667,6 @@ fn progress_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> O
         ink.quiet,
     );
     let bar = Box::new(at.x, at.y + 34.0, at.w - 86.0, 8.0);
-    // A run whose stream does not say how far it is draws the bar without
-    // a fill, which is honest about what is known (A7).
     ui::progress(
         paint,
         bar,
@@ -2961,9 +2676,6 @@ fn progress_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> O
     ui::button(paint, mouse, stop, "Stop", Kind::Primary).then_some(Act::Stop)
 }
 
-/// The list's rows from the top of its region: each family under its
-/// heading with a Run all where the family is one run, one row a
-/// diagnostic (D53).
 fn diagnostic_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
@@ -2995,9 +2707,6 @@ fn diagnostic_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -
     act
 }
 
-/// One row of the list: the diagnostic's name, and beneath it when it
-/// last ran on this model and through what, *never run*, or that it is
-/// running now and which step it is on (D53).
 fn diagnostic_row(
     paint: &mut Painter,
     desk: &Desk,
@@ -3078,10 +2787,6 @@ fn diagnostic_row(
     mouse.clicked(where_).then_some(Act::Show(diagnostic))
 }
 
-/// The chosen diagnostic, whole, in its own scrolled region: the ladder's
-/// card as it was, a run's card with its last finding under it, or a
-/// probe's or measurement's own pane (D53). Returns what was pressed and
-/// a menu to draw over everything, where one is open.
 fn diagnostic_pane(
     paint: &mut Painter,
     desk: &Desk,
@@ -3116,8 +2821,6 @@ fn diagnostic_pane(
     (act, menu)
 }
 
-/// The cost of a run on a hosted model, above its pane: the space it takes
-/// off the top of the pane is returned as what is left (B-561, F243).
 fn second_copy_line(paint: &mut Painter, desk: &Desk, inner: Box) -> Box {
     let Some(said) = desk.second_copy() else {
         return inner;
@@ -3135,10 +2838,6 @@ fn second_copy_line(paint: &mut Painter, desk: &Desk, inner: Box) -> Box {
     Box::new(inner.x, inner.y + 24.0, inner.w, (inner.h - 24.0).max(0.0))
 }
 
-/// A coding suite's pane: what it answers, Run — which starts MCF's own
-/// `eval` for the suite and reads it as it goes — or Stop while it runs,
-/// the command's last line meanwhile, when it last ran, and its readings
-/// (B-519, D54).
 #[allow(clippy::too_many_lines, reason = "one pane, its rows in order")]
 fn eval_pane(
     paint: &mut Painter,
@@ -3162,8 +2861,6 @@ fn eval_pane(
     } else {
         0.0
     };
-    // The results so far, a line each, while the suite runs and once it
-    // has finished (B-569).
     let so_far = if running_one || done {
         desk.results_so_far()
     } else {
@@ -3185,9 +2882,6 @@ fn eval_pane(
     let y = card_head_named(paint, frame, diagnostic.name(), diagnostic.answers());
     let mut act = None;
     let running = a_run_is_going(desk);
-    // Stop asks the suite to finish the attempt in hand and close its run;
-    // a second press kills it. A row whose newest run did not finish
-    // offers Resume, which goes on from what that run has (B-571).
     let stopping = matches!(&desk.doing, Doing::Evaluating(job) if job.stopping && !job.finished);
     let label = if running_one && stopping {
         "Kill"
@@ -3215,7 +2909,6 @@ fn eval_pane(
         act = Some(Act::RunOne(diagnostic));
     }
     if running_one {
-        // The command's own last line, as `mcf eval` prints it.
         let said = desk
             .doing
             .job()
@@ -3242,8 +2935,6 @@ fn eval_pane(
         );
     }
     let mut below = y + 44.0;
-    // What the catalogue will run under, and the two fields that set it
-    // (B-564): under the Run button, before the readings.
     if is_the_challenges_row(diagnostic)
         && let Some(pressed) = runs_under(paint, desk, mouse, inner_x, &mut below)
     {
@@ -3314,8 +3005,6 @@ fn eval_pane(
     act
 }
 
-/// A run's pane: its card as it was, and under it what its last run
-/// said and when (D53).
 fn run_pane(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let card = desk.diagnostic.card();
@@ -3375,9 +3064,6 @@ fn run_pane(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
     act
 }
 
-/// A probe's or a measurement's pane: what it answers, Apply for a
-/// probe, Run with the step while it goes, and under the card its last
-/// finding with when it was taken and through what (D53).
 fn one_pane(
     paint: &mut Painter,
     desk: &Desk,
@@ -3471,8 +3157,6 @@ fn one_pane(
     act
 }
 
-/// A probe's or measurement's last finding on the chosen model, under
-/// its card: when it was taken and through what, then the lines (D53).
 fn finding_rows(
     paint: &mut Painter,
     desk: &Desk,
@@ -3513,8 +3197,6 @@ fn finding_rows(
             y += 20.0;
         }
     }
-    // The rows under the sentences: every figure the run read, raw, in
-    // one table — what a person compares models by (D54, B-516).
     if let Some(run) = desk.readings_of(diagnostic) {
         readings_table(
             paint,
@@ -3525,13 +3207,8 @@ fn finding_rows(
     }
 }
 
-/// How many rows of a run's readings the pane shows before it says how
-/// many more there are: enough to read a run whole, few enough that a
-/// fidelity run of three hundred rows does not push the page a metre down.
 const ROWS_SHOWN: usize = 60;
 
-/// A run's readings as a table: the dimensions as columns, then the
-/// metric, the value and its unit, one row a reading (D54, B-516).
 #[allow(clippy::too_many_lines, reason = "one table, its lines in order")]
 fn readings_table(paint: &mut Painter, area: Box, run: &Value, going: bool) {
     let ink = paint.ink;
@@ -3542,8 +3219,6 @@ fn readings_table(paint: &mut Painter, area: Box, run: &Value, going: bool) {
     let dims = mcf_record::readings::dims_of(&rows);
     let mut heads: Vec<String> = dims.clone();
     heads.extend(["metric", "value", "unit"].map(str::to_owned));
-    // Each column as wide as its widest cell, the value column set flush
-    // right; what does not fit the pane is elided rather than run off it.
     let cells: Vec<Vec<String>> = rows
         .iter()
         .take(ROWS_SHOWN)
@@ -3570,9 +3245,6 @@ fn readings_table(paint: &mut Painter, area: Box, run: &Value, going: bool) {
     let mut y = area.y;
     spaced(paint, area.x, y, "readings", ink.faint);
     y += 22.0;
-    // What the run ran under, from its conditions: the engine, the window,
-    // the layers, and whatever else the run named, so that the figures
-    // below are never read without them (D56).
     let under: Vec<String> = match run.get("conditions") {
         Some(Value::Map(conditions)) => conditions
             .iter()
@@ -3593,8 +3265,6 @@ fn readings_table(paint: &mut Painter, area: Box, run: &Value, going: bool) {
         paint.say_at(area.x, y, &said, Weight::Regular, size::SMALL, ink.faint);
         y += 20.0;
     }
-    // A run recorded a part at a time says how it ended, or that it has
-    // not: under way while its suite runs, cut off otherwise (B-570).
     if mcf_record::readings::in_parts(run) {
         let ended = match mcf_record::readings::ended_of(run) {
             Some(ended) => ended,
@@ -3648,9 +3318,6 @@ fn readings_table(paint: &mut Painter, area: Box, run: &Value, going: bool) {
     }
 }
 
-/// A line the daemon aligned into columns with runs of spaces, as a
-/// proportional face can show it: the columns parted by a dot, since the
-/// spaces that lined them up on a terminal collapse here.
 pub(crate) fn columns_said(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut spaces = 0_usize;
@@ -3670,8 +3337,6 @@ pub(crate) fn columns_said(line: &str) -> String {
     out
 }
 
-/// Whether a probe's or measurement's own run has finished with a
-/// finding for it (D53).
 fn is_done_one(desk: &Desk, diagnostic: crate::Diagnostic) -> bool {
     if let (crate::Diagnostic::Eval(which), Doing::Evaluating(job)) = (diagnostic, &desk.doing) {
         return job.finished
@@ -3699,13 +3364,10 @@ fn is_done_one(desk: &Desk, diagnostic: crate::Diagnostic) -> bool {
         })
 }
 
-/// A card's frame: the panel, its name and what it answers. Returns where
-/// the card's own rows begin.
 fn card_head(paint: &mut Painter, at: Box, card: Card) -> f32 {
     card_head_named(paint, at, card.name(), card.answers())
 }
 
-/// A card's frame by name: the panel, the name and what it answers.
 fn card_head_named(paint: &mut Painter, at: Box, name: &str, answers: &str) -> f32 {
     let ink = paint.ink;
     paint.panel(at, 10.0, ink.card, 255);
@@ -3730,13 +3392,10 @@ fn card_head_named(paint: &mut Painter, at: Box, name: &str, answers: &str) -> f
     y + 6.0
 }
 
-/// How tall a card's head is: its name and what it answers, wrapped to two
-/// lines at most.
 fn head_height(paint: &mut Painter, card: Card, w: f32) -> f32 {
     head_height_of(paint, card.answers(), w)
 }
 
-/// The same, by what the head says.
 fn head_height_of(paint: &mut Painter, answers: &str, w: f32) -> f32 {
     let lines = paint
         .wrap(answers, Weight::Regular, size::SMALL, w - 2.0 * PAD)
@@ -3747,8 +3406,6 @@ fn head_height_of(paint: &mut Painter, answers: &str, w: f32) -> f32 {
     31.0 + 16.0 * lines + 6.0
 }
 
-/// A card's Run, or Stop while its run goes, or *Download and run* on a
-/// subject not here (B-487).
 fn run_label(desk: &Desk, going: bool) -> &'static str {
     if going {
         "Stop"
@@ -3759,7 +3416,6 @@ fn run_label(desk: &Desk, going: bool) -> &'static str {
     }
 }
 
-/// An act on a subject not here goes after its download (B-487).
 fn download_then(desk: &Desk, act: Act) -> Act {
     if desk.pending.is_some() {
         Act::DownloadThen(std::boxed::Box::new(act))
@@ -3768,7 +3424,6 @@ fn download_then(desk: &Desk, act: Act) -> Act {
     }
 }
 
-/// Whether a run is going, so that no card offers a second one meanwhile.
 fn a_run_is_going(desk: &Desk) -> bool {
     matches!(
         &desk.doing,
@@ -3781,9 +3436,6 @@ fn a_run_is_going(desk: &Desk) -> bool {
     )
 }
 
-/// The throughput card: device and window pickers, where the model lands,
-/// the depths the window implies, two ways to run it with their cost, and
-/// the run's readings as they come.
 fn throughput_card(
     paint: &mut Painter,
     desk: &Desk,
@@ -3835,8 +3487,6 @@ fn throughput_card(
         }
         y += card_unused_height(paint, desk, inner.w, because);
     }
-    // Choosing a window implies every power of two below it, so the depths
-    // are stated rather than offered as a second set of choices.
     paint.say_at(inner.x, y, "Depths", Weight::Regular, size::BODY, ink.quiet);
     let column = label_column(inner.w);
     let depths = paint.elide(
@@ -3866,19 +3516,14 @@ fn throughput_card(
     (act, menu)
 }
 
-/// How wide a card's label column is: a hundred and fifty points where
-/// there is room, and a share of a narrow card otherwise (B-510).
 fn label_column(inner_w: f32) -> f32 {
     label_column_of(inner_w, 150.0)
 }
 
-/// The same, with the width the labels want where there is room.
 fn label_column_of(inner_w: f32, most: f32) -> f32 {
     (inner_w * 0.4).min(most).max(70.0)
 }
 
-/// Quick run and Run, each with its cost; Stop while the ladder climbs; and
-/// where the figures went once it has. Returns where the readings begin.
 fn throughput_buttons(
     paint: &mut Painter,
     desk: &Desk,
@@ -3894,8 +3539,6 @@ fn throughput_buttons(
     } else {
         (130.0, 110.0)
     };
-    // Two buttons and a Stop share a narrow card rather than run off it
-    // (B-510).
     let room = ((wide - 28.0) / 3.0).max(60.0);
     let (quick_w, full_w) = (quick_w.min(room), full_w.min(room));
     let quick = Box::new(x, y, quick_w, 34.0);
@@ -3909,8 +3552,6 @@ fn throughput_buttons(
             Kind::Ordinary
         }
     };
-    // On a subject not here the buttons download first and run after
-    // (B-487).
     let then = |act: Act| download_then(desk, act);
     let (quick_label, full_label) = if desk.pending.is_some() {
         ("Download, quick run", "Download and run")
@@ -3934,7 +3575,6 @@ fn throughput_buttons(
     }
     for (button, quick_one) in [(quick, true), (full, false)] {
         let (low, high) = desk.estimate(quick_one);
-        // The caption fits its button, however narrow the card (B-510).
         let caption = paint.elide(
             &span(low, high),
             Weight::Regular,
@@ -3959,22 +3599,13 @@ fn throughput_buttons(
     (act, below + 12.0)
 }
 
-/// Whether the row is the catalogue's, whose pane takes the retries and
-/// the window (B-564).
 fn is_the_challenges_row(diagnostic: crate::Diagnostic) -> bool {
     matches!(diagnostic, crate::Diagnostic::Eval(at)
         if crate::SUITES.get(at).is_some_and(|(name, _, _)| name.starts_with("challenges")))
 }
 
-/// What the Challenges pane's conditions and fields take, in height; a
-/// refusal of what was typed takes one line more.
 const RUNS_UNDER_HEIGHT: f32 = 18.0 * 3.0 + 34.0 * 3.0 + 8.0;
 
-/// What the catalogue will run under, said before Run is pressed: the
-/// engine and device MCF resolved for the model, the answer budget, and
-/// the two fields a person can set — the retries and the window (B-564,
-/// D56). The rest is the daemon's at the ask, and every row's record
-/// names it.
 fn runs_under(paint: &mut Painter, desk: &Desk, mouse: &Mouse, x: f32, y: &mut f32) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
@@ -4049,7 +3680,6 @@ fn runs_under(paint: &mut Painter, desk: &Desk, mouse: &Mouse, x: f32, y: &mut f
     act
 }
 
-/// Whether this card's run has finished, with figures to read.
 fn is_done(desk: &Desk, card: Card) -> bool {
     match (card, &desk.doing) {
         (Card::Throughput, Doing::Measuring(job))
@@ -4071,8 +3701,6 @@ fn is_done(desk: &Desk, card: Card) -> bool {
     }
 }
 
-/// *Done — figures on Statistics*, with the button that goes there, where
-/// the card's run has finished (D50).
 fn done_line(
     paint: &mut Painter,
     desk: &Desk,
@@ -4096,8 +3724,6 @@ fn done_line(
     pressed.then_some(Act::SeeStatistics)
 }
 
-/// One of the four smaller cards. Returns what was pressed and where the
-/// card ends.
 fn small_card(
     paint: &mut Painter,
     desk: &Desk,
@@ -4109,8 +3735,6 @@ fn small_card(
     let running = a_run_is_going(desk);
     let inner_x = at.x + PAD;
     let inner_w = at.w - 2.0 * PAD;
-    // The card's height is known before it is drawn: the frame is painted
-    // first and the rows go over it.
     let model = desk
         .chosen
         .and_then(|at| desk.models.get(at))
@@ -4169,8 +3793,6 @@ fn small_card(
                 act = Some(pressed);
             }
         }
-        // Every coding suite in one run of MCF's own `eval`, read as a job
-        // (B-519); each suite is also a row of the list with its own Run.
         Card::Coding => {
             let evaluating = matches!(&desk.doing, Doing::Evaluating(job) if !job.finished);
             let (pressed, _) = ui::fitted(
@@ -4194,8 +3816,6 @@ fn small_card(
                 act = Some(pressed);
             }
         }
-        // The probes and the measurements are rows of the list, each shown
-        // whole from its own pane (D53); the ladder has its own card.
         Card::Throughput
         | Card::Capabilities
         | Card::Performance
@@ -4205,9 +3825,6 @@ fn small_card(
     (act, frame.bottom())
 }
 
-/// A step the daemon announced for the measurements, as one line:
-/// *measurement 3 of 14: prefix-reuse* — the same words `mcf examine`
-/// prints (A22).
 fn measure_step_said(body: &Value) -> Option<String> {
     let step = body.get("step")?;
     let figure = |key: &str| step.get(key).and_then(Value::as_integer);
@@ -4228,8 +3845,6 @@ fn measure_step_said(body: &Value) -> Option<String> {
     ))
 }
 
-/// A step the daemon announced for the probes, as one line: *probe 3 of
-/// 9: stop-conditions* — the same words `mcf probe` prints (A22).
 fn probe_step_said(body: &Value) -> Option<String> {
     let step = body.get("step")?;
     let figure = |key: &str| step.get(key).and_then(Value::as_integer);
@@ -4241,7 +3856,6 @@ fn probe_step_said(body: &Value) -> Option<String> {
     ))
 }
 
-/// A checkbox with its label. Returns whether it was pressed.
 fn tick_box(paint: &mut Painter, mouse: &Mouse, (x, y): (f32, f32), label: &str, on: bool) -> bool {
     let ink = paint.ink;
     let square = Box::new(x, y - 1.0, 16.0, 16.0);
@@ -4263,7 +3877,6 @@ fn tick_box(paint: &mut Painter, mouse: &Mouse, (x, y): (f32, f32), label: &str,
     mouse.clicked(Box::new(x - 4.0, y - 5.0, width, 24.0))
 }
 
-/// How tall a small card is, from what it shows.
 fn small_card_height(
     paint: &mut Painter,
     desk: &Desk,
@@ -4303,9 +3916,6 @@ fn small_card_height(
     }
 }
 
-/// The rows of a card whose run is at the command line for now: what the
-/// probes last applied, the sentence saying where it runs, the command,
-/// and Copy (B-478).
 fn command_rows(
     paint: &mut Painter,
     mouse: &Mouse,
@@ -4333,16 +3943,8 @@ fn command_rows(
     pressed.then_some(Act::Copy(command))
 }
 
-/// Where the model lands — engine and device — as MCF resolved them, in the
-/// words the Models page uses for the same two facts. Not pickers: a person
-/// who wants them otherwise changes them where they are set. The device is
-/// the line this page had nothing of: a run whose page does not say whether
-/// it is timing a card or a processor is timing something the reader has to
-/// guess at (A7, §3.4). Returns where the next row goes.
 fn placement_rows(paint: &mut Painter, desk: &Desk, x: f32, mut y: f32, wide: f32) -> f32 {
     let ink = paint.ink;
-    // A subject not here has no engine or device yet: MCF resolves a file
-    // it holds, and the last model's would be a claim about this one (A7).
     let placed = if desk.pending.is_some() {
         None
     } else {
@@ -4376,8 +3978,6 @@ fn placement_rows(paint: &mut Painter, desk: &Desk, x: f32, mut y: f32, wide: f3
     y + 8.0
 }
 
-/// A card nothing here drives: the daemon's sentence, a button to build the
-/// engine that would, and — while it builds — how that is going.
 fn card_unused(
     paint: &mut Painter,
     desk: &Desk,
@@ -4413,14 +4013,11 @@ fn card_unused(
     (pressed && !desk.doing.busy()).then(|| Act::Build(component.to_owned()))
 }
 
-/// How much room the card line and its button take, so what follows is
-/// drawn under them.
 fn card_unused_height(paint: &mut Painter, desk: &Desk, wide: f32, because: &str) -> f32 {
     let lines = paint
         .wrap(because, Weight::Regular, size::SMALL, wide)
         .len()
         .min(3);
-    // A build in progress prints up to four lines under its own heading.
     let under = if matches!(&desk.doing, Doing::Provisioning(_)) {
         90.0
     } else {
@@ -4431,14 +4028,12 @@ fn card_unused_height(paint: &mut Painter, desk: &Desk, wide: f32, because: &str
     text + 6.0 + under + 10.0
 }
 
-/// Where a run can put the model, in the order the menu offers them.
 const ON_CHOICES: [Option<mcf_serve::control::On>; 3] = [
     None,
     Some(mcf_serve::control::On::Processor),
     Some(mcf_serve::control::On::Card),
 ];
 
-/// The words for where the model goes.
 fn on_label(on: Option<mcf_serve::control::On>) -> String {
     match on {
         None => "Auto".to_owned(),
@@ -4447,7 +4042,6 @@ fn on_label(on: Option<mcf_serve::control::On>) -> String {
     }
 }
 
-/// Draws whichever dropdown is open, and says what was picked from it.
 fn open_menu(
     paint: &mut Painter,
     desk: &Desk,
@@ -4457,9 +4051,6 @@ fn open_menu(
 ) -> Option<Act> {
     match picker {
         Picker::Model => {
-            // **Every model this computer holds**, which is the same list Host
-            // shows: a measurement is of a model, so the question is answered
-            // where it is asked rather than by sending the reader elsewhere.
             let labels: Vec<String> = desk.models.iter().map(|held| held.name.clone()).collect();
             if labels.is_empty() {
                 return None;
@@ -4473,7 +4064,6 @@ fn open_menu(
                 .and_then(|index| ON_CHOICES.get(index).copied())
                 .map(Act::SetOn)
         }
-        // The Configure tab's lists are drawn by the model page.
         Picker::Placement | Picker::Rope | Picker::Quantization => None,
         Picker::Architecture => {
             let mut labels = vec!["any".to_owned()];
@@ -4520,8 +4110,6 @@ fn open_menu(
     }
 }
 
-/// What a cross-check has said so far: which half is running, then the
-/// daemon's sentences.
 fn cross_check_progress(paint: &mut Painter, job: &crate::job::Job, area: Box) {
     let ink = paint.ink;
     let mut y = area.y;
@@ -4532,8 +4120,6 @@ fn cross_check_progress(paint: &mut Painter, job: &crate::job::Job, area: Box) {
         255,
     );
     let mut lines: Vec<(String, Weight, crate::paint::Rgb)> = Vec::new();
-    // What it is and how long so far, first — the same line the window
-    // carries at the top right, here where the run was started (A7).
     if !job.finished {
         lines.push((
             format!("{}, {} s so far", job.what, job.ran()),
@@ -4603,9 +4189,6 @@ fn cross_check_progress(paint: &mut Painter, job: &crate::job::Job, area: Box) {
     }
 }
 
-/// One rung as it arrived: the depth, the figure or that there is none,
-/// and how many pairs it was read off where fewer than all separated.
-/// Returns where the next line goes, or nothing where this was no rung.
 fn one_reading(paint: &mut Painter, answer: &Value, x: f32, mut y: f32, wide: f32) -> Option<f32> {
     let ink = paint.ink;
     let reading = answer.get("reading")?;
@@ -4637,8 +4220,6 @@ fn one_reading(paint: &mut Painter, answer: &Value, x: f32, mut y: f32, wide: f3
     };
     let column = label_column_of(wide, 190.0);
     paint.say_at(x + column, y, &said, Weight::Bold, size::BODY, colour);
-    // A figure from one pair of three says so beside itself, quietly,
-    // so it does not wear the look of one from three (A7, F174).
     let note = mcf_tui::screens::diagnostics::pairs_note(reading);
     if !note.is_empty() {
         let after = paint.measure(&said, Weight::Bold, size::BODY);
@@ -4661,7 +4242,6 @@ fn one_reading(paint: &mut Painter, answer: &Value, x: f32, mut y: f32, wide: f3
     Some(y)
 }
 
-/// What a run has said so far, under the setup rather than instead of it.
 fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
     let ink = paint.ink;
     if let Doing::CrossChecking(job) = &desk.doing {
@@ -4688,10 +4268,6 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
         ink.line,
         255,
     );
-    // The run under way, before its readings: what it is and how long so
-    // far, then the daemon's estimate. A run still loading its first model
-    // has no readings, and drawing nothing there drew a run that looked
-    // stopped (A7). The console's arrangement (B-072).
     if let Some(said) = desk.under_way() {
         paint.say_at(area.x, y, &said, Weight::Bold, size::BODY, ink.ink);
         y += 22.0;
@@ -4708,9 +4284,6 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
             return;
         }
     }
-    // Where it is now, after what it has found: the step the daemon last
-    // announced, which changes every generation and is the sign the run is
-    // alive between one reading and the next.
     if !job.finished
         && let Some(step) = mcf_tui::screens::diagnostics::step_of(job)
     {
@@ -4718,8 +4291,6 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
         paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.accent);
     }
     if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
-        // B65 and D31: a timing from MCF's own stand-in measures the stand-in.
-        // Which engine ran is a condition of every number above it.
         let ran = conditions
             .get("engine_ran")
             .and_then(Value::as_text)
@@ -4744,7 +4315,6 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
     }
 }
 
-/// Seconds as the console writes them.
 fn clock(seconds: u64) -> String {
     if seconds < 60 {
         return format!("{seconds} s");
@@ -4754,14 +4324,10 @@ fn clock(seconds: u64) -> String {
     format!("{minutes} min {rest:02} s")
 }
 
-/// A range of seconds, as the console writes one.
 fn span(low: u64, high: u64) -> String {
     format!("{} – {}", clock(low), clock(high))
 }
 
-// ── The two screens the actions lead to ──────────────────────────────────────
-
-/// Fetching a model that is not here yet.
 fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "add model", ink.faint);
@@ -4857,8 +4423,6 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     .or(act)
 }
 
-/// The repositories the hub listed for a word, one row each, most
-/// downloaded first; pressing one looks it up.
 fn searched(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Option<Act> {
     let ink = paint.ink;
     let query = found.get("query").and_then(Value::as_text).unwrap_or("");
@@ -4929,12 +4493,6 @@ fn searched(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Opt
     act
 }
 
-/// One variant a repository publishes, as a row: what it is called, how
-/// many files it comes in where it is more than one, what the whole
-/// weighs, and the button that takes it (B-597).
-///
-/// The button asks for the first part, which fetches the whole set
-/// (B-590); the row itself picks the variant as the page's subject.
 fn offered_row(
     paint: &mut Painter,
     mouse: &Mouse,
@@ -5000,12 +4558,9 @@ fn offered_row(
             file: asked_for,
         });
     }
-    // The row itself picks the variant as the page's subject, not
-    // downloaded, with the button that downloads and starts it (B-487).
     mouse.clicked(where_).then_some(Act::PickOffered(at))
 }
 
-/// The variants a repository publishes, one row each.
 fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Option<Act> {
     let ink = paint.ink;
     let repository = found
@@ -5021,12 +4576,7 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
     let mut y = area.y;
     paint.say_at(area.x, y, &repository, Weight::Bold, size::HEAD, ink.ink);
     y += 30.0;
-    // Before the files, because it is the thing somebody may need in order to
-    // decide not to download at all — and after the download is too late
-    // (B-023).
     if let Some(terms) = found.get("terms").and_then(Value::as_text) {
-        // An unknown or unidentified licence is not a detail: it is the state
-        // that needs a person's attention, and it is coloured accordingly.
         let colour = if terms.contains("unknown") || terms.contains("could not identify") {
             ink.warn
         } else {
@@ -5050,10 +4600,6 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
         }
         y += 10.0;
     }
-    // Where the shape came from, which is a condition of every verdict below.
-    // A21: every verdict below rests on a number the repository supplied. The
-    // arithmetic is MCF's; the shape it is over is not, and MCF has not
-    // fetched the weights to check it.
     if let Some(from) = found.get("shape_from").and_then(Value::as_text) {
         for line in paint.wrap(
             &format!(
@@ -5081,12 +4627,6 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
     act
 }
 
-/// The turn a question is asked inside, and the picture shown with it: a
-/// system turn, thinking, an effort, a file (B-462).
-///
-/// Every one of them is *what was said*, and empty is nothing said rather
-/// than a default said out loud (D43, §3.15). Returns what was pressed and
-/// where the row ends.
 fn the_turn(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Option<Act>, f32) {
     let ink = paint.ink;
     let mut act = None;
@@ -5129,8 +4669,6 @@ fn the_turn(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Opti
         Some(true) => "on",
         Some(false) => "off",
     };
-    // Outlined rather than text alone: a control a person cannot see is a
-    // control they do not have (§3.15).
     let (pressed, switch) = ui::fitted(paint, mouse, (field_at, y - 2.0), said, Kind::Ordinary);
     if pressed {
         act = Some(Act::CycleThinking);
@@ -5154,8 +4692,6 @@ fn the_turn(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Opti
         act = Some(Act::Focus(Caret::Effort));
     }
     y += 34.0;
-    // A switch a template does not read is refused by the daemon in its own
-    // words, and that refusal is what the panel below shows (A2, A4).
     paint.say_at(
         area.x,
         y,
@@ -5167,7 +4703,6 @@ fn the_turn(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Opti
     (act, y + 18.0)
 }
 
-/// What a download is doing, in one line.
 fn downloading_line(job: &crate::job::Job) -> String {
     let Some(latest) = job.latest() else {
         return "starting".to_owned();
@@ -5185,8 +4720,6 @@ fn downloading_line(job: &crate::job::Job) -> String {
     match latest.get("doing").and_then(Value::as_text) {
         Some("checking") => "checking that what arrived is what was published".to_owned(),
         _ => match (held("arrived"), held("bytes")) {
-            // A model in parts: the whole is what a person is waiting for
-            // (B-590).
             (Some(_), Some(_)) if held("bytes_whole").is_some() => format!(
                 "part {} of {}: {} of {}",
                 held("part").unwrap_or(0),
@@ -5204,11 +4737,6 @@ fn downloading_line(job: &crate::job::Job) -> String {
     }
 }
 
-/// A model, held and answering.
-/// The box a question is typed into, the button that sends it, and the
-/// turn it goes inside: the same switches `mcf run` takes, so what a person
-/// can ask at the prompt they can ask here (A22, B-462). Returns what was
-/// pressed and where the next thing goes.
 fn ask_box(
     paint: &mut Painter,
     desk: &Desk,
@@ -5253,9 +4781,6 @@ fn ask_box(
     (act.or(turn_act), after + 10.0)
 }
 
-/// What the held engine is doing, as the engine counts it, before where
-/// it answers: the tiles and the rate line. Returns where the next thing
-/// goes; nothing is drawn where nothing is held.
 fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let Some(in_use) = desk
         .hosted
@@ -5270,11 +4795,6 @@ fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     y + 16.0
 }
 
-/// The server the daemon holds for a run, as a hosted one is shown: its
-/// name, engine and window, its counters as tiles, and what the run has
-/// spent — the card's energy summed a second at a time, the tokens it
-/// produced meanwhile, and tokens a kilojoule (B-573). Nothing where no
-/// run holds a server; returns where the next block begins.
 fn under_test_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let Some(under) = desk.under_test.as_ref() else {
         return at.y;
@@ -5297,9 +4817,6 @@ fn under_test_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     y + 22.0
 }
 
-/// What the held engine is doing, as tiles: a short label over a figure,
-/// two rows of five. A figure the engine did not publish is drawn as
-/// unmeasured, not as nought (A7).
 fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
     let rate = |held: Option<f32>| held.map(|rate| format!("{rate:.1}"));
     let count = |held: Option<u64>| held.map(words::grouped);
@@ -5307,8 +4824,6 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
     let tiles: Vec<(&str, Option<String>)> = vec![
         ("Gen tok/s", rate(in_use.generated_per_second)),
         ("Prompt tok/s", rate(in_use.prompted_per_second)),
-        // What it has produced, the answer in hand counted: the engine's
-        // own total stands still until a request ends (B-591).
         (
             "Tokens out",
             count(in_use.generated_live.or(in_use.generated)),
@@ -5322,9 +4837,6 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
         ),
         ("KV tokens", count(in_use.cache_tokens)),
         ("Decodes", count(in_use.decodes)),
-        // The draw and what it has spent while MCF held this, which is the
-        // chip's and not this model's alone — and on a processor whose
-        // graphics are part of it, the whole package (B-593, B-596).
         (
             if in_use.power_named.as_deref() == Some("package") {
                 "Package watts"
@@ -5362,10 +4874,6 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
     tiles_of(paint, &tiles, at)
 }
 
-/// The machine and the run beside the engine, a tile each: what the card
-/// is doing and drawing now, and what the run going has spent — energy,
-/// tokens, tokens a kilojoule, time (B-581, B-573). A figure nobody read is
-/// drawn as unmeasured, not as nought (A7).
 fn machine_and_run_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let card = desk.reading.cards.first();
     let spent = desk.spent;
@@ -5415,8 +4923,6 @@ fn machine_and_run_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     tiles_of(paint, &tiles, at)
 }
 
-/// Tiles in rows of five: a short label over a figure, each its own box;
-/// returns where the next block begins (B-581).
 fn tiles_of(paint: &mut Painter, tiles: &[(&str, Option<String>)], at: Box) -> f32 {
     let ink = paint.ink;
     let across = (at.w - 4.0 * 10.0) / 5.0;
@@ -5450,12 +4956,6 @@ fn tiles_of(paint: &mut Painter, tiles: &[(&str, Option<String>)], at: Box) -> f
     y + 66.0
 }
 
-/// One line in the middle of an empty window, shown while the window is
-/// doing the last thing it does (B-592).
-///
-/// Its own frame rather than a page: the pages are drawn from what the
-/// daemon last said, and what is being said here is that MCF is asking it
-/// for something the answer to which is not back yet.
 pub fn saying(paint: &mut Painter, said: &str) {
     let ink = paint.ink;
     paint.begin();
@@ -5472,8 +4972,6 @@ pub fn saying(paint: &mut Painter, said: &str) {
     paint.end();
 }
 
-/// The predicting rate over the last two minutes, one bar a second, newest
-/// at the right, against the highest seen in that time.
 fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: Box) -> f32 {
     let ink = paint.ink;
     let peak = rates.iter().copied().fold(0.0_f32, f32::max);
@@ -5481,9 +4979,6 @@ fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: B
     let plot = Box::new(at.x, at.y + 16.0, at.w, at.h - 16.0);
     paint.edge(plot, 6.0, ink.line, ink.card);
     if peak <= 0.0 {
-        // Nothing has been produced while this page has been open, which is
-        // not the same as nothing having been read: the readings are there
-        // and every one of them was nought.
         let said = if rates.is_empty() {
             "waiting for a reading"
         } else {
@@ -5528,13 +5023,6 @@ fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: B
     plot.bottom()
 }
 
-/// The state of the hold, on the page a person asks the model from: where
-/// it answers, with a button that copies the address and a line saying what
-/// the address is; or how far the load has got; or the engine being built
-/// first; or why the last hold was refused; or what the last stop freed.
-/// Returns what was pressed and where the next thing goes. The ask box
-/// follows either way: a question goes through MCF's own engine, loaded for
-/// it, whether or not the model is held on a port.
 fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Option<Act>, f32) {
     let ink = paint.ink;
     let mut y = at.y;
@@ -5577,9 +5065,6 @@ fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Opti
     (None, y + 8.0)
 }
 
-/// Where a held model answers: the address with a button that copies it,
-/// what the address is, whether a key guards it, its window and since when,
-/// and what reaches it.
 fn where_it_answers(
     paint: &mut Painter,
     mouse: &Mouse,
@@ -5612,7 +5097,6 @@ fn where_it_answers(
         act = Some(Act::Copy(hosting.address.clone()));
     }
     y += 24.0;
-    // Where the network reaches it, where the hold is open to it (B-577).
     if let Some(network) = &hosting.network_address {
         paint.say_at(
             at.x,
@@ -5661,8 +5145,6 @@ fn where_it_answers(
             ),
             hosting.since
         ),
-        // What the held window costs, where the model is listed here and
-        // its cache per token is known (§3.15).
         model
             .zip(hosting.context)
             .and_then(|(model, context)| reserve_line(model, context))
@@ -5690,23 +5172,13 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     )
 }
 
-/// The Server page's content, from the top of its region.
 fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    // The model under test first, where a run holds one: what it is doing
-    // and what the run has cost, the way a hosted model is shown (B-573).
     let top = under_test_block(paint, desk, Box::new(area.x, area.y, area.w, 0.0));
     let area = Box::new(area.x, top, area.w, (area.h - (top - area.y)).max(0.0));
-    // The held model first, whatever is chosen on Models; the chosen one
-    // where nothing is held, because a question can still be asked of it
-    // through MCF's own engine.
     let held = desk
         .hosted_model()
         .or_else(|| desk.chosen.and_then(|at| desk.models.get(at)));
-    // A model can be held that this list does not carry — the daemon's
-    // store moved under it, or another client held it — and it is still
-    // running: its name comes from the hold, and there is no ask box for
-    // it because the box needs the model to be listed.
     let name = match (held, desk.hosted.as_ref()) {
         (Some(held), _) => held.name.clone(),
         (None, Some(hosting)) => hosting.name(),
@@ -5737,7 +5209,6 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
 
     let mut act = None;
     let Some(held) = held else {
-        // Held and not listed: where it answers, and nothing to ask it with.
         if let Some(hosting) = desk.hosted.as_ref() {
             let (pressed, _) = where_it_answers(
                 paint,
@@ -5750,8 +5221,6 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
         }
         return act;
     };
-    // What is held, or how the hold is going, or why it is not: the one
-    // place for it, before anything can be asked (A2, A7).
     let (held_act, after) = held_block(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0));
     act = held_act.or(act);
     y = after;
@@ -5789,11 +5258,6 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act
 }
 
-/// What the model said, under the conditions it said it.
-///
-/// The conditions go above the words rather than under them, because a
-/// reader meeting the words first has read them under conditions they were
-/// not told (§3.15, A6, B-452).
 fn what_it_said(paint: &mut Painter, desk: &Desk, area: Box) {
     let ink = paint.ink;
     let mut y = area.y;
@@ -5822,15 +5286,10 @@ fn what_it_said(paint: &mut Painter, desk: &Desk, area: Box) {
     }
 }
 
-/// The conditions of the answer on the screen, from the account the daemon
-/// ended the stream with: how the turn was addressed, and the picture where
-/// one was shown (B-462, B-452).
 fn what_it_ran_under(desk: &Desk) -> Vec<String> {
     let Doing::Answering(job) = &desk.doing else {
         return Vec::new();
     };
-    // The line the daemon ends a generation with carries the account; the
-    // ones before it carry the tokens.
     let Some(account) = job
         .answers
         .iter()
@@ -5872,16 +5331,6 @@ fn what_it_ran_under(desk: &Desk) -> Vec<String> {
     said
 }
 
-/// How MCF is set up, which is nothing yet — and the console says so in these
-/// words, so this does too.
-/// What a prompt does to the chosen model.
-///
-/// **A client of one request, like the command line** (A22). The measuring is
-/// the daemon's — one generation per sentence and one per seed — and what is
-/// here is a field, a button and the reading. A screen that computed its own
-/// answer would be a second answer to a question already served.
-/// The finished report, or what stands in its place: the run in progress, or
-/// the refusal.
 fn a_report_or_why_not<'a>(
     paint: &mut Painter,
     desk: &'a Desk,
@@ -5900,12 +5349,6 @@ fn a_report_or_why_not<'a>(
             size::BODY,
             ink.quiet,
         );
-        // **Which generation, of how many.** The daemon says before each
-        // what it is about to ask — *generation 3 of 12: without part 2 of
-        // 4* — and the page says the same, with a bar of the count and the
-        // seconds so far; before the first is announced it says it is
-        // waiting for that, not a sentence about generations in general
-        // (B-479, A7).
         let step = job
             .latest()
             .and_then(mcf_serve::prompt::step_said)
@@ -5950,8 +5393,6 @@ fn a_report_or_why_not<'a>(
     job.conclusion().or_else(|| job.latest())
 }
 
-/// How far a report is, as the generation announced of those planned;
-/// `None` where the daemon has not said (A7).
 fn step_fraction(latest: &Value) -> Option<f32> {
     let step = latest.get("step")?;
     let figure = |key: &str| {
@@ -5963,7 +5404,6 @@ fn step_fraction(latest: &Value) -> Option<f32> {
     if of == 0 {
         return None;
     }
-    // A generation index is a small count, exact in f32.
     Some((f32::from(count.saturating_sub(1)) / f32::from(of)).clamp(0.0, 1.0))
 }
 
@@ -5992,8 +5432,6 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     );
 
     let (mut act, under) = the_document(paint, desk, mouse, area);
-    // While a report runs, the button that started it is the one that cuts
-    // it short (B-479, B-468).
     let running = matches!(&desk.doing, Doing::Reporting(job) if !job.finished);
     let (asked, button) = ui::fitted(
         paint,
@@ -6022,18 +5460,12 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         desk,
         mouse,
         (area.x, cleared_button.bottom() + 12.0),
-        // As wide as the document above it: four unit buttons and a
-        // condition beside them need the room (B-443).
         area.w,
     );
     if chosen.is_some() {
         act = chosen;
     }
 
-    // **The report scrolls under the controls.** It grew past one window
-    // as the readings did, and a report that does not fit is read by the
-    // wheel: the body is drawn from `scroll` points up and confined to the
-    // region under the controls, and the mouse sees only that region.
     let top = bottom + 12.0;
     let body = Box::new(0.0, top, area.right() + PAD, (area.bottom() - top).max(0.0));
     let offset = desk.scrolled(Region::Prompt);
@@ -6049,9 +5481,6 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         .or(act)
 }
 
-/// A report as figures and short labels (§3.4, §3.15): the conditions of
-/// the run, a table a reading, and the answer under them. Every row with an
-/// answer behind it is the control that shows it (A19).
 fn prompt_report(
     paint: &mut Painter,
     desk: &Desk,
@@ -6093,7 +5522,6 @@ fn prompt_report(
     act = pressed.or(act);
     y = seeds_line(paint, (area.x, after), wide, found);
     y = more_line(paint, (area.x, y), wide, found);
-    // The page scrolls, so the answer has a page of its own below the rest.
     the_answer(
         paint,
         desk,
@@ -6103,8 +5531,6 @@ fn prompt_report(
     act
 }
 
-/// A reading's label and the conditions it was read under, on one line
-/// (§3.4). Returns the line under it.
 fn section(
     paint: &mut Painter,
     at: (f32, f32),
@@ -6127,7 +5553,6 @@ fn section(
     at.1 + 22.0
 }
 
-/// A line of figures under a table: a label and a value.
 fn foot(paint: &mut Painter, at: (f32, f32), label: &str, value: &str, colour: Rgb) -> f32 {
     let ink = paint.ink;
     paint.say_at(at.0, at.1, label, Weight::Regular, size::SMALL, ink.quiet);
@@ -6156,7 +5581,6 @@ fn part_text(found: &Value, at: usize) -> String {
         .unwrap_or_default()
 }
 
-/// A difference of two shares with its sign, to a tenth: `+2.0`, `-1.3`.
 fn signed_percent(difference: i64) -> String {
     #[expect(
         clippy::cast_precision_loss,
@@ -6166,11 +5590,6 @@ fn signed_percent(difference: i64) -> String {
     format!("{held:+.1}")
 }
 
-/// The conditions of the run, a figure a line (§3.4, §3.15): what the text
-/// was cut into and who decided, how it reached the model, what every
-/// generation was allowed to be, what the generations were spent on, the
-/// floor and how it was drawn, whether the floor leaves the rows readable,
-/// and where the figures survive this window.
 fn report_conditions(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
     let ink = paint.ink;
     let unit = unit_of(found);
@@ -6186,8 +5605,6 @@ fn report_conditions(paint: &mut Painter, at: (f32, f32), width: f32, found: &Va
     if let Some(addressed) = text("addressed_as") {
         rows.push(("addressed", addressed.to_owned(), ink.ink));
     }
-    // **Who read the prompt** (B-441): the engine that answered it, named,
-    // or why there is no count at all (A7).
     let read_by = text("read_by").unwrap_or("not recorded");
     let tokens = integer(found, "prompt_tokens");
     if tokens > 0 {
@@ -6212,8 +5629,6 @@ fn report_conditions(paint: &mut Painter, at: (f32, f32), width: f32, found: &Va
     }
     rows.push(("floor", the_floor_line(found, unit), ink.ink));
     let floor = integer(found, "floor_parts_per_million");
-    // **Where the floor swamps the column, that is the finding** (§3.15,
-    // A7, F147): said before the rows, in a line of its own.
     rows.push(if floor < 500_000 {
         ("separable", "yes".to_owned(), ink.ink)
     } else {
@@ -6226,8 +5641,6 @@ fn report_conditions(paint: &mut Painter, at: (f32, f32), width: f32, found: &Va
             ink.bad,
         )
     });
-    // **Where this survives the window** (A1, A2, B-432): the figures under
-    // their conditions, and none of the text.
     rows.push(match text("recorded") {
         Some(id) => (
             "record",
@@ -6251,8 +5664,6 @@ fn report_conditions(paint: &mut Painter, at: (f32, f32), width: f32, found: &Va
     y + 8.0
 }
 
-/// What the generations were spent on — each thing that cost some, and
-/// only the things this run asked for (A19, §3.4).
 fn what_the_generations_were(found: &Value) -> String {
     let list = |key: &str| found.get(key).and_then(Value::as_list).map(<[Value]>::len);
     let mut spent = vec![
@@ -6285,8 +5696,6 @@ fn what_the_generations_were(found: &Value) -> String {
     spent.join(" · ")
 }
 
-/// The floor's line: the figure, and how it was drawn — one draw before the
-/// last part, or at every position with its spread (B-434, §3.4).
 fn the_floor_line(found: &Value, unit: &str) -> String {
     let floor = as_percent(integer(found, "floor_parts_per_million"));
     let depth = integer(found, "forced_depth");
@@ -6296,8 +5705,6 @@ fn the_floor_line(found: &Value, unit: &str) -> String {
             crate::held_mark(Some(held), depth),
             crate::open_mark(Some(held))
         ),
-        // Not taken, and why: a dash alone sent a reader to look for an
-        // engine that was running the whole time (A2, F160).
         _ => format!(
             " · control in: not taken · {}",
             found
@@ -6330,9 +5737,6 @@ fn the_floor_line(found: &Value, unit: &str) -> String {
     }
 }
 
-/// One row of a reading's table: its label, how much the answer moved and
-/// whether that is above the floor, the cells under the columns after the
-/// bar, the part's text, and what pressing it shows, if anything.
 struct ReadingRow {
     first: String,
     moved: i64,
@@ -6343,13 +5747,9 @@ struct ReadingRow {
     chosen: bool,
 }
 
-/// The columns every reading's table starts with: the figure, then the bar.
 const MOVED_AT: f32 = 76.0;
 const BAR_WIDTH: f32 = 160.0;
 
-/// A table of readings: heads, a rule, and a row a reading with its bar
-/// coloured against the floor. Rows with an answer behind them are pressed
-/// to show it. Returns the line under the table and what was pressed.
 fn reading_table(
     paint: &mut Painter,
     mouse: &Mouse,
@@ -6361,7 +5761,6 @@ fn reading_table(
     let ink = paint.ink;
     let mut y = heads(paint, area, first, columns);
     let mut act = None;
-    // The figure sits at the first column's edge, the bar after it.
     let moved_at = columns.first().map_or(MOVED_AT, |column| column.at);
     for row in rows {
         let hit = Box::new(area.x - 6.0, y - 3.0, area.w + 12.0, 22.0);
@@ -6405,7 +5804,6 @@ fn reading_table(
         );
         let mut text_at = bar.right() + 14.0;
         for (column, value) in columns.iter().skip(2).zip(&row.cells) {
-            // An absent figure is drawn quietly (A7).
             let cell = if value == "—" { ink.faint } else { colour };
             paint.say_right(area.x + column.at, y, value, Weight::Bold, size::BODY, cell);
             text_at = area.x + column.at + 14.0;
@@ -6422,8 +5820,6 @@ fn reading_table(
     (y, act)
 }
 
-/// A row's cells after the bar: where the answer's first token ranked and
-/// how much of its opening stayed.
 fn held_cells(read: &Value, depth: i64) -> Vec<String> {
     vec![
         crate::held_mark(read.get("held"), depth),
@@ -6431,9 +5827,6 @@ fn held_cells(read: &Value, depth: i64) -> Vec<String> {
     ]
 }
 
-/// The parts removed in turn (§3.8, B-429): a row a part with what the
-/// answer did without it, the control's row under them, and the parts at
-/// or under the floor. Each row shows the answer without its part.
 fn removed_table(
     paint: &mut Painter,
     desk: &Desk,
@@ -6519,7 +5912,6 @@ fn removed_table(
     (y + 8.0, act)
 }
 
-/// The removed table's rows: a part a row, and the control's row last.
 fn removed_rows(desk: &Desk, found: &Value, own: bool) -> Vec<ReadingRow> {
     let depth = integer(found, "forced_depth");
     let floor = integer(found, "floor_parts_per_million");
@@ -6565,8 +5957,6 @@ fn removed_rows(desk: &Desk, found: &Value, own: bool) -> Vec<ReadingRow> {
     rows
 }
 
-/// Under the removed table: which parts sit at or under the floor, the
-/// part the model least expected, and how many parts were not removed.
 fn removed_foot(paint: &mut Painter, at: (f32, f32), found: &Value, floor: i64) -> f32 {
     let ink = paint.ink;
     let clauses = clauses_of(found);
@@ -6577,8 +5967,6 @@ fn removed_foot(paint: &mut Painter, at: (f32, f32), found: &Value, floor: i64) 
         .map(|(at, _)| format!("#{}", at.saturating_add(1)))
         .collect();
     let mut y = at.1;
-    // **Every removal giving the same answer is a finding, and it reads
-    // like a broken tool** (A7).
     if floor == 0 && quiet.len() == clauses.len() {
         y = foot(
             paint,
@@ -6602,8 +5990,6 @@ fn removed_foot(paint: &mut Painter, at: (f32, f32), found: &Value, floor: i64) 
     if let Some(least) = least_expected(found) {
         y = foot(paint, (at.0, y), "least expected", &least, ink.ink);
     }
-    // Sentences past the cap are not measured, and a list that quietly
-    // shortened itself is the one thing a list must not do (A1, A4).
     let over = integer(found, "clauses_over_the_cap");
     if over > 0 {
         y = foot(
@@ -6617,9 +6003,6 @@ fn removed_foot(paint: &mut Painter, at: (f32, f32), found: &Value, floor: i64) 
     y
 }
 
-/// The part with the smallest share of first choices (B-433), by the rank
-/// reading grouped by part: shares compared crosswise so no division is
-/// done, and a tie names nobody (A19). `None` where no reading was taken.
 fn least_expected(found: &Value) -> Option<String> {
     let parts = found
         .get("expected_by_part")
@@ -6656,9 +6039,6 @@ fn least_expected(found: &Value) -> Option<String> {
     })
 }
 
-/// The floor at every position, where it was drawn (B-434): a row a
-/// position, and how many parts sit under the widest of them. Nothing
-/// where one draw was taken; the floor's line above says so (A7).
 fn floors_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
     let ink = paint.ink;
     let Some(floors) = found.get("floors").and_then(Value::as_list) else {
@@ -6742,8 +6122,6 @@ fn floors_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) 
     ) + 8.0
 }
 
-/// A reading that was not asked for, as a phrase for the `more` line: the
-/// button above that asks it, and what it costs (§3.15).
 fn not_asked(extra: mcf_serve::prompt::Extra, found: &Value) -> String {
     let removed = clauses_of(found).len();
     let parts = removed
@@ -6756,9 +6134,6 @@ fn not_asked(extra: mcf_serve::prompt::Extra, found: &Value) -> String {
     )
 }
 
-/// The readings not asked for, on one line rather than four empty sections
-/// (B-443): each with the button above that asks it and its cost. Nothing
-/// where every one was asked.
 fn more_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
     let mut conditions = vec!["not asked".to_owned()];
     if found.get("alone").and_then(Value::as_list).is_none() {
@@ -6783,8 +6158,6 @@ fn more_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> 
     section(paint, at, width, "more", &conditions) + 4.0
 }
 
-/// Each part asked as the whole prompt in turn (B-435), read against the
-/// control alone; each row shows the answer to its part alone.
 fn alone_table(
     paint: &mut Painter,
     desk: &Desk,
@@ -6867,8 +6240,6 @@ fn alone_table(
     (y + 8.0, act)
 }
 
-/// The alone table's rows: a part a row, and the control alone last where
-/// it was read.
 fn alone_rows(desk: &Desk, found: &Value, alone: &[Value]) -> Vec<ReadingRow> {
     let depth = integer(found, "forced_depth");
     let control = found
@@ -6881,8 +6252,6 @@ fn alone_rows(desk: &Desk, found: &Value, alone: &[Value]) -> Vec<ReadingRow> {
         .map(|(at, read)| ReadingRow {
             first: at.saturating_add(1).to_string(),
             moved: moved_of(read),
-            // Under the control alone is a part that carries some of the
-            // answer by itself.
             loud: control_moved.is_some_and(|control| moved_of(read) < control),
             cells: held_cells(read, depth),
             text: part_text(found, at),
@@ -6904,8 +6273,6 @@ fn alone_rows(desk: &Desk, found: &Value, alone: &[Value]) -> Vec<ReadingRow> {
     rows
 }
 
-/// The prompt grown from the front (B-436): a row a prefix, and the first
-/// within the floor of the answer as written. Each row shows its answer.
 fn prefixes_table(
     paint: &mut Painter,
     desk: &Desk,
@@ -6995,8 +6362,6 @@ fn prefixes_table(
     (y + 8.0, act)
 }
 
-/// Neighbouring parts swapped (B-437): a row a pair, and how many of them
-/// moved the answer past the floor. Each row shows its answer.
 fn swaps_table(
     paint: &mut Painter,
     desk: &Desk,
@@ -7080,7 +6445,6 @@ fn swaps_table(
     (y + 8.0, act)
 }
 
-/// The forms that were read: the served rows without a *not rendered*.
 fn rendered_forms(forms: &[Value]) -> Vec<&Value> {
     forms
         .iter()
@@ -7088,9 +6452,6 @@ fn rendered_forms(forms: &[Value]) -> Vec<&Value> {
         .collect()
 }
 
-/// The same parts in each form (B-444): a row a form read, and how many
-/// of them moved the answer past the floor. A form not rendered is a line
-/// under the table saying why (A7). Each row shows its answer.
 fn forms_table(
     paint: &mut Painter,
     desk: &Desk,
@@ -7197,7 +6558,6 @@ fn forms_table(
     (y + 8.0, act)
 }
 
-/// The form a served row names.
 fn form_name(formed: &Value) -> String {
     formed
         .get("form")
@@ -7206,8 +6566,6 @@ fn form_name(formed: &Value) -> String {
         .to_owned()
 }
 
-/// Whether several seeds gave several answers, under the temperature it
-/// was asked at — or not asked, which is never *settled* (A7, B-431, B60).
 fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
     let Some(settled) = found
         .get("settled")
@@ -7247,9 +6605,6 @@ fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) ->
     section(paint, (at.0, y), width, "cut", &cut_lines(settled))
 }
 
-/// How each seeded draw was cut before it was taken, and whose cut it was
-/// (B-440): `top_k 20 · top_p 0.950 · min_p off · declared by the file`. A
-/// report from before the cut was stated says so rather than *off* (A7).
 fn cut_lines(settled: &Value) -> Vec<String> {
     let named = |key: &str| settled.get(key).and_then(Value::as_text);
     match (
@@ -7268,11 +6623,6 @@ fn cut_lines(settled: &Value) -> Vec<String> {
     }
 }
 
-/// How the model received each word (B-443): where its first piece ranked
-/// in the model's own choice, how many of its pieces the model would have
-/// written itself, and the part it begins in. Least expected first, a word
-/// the model would have written whole left off the table; past the depth
-/// read is a bound, not an absence (A7). Not taken is said with why.
 fn expected_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
     let ink = paint.ink;
     let Some(by_word) = found
@@ -7368,40 +6718,26 @@ fn expected_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value
     y + 8.0
 }
 
-/// How many words the table shows before it says how many more there are.
 const MOST_WORDS: usize = 15;
 
-/// What the word table's foot counts.
 #[derive(Default)]
 struct WordTally {
-    /// Words the model would have written whole.
     whole: i64,
-    /// Pieces that were the model's own first choice.
     own: i64,
-    /// Pieces read: the unread first piece of the prompt is not among them.
     pieces: i64,
-    /// Words whose first ranked piece was past the depth read.
     past: i64,
-    /// Words no piece fell in.
     unread: i64,
-    /// Words nothing preceded, so no piece of them was ranked.
     no_context: i64,
 }
 
-/// The words the model did not write whole, least expected first, and the
-/// foot's counts.
 fn tallied(words: &[Value]) -> (Vec<(i64, &Value)>, WordTally) {
     let mut surprising: Vec<(i64, &Value)> = Vec::new();
     let mut tally = WordTally::default();
     for word in words {
-        // A word no piece fell in was not read, and is not a first choice:
-        // nought of nought is not every piece the model's own (A7, F160).
         if integer(word, "pieces") == 0 {
             tally.unread = tally.unread.saturating_add(1);
             continue;
         }
-        // A word nothing preceded was not ranked either; only its read
-        // pieces are counted (F160).
         let read = integer(word, "pieces").saturating_sub(integer(word, "unread"));
         if read == 0 {
             tally.no_context = tally.no_context.saturating_add(1);
@@ -7409,7 +6745,6 @@ fn tallied(words: &[Value]) -> (Vec<(i64, &Value)>, WordTally) {
         }
         tally.pieces = tally.pieces.saturating_add(read);
         tally.own = tally.own.saturating_add(integer(word, "first_choice"));
-        // Outside the list asked for: a bound, not an absence (A7).
         let rank = word
             .get("rank")
             .and_then(Value::as_integer)
@@ -7427,7 +6762,6 @@ fn tallied(words: &[Value]) -> (Vec<(i64, &Value)>, WordTally) {
     (surprising, tally)
 }
 
-/// The word table's columns after the rank.
 const WORD_COLUMNS: [Column; 3] = [
     Column {
         head: "own",
@@ -7446,7 +6780,6 @@ const WORD_COLUMNS: [Column; 3] = [
     },
 ];
 
-/// What the word reading says and was read under (§3.4, B-429).
 fn expected_conditions(found: &Value) -> Vec<String> {
     let mut conditions = vec![
         "rank of each word's first piece in the model's own choice".to_owned(),
@@ -7463,8 +6796,6 @@ fn expected_conditions(found: &Value) -> Vec<String> {
     conditions
 }
 
-/// One word's row: its first piece's rank, its pieces the model would have
-/// written itself over its pieces, the part it begins in, and the word.
 fn word_row(paint: &mut Painter, at: (f32, f32), width: f32, held: (i64, &Value), depth: i64) {
     let ink = paint.ink;
     let (rank, word) = held;
@@ -7487,7 +6818,6 @@ fn word_row(paint: &mut Painter, at: (f32, f32), width: f32, held: (i64, &Value)
         integer(word, "pieces").saturating_sub(integer(word, "unread"))
     );
     paint.say_right(at.0 + 110.0, at.1, &own, Weight::Bold, size::SMALL, ink.ink);
-    // A word in no part is drawn quietly (A7).
     let part = word
         .get("part")
         .and_then(Value::as_integer)
@@ -7522,18 +6852,8 @@ fn word_row(paint: &mut Painter, at: (f32, f32), width: f32, held: (i64, &Value)
     );
 }
 
-/// What the model actually said, under the figures about it.
-///
-/// **The report was all measurement and no evidence.** Every number on this
-/// screen is *how much of the answer moved*, and the answer itself was on the
-/// console and not here — so a reader could see that a sentence moved 96% of
-/// something they were never shown. The figures are checkable only beside the
-/// thing they are about (A19, §3.15).
 fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     let ink = paint.ink;
-    // The answer without whichever part is being asked about, or to it
-    // alone, or to that much of the prompt — or as written when none is.
-    // The title names the row the way the table does.
     let chosen = desk.shown.and_then(|shown| match shown {
         crate::Shown::Without(at) => {
             let clause = found.get("clauses").and_then(Value::as_list)?.get(at)?;
@@ -7586,9 +6906,6 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     if area.h < 40.0 {
         return;
     }
-    // An empty answer is said, not skipped (A7, F160): the title stays, with
-    // the token count and what ended it, over one line that says nothing
-    // was written.
     let said = if said.trim().is_empty() {
         crate::NOTHING_WRITTEN
     } else {
@@ -7597,27 +6914,16 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     let title = paint.elide(&title, Weight::Regular, size::SMALL, area.w);
     spaced(paint, area.x, area.y, &title, ink.faint);
     let room = area.w;
-    // **Wrapped line by line, so the answer keeps its shape.** `wrap` breaks on
-    // width and treats a newline as a space, which turns a function into one
-    // run-on line — and an answer is code as often as it is prose. Each of the
-    // model's own lines is wrapped on its own and they are laid out in order.
     let mut lines = Vec::new();
     for written in said.trim().lines() {
         if written.trim().is_empty() {
             lines.push(String::new());
         } else if paint.measure(written, Weight::Regular, size::SMALL) <= room {
-            // **Verbatim where it fits.** `wrap` breaks on words and rejoins
-            // with single spaces, which loses the leading spaces — and an
-            // answer is code as often as it is prose, where the indentation is
-            // part of what the reader is checking. A line that fits needs no
-            // wrapping and keeps exactly what the model wrote.
             lines.push(written.to_owned());
         } else {
             lines.extend(paint.wrap(written, Weight::Regular, size::SMALL, room));
         }
     }
-    // As many as fit in the room given, and no more: the console's `mcf
-    // prompt --json` carries the whole answer for a reader who wants it.
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -7644,18 +6950,8 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     }
 }
 
-/// The one field: the prompt, whole.
-///
-/// Returns what was pressed and where the row of buttons goes.
 fn the_document(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Option<Act>, f32) {
     let mut act = None;
-    // **A document, not a line, and one of them.** What is analysed is a
-    // persona or an instruction sheet, pasted in whole — every part of it,
-    // with nothing held out of the ablation in a second field; the field is
-    // sized for one and the page below it gives up a little height (B-430).
-    // Once there is a report
-    // the report is what the page is for, and the field keeps its tail and
-    // three lines: this window does not scroll.
     let reported = desk
         .doing
         .job()
@@ -7679,15 +6975,6 @@ fn the_document(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (
     (act, field.bottom() + 8.0)
 }
 
-/// What pressing Analyse will do and cost, as a table: a row a reading,
-/// with the choice in it, the condition it is read under, and the
-/// generations it spends — and the total, before it is spent (§3.8,
-/// §3.15). The unit the document is taken apart into, how many parts are
-/// removed, the temperature the seeds are drawn at and every further
-/// reading are choices on the page rather than constants behind it
-/// (B-430, B-431, B-434, B-435, B-436, B60).
-///
-/// Returns what was pressed and the table's bottom.
 fn the_readings(
     paint: &mut Painter,
     desk: &Desk,
@@ -7717,7 +7004,6 @@ fn the_readings(
             right: true,
         },
     ];
-    // The answer as written is the one generation every run spends.
     let mut table = Readings {
         area,
         y: heads(paint, area, "reading", &columns),
@@ -7743,7 +7029,6 @@ fn the_readings(
     (table.act, bottom)
 }
 
-/// The readings table as it is drawn, a row at a time.
 struct Readings {
     area: Box,
     y: f32,
@@ -7751,16 +7036,11 @@ struct Readings {
     act: Option<Act>,
 }
 
-/// Where the readings table's choice and condition columns start.
 const READING_CHOICE: f32 = 96.0;
 const READING_CONDITION: f32 = 440.0;
-/// A readings row: a button's height and a little air.
 const READING_ROW: f32 = ui::BUTTON + 2.0;
 
 impl Readings {
-    /// One row's label, condition and cost. A reading not asked for still
-    /// says what it would cost, quietly, and adds nothing to the total
-    /// (§3.15).
     fn row(
         &mut self,
         paint: &mut Painter,
@@ -7808,7 +7088,6 @@ impl Readings {
         self.y += READING_ROW;
     }
 
-    /// The unit, decided by the text unless chosen here.
     fn unit_row(
         &mut self,
         paint: &mut Painter,
@@ -7851,7 +7130,6 @@ impl Readings {
         self.row(paint, "unit", (&decided, quiet), None);
     }
 
-    /// How many parts are removed: in steps, up to every one.
     fn removed_row(
         &mut self,
         paint: &mut Painter,
@@ -7887,9 +7165,6 @@ impl Readings {
         self.row(paint, "removed", (&how_many, quiet), Some((removed, true)));
     }
 
-    /// The control — one draw, or at every position — and the further
-    /// readings, each a switch with its cost beside it (B-434, B-435,
-    /// B-436).
     fn extra_rows(
         &mut self,
         paint: &mut Painter,
@@ -7944,9 +7219,6 @@ impl Readings {
                     "each part and the next in each other's places · words kept".to_owned(),
                     extra.generations(parts, removed),
                 ),
-                // Counted from the text rather than forecast from the
-                // count of parts: a form the prompt is already in is not
-                // asked, and the page has the text (B-444).
                 Extra::Forms => (
                     "forms",
                     "one line · bullets · numbered · headings · tags · capitals · words kept"
@@ -7964,9 +7236,6 @@ impl Readings {
         }
     }
 
-    /// The temperature the seeds are drawn at: empty asks nothing, and the
-    /// page says so rather than settling on a value of its own (B60,
-    /// B-431). What is not a temperature holds Analyse (§3.15).
     fn seeds_row(&mut self, paint: &mut Painter, desk: &Desk, mouse: &Mouse) {
         use mcf_serve::prompt::SEEDS;
         let ink = paint.ink;
@@ -8006,7 +7275,6 @@ impl Readings {
         self.row(paint, "seeds", (&condition, colour), Some((SEEDS, seeds)));
     }
 
-    /// The total under the rows. Returns the line under it.
     fn total_row(&self, paint: &mut Painter) -> f32 {
         let ink = paint.ink;
         let (area, y) = (self.area, self.y);
@@ -8039,7 +7307,6 @@ impl Readings {
     }
 }
 
-/// What the report took the document apart into, as it names one part.
 fn unit_of(found: &Value) -> &str {
     found
         .get("unit")
@@ -8047,11 +7314,6 @@ fn unit_of(found: &Value) -> &str {
         .unwrap_or("sentence")
 }
 
-/// A count and the thing counted, in English.
-///
-/// `1 sentence`, `2 sentences`. Every one of these read `1 sentence(s)`, which
-/// is the sort of thing a reader forgives once and stops trusting the fourth
-/// time.
 fn count_of(how_many: usize, noun: &str) -> String {
     if how_many == 1 {
         format!("1 {noun}")
@@ -8060,10 +7322,6 @@ fn count_of(how_many: usize, noun: &str) -> String {
     }
 }
 
-/// A share of the answer, as a person reads one.
-///
-/// The wire carries parts per million because that is a count and not a
-/// rounding; a reader wants one decimal place.
 fn as_percent(parts_per_million: i64) -> String {
     #[expect(
         clippy::cast_precision_loss,
@@ -8073,12 +7331,6 @@ fn as_percent(parts_per_million: i64) -> String {
     format!("{held:.1}%")
 }
 
-/// What MCF can build, and which of it is here.
-///
-/// **Read-only, and says so.** Building takes minutes and writes a record of
-/// its own, so it is a command rather than something a window waits on a
-/// socket for — and a screen that offered a button it could not honour would
-/// be worse than one that names the command (A7).
 fn components(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "components", ink.faint);
@@ -8118,7 +7370,6 @@ fn components(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
     act
 }
 
-/// One component: what it is, what state it is in, and what can be done.
 fn component_card(
     paint: &mut Painter,
     desk: &Desk,
@@ -8129,7 +7380,6 @@ fn component_card(
     let ink = paint.ink;
     ui::card(paint, card, component.provisioned);
 
-    // The name, and exactly which source it was built from.
     paint.say_at(
         card.x + 14.0,
         card.y + 14.0,
@@ -8148,8 +7398,6 @@ fn component_card(
         ink.faint,
     );
 
-    // What it is, wrapped rather than cut: the sentence is the reason to
-    // have it, and half of one is not a reason.
     let mut at = card.y + 34.0;
     for line in paint
         .wrap(
@@ -8172,9 +7420,6 @@ fn component_card(
         at += 16.0;
     }
 
-    // A build of this one, running: the card it is for shows it, with how
-    // long so far and the last line the build printed, so that a build that
-    // takes minutes is watched rather than waited on (A2, B-367).
     let running = match &desk.doing {
         Doing::Provisioning(job)
             if !job.finished && desk.building.as_deref() == Some(component.name.as_str()) =>
@@ -8184,13 +7429,6 @@ fn component_card(
         _ => None,
     };
 
-    // Four states, not two. The third is a run that stopped partway: a prefix
-    // with no provenance beside it. Saying that plainly is what keeps a person
-    // from reading a half-build as a build (A7).
-    //
-    // Whether MCF can reach it as an ENGINE is a separate fact, said below —
-    // not every component is an engine, and a window library that reported
-    // itself unreachable would be answering a question nobody asked.
     let (word, ground, colour) = if running.is_some() {
         ("Building", ink.warn_soft, ink.warn)
     } else if component.provisioned {
@@ -8231,8 +7469,6 @@ fn component_card(
     component_foot(paint, desk, mouse, component, card, foot)
 }
 
-/// The bottom line of a card that is not building: where it is, why the last
-/// build stopped, and the button that builds it.
 fn component_foot(
     paint: &mut Painter,
     desk: &Desk,
@@ -8242,9 +7478,6 @@ fn component_foot(
     foot: f32,
 ) -> Option<Act> {
     let ink = paint.ink;
-    // The failure first, in red, where there was one; else where the prefix
-    // is. A finished build puts the prefix on the right, alone; an
-    // unfinished one leaves the right to the button that builds it again.
     let failed = desk
         .build_failed
         .as_ref()
@@ -8289,8 +7522,6 @@ fn component_foot(
             ink.faint,
         );
     }
-    // Build here, from the window, while nothing else runs: one job at a time
-    // is the window's rule, and a button that would be refused is not drawn.
     let idle = desk.doing.job().is_none_or(|job| job.finished);
     if !component.provisioned && idle {
         let label = if component.present {
@@ -8307,13 +7538,6 @@ fn component_foot(
     None
 }
 
-/// What a model is made of, as the daemon counted it.
-///
-/// **Counted there, drawn here.** Every figure on this screen came over the
-/// socket from the same counting `mcf explain` prints, and nothing on it is
-/// worked out by the window (B-072). Nothing on it is a measurement either:
-/// it is the file's directory set against the file's header, and one token's
-/// arithmetic from both (A20, A21). A speed is on the Diagnostics screen.
 fn anatomy(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let (switched, top) = counted_head(
         paint,
@@ -8336,13 +7560,8 @@ fn anatomy(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     switched
 }
 
-/// The tensor directory's figures, agreements, arithmetic and shares.
 fn anatomy_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) {
     let top = area.y;
-    // Two columns: the figures and the header check on the left, the tables
-    // on the right. The window does not scroll, so a table that does not fit
-    // is cut at a row that says so rather than drawn over the edge.
-    // A narrow pane stacks the two columns instead of squeezing them.
     let stacked = area.w < 900.0;
     let figures = if stacked {
         area.w
@@ -8351,9 +7570,6 @@ fn anatomy_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said)
     };
     let left = Box::new(area.x, top, figures, area.bottom() - top);
     let after = counted(paint, left, said);
-    // The header check before the arithmetic: a disagreement is the finding
-    // this screen exists to show, and the arithmetic is drawn from a header
-    // the check has just vouched for.
     let after = agreements(
         paint,
         Box::new(area.x, after + 24.0, figures, area.bottom() - after - 24.0),
@@ -8407,8 +7623,6 @@ fn anatomy_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said)
     );
 }
 
-/// The heading the two counted screens share: what is in it, and what it
-/// says with — with the switch between them. Returns where the body starts.
 fn counted_head(
     paint: &mut Painter,
     desk: &Desk,
@@ -8423,7 +7637,6 @@ fn counted_head(
         .chosen
         .and_then(|at| desk.models.get(at))
         .map_or("no model chosen", |held| held.name.as_str());
-    // The switch first, so the name can be cut short of it.
     let mut switched = None;
     let mut right = area.right();
     for (label, page) in [
@@ -8433,8 +7646,6 @@ fn counted_head(
         let width = paint.measure(label, Weight::Bold, size::SMALL) + 28.0;
         right -= width;
         let button = Box::new(right, area.y + 18.0, width, 28.0);
-        // The screen this is is drawn as text and the other as a button, so
-        // the pair reads as *where you are* and *where else you can be*.
         let kind = if page == here {
             Kind::Quiet
         } else {
@@ -8465,8 +7676,6 @@ fn counted_head(
     (switched, area.y + 90.0)
 }
 
-/// Why there is nothing counted to draw, in the daemon's words or the
-/// window's own (A2).
 fn not_counted(paint: &mut Painter, desk: &Desk, area: Box, top: f32) {
     let ink = paint.ink;
     let why = desk
@@ -8480,13 +7689,6 @@ fn not_counted(paint: &mut Painter, desk: &Desk, area: Box, top: f32) {
     }
 }
 
-/// What a model says with, as the daemon counted its token list.
-///
-/// Nothing is tokenised and nothing is rated: this is the list the header
-/// carries, counted, and the tokens the header names looked up in it — a
-/// number past the end of the list is shown as the fault it is (A2). Every
-/// sentence on the screen came over the socket in the words `mcf explain`
-/// prints (B-072).
 fn vocabulary(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let (switched, top) = counted_head(
         paint,
@@ -8508,7 +7710,6 @@ fn vocabulary(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
     switched
 }
 
-/// The vocabulary's figures, its template, and its named tokens.
 fn vocabulary_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) {
     let top = area.y;
     let spoken = &said.vocabulary;
@@ -8545,7 +7746,6 @@ fn vocabulary_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Sa
     }
 }
 
-/// The list, counted: one figure a line, the long ones wrapped.
 fn spoken_figures(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "the token list", ink.faint);
@@ -8598,9 +7798,6 @@ fn spoken_figures(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f3
             if y > area.bottom() - 18.0 {
                 return y;
             }
-            // Wrapped at the spaces, then cut: the longest token in a list
-            // is one word hundreds of bytes long, and a line with no space
-            // in it wraps nowhere.
             let line = paint.elide(&line, Weight::Bold, size::BODY, area.w - 160.0);
             paint.say_at(area.x + 150.0, y, &line, Weight::Bold, size::BODY, ink.ink);
             y += 20.0;
@@ -8610,8 +7807,6 @@ fn spoken_figures(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f3
     y
 }
 
-/// The chat template: its size, what it mentions, and the control tokens it
-/// frames a turn with — or why none is shown.
 fn template(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "chat template", ink.faint);
@@ -8665,9 +7860,6 @@ fn template(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 {
     y
 }
 
-/// The tokens the header names by number, each spelled from the list — or
-/// shown to be beyond it, which an engine reading the header would not
-/// survive (A2).
 fn named_tokens(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 {
     let ink = paint.ink;
     let columns = [
@@ -8735,7 +7927,6 @@ fn named_tokens(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 
     y
 }
 
-/// Name and figure, one line each, the way the model's own card is set.
 fn figures(paint: &mut Painter, area: Box, rows: &[(&str, String)]) -> f32 {
     let ink = paint.ink;
     let mut y = area.y;
@@ -8756,7 +7947,6 @@ fn figures(paint: &mut Painter, area: Box, rows: &[(&str, String)]) -> f32 {
     y
 }
 
-/// Bits an element, to two places, where the bytes are known.
 fn bits_an_element(bytes: Option<u64>, elements: u64) -> Option<String> {
     let bytes = bytes?;
     if elements == 0 {
@@ -8770,7 +7960,6 @@ fn bits_an_element(bytes: Option<u64>, elements: u64) -> Option<String> {
     Some(format!("{bits:.2} bits an element"))
 }
 
-/// A share of the whole, in percent to one place.
 fn percent_of(part: u64, whole: u64) -> String {
     if whole == 0 {
         return "—".to_owned();
@@ -8783,7 +7972,6 @@ fn percent_of(part: u64, whole: u64) -> String {
     format!("{share:.1}%")
 }
 
-/// What the file holds, in total.
 fn counted(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> f32 {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "counted", ink.faint);
@@ -8837,7 +8025,6 @@ fn counted(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> f
     )
 }
 
-/// One token's arithmetic, and the cache — sized, or why not.
 fn arithmetic(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> f32 {
     use mcf_serve::anatomy::SaidCache;
     let ink = paint.ink;
@@ -8930,7 +8117,6 @@ fn arithmetic(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -
     y
 }
 
-/// Bytes in a table cell: a figure a person reads, at the scale it has.
 fn bytes_figure(bytes: u64) -> String {
     #[expect(
         clippy::cast_precision_loss,
@@ -8946,7 +8132,6 @@ fn bytes_figure(bytes: u64) -> String {
     }
 }
 
-/// Tensors, elements, share and bytes for each part or each encoding.
 fn share_table(
     paint: &mut Painter,
     area: Box,
@@ -9006,8 +8191,6 @@ fn share_table(
     y
 }
 
-/// Each shape of block: which blocks, what they hold, and what each is made
-/// of in the words every surface uses.
 fn by_block(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> f32 {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "by block", ink.faint);
@@ -9061,9 +8244,6 @@ fn by_block(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> 
     y
 }
 
-/// What the header says beside what the directory shows, and whether they
-/// agree — a disagreement in the alarm colour, a missing side in neither
-/// (A21, A7).
 fn agreements(paint: &mut Painter, area: Box, held: &[mcf_serve::anatomy::SaidAgreement]) -> f32 {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "header against directory", ink.faint);
@@ -9138,7 +8318,6 @@ fn settings(paint: &mut Painter, area: Box) -> Option<Act> {
     None
 }
 
-/// Leaving.
 fn leaving(paint: &mut Painter, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     paint.say_at(

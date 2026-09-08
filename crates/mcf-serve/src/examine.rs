@@ -1,23 +1,3 @@
-//! Every part of a model measured by a count or a clock, never by a
-//! rater: the fourteen measurements of D52, as one run the daemon carries
-//! (`mcf examine`, the window's Performance, Fidelity and Behaviour cards).
-//!
-//! **What this is beside the probes.** A probe asks whether the model
-//! does a thing — emits a call, stops, produces a shape — and configures
-//! nothing from the answer (D42). A measurement here asks *how much*: how
-//! many positions agree with a reference file, how many tokens a second
-//! at each layer count, how many bytes resident against how many were
-//! predicted. Both are experiments, both write to the record under their
-//! method, and both are three-valued: measured, not, or could not tell
-//! (A7). They share the record writer and the stream shape for that
-//! reason, and they differ in what they start: a probe goes through the
-//! daemon's generation path as a generation does, while a measurement
-//! starts the engine itself, under the settings it varies (D52).
-//!
-//! **Each measurement is its own module** with one entry point, so that
-//! a check reading this directory can find every one of them and the
-//! list below cannot fall out of step with what runs.
-
 use std::path::{Path, PathBuf};
 
 use mcf_record::json::Value;
@@ -77,7 +57,6 @@ pub mod tokenizer;
 pub mod tooluse;
 pub mod vocabulary;
 
-/// Every measurement the run can make, in the order it makes them.
 pub const MEASURES: [&str; 47] = [
     offload::NAME,
     prefill::NAME,
@@ -128,8 +107,6 @@ pub const MEASURES: [&str; 47] = [
     deep::NAME,
 ];
 
-/// The three families the window shows as cards, each with its
-/// measurements in the order the run makes them (D52).
 pub const FAMILIES: [(&str, &[&str]); 3] = [
     (
         "Performance",
@@ -195,13 +172,8 @@ pub const FAMILIES: [(&str, &[&str]); 3] = [
     ),
 ];
 
-/// The window a plain load opens, in tokens: room for every measurement
-/// that does not ask for more.
 pub const PLAIN_WINDOW: u64 = 4096;
 
-/// Which measurements a run makes, in order: every one where none is
-/// named, else the ones named. A name that is none of them is ignored,
-/// so the caller that reads a wire says what it could not read.
 #[must_use]
 pub fn planned(only: &[String]) -> Vec<&'static str> {
     if only.is_empty() {
@@ -213,39 +185,17 @@ pub fn planned(only: &[String]) -> Vec<&'static str> {
         .collect()
 }
 
-/// Where a run happens: the engine, the model, and the conditions every
-/// measurement starts from unless it varies one.
 pub struct Site<'a> {
-    /// The provisioned engine the model resolves to.
     pub llama: &'a ProvisionedLlama,
-    /// The model file.
     pub model: &'a Path,
-    /// Where a server's socket goes.
     pub runtime: &'a Path,
-    /// How many layers MCF resolved to the card, which is all or none.
     pub gpu_layers: u32,
-    /// The window MCF resolved for this model here.
     pub context: u64,
-    /// The projector beside the model, where there is one.
     pub projector: Option<PathBuf>,
-    /// Whether the engine computes on a card here.
     pub has_card: bool,
-    /// The engine, as the record names it.
     pub engine: String,
-    /// Whether the asker has gone, asked between requests: a run cut
-    /// short spends nothing further on nobody (B-468).
     pub gone: &'a (dyn Fn() -> bool + Sync),
-    /// Where a measurement says how far along it is within its step —
-    /// which picture, which sum, which request of two hundred — so that
-    /// the person waiting sees the work and not only its name (D56).
     pub tell: &'a (dyn Fn(&Progress) + Sync),
-    /// Who is waiting, so that a long request in flight is closed when
-    /// they leave (D48). **A timed request does not wait this way**: a
-    /// watched request is noticed done only when the watcher's glance
-    /// comes round, a quarter of a second at a time, and a timing taken
-    /// through it read 512.0 ms for whatever took between a quarter and
-    /// a half (F196). The short requests a timing is taken over are
-    /// waited for as they are, with the asker looked at between them.
     pub waiting: Waiting<'a>,
 }
 
@@ -260,20 +210,14 @@ impl std::fmt::Debug for Site<'_> {
     }
 }
 
-/// How far along a measurement is within its step: `done` of `of`, and
-/// what is being done now, in a few words (D56).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Progress {
-    /// How many of the step's parts are done.
     pub done: usize,
-    /// How many parts the step has.
     pub of: usize,
-    /// What is being done now: the picture's name, the sum, the request.
     pub what: String,
 }
 
 impl Progress {
-    /// The record's shape, and the wire's.
     #[must_use]
     pub fn to_value(&self) -> Value {
         Value::map([
@@ -285,8 +229,6 @@ impl Progress {
 }
 
 impl Site<'_> {
-    /// Says how far along the measurement is: `done` of `of` parts, and
-    /// what is being done now (D56).
     pub fn progress(&self, done: usize, of: usize, what: &str) {
         (self.tell)(&Progress {
             done,
@@ -295,15 +237,6 @@ impl Site<'_> {
         });
     }
 
-    /// The plain load, as MCF resolved it for this model — under a window
-    /// a measurement needs rather than the window the model could hold.
-    ///
-    /// **The resolved window is the largest this machine holds**, which
-    /// for a small model is its whole trained context; a cache for a
-    /// quarter of a million tokens was being allocated for a request of
-    /// sixty (F196). A measurement that needs more opens more:
-    /// retrieval its deepest depth, the memory measurement each window
-    /// it measures.
     #[must_use]
     pub fn startup(&self) -> Startup {
         Startup {
@@ -314,21 +247,10 @@ impl Site<'_> {
         }
     }
 
-    /// A server on this model under a startup, or why there is none.
-    ///
-    /// # Errors
-    ///
-    /// What the engine said as it refused to start, in a sentence.
     pub fn server(&self, startup: &Startup) -> Result<Served, String> {
         self.server_for(self.model, startup)
     }
 
-    /// A server on another file of the same repository — a reference to
-    /// measure against — under a startup.
-    ///
-    /// # Errors
-    ///
-    /// As [`Self::server`].
     pub fn server_for(&self, model: &Path, startup: &Startup) -> Result<Served, String> {
         if (self.gone)() {
             return Err(crate::served::CLIENT_LEFT.to_owned());
@@ -341,35 +263,25 @@ impl Site<'_> {
         })
     }
 
-    /// Whether the asker has gone.
     #[must_use]
     pub fn asker_gone(&self) -> bool {
         (self.gone)()
     }
 
-    /// How a timed request waits: for the engine alone, so that the
-    /// clock reads the engine and not the watcher's glance (F196).
     #[must_use]
     pub const fn timed(&self) -> Waiting<'static> {
         Waiting::NOBODY
     }
 }
 
-/// What one measurement found: the lines a person reads, and the fields
-/// the record keeps. A measurement that could not tell says so in both.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Found {
-    /// The finding, a line each, as every surface prints it.
     pub lines: Vec<String>,
-    /// What the record keeps, beside the model, method and engine.
     pub fields: Vec<(&'static str, Value)>,
-    /// Every figure read, raw, one row each: the repeat, the position, the
-    /// trial, the placement it was read under (D54, B-512).
     pub rows: Vec<Reading>,
 }
 
 impl Found {
-    /// A measurement that could not be taken, and why (A7).
     #[must_use]
     pub fn could_not_tell(why: &str) -> Self {
         Self {
@@ -379,25 +291,12 @@ impl Found {
         }
     }
 
-    /// Whether the measurement was taken.
     #[must_use]
     pub fn measured(&self) -> bool {
         !self.fields.iter().any(|(key, _)| *key == "could_not_tell")
     }
 }
 
-/// Runs the measurements named on one model, saying which is about to
-/// run and what each found as it lands — the same shape a probe run has
-/// (B-478, D50).
-///
-/// `say` is told each step twice — before the measurement, with no
-/// lines, and after, with what it found — and answers whether to go on.
-/// Every finding is written to the record before it is said, whichever
-/// way it came out (A1, A9).
-///
-/// # Errors
-///
-/// The file could not be read as a model, in a sentence.
 #[allow(
     clippy::too_many_lines,
     reason = "one arm a measurement, so that the list of what runs is read in one place"
@@ -483,9 +382,6 @@ pub fn run(
             Ok(path) => format!("  recorded in {}", path.display()),
             Err(why) => format!("  NOT RECORDED: {why}"),
         });
-        // The rows beside the finding: every figure raw, under the
-        // conditions the run shared (D54). The counts above are what the
-        // sentences read; the rows are what a person compares by.
         if !found.rows.is_empty() {
             let conditions: Vec<(&str, Value)> = found
                 .fields
@@ -493,9 +389,6 @@ pub fn run(
                 .filter(|(_, held)| !matches!(held, Value::List(_) | Value::Map(_)))
                 .map(|(key, held)| (*key, held.clone()))
                 .collect();
-            // Every run's conditions carry what it ran under, whatever its
-            // own fields say: the engine, the window a plain load opens, the
-            // layers on the card (D56).
             let load = site.startup();
             let mut conditions = conditions;
             for (key, stated) in [
@@ -533,13 +426,6 @@ pub fn run(
     ])
 }
 
-/// Writes a run's readings from outside the daemon — the coding
-/// laboratory runs at the command line, with its container — under the
-/// one schema every diagnostic shares (D54, B-518).
-///
-/// # Errors
-///
-/// Nowhere to record, or the record could not be written.
 pub fn record_rows(
     model: &Path,
     method: &str,
@@ -550,10 +436,6 @@ pub fn record_rows(
     crate::probes::run::record_readings(model, method, engine, conditions, rows)
 }
 
-/// A run recorded a part at a time: opened with its conditions before
-/// the first row is taken, each unit's rows landed as they are, and
-/// closed with how it ended. A run killed between lands keeps every row
-/// landed and reads back with no end (B-570).
 #[derive(Debug)]
 pub struct Landing {
     model: PathBuf,
@@ -565,11 +447,6 @@ pub struct Landing {
 }
 
 impl Landing {
-    /// Opens a run: writes its conditions as its first part, with no rows.
-    ///
-    /// # Errors
-    ///
-    /// Nowhere to record, or the record could not be written.
     pub fn open(
         model: &Path,
         method: &str,
@@ -592,9 +469,6 @@ impl Landing {
         })
     }
 
-    /// Goes on with a run recorded earlier that did not finish: the parts
-    /// written from here carry its identity, so that reading merges them
-    /// into it (B-571).
     #[must_use]
     pub fn resume(model: &Path, method: &str, run: &str, rows_so_far: usize) -> Self {
         Self {
@@ -602,8 +476,6 @@ impl Landing {
             method: method.to_owned(),
             engine: String::new(),
             run: run.to_owned(),
-            // Parts are read in the order recorded; the number only has to
-            // keep rising within one writer.
             part: u64::try_from(rows_so_far)
                 .unwrap_or(u64::MAX)
                 .saturating_add(1),
@@ -611,11 +483,6 @@ impl Landing {
         }
     }
 
-    /// Lands one unit's rows, naming the engine where it is known by now.
-    ///
-    /// # Errors
-    ///
-    /// The record could not be written.
     pub fn land(
         &mut self,
         engine: Option<&str>,
@@ -642,11 +509,6 @@ impl Landing {
         Ok(())
     }
 
-    /// Closes the run with how it ended: `finished`, or `stopped after …`.
-    ///
-    /// # Errors
-    ///
-    /// The record could not be written.
     pub fn close(&mut self, ended: &str) -> Result<usize, mcf_core::Failure> {
         self.part = self.part.saturating_add(1);
         let _wrote = crate::probes::run::record_part(
@@ -662,21 +524,17 @@ impl Landing {
         Ok(self.rows)
     }
 
-    /// How many rows have landed so far.
     #[must_use]
     pub const fn landed(&self) -> usize {
         self.rows
     }
 
-    /// The method the run is recorded under.
     #[must_use]
     pub fn method(&self) -> &str {
         &self.method
     }
 }
 
-/// One measurement's recorded finding as a sentence, from the fields the
-/// record keeps of it, read back the way a probe's is (B-483).
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -1018,17 +876,14 @@ fn same(held: Option<&Value>) -> &'static str {
     }
 }
 
-/// A count as the record's integer, saturating rather than wrapping.
 pub(crate) fn as_integer(held: usize) -> i64 {
     i64::try_from(held).unwrap_or(i64::MAX)
 }
 
-/// A figure as the record's integer.
 pub(crate) fn whole(held: u64) -> Value {
     Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
 }
 
-/// Nanoseconds as milliseconds to one place, without a float.
 pub(crate) fn as_ms(ns: u64) -> String {
     #[expect(
         clippy::integer_division,
@@ -1040,7 +895,6 @@ pub(crate) fn as_ms(ns: u64) -> String {
     format!("{whole}.{tenth}")
 }
 
-/// Parts per million as a percentage to one place.
 pub(crate) fn per_cent(ppm: i64) -> String {
     #[expect(
         clippy::integer_division,
@@ -1052,7 +906,6 @@ pub(crate) fn per_cent(ppm: i64) -> String {
     format!("{whole}.{tenth}%")
 }
 
-/// A part of a whole in parts per million; nought of nothing.
 pub(crate) fn ppm(part: u64, whole: u64) -> i64 {
     if whole == 0 {
         return 0;
@@ -1065,8 +918,6 @@ pub(crate) fn ppm(part: u64, whole: u64) -> i64 {
     i64::try_from(parts).unwrap_or(i64::MAX)
 }
 
-/// Tokens a second from a count and nanoseconds; nought where no time
-/// passed.
 pub(crate) fn per_second(tokens: u64, ns: u64) -> u64 {
     if ns == 0 {
         return 0;
@@ -1079,14 +930,12 @@ pub(crate) fn per_second(tokens: u64, ns: u64) -> u64 {
     u64::try_from(rate).unwrap_or(u64::MAX)
 }
 
-/// A rate in thousandths as a figure to one place, without a float.
 pub(crate) fn milli_said(milli: u64) -> String {
     #[expect(clippy::integer_division, reason = "thousandths to whole and tenths")]
     let (whole, tenths) = (milli / 1000, (milli % 1000) / 100);
     format!("{whole}.{tenths}")
 }
 
-/// The median of some samples, sorting them on the way; `None` of none.
 pub(crate) fn median(samples: &mut [u64]) -> Option<u64> {
     if samples.is_empty() {
         return None;
@@ -1100,7 +949,6 @@ pub(crate) fn median(samples: &mut [u64]) -> Option<u64> {
     samples.get(at).copied()
 }
 
-/// How long a closure takes, in whole nanoseconds, beside what it returned.
 pub(crate) fn timed<T>(work: impl FnOnce() -> T) -> (T, u64) {
     let began = std::time::Instant::now();
     let out = work();
@@ -1110,14 +958,6 @@ pub(crate) fn timed<T>(work: impl FnOnce() -> T) -> (T, u64) {
     )
 }
 
-/// A person's text as one user turn under the model's own template, as
-/// the engine reads it: the template's opening pieces with the beginning
-/// marker, the text segmented plainly, the template's closing pieces.
-///
-/// # Errors
-///
-/// Whatever the engine refused: a template that could not be rendered,
-/// or a text it could not segment.
 pub(crate) fn framed_ids(engine: &Served, text: &str) -> Result<Vec<usize>, String> {
     let frame = crate::turn::frame(engine, &crate::turn::Turn::default())
         .map_err(|failure| failure.detail().to_owned())?;
@@ -1138,14 +978,10 @@ pub(crate) fn framed_ids(engine: &Served, text: &str) -> Result<Vec<usize>, Stri
     Ok(ids)
 }
 
-/// A run of one identifier, `depth` long: what a timing is taken over when
-/// what is being measured is depth rather than text. Identifier 1 is
-/// inside every vocabulary MCF can address.
 pub(crate) fn filler(depth: usize) -> Vec<usize> {
     vec![1; depth]
 }
 
-/// Bytes as gigabytes to one place.
 pub(crate) fn gigabytes(bytes: u64) -> String {
     #[expect(clippy::integer_division, reason = "bytes to tenths of a gigabyte")]
     let tenths = bytes / 100_000_000;

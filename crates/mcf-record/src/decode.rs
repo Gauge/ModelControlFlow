@@ -1,32 +1,3 @@
-//! Reading back what the record holds.
-//!
-//! B-007's condition is that *the §3.4 floor is captured from a live machine
-//! and round-trips through the record store losslessly*, and a round trip needs
-//! both directions. [`encode`] writes; this reads.
-//!
-//! **What losslessly means here, and what it does not.** A condition MCF wrote
-//! comes back as what MCF wrote; a condition MCF could not read comes back as
-//! [`Attested::Unknown`] and not as the word *unknown*. Those two are the whole
-//! of the property: a floor whose unknowns came back as strings would compare
-//! equal to a floor that had read something, which is exactly A7's substitution
-//! arriving through the back door of a decoder.
-//!
-//! **A line this version cannot understand is not decoded into a guess.** The
-//! floor's decoder returns `None` on a shape it does not recognize, and the
-//! caller decides whether that is `record.schema.unknown` or a corrupt line —
-//! the same discipline `EntryKind::parse` follows, for §7.30's reason.
-//!
-//! **Two shapes of answer, for two different questions.** That yes-or-no is
-//! right for a journal line, where only the caller knows what it was doing when
-//! it found one it could not read. It is wrong for a provenance: there is an
-//! artifact on the disk and somebody is asking where it came from (B-029), and
-//! *no* is not an answer they can act on. So [`provenance`] refuses with a
-//! classified failure that names the field, and refuses the whole chain when a
-//! link in it is unreadable — a chain with an invented link is worse than no
-//! chain (A1, §XII).
-//!
-//! [`encode`]: crate::encode
-
 use mcf_core::attested::Attested;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::measurement::{ConditionValue, Conditions, Floor};
@@ -39,18 +10,6 @@ use mcf_core::trial::Draw;
 
 use crate::json::Value;
 
-/// What an encoded failure said, as the lines a person reads.
-///
-/// The daemon refuses with [`encode::failure`]'s shape, and six readers had
-/// each looked for a key that shape never writes and told the operator *MCF
-/// did not say why* — while the body beside it carried the category, the
-/// detail, the wanted-and-found context and the cause (A2). One reader, so
-/// the seventh cannot make the same mistake.
-///
-/// `None` for a body that is not a failure at all; the caller says what it
-/// was doing when it received one.
-///
-/// [`encode::failure`]: crate::encode::failure
 #[must_use]
 pub fn failure_said(value: &Value) -> Option<String> {
     let detail = value.get("detail")?.as_text()?;
@@ -68,13 +27,6 @@ pub fn failure_said(value: &Value) -> Option<String> {
     Some(lines.join("\n"))
 }
 
-/// Reads a condition floor back.
-///
-/// Returns `None` when a question the floor asks is missing from the record
-/// entirely — which is a *different* thing from a question that was asked and
-/// not answered. The first means this line was not written by a version that
-/// asks the same questions; the second is `null`, and comes back as
-/// [`Attested::Unknown`].
 #[must_use]
 pub fn floor(value: &Value) -> Option<Floor> {
     Some(Floor {
@@ -94,12 +46,6 @@ pub fn floor(value: &Value) -> Option<Floor> {
     })
 }
 
-/// Reads what a trial drew back (B-290).
-///
-/// `None` where the record does not say — an entry from a version that did not
-/// ask, which is a different thing from a trial that drew nothing. Deciding
-/// what to do about that belongs to the reader with the context (§7.30), and a
-/// decoder that invented a seed would be inventing a condition.
 #[must_use]
 pub fn draw(value: &Value) -> Option<Draw> {
     let held = value.get("drew")?;
@@ -117,13 +63,6 @@ pub fn draw(value: &Value) -> Option<Draw> {
     }
 }
 
-/// Reads a condition set back, instrument included.
-///
-/// The build identity is *not* reconstructed from the record: [`Conditions`]
-/// binds a floor to the instrument that read it, and the instrument a decoder
-/// could offer is the one running now, not the one that wrote the line. The
-/// caller supplies it, which forces the question of whose instrument this is to
-/// be answered at the call site rather than assumed by a parser (§3.4).
 #[must_use]
 pub fn conditions(
     value: &Value,
@@ -132,23 +71,17 @@ pub fn conditions(
     Some(Conditions::new(read_by, floor(value)?))
 }
 
-/// One condition: present and readable, present and null, or absent.
 fn condition(value: &Value, question: &str) -> Option<Attested<ConditionValue>> {
     match value.get(question)? {
         Value::Null => Some(Attested::Unknown),
         Value::Text(text) => Some(Attested::Known(ConditionValue::text(text.clone()))),
         Value::Integer(number) => Some(Attested::Known(ConditionValue::integer(*number))),
-        // A condition written as a boolean, a list, an object or a number this
-        // format does not carry is a shape this version does not ask for. It is
-        // not decoded into text, because a decoder that coerced would make a
-        // record say something nobody wrote.
         Value::Bool(_) | Value::ForeignNumber(_) | Value::List(_) | Value::Map(_) => None,
     }
 }
 
 const WHERE: Subsystem = Subsystem::new("mcf-record::decode");
 
-/// Something the record had to say and did not.
 fn missing(what: &str) -> Failure {
     Failure::new(
         Category::ArtifactProvenanceIncomplete,
@@ -160,7 +93,6 @@ fn missing(what: &str) -> Failure {
     .with_context("wanted", what.to_owned())
 }
 
-/// Something the record said that cannot be read.
 fn unreadable(what: &str, found: &Value) -> Failure {
     Failure::new(
         Category::ArtifactProvenanceIncomplete,
@@ -173,19 +105,8 @@ fn unreadable(what: &str, found: &Value) -> Failure {
     .with_context("found", found.to_line())
 }
 
-/// Where an artifact came from, and everything that happened to it since.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` naming the field, for anything absent or
-/// unreadable. The chain is read whole: a source whose own provenance is
-/// unreadable refuses the derivative too, because a chain with an invented link
-/// is worse than no chain (A1, §XII).
 pub fn provenance(value: &Value) -> Result<Provenance> {
     let origin = origin(value.get("origin").ok_or_else(|| missing("origin"))?)?;
-    // A retrieval time that is `null` is a link MCF never fetched, which is a
-    // state the type has (`known_of`) rather than a field to fill in — the
-    // upstream half of §XII's chain (A7).
     let mut read = match known(value.get("retrieved_at")) {
         Some(at) => Provenance::acquired(origin, timestamp(at)?),
         None => Provenance::known_of(origin),
@@ -217,11 +138,6 @@ pub fn provenance(value: &Value) -> Result<Provenance> {
     Ok(read)
 }
 
-/// What MCF found upstream when it looked (B-331, D37).
-///
-/// A finding this version does not know is `record.schema.unknown` rather than
-/// a shrug: an observation read as *unchanged* when it said something else
-/// would be a record that lies in the safe-sounding direction (§7.30, A7).
 fn observation(value: &Value) -> Result<Observation> {
     let looked_at = timestamp(value.get("looked_at").ok_or_else(|| missing("looked_at"))?)?;
     let name = value
@@ -267,12 +183,6 @@ fn observation(value: &Value) -> Result<Observation> {
     Ok(Observation::new(looked_at, found))
 }
 
-/// A field that is present and is not `null`.
-///
-/// `null` is *unknown* in a record (A7), and a field that is absent altogether
-/// is the same absence written by an older writer — both are read as unknown
-/// rather than as a reason to refuse, because a provenance that says *MCF did
-/// not read the licence* is a complete provenance.
 fn known(value: Option<&Value>) -> Option<&Value> {
     match value {
         Some(Value::Null) | None => None,
@@ -280,13 +190,6 @@ fn known(value: Option<&Value>) -> Option<&Value> {
     }
 }
 
-/// Where bytes came from.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` when the kind is absent, unreadable, or one
-/// this build does not know — the last of which is a record from a later MCF,
-/// and inventing an origin for it would be worse than saying so (§7.30).
 pub fn origin(value: &Value) -> Result<Origin> {
     let kind = value
         .get("kind")
@@ -322,14 +225,6 @@ pub fn origin(value: &Value) -> Result<Origin> {
     }
 }
 
-/// A digest of an artifact's bytes.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` when the algorithm is one this build does
-/// not compute, or the digest is not one: a checksum MCF cannot check is not a
-/// checksum, and recording it as though it were would make an unverifiable
-/// artifact look verified (A21).
 pub fn checksum(value: &Value) -> Result<Checksum> {
     let algorithm = value
         .get("algorithm")
@@ -346,11 +241,6 @@ pub fn checksum(value: &Value) -> Result<Checksum> {
     }
 }
 
-/// What an artifact's terms are.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` for a state this build does not know.
 pub fn licence(value: &Value) -> Result<Licence> {
     let state = value
         .get("state")
@@ -367,11 +257,6 @@ pub fn licence(value: &Value) -> Result<Licence> {
     }
 }
 
-/// One thing that was done to an artifact.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` when the kind is absent or unreadable.
 pub fn transformation(value: &Value) -> Result<Transformation> {
     let kind = value
         .get("kind")
@@ -381,8 +266,6 @@ pub fn transformation(value: &Value) -> Result<Transformation> {
         "quantization" => TransformationKind::Quantization,
         "requantization" => TransformationKind::Requantization,
         "format_conversion" => TransformationKind::FormatConversion,
-        // Anything else is what whoever did it called it, which is exactly how
-        // it was written.
         other => TransformationKind::Other(other.to_owned()),
     };
 
@@ -411,11 +294,6 @@ pub fn transformation(value: &Value) -> Result<Transformation> {
     ))
 }
 
-/// What performed a transformation.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` when the tool has no name.
 pub fn tool_identity(value: &Value) -> Result<ToolIdentity> {
     let name = value
         .get("name")
@@ -433,21 +311,12 @@ pub fn tool_identity(value: &Value) -> Result<ToolIdentity> {
     Ok(ToolIdentity::new(name, version))
 }
 
-/// A moment.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` when the nanoseconds are absent or are not
-/// a number. The rendering is not read back: it is for a person, and a reader
-/// that trusted it over the integer would be trusting a formatting decision.
 pub fn timestamp(value: &Value) -> Result<Timestamp> {
     let found = value
         .get("utc_nanos")
         .ok_or_else(|| missing("timestamp.utc_nanos"))?;
     let nanos: i128 = match found {
         Value::Integer(nanos) => i128::from(*nanos),
-        // Written as text where the value does not fit an integer, which is how
-        // the whole range survives a format that has less of one (A1).
         Value::Text(written) => written
             .parse()
             .map_err(|_| unreadable("timestamp.utc_nanos", found))?,

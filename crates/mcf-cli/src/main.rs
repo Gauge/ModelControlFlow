@@ -1,15 +1,3 @@
-//! `mcf` — the headless surface.
-//!
-//! A22 makes this the complete surface rather than a convenience wrapper: any
-//! action reachable only through an interface is one the laboratory cannot
-//! test, which A19 already forbids. Every command MCF grows appears here
-//! first, and the interface of §XI (M4) becomes a client of the same API.
-//!
-//! At M0 the surface is `mcf doctor` and `mcf --version`. `doctor` is the
-//! milestone's product: it reports what this machine is, what MCF costs on it,
-//! and what MCF will and will not promise here, and writes the whole thing to
-//! the record.
-
 mod acquire;
 mod bench;
 mod bundle;
@@ -53,419 +41,202 @@ use std::process::ExitCode;
 
 use mcf_core::build_identity::BuildIdentity;
 
-/// What the process was asked to do.
-///
-/// A2's habit at the smallest scale: an unrecognized argument is a named
-/// outcome carrying what it saw, never an ignored one and never a silent
-/// fallback to help text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Request<'a> {
-    /// Report what this binary is and what built it.
     Version,
-    /// Show what would leave this machine, row by row, and write it (B-160,
-    /// A24).
     Share {
-        /// Where the file goes.
         into: Option<&'a str>,
     },
-    /// State the licence, and the obligations that come with conveying this
-    /// binary (B-330, D28).
     Licence {
-        /// Whether to print the whole text, which is compiled in.
         full: bool,
     },
-    /// Report the surface that exists.
     Usage,
-    /// Report one command's line of it, because `--help` was asked of the
-    /// command rather than of `mcf` (B-426).
     CommandUsage {
-        /// The command.
         command: &'a str,
     },
-    /// A command that wants a name first was given a flag there.
-    ///
-    /// Distinct from [`Request::UnexpectedArgument`]: `mcf measure --deepest`
-    /// used to measure a model named `--deepest`, and *measure does not take
-    /// --deepest* would be false — it does, after the model (B-426).
     NameExpected {
-        /// The command.
         command: &'a str,
-        /// What was found where the name goes.
         argument: &'a str,
-        /// The name the usage table says goes there.
         needs: &'static str,
     },
-    /// Write the record to one portable file.
     Export {
-        /// Where to write it.
         to: &'a str,
     },
-    /// Report what this machine is and what MCF costs on it.
     Doctor {
-        /// Whether to write the report to the record.
         record: bool,
-        /// Whether to render the record's own JSON rather than the report.
-        ///
-        /// A22 makes the headless path complete, and "complete" includes being
-        /// consumable by something other than a person: the interface of §XI
-        /// is a client of the same surface (B22), and a surface a script cannot
-        /// read is one only a person can drive.
         as_json: bool,
     },
-    /// Bring a model onto this machine.
     Pull {
-        /// The reference, as the operator wrote it.
         reference: &'a str,
-        /// A hub other than the default.
         from: Option<&'a str>,
-        /// Which store to put it in, where the operator named one.
         into: Option<&'a str>,
-        /// Where MCF may read a credential from, if the operator named one.
         offered: pull::Offered<'a>,
-        /// Whether to ask the hub again rather than answer a word from what
-        /// was kept of its last answer within the day (B-488).
         fresh: bool,
     },
-    /// Check what this machine holds: the bytes, and where they came from.
     Check {
-        /// One artifact, by any part of its path; every one when absent.
         only: Option<&'a str>,
-        /// How much of the question to ask.
         reach: check::Reach,
-        /// A hub other than the default.
         from: Option<&'a str>,
-        /// Where MCF may read a credential from, if the operator named one.
         offered: pull::Offered<'a>,
     },
-    /// Start the daemon and stay there.
     Serve,
-    /// Open MCF in a window and stay there.
-    ///
-    /// A third surface and a client of the same control plane (A22, B-072),
-    /// drawing the console's own screens at another scale.
     Desk,
-    /// Open MCF as a terminal application and stay there.
-    ///
-    /// A second surface and a client of the same control plane (A22, B-072).
-    /// It adds no capability: every action it offers is a request a command
-    /// here already sends.
     Tui,
-    /// The record's newest classified failures, with every field the
-    /// taxonomy gives them.
     Failures {
-        /// How many of the most recent to show.
         last: Option<usize>,
     },
-    /// Read the record back.
     Log {
-        /// Only entries of this kind.
         kind: Option<&'a str>,
-        /// How many of the most recent to show.
         last: Option<usize>,
-        /// The record's own JSON rather than a summary.
         full: bool,
     },
-    /// Say what a model declares and what MCF would do with it.
     Explain {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// The daemon's count of what the file holds, as the one line every
-        /// client reads — the window included — rather than the pages.
         json: bool,
     },
-    /// Ask a model something, with MCF's own engine.
     Run {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// What to ask it.
         prompt: &'a str,
-        /// How many tokens to produce at most.
         limit: Option<usize>,
-        /// The seed, which is a condition of the answer (D19).
         seed: u64,
-        /// Which engine, where the operator says (B-032).
         engine: Option<&'a str>,
-        /// How the turn is framed, where the person asked the engine to
-        /// frame it from the model's own template (D47). Boxed for the
-        /// size of the request, not for any sharing.
         turn: Box<mcf_serve::turn::Turn>,
-        /// A picture to show the model, where the person named one (B-452).
         image: Option<&'a str>,
-        /// What the engine is started with beyond the plain load, where the
-        /// person asked for either (B-456).
         started: mcf_serve::declared::Started,
     },
-    /// Check a bundle against this machine.
     Verify {
-        /// The bundle to check.
         bundle: &'a str,
     },
-    /// Write one file that reproduces one claim.
     Bundle {
-        /// The claim's identifier, as `mcf log` prints it.
         id: &'a str,
-        /// Where to write it.
         into: Option<&'a str>,
     },
-    /// Expand one recorded entry into the evidence behind it.
     Show {
-        /// The entry's identifier, as `mcf log` prints it.
         id: &'a str,
     },
-    /// Compare two models on a timeable engine, with no pass condition.
     Bench {
-        /// The left arm: a path, or something `mcf list` names.
         left: &'a str,
-        /// The right arm.
         right: &'a str,
-        /// What to ask both of them.
         prompt: &'a str,
-        /// How many tokens to produce at most.
         limit: Option<usize>,
-        /// The seed, which is a condition of the answer and of the order the
-        /// arms were drawn in (D19, B53).
         seed: u64,
-        /// Which engine, where the operator says (B-032).
         engine: Option<&'a str>,
-        /// The difference the caller cares about, in parts per million.
         resolving: Option<u64>,
-        /// Whether every trial must load the model for itself (§6.13, F65).
         cold: bool,
-        /// A wall-clock budget, in seconds, from the operator.
-        ///
-        /// **The operator's, not the laboratory's** (B-224, B-226). A lab may
-        /// not declare its work in minutes; a person may certainly say how
-        /// many they have. What MCF owes in return is a proposal naming what
-        /// fits and what does not, rather than a quietly smaller run (§3.1).
         within: Option<u64>,
-        /// What the engine is started with beyond the plain load, the same
-        /// for both arms (B-463).
         started: mcf_serve::declared::Started,
     },
-    /// Write what a maintainer would need to read this machine's hardware.
     Support {
-        /// Where to write it.
         into: Option<&'a str>,
     },
-    /// Show how a model's vocabulary segments a prompt.
     Segment {
-        /// The model whose vocabulary does the segmenting.
         model: &'a str,
-        /// The text to segment.
         prompt: &'a str,
     },
-    /// Install, build and pin a component in a controlled environment.
     Provision {
-        /// Which component, from the table MCF carries — or none, for the
-        /// one a model on this machine would run on.
         name: Option<&'a str>,
-        /// A prefix root other than the default.
         into: Option<&'a str>,
     },
-    /// Say what can be provisioned and what is.
     ProvisionList {
-        /// A prefix root other than the default.
         into: Option<&'a str>,
     },
-    /// Remove a provisioned component, with the reason.
     ProvisionRemove {
-        /// Which component.
         name: &'a str,
-        /// Why it is going.
         because: Option<&'a str>,
-        /// A prefix root other than the default.
         into: Option<&'a str>,
     },
-    /// Compare MCF's own engine against the one it provisioned.
     CrossCheck {
-        /// The model both engines read.
         model: &'a str,
     },
-    /// Ask a model to do the thing, and report what it did.
-    /// What a repository publishes, and which of it will run here.
     Offered {
-        /// The repository.
         reference: &'a str,
     },
-    /// Fetch one published file, through the daemon.
     Acquire {
-        /// The repository.
         reference: &'a str,
-        /// Which published file.
         file: &'a str,
     },
-    /// What MCF would run a model under.
     Settings {
-        /// A context to price besides the one MCF recommends, where the
-        /// operator named one.
         at: Option<u64>,
-        /// The model.
         model: &'a str,
     },
-    /// Hold a model and answer on a port.
     Host {
-        /// The model.
         model: &'a str,
-        /// Settings to move off what MCF recommends.
         changes: Vec<(String, mcf_record::json::Value)>,
     },
-    /// What is being hosted.
     Hosted,
-    /// Stop hosting.
     Unhost,
-    /// Time a model at doubling depths.
     Measure {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// The deepest context to sample, which implies every power of two
-        /// below it.
         deepest: u64,
-        /// Which engine to ask through, if the caller named one.
         engine: Option<&'a str>,
-        /// Where the model goes, if the caller said: the processor or the
-        /// card. Absent is where MCF resolves it to.
         on: Option<mcf_serve::control::On>,
-        /// What the engine is started with beyond the plain load (B-463).
         started: mcf_serve::declared::Started,
     },
-    /// What a prompt does to a model: which of its parts reach the answer.
     PromptReport {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// The document to take apart, as given on the command line.
         prompt: Option<&'a str>,
-        /// A file holding the document, `-` for standard input: a persona is
-        /// a page, not a shell argument (B-430).
         file: Option<&'a str>,
-        /// What to take it apart into, where the caller says.
         by: Option<mcf_serve::prompt::Unit>,
-        /// The most parts to remove, where the caller says.
         most: Option<usize>,
-        /// The temperature to draw the settledness seeds at, where the
-        /// caller states one; none spends nothing on the question (B-431).
         temperature: Option<mcf_core::configuration::Thousandths>,
-        /// The further readings asked for, each costing generations
-        /// (B-434, B-435).
         extras: mcf_serve::prompt::Extras,
-        /// How the turn is framed, where the person asked for one of the
-        /// template's switches (B-455). Boxed for the size of the request,
-        /// not for any sharing.
         turn: Box<mcf_serve::turn::Turn>,
-        /// Whether to answer as data rather than as prose.
         as_json: bool,
     },
-    /// Ask a model to do the work, and check what it did (B-110).
     Eval {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// One suite to run rather than all of them.
         only: Option<&'a str>,
-        /// How many attempts a challenge gets in a language, where the
-        /// person said; ten otherwise (D56).
         retries: Option<usize>,
-        /// The languages the catalogue runs in, where the person named
-        /// them; every one MCF has an image for otherwise.
         languages: Option<&'a str>,
-        /// One tier of the catalogue, where the person named it.
         tier: Option<&'a str>,
-        /// The window every challenge ask is made in, where the person set
-        /// it; sized to each turn otherwise (B-564).
         window: Option<u64>,
-        /// Go on from the newest unfinished run of the same conditions,
-        /// skipping what it already has (B-571).
         resume: bool,
     },
-    /// A model's readings as a table (D54).
     Data {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// One method's runs only, where the caller named one.
         method: Option<&'a str>,
-        /// JSON lines rather than a comma-separated table.
         as_json: bool,
     },
-    /// Measure a model's parts by count and clock (D52).
     Examine {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// Which engine to measure through, if the caller named one.
         engine: Option<&'a str>,
-        /// Which measurements, by name and separated by commas; every one
-        /// when absent.
         only: Option<&'a str>,
     },
     Probe {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// Which engine to ask through, if the caller named one.
         engine: Option<&'a str>,
-        /// Whether to apply what was observed, which is an act (D43).
         apply: bool,
-        /// The longest prompt the usable-context probe may ask for, where
-        /// the caller wants less than the file declares (B-461).
         up_to: Option<usize>,
-        /// Which probes, by name and separated by commas; every one when
-        /// absent (B-478).
         only: Option<&'a str>,
     },
-    /// Ask an embedding model for a vector.
     Embed {
-        /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// The text to embed.
         text: &'a str,
     },
-    /// Ask a running daemon what it is.
     Status,
-    /// Ask a running daemon to stop.
     Stop {
-        /// Why, which the daemon records rather than being killed silently.
         because: Option<&'a str>,
     },
-    /// What this machine is holding.
     List,
-    /// Stop holding something.
     Remove {
-        /// What to remove, as the operator named it.
         names: Vec<&'a str>,
-        /// Why — which is the authorization. Without it this previews.
         because: Option<&'a str>,
-        /// Whether to delete what the removal shelves.
         purge: bool,
     },
-    /// A command MCF does not have. Carries what was asked for, so the outcome
-    /// can say it back.
     Unrecognized(&'a str),
-    /// A command MCF has, given an argument it does not take. Distinct from
-    /// [`Request::Unrecognized`] because telling an operator that `--version`
-    /// is not a command when it is would be the wrong answer stated
-    /// confidently, which P1 puts below saying nothing.
     UnexpectedArgument {
-        /// The command that was recognized.
         command: &'a str,
-        /// The first argument it does not take.
         argument: &'a str,
     },
-    /// A command MCF has, without something it needs.
-    ///
-    /// Distinct from an unrecognized argument for the reason
-    /// [`Request::UnexpectedArgument`] is distinct from
-    /// [`Request::Unrecognized`]: telling an operator that `export` takes no
-    /// arguments when it requires one would be a confident wrong answer.
     MissingArgument {
-        /// The command.
         command: &'a str,
-        /// What it needs.
         needs: &'static str,
     },
 }
 
-/// What MCF is going to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Response {
-    /// The text the operator sees.
     text: String,
-    /// Whether the request was one MCF could serve.
     served: bool,
 }
 
@@ -482,17 +253,12 @@ fn main() -> ExitCode {
     }
 }
 
-/// Reads the command line. Total: every input reaches a named request.
 #[allow(
     clippy::too_many_lines,
     reason = "one arm per command, and a table of them is more readable in one \
               place than split across functions by an arbitrary line count"
 )]
 fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
-    // Before the table: `--help` asked of a command, and a flag where the
-    // command wants a name. Each used to be read as the name — `mcf measure
-    // --help` measured a model called `--help`, and started a daemon to do
-    // it (B-426).
     if let [command, argument, ..] = arguments
         && (!command.starts_with('-') || usage_of(command).is_some())
     {
@@ -511,17 +277,12 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
     }
     match arguments {
         ["--version" | "-V"] => Request::Version,
-        // Both spellings, because the SPDX identifier and half the world spell
-        // it one way and this project's documents spell it the other. A
-        // redistributor looking for their obligations should not have to guess.
         ["licence" | "license" | "--licence" | "--license"] => Request::Licence { full: false },
         ["licence" | "license" | "--licence" | "--license", "--full"] => {
             Request::Licence { full: true }
         }
         [] | ["--help" | "-h"] => Request::Usage,
         ["export", "--to", to] => Request::Export { to },
-        // A2: an `export` with no destination is a named outcome carrying what
-        // it saw, not a guess at where the operator wanted the file.
         ["export", rest @ ..] => match rest.first() {
             Some(argument) => Request::UnexpectedArgument {
                 command: "export",
@@ -606,20 +367,12 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 argument: at,
             },
         },
-        // Each of these wanted its argument, matched nothing without it,
-        // and answered *no such command* — a command MCF has, denying
-        // itself. `mcf explain` sends the operator to `mcf settings`
-        // directly (F139).
         ["settings"] => Request::MissingArgument {
             command: "settings",
             needs: "<model>",
         },
         ["hosted"] => Request::Hosted,
         ["unhost"] => Request::Unhost,
-        // Without this the pattern below wants a model, nothing matched,
-        // and `mcf host` answered *no such command: host* — denying a
-        // command MCF has, in the same breath as `mcf status` telling the
-        // operator to run it (F139).
         ["host"] => Request::MissingArgument {
             command: "host",
             needs: "<model>",
@@ -881,10 +634,6 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             argument,
             ..,
         ] => Request::UnexpectedArgument { command, argument },
-        // A command the table has, with arguments no arm above took. Before
-        // this arm it fell through to *no such command: settings* — MCF
-        // denying a command it has, in the same breath as `mcf --help`
-        // listing it (F139, B-426).
         [command, _, argument, ..] if usage_of(command).is_some() => {
             Request::UnexpectedArgument { command, argument }
         }
@@ -892,12 +641,6 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
     }
 }
 
-/// The flags `mcf measure <model>` takes, in any order.
-///
-/// `--deepest` wants a power of two, 512 or larger: a context window is
-/// asked for in powers of two, and a ladder that ended anywhere else would
-/// have a top rung nobody could ask a model to run at; below 512 the cost a
-/// token is the same to within the noise.
 fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut deepest = 8192;
     let mut engine = None;
@@ -949,10 +692,6 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
                     }
                 };
             }
-            // What the engine is started with beyond the plain load: a
-            // timing under one of these is a timing of that condition, and
-            // the two conditions are only comparable if each says which it
-            // was (B-463, B-456).
             "--draft-head" => started.draft_head = true,
             "--rope-scaling" | "--rope-scale" => {
                 if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
@@ -974,10 +713,6 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
     })
 }
 
-/// The flags `mcf data <model>` takes, in any order: `--method` names one
-/// method's runs, `--json` asks for JSON lines (D54).
-/// The flags `mcf eval <model>` takes, in any order: `--only` a suite,
-/// `--retries` a count, `--languages` a list, `--tier` a tier (D56).
 fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let (mut only, mut retries, mut languages, mut tier, mut window) =
         (None, None, None, None, None);
@@ -1071,8 +806,6 @@ fn data_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>
     })
 }
 
-/// The flags `mcf examine <model>` takes, in any order: `--only` names the
-/// measurements, `--engine` the engine (D52).
 fn examine_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut engine = None;
     let mut only = None;
@@ -1107,17 +840,6 @@ fn examine_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
     })
 }
 
-/// The flags `mcf probe <model>` takes, in any order.
-///
-/// `--apply` is the act D43 requires, a flag rather than a default because
-/// that is the whole of the decision: MCF may learn better, and what it does
-/// with that is say so until somebody asks for the change. `--engine` names
-/// the engine because a probe result belongs to the engine it was taken
-/// through (D42), and until the two are shown to agree, which one answered
-/// is part of the result (B-376). `--up-to` caps the usable-context probe's
-/// question below the file's declared length: a trial the file's claim
-/// would make six hours long can be asked for less, and the report says the
-/// claim itself was not asked (B-461).
 fn probe_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut engine = None;
     let mut apply = false;
@@ -1174,13 +896,6 @@ fn probe_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a
     })
 }
 
-/// The flags `mcf prompt <model>` takes, in any order.
-///
-/// The document comes from `--prompt` or `--file`, one or the other: a
-/// persona is a page and a page is a file, and `-` reads the standard input
-/// so that one can be piped in. `--by` and `--most` are choices the report
-/// would otherwise make and say it made (§3.15, B-430).
-/// A report reads one document: given inline or in a file, and never both.
 fn one_document<'a>(prompt: Option<&'a str>, file: Option<&'a str>) -> Option<Request<'a>> {
     match (prompt, file) {
         (None, None) => Some(Request::MissingArgument {
@@ -1195,7 +910,6 @@ fn one_document<'a>(prompt: Option<&'a str>, file: Option<&'a str>) -> Option<Re
     }
 }
 
-/// A switch that needed a value it did not get.
 const fn needs_for<'a>(command: &'static str, needs: &'static str) -> Request<'a> {
     Request::MissingArgument { command, needs }
 }
@@ -1211,8 +925,6 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
     let mut as_json = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
-        // The value a switch takes, or what it needed: the name rather than
-        // the whole request, which is a large thing to carry as an error.
         let value = |needs: &'static str, rest: &mut std::slice::Iter<'_, &'a str>| {
             rest.next().copied().ok_or(needs)
         };
@@ -1221,8 +933,6 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                 Ok(text) => prompt = Some(text),
                 Err(needs) => return Ok(needs_for("prompt", needs)),
             },
-            // The template's own switches, as `mcf run` takes them: what is
-            // read is the prompt inside the turn it will be used in (B-455).
             "--thinking" | "--effort" | "--system" => {
                 if let Some(needs) = turn_switch(&mut turn, argument, rest.next().copied()) {
                     return Ok(Request::MissingArgument {
@@ -1276,8 +986,6 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                 Err(needs) => return Ok(needs_for("prompt", needs)),
             },
             "--json" => as_json = true,
-            // Every further reading is a flag of its own name: --floors,
-            // --alone, --prefixes, --swaps, --forms (B-072).
             other => match other
                 .strip_prefix("--")
                 .and_then(mcf_serve::prompt::Extra::named)
@@ -1303,15 +1011,12 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
     })
 }
 
-/// The line of the usage table that introduces a command, with the lines
-/// that continue it. `None` for a command the table does not have.
 fn usage_of(command: &str) -> Option<&'static str> {
     let mut at = 0;
     let mut start = None;
     for line in COMMANDS.lines() {
         if let Some(introduced) = introduces(line) {
             match start {
-                // The block ends where the next command's line begins.
                 Some(from) => return COMMANDS.get(from..at),
                 None if introduced == command => start = Some(at),
                 None => {}
@@ -1322,16 +1027,10 @@ fn usage_of(command: &str) -> Option<&'static str> {
     COMMANDS.get(start?..)
 }
 
-/// The command a line of the usage table introduces, if it introduces one:
-/// the word after `mcf` on a line that begins with it.
 fn introduces(line: &str) -> Option<&str> {
     line.strip_prefix("  mcf ")?.split_whitespace().next()
 }
 
-/// The name a command wants before any flag, as the usage table writes it —
-/// `<model>`, `<owner/name>` — or `None` for one that takes a flag or nothing
-/// first. An optional name, `[<model>]`, is not wanted: a flag may stand
-/// there.
 fn name_wanted_first(command: &str) -> Option<&'static str> {
     let line = COMMANDS
         .lines()
@@ -1347,13 +1046,6 @@ fn name_wanted_first(command: &str) -> Option<&'static str> {
     after.get(..=close)
 }
 
-/// Writes the record to one portable file (B-302, D20).
-///
-/// Not a gated category. A24 gates *publication* — the irreversible, itemized
-/// act of sending something off this machine — and writing a file to a path the
-/// operator named is not that; the gate belongs to whatever later *sends* a
-/// bundle (B-160). What this does state is what the bundle contains, because a
-/// portable file whose contents nobody described is a file nobody should send.
 fn export(to: &std::path::Path) -> Response {
     let Some(journal) = mcf_record::journal::default_path() else {
         return Response {
@@ -1383,11 +1075,6 @@ fn export(to: &std::path::Path) -> Response {
                 to.display(),
                 manifest.entries,
                 manifest.digest,
-                // Read from the file that was written rather than asserted
-                // about the mechanism. The sentence this replaces said *no
-                // prompt or completion content, by construction* over an
-                // export carrying four thousand completions, because the
-                // record held them and nothing here looked (F105, A1).
                 if manifest.content_entries == 0 {
                     "\x20 no prompt or completion content: the record keeps a length and a \
                      digest, and\n\x20 the text is in the content store, which this does not \
@@ -1412,15 +1099,6 @@ fn export(to: &std::path::Path) -> Response {
     }
 }
 
-/// Reads `log`'s own arguments.
-///
-/// Total: an option it does not have is named back, and a count that is not a
-/// number is a refusal rather than a default quietly substituted (A7).
-/// The settings a `host` command moves off MCF's recommendation.
-///
-/// Every one is optional and anything unnamed keeps what MCF advised — a
-/// caller who said nothing has not asked for a setting's lowest value (A7,
-/// D43).
 fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>, &'static str> {
     use mcf_record::json::Value;
     let mut changes = Vec::new();
@@ -1438,9 +1116,6 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
         let change = match *flag {
             "--context" => number("context")?,
             "--gpu-layers" => number("gpu_layers")?,
-            // Where the model goes, in the daemon's own list of placements,
-            // with the build that fits: resolved into engine, device and
-            // layers before the hold is asked for.
             "--on" => (
                 "on".to_owned(),
                 Value::text(
@@ -1466,10 +1141,7 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
                 Value::Bool(said == Some("on")),
             ),
             "--keep-resident" => ("keep_resident".to_owned(), Value::Bool(said == Some("on"))),
-            // Reachable from the network, with the key the hold then needs
-            // (B-577).
             "--open" => ("open".to_owned(), Value::Bool(said == Some("on"))),
-            // The engine's own start, beyond the plain load (B-456).
             "--draft-head" => ("draft_head".to_owned(), Value::Bool(said == Some("on"))),
             "--rope-scaling" => (
                 "rope_scaling".to_owned(),
@@ -1516,11 +1188,6 @@ fn log_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     Ok(Request::Log { kind, last, full })
 }
 
-/// Throws one of the engine's own start switches that takes a value, or
-/// names what it needed.
-///
-/// `--draft-head` is not here: it takes no value, and a switch that reads
-/// the next argument would swallow the one after it.
 fn started_switch(
     started: &mut mcf_serve::declared::Started,
     switch: &str,
@@ -1540,7 +1207,6 @@ fn started_switch(
     None
 }
 
-/// Throws one of the template's switches as said, or names what it needed.
 fn turn_switch(
     turn: &mut mcf_serve::turn::Turn,
     switch: &str,
@@ -1561,11 +1227,6 @@ fn turn_switch(
     None
 }
 
-/// Reads `run`'s own arguments.
-///
-/// Total: an option it does not have is named back rather than ignored, and a
-/// number that is not one is a refusal rather than a default quietly
-/// substituted (A7).
 fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut model = None;
     let mut prompt = None;
@@ -1596,8 +1257,6 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
-            // The engine's own start, where the person asked for more of
-            // the file than the plain load reads (B-456).
             "--draft-head" => started.draft_head = true,
             "--rope-scaling" | "--rope-scale" => {
                 if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
@@ -1607,7 +1266,6 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             }
-            // The template's own switches, each passed through as said.
             "--thinking" | "--effort" | "--system" => {
                 if let Some(needs) = turn_switch(&mut turn, argument, rest.next().copied()) {
                     return Ok(Request::MissingArgument {
@@ -1671,13 +1329,6 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     }
 }
 
-/// Reads `bench`'s own arguments.
-///
-/// `--resolving` is a percentage to one decimal place, read into parts per
-/// million, because *how much is a difference* is the caller's question and
-/// this is where they answer it (F55).
-/// What a benchmark is allowed to spend, and what difference it is asked to
-/// resolve: both are numbers with their own shapes, read in one place.
 fn bench_budget(
     switch: &str,
     value: Option<&str>,
@@ -1735,8 +1386,6 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
-            // Held the same across both arms: a comparison under a draft
-            // head is a comparison of two models each with one (B-463).
             "--draft-head" => started.draft_head = true,
             "--rope-scaling" | "--rope-scale" => {
                 if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
@@ -1792,7 +1441,6 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     }))
 }
 
-/// What `bench` was asked for, before it is known to be a complete request.
 struct Asked<'a> {
     left: Option<&'a str>,
     right: Option<&'a str>,
@@ -1803,15 +1451,9 @@ struct Asked<'a> {
     resolving: Option<u64>,
     cold: bool,
     within: Option<u64>,
-    /// What the engine is started with beyond the plain load (B-463).
     started: mcf_serve::declared::Started,
 }
 
-/// A benchmark request, or the first thing missing from one.
-///
-/// Which thing is missing is named rather than counted: *bench needs an
-/// argument* sends the reader back to the manual, and `--against <model>`
-/// sends them back to the shell.
 fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
     let &Asked {
         left,
@@ -1829,13 +1471,6 @@ fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
         (Some(left), Some(right)) => Request::Bench {
             left,
             right,
-            // **The standard question when nobody names one** (B-160, B42).
-            // A benchmark needs something to time, and who chose it decides
-            // whether the result can be shared: MCF ships one so that the
-            // ordinary run produces something that travels, and an operator
-            // who wants their own text says so and gets a result that stays
-            // here. Before this, `--prompt` was required and every result was
-            // therefore the operator's own (F115).
             prompt: prompt.unwrap_or(mcf_bench::STANDARD_QUESTION),
             limit,
             seed,
@@ -1856,19 +1491,12 @@ fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
     }
 }
 
-/// A percentage to one decimal place, as parts per million.
-///
-/// Parsed by hand rather than through a float: this crate holds no
-/// floating-point number, and a percentage with one decimal place is two
-/// integers (A6).
 pub(crate) fn per_cent(written: &str) -> Option<u64> {
     let (whole, tenths) = match written.split_once('.') {
         Some((whole, rest)) => {
             let mut digits = rest.chars();
             let tenth = digits.next()?.to_digit(10)?;
             if digits.next().is_some() {
-                // More precision than the unit admits, refused rather than
-                // silently rounded (A7).
                 return None;
             }
             (whole.parse::<u64>().ok()?, u64::from(tenth))
@@ -1881,10 +1509,6 @@ pub(crate) fn per_cent(written: &str) -> Option<u64> {
     (held > 0).then_some(held)
 }
 
-/// Reads `pull`'s own arguments.
-///
-/// Total: an option it does not have is named back, and a `--from` with
-/// nothing after it is a missing argument rather than a silent default.
 fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut reference = None;
     let mut from = None;
@@ -1951,11 +1575,6 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     }
 }
 
-/// Reads `check`'s own arguments.
-///
-/// The same two options `pull` has, for the same reason: a check speaks to the
-/// same hub, and a credential comes from where the operator named and nowhere
-/// else (B-024).
 fn check_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut only = None;
     let mut reach = check::Reach::Everything;
@@ -2005,11 +1624,6 @@ fn check_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     })
 }
 
-/// Reads `rm`'s own arguments.
-///
-/// Total: an option it does not have is named back rather than ignored, and a
-/// `--because` with nothing after it is a missing argument rather than a
-/// removal with an empty reason.
 fn remove_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut names = Vec::new();
     let mut because = None;
@@ -2044,9 +1658,6 @@ fn remove_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     })
 }
 
-/// Reads `doctor`'s own arguments.
-///
-/// Total: an option it does not have is named back rather than ignored.
 fn doctor_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut record = true;
     let mut as_json = false;
@@ -2060,13 +1671,6 @@ fn doctor_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     Ok(Request::Doctor { record, as_json })
 }
 
-/// The commands there are, one line each, as `mcf --help` prints them.
-///
-/// The parser reads this table too: which commands exist, and which of them
-/// want a name before any flag, are read off it rather than listed a second
-/// time (B-072, B-426). A line begins `  mcf <command>`; what follows is the
-/// command's arguments, then its description, and a continuation line begins
-/// with more spaces.
 const COMMANDS: &str = "\
     \x20 mcf desk                            MCF in a window: every screen a\n\
     \x20                                     client of the same daemon. Needs\n\
@@ -2237,7 +1841,6 @@ const COMMANDS: &str = "\
     \x20                                     binary obliges you to (GPL-3.0-only)\n\
     \x20 mcf --version                       what this binary is\n";
 
-/// What follows the table.
 const NOTES: &str = "\
     Acquisition reaches an encrypted hub over MCF's own HTTP and a vendored\n\
     TLS stack, or a plain one where you name it — a mirror, or the\n\
@@ -2253,8 +1856,6 @@ const NOTES: &str = "\
     rights this one does not have: the processor governor, a device's\n\
     exclusive mode, and the processor's energy counter (D35)";
 
-/// Answers a request. Pure, so the laboratory can exercise every branch
-/// without a process (B19).
 #[allow(
     clippy::too_many_lines,
     reason = "one arm per request, for the same reason `parse` has one per command"
@@ -2296,7 +1897,6 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 } else {
                     report.render()
                 },
-                // `doctor` reports; it does not fail because the machine did.
                 served: true,
             }
         }
@@ -2467,9 +2067,6 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             served: false,
         },
         Request::UnexpectedArgument { command, argument } => Response {
-            // Not "takes no arguments": some of them take one, and telling an
-            // operator that `licence` takes none when it takes `--full` is a
-            // confident wrong answer of the kind P1 puts below saying less.
             text: format!("mcf: {command} does not take: {argument}"),
             served: false,
         },
@@ -2503,15 +2100,6 @@ mod tests {
         assert_eq!(parse(&["-h"]), Request::Usage);
     }
 
-    /// A2: an unrecognized command is a named outcome carrying what it saw,
-    /// not a silent fall-through to help text.
-    ///
-    /// **The example has to be a command MCF does not have.** This was written
-    /// with `measure`, which MCF did not answer at the time and does now — so
-    /// the test went on passing while asserting that a command MCF has is
-    /// unknown, which is the defect rather than the property (F139). The name
-    /// below is not a word anybody would implement, and
-    /// `every_command_the_help_lists_is_one_mcf_has` holds the general case.
     #[test]
     fn an_unknown_command_is_named_and_carries_its_input() {
         let absent = "quinquagesima";
@@ -2527,10 +2115,6 @@ mod tests {
         assert!(text.contains(absent), "{text:?} does not say what it saw");
     }
 
-    /// Usage advertises exactly what exists. A22 makes the headless surface
-    /// complete, so a command missing from usage is a capability only somebody
-    /// who read the source can reach — and one that appears there without
-    /// existing is the fabricated report C7 and A20 are written against.
     #[test]
     fn usage_advertises_what_exists_and_nothing_else() {
         let Response { text, .. } = respond(&Request::Usage, BuildIdentity::current());
@@ -2549,22 +2133,12 @@ mod tests {
         assert!(text.contains("mcf failures"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         assert!(text.contains("mcf check"), "{text}");
-        // Built since this list was written: `mcf probe` asks a model to do
-        // the thing (B-051, B-052) and `mcf provision` builds a component in a
-        // controlled environment (B-367).
         assert!(text.contains("mcf probe"), "{text}");
         assert!(text.contains("mcf examine"), "{text}");
         assert!(text.contains("mcf data"), "{text}");
         assert!(text.contains("mcf provision"), "{text}");
-        // And `mcf bench`, which compares two models on an engine that can be
-        // timed and has no pass condition (B-080, A18).
         assert!(text.contains("mcf bench"), "{text}");
-        // And `mcf segment`, which shows a prompt as the model's own
-        // vocabulary produces it, with no generation and no judgement
-        // (B-381, PR11, §3.15).
         assert!(text.contains("mcf segment"), "{text}");
-        // And `mcf support`, the route by which hardware MCF cannot read
-        // reaches somebody who can add it (F91).
         assert!(text.contains("mcf support"), "{text}");
         for unbuilt in ["mcf lab", "mcf recommend"] {
             assert!(
@@ -2572,10 +2146,6 @@ mod tests {
                 "usage advertises {unbuilt}, which nothing has built"
             );
         }
-        // And it does not claim what MCF stopped being unable to do. The TLS
-        // sentence outlived the vendoring by several weeks; a usage text is
-        // read by somebody deciding whether to try something (D7), so a stale
-        // *cannot* is worse than a missing line.
         assert!(
             !text.contains("has not vendored"),
             "usage still says a vendored dependency is not vendored: {text}"
@@ -2583,8 +2153,6 @@ mod tests {
         assert!(text.contains("mcf-helper"), "{text}");
     }
 
-    /// `export` needs a destination, and says which rather than guessing at
-    /// one. A2: a named outcome carrying what it saw.
     #[test]
     fn export_needs_a_destination_and_says_so() {
         assert_eq!(
@@ -2611,7 +2179,6 @@ mod tests {
         assert!(text.contains("--to <path>"), "{text}");
     }
 
-    /// `doctor` reads its own options, and refuses anything else by name (A2).
     #[test]
     fn doctor_reads_its_own_options() {
         assert_eq!(
@@ -2637,8 +2204,6 @@ mod tests {
         );
     }
 
-    /// `explain` reads the pages here and the JSON through the daemon, and
-    /// refuses anything else by name (A2).
     #[test]
     fn explain_reads_its_own_options() {
         assert_eq!(
@@ -2664,8 +2229,6 @@ mod tests {
         );
     }
 
-    /// The version response is the build identity verbatim, so what a record
-    /// says and what the operator is told cannot drift (§3.4).
     #[test]
     fn version_is_the_build_identity_verbatim() {
         let identity = BuildIdentity::current();
@@ -2674,9 +2237,6 @@ mod tests {
         assert_eq!(text, identity.to_string());
     }
 
-    /// Total function: no input is unhandled, including the empty string and
-    /// arguments that look like flags MCF does not have (B7's shape, at the
-    /// smallest scale).
     #[test]
     fn every_input_reaches_a_named_request() {
         for argument in ["", "-", "--", "--verbose", "-x", "🙂", "--version=1"] {
@@ -2688,9 +2248,6 @@ mod tests {
         }
     }
 
-    /// A21's habit applied to arguments: a recognized command given an
-    /// argument it does not take is its own outcome. Reporting it as "no such
-    /// command: --version" would be a confident wrong answer.
     #[test]
     fn a_trailing_argument_is_its_own_outcome() {
         assert_eq!(
@@ -2713,9 +2270,6 @@ mod tests {
         );
     }
 
-    /// `--help` asked of a command is that command's usage, and runs nothing
-    /// (B-426). `mcf measure --help` used to measure a model named `--help`,
-    /// and started a daemon to do it.
     #[test]
     fn help_asked_of_a_command_is_its_usage_and_not_a_run() {
         for command in commands() {
@@ -2732,7 +2286,6 @@ mod tests {
                     text.starts_with("usage:\n  mcf ") && text.contains(command),
                     "mcf {command} {help}: {text}"
                 );
-                // That command's line, and not another's.
                 assert_eq!(
                     text.lines()
                         .filter(|line| line.starts_with("  mcf "))
@@ -2755,10 +2308,6 @@ mod tests {
         assert!(!served && text.contains("no such command"), "{text}");
     }
 
-    /// A command that wants a name first, given a flag there, says so with
-    /// the flag it saw and the name it wanted — it does not take the flag as
-    /// the name (B-426), and it does not say the flag is one it never takes,
-    /// which for `measure --deepest` would be false.
     #[test]
     fn a_flag_where_a_name_goes_is_refused_by_name() {
         let mut wanting = 0;
@@ -2804,10 +2353,6 @@ mod tests {
         assert_eq!(super::name_wanted_first("--version"), None);
     }
 
-    /// A command the table has, given an argument no arm takes after its
-    /// name, is refused with that argument — not *no such command*, which
-    /// `mcf settings foo --bogus` and `mcf cross-check foo --json` used to
-    /// answer (F139, B-426).
     #[test]
     fn a_command_the_table_has_is_never_denied() {
         for command in commands() {
@@ -2829,8 +2374,6 @@ mod tests {
         );
     }
 
-    /// `mcf measure` reads its flags in any order, and a flag without its
-    /// value is a missing argument rather than a run (B-426).
     #[test]
     fn eval_reads_its_flags_in_any_order() {
         assert_eq!(
@@ -2954,9 +2497,6 @@ mod tests {
         ));
     }
 
-    /// `mcf prompt` takes a document from the line or a file, a question after
-    /// it, and the unit and the cap as choices — in any order, each said back
-    /// when it is wrong (B-430).
     #[test]
     fn prompt_reads_its_flags_in_any_order() {
         let whole = Request::PromptReport {
@@ -3033,8 +2573,6 @@ mod tests {
         );
     }
 
-    /// What `prompt` refuses: a missing model or file, a unit, a cap or a
-    /// temperature that is not one, both sources, a flag it does not know.
     #[test]
     fn prompt_refuses_what_is_not_an_argument() {
         assert!(matches!(
@@ -3080,7 +2618,6 @@ mod tests {
         ));
     }
 
-    /// Every command the usage table introduces.
     fn commands() -> Vec<&'static str> {
         super::COMMANDS
             .lines()

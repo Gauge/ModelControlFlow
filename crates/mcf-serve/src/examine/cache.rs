@@ -1,14 +1,3 @@
-//! The cache's precision: the same generation with the engine's
-//! key-value cache held at sixteen, eight and four bits — tokens a
-//! second, resident bytes, and whether the output agrees with the
-//! sixteen-bit one and where it parts (B-534, D55, B-491).
-//!
-//! A quantized cache is the usual way to fit a longer window on a card,
-//! and it is a change to the arithmetic every token is drawn from. Each
-//! precision is a server started with the cache told to hold keys and
-//! values that way; the generation is the same prompt, greedy, so what
-//! differs is the cache.
-
 use mcf_record::json::Value;
 
 use super::determinism::divergence_at;
@@ -16,24 +5,16 @@ use super::{Found, Reading, Site, as_integer, framed_ids, per_second, timed};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "cache-precision";
 
-/// The cache types tried, as the engine names them, with the bits each
-/// holds a value in.
 pub const PRECISIONS: [(&str, u32); 3] = [("f16", 16), ("q8_0", 8), ("q4_0", 4)];
 
-/// How many tokens the generation produces, at most.
 const PRODUCE: usize = 384;
 
-/// How long the prompt read before it is, in tokens: enough that the
-/// cache holds something.
 const PROMPT: usize = 1024;
 
-/// What is generated from, after the filler.
 const ASK: &str = "Now write, in plain prose, a description of a harbour at dawn.";
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -208,11 +189,9 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// The prompt: filler to about `PROMPT` tokens, then the ask.
 fn prompt_text() -> String {
     let filler = super::retrieval::FILLER;
     let mut text = String::new();
-    // About six characters a token: enough repeats to reach the length.
     while text.len() < PROMPT.saturating_mul(4) {
         text.push_str(filler);
     }

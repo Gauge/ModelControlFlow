@@ -1,43 +1,9 @@
-//! Reading the machine's offset from UTC.
-//!
-//! D9: *records are timestamped in UTC, stored with the local offset alongside
-//! rather than baked in, so a record is both comparable across machines and
-//! legible about where it was taken.* B-352 is the offset.
-//!
-//! **The offset is never folded into the moment**, which is what
-//! [`Timestamp`](super::Timestamp) already enforces. This module supplies the
-//! number that travels beside it, and nothing here can change the moment.
-//!
-//! **Why the zone file is parsed rather than a platform call made.** The
-//! obvious route is the C library's `localtime_r`, whose `tm_gmtoff` is not
-//! POSIX but a widely-implemented extension — which means declaring another
-//! platform's `struct tm` layout by hand, in `unsafe`, for a field that is not
-//! standardized. The zone file is a published, stable, fixed format that MCF can
-//! read in safe Rust and test against a value the machine itself can be asked
-//! for. B15 admits weight against a stated cost, and this is the cheaper side.
-//!
-//! **What it claims.** RFC 8536's `TZif`, versions 1 through 4, far enough to
-//! answer *what is the offset now* — which is the only question a timestamp
-//! asks. It does not evaluate the POSIX rule in a version 2+ footer, so a
-//! moment beyond the file's last recorded transition is [`Attested::Unknown`]
-//! rather than extrapolated (A7). Zone files carry transitions decades ahead,
-//! so that is a boundary rather than a common case, and it is stated rather
-//! than guessed past.
-
 use crate::attested::Attested;
 
 use super::{Timestamp, UtcOffset};
 
-/// Where the platform publishes the machine's zone.
 const ZONE_FILE: &str = "/etc/localtime";
 
-/// Reads the offset in force at a moment.
-///
-/// `Unknown` where the platform publishes no zone file, where the file cannot
-/// be read or understood, or where the moment lies beyond the transitions the
-/// file records. Each of those is a different reason and none of them is a
-/// reason to return zero: `+00:00` is a real offset that most machines do not
-/// have, and A7 forbids the plausible substitute.
 #[must_use]
 pub fn offset_at(moment: Timestamp) -> Attested<UtcOffset> {
     let Ok(bytes) = std::fs::read(ZONE_FILE) else {
@@ -49,31 +15,17 @@ pub fn offset_at(moment: Timestamp) -> Attested<UtcOffset> {
     }
 }
 
-/// The transitions a zone file records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Zone {
-    /// When each transition happens, in seconds since the epoch, ascending.
     transitions: Vec<i64>,
-    /// The offset in force from each transition, in seconds east.
     offsets: Vec<i32>,
-    /// The offset in force before the first transition.
     initial: i32,
 }
 
 impl Zone {
-    /// Reads a zone file.
-    ///
-    /// # Errors
-    ///
-    /// `None` for anything this reader does not claim: a file that is not
-    /// `TZif`, a version it does not know, or a body that ends early. A7's habit
-    /// applied to a parser — what it cannot read, it does not approximate.
     #[must_use]
     pub fn parse(bytes: &[u8]) -> Option<Self> {
         let first = Block::parse(bytes, 4)?;
-        // Version 2 and later repeat the header and follow it with a block
-        // using 8-byte transition times, which is the one to use: the 4-byte
-        // block cannot represent a moment past 2038.
         if first.version >= b'2' {
             let rest = bytes.get(first.length..)?;
             let second = Block::parse(rest, 8)?;
@@ -82,15 +34,11 @@ impl Zone {
         first.into_zone()
     }
 
-    /// The offset in force at a moment, if the file records one.
     #[must_use]
     pub fn offset_at(&self, moment: Timestamp) -> Option<UtcOffset> {
         const NANOS_PER_SECOND: i128 = 1_000_000_000;
         let seconds = i64::try_from(moment.utc_nanos().div_euclid(NANOS_PER_SECOND)).ok()?;
 
-        // Beyond the last transition the file says nothing, and the POSIX rule
-        // in the footer is not evaluated (see the module note). Unknown rather
-        // than extrapolated.
         let last = self.transitions.last().copied();
         if last.is_some_and(|last| seconds > last.saturating_add(SAFE_HORIZON)) {
             return None;
@@ -103,11 +51,6 @@ impl Zone {
         UtcOffset::from_seconds_east(at)
     }
 
-    /// How far past its last recorded transition a zone file is still believed.
-    ///
-    /// Zero: the file's last transition is the last thing it says, and a moment
-    /// after it is a moment the file does not describe. The constant exists so
-    /// that the boundary is named rather than implied by an off-by-one.
     #[must_use]
     pub const fn safe_horizon() -> i64 {
         SAFE_HORIZON
@@ -116,7 +59,6 @@ impl Zone {
 
 const SAFE_HORIZON: i64 = 0;
 
-/// One data block of a zone file, and the header that describes it.
 #[derive(Debug)]
 struct Block {
     version: u8,
@@ -127,8 +69,6 @@ struct Block {
 }
 
 impl Block {
-    /// Reads a header and its block. `time_size` is 4 for a version 1 block and
-    /// 8 for the block that follows a version 2 or later header.
     fn parse(bytes: &[u8], time_size: usize) -> Option<Self> {
         if bytes.get(..4)? != b"TZif" {
             return None;
@@ -138,10 +78,6 @@ impl Block {
             return None;
         }
 
-        // Six counts, big-endian, after fifteen reserved bytes.
-        // A negative count is a malformed file, not a large one: `try_from`
-        // refuses it rather than wrapping it into an enormous length (A7's
-        // habit — what cannot be read is not approximated).
         let count = |index: usize| -> Option<usize> {
             be32(bytes, 20 + index * 4).and_then(|n| usize::try_from(n).ok())
         };
@@ -172,13 +108,10 @@ impl Block {
         let mut offsets = Vec::with_capacity(typecnt);
         for _ in 0..typecnt {
             offsets.push(be32(bytes, at)?);
-            // Each record is a 4-byte offset, an is-DST byte and a
-            // designation index.
             at += 6;
         }
 
         at += charcnt;
-        // A leap-second record is a time and a correction.
         at += leapcnt * (time_size + 4);
         at += isstdcnt;
         at += isutcnt;
@@ -196,10 +129,6 @@ impl Block {
     }
 
     fn into_zone(self) -> Option<Zone> {
-        // The offset before the first transition. RFC 8536 says to use the
-        // first record that is not daylight saving; this reader uses the first,
-        // which agrees for every zone that has transitions and is the only
-        // available answer for one that does not.
         let initial = *self.offsets.first()?;
         let offsets = self
             .indices

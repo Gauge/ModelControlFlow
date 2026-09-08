@@ -1,16 +1,3 @@
-//! `mcf settings`, `mcf host`, `mcf hosted` and `mcf unhost`: holding a model
-//! where other programs can reach it.
-//!
-//! **The API is the engine's and MCF says so.** MCF does not implement an
-//! inference API. It provisions an engine that has one, starts it under
-//! settings that are written down, and supervises it — so what a caller talks
-//! to is `llama-server`'s OpenAI-compatible interface, and calling it MCF's
-//! own would be claiming authorship of something MCF did not write (A19).
-//!
-//! **Every setting is shown with what MCF recommended beside it**, and the
-//! ones somebody moved are listed separately, because a run under a changed
-//! setting is not a run under the recommended one (§3.15, A6).
-
 use crate::say::refused_because;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
@@ -20,7 +7,6 @@ use mcf_serve::control::{Answer, Request};
 
 use crate::Response;
 
-/// What MCF would run a model under, and why.
 pub(crate) fn settings(model: &str, at: Option<u64>) -> Response {
     ask(&Request::Settings {
         model: model.to_owned(),
@@ -37,12 +23,7 @@ pub(crate) fn settings(model: &str, at: Option<u64>) -> Response {
     )
 }
 
-/// Holds a model and answers on a port.
 pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
-    // `--on` names a placement; the daemon lists them with the build that
-    // fits each, and the choice becomes the engine, the device and the
-    // layers of that placement rather than the recommended build with its
-    // layers moved (F176).
     let mut changes: Vec<(String, Value)> = changes.to_vec();
     if let Some(at) = changes.iter().position(|(name, _)| name == "on") {
         let (_, wanted) = changes.remove(at);
@@ -91,9 +72,6 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
                 .map(|(name, value)| (name.as_str(), value.clone())),
         )
     };
-    // Printed as it loads: the daemon says once a second how much of the
-    // model the engine has read, and a terminal that showed nothing for the
-    // minutes a large model takes showed a load that looked stopped (A7).
     ask_as_it_comes(
         &Request::Host {
             model: model.to_owned(),
@@ -118,17 +96,11 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
     )
 }
 
-/// One line of a load's progress, where the answer is one: how much of the
-/// model the engine holds so far, of how much, after how long — and, once
-/// there is a rate to read it off, about how long is left. The estimate is
-/// arithmetic on what was read so far and says so with *about* (A6).
 pub(crate) fn loading_said(body: &Value) -> Option<String> {
     let loading = body.get("loading")?;
     let figure = |key: &str| loading.get(key).and_then(Value::as_integer);
     let seconds = figure("seconds")?;
     let of = figure("of_bytes");
-    // Onto a card, the card's memory is the figure that grows; the engine's
-    // own does not show weights that went there.
     let (read, where_) = match figure("card_bytes") {
         Some(on_card) => (on_card, " onto the card"),
         None => (figure("resident_bytes")?, ""),
@@ -136,12 +108,6 @@ pub(crate) fn loading_said(body: &Value) -> Option<String> {
     Some(load_line(read, where_, of, seconds, "  "))
 }
 
-/// The sentence for how far a load has got, shared with the window's words.
-///
-/// No estimate off the first crumbs: a rate read from under a twentieth of
-/// the weights said *about 200 s* two seconds into a ten-second load. And
-/// none past the weights: what follows them is the cache and the engine's
-/// buffers, whose size the file does not say (A6, A7).
 pub(crate) fn load_line(
     read: i64,
     where_: &str,
@@ -184,15 +150,11 @@ pub(crate) fn load_line(
     }
 }
 
-/// What was last held, where the record says: which model, on what, since
-/// when and until when, and how long ago that was.
 pub(crate) fn last_held(body: &Value) -> String {
     let Some(last) = body.get("last").filter(|held| !matches!(held, Value::Null)) else {
         return String::new();
     };
     let text = |key: &str| last.get(key).and_then(Value::as_text).unwrap_or("?");
-    // The times are the record's, in its shape; shown as the record shows
-    // them elsewhere.
     let when = |key: &str| {
         last.get(key)
             .and_then(|at| mcf_record::decode::timestamp(at).ok())
@@ -223,7 +185,6 @@ pub(crate) fn last_held(body: &Value) -> String {
     )
 }
 
-/// Seconds as a span a person says: *40 s*, *12 min*, *2 h 5 min*.
 pub(crate) fn ago_said(seconds: i64) -> String {
     #[expect(
         clippy::integer_division,
@@ -237,8 +198,6 @@ pub(crate) fn ago_said(seconds: i64) -> String {
     }
 }
 
-/// What a stop gave back, where the daemon measured it: the engine's own
-/// memory, and the card's where the model was on one.
 pub(crate) fn freed_said(body: &Value) -> String {
     let figure = |key: &str| body.get(key).and_then(Value::as_integer);
     match (figure("freed_bytes"), figure("freed_card_bytes")) {
@@ -253,8 +212,6 @@ pub(crate) fn freed_said(body: &Value) -> String {
     }
 }
 
-/// Sends one request that answers in many lines, handing each line short
-/// of the last to `heard`, and returns the last.
 pub(crate) fn ask_as_it_comes(
     request: &Request,
     heard: &mut dyn FnMut(&Value),
@@ -287,7 +244,6 @@ pub(crate) fn ask_as_it_comes(
     Err("mcf: MCF stopped answering before it said it had finished".to_owned())
 }
 
-/// What is being held, if anything.
 pub(crate) fn held() -> Response {
     ask(&Request::Hosted).map_or_else(
         |text| Response {
@@ -308,7 +264,6 @@ pub(crate) fn held() -> Response {
     )
 }
 
-/// Stops holding it.
 pub(crate) fn unhost() -> Response {
     ask(&Request::Unhost).map_or_else(
         |text| Response {
@@ -325,7 +280,6 @@ pub(crate) fn unhost() -> Response {
     )
 }
 
-/// Sends one request and returns what it answered, or a sentence.
 pub(crate) fn ask(request: &Request) -> Result<Value, String> {
     let Some(socket) = crate::serve::socket_path() else {
         return Err("mcf: MCF has nowhere to put a control socket on this machine".to_owned());
@@ -335,8 +289,6 @@ pub(crate) fn ask(request: &Request) -> Result<Value, String> {
     }
     let mut connection = UnixStream::connect(&socket)
         .map_err(|error| format!("mcf: MCF is not answering\n  {error}"))?;
-    // Loading a large model onto a card is tens of seconds, so no deadline
-    // here: a timeout would report a working load as a broken daemon.
     writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
         .map_err(|error| format!("mcf: the request could not be sent\n  {error}"))?;
@@ -352,8 +304,6 @@ pub(crate) fn ask(request: &Request) -> Result<Value, String> {
     }
 }
 
-/// Every setting, with what it does and what MCF advised.
-/// Bytes as a figure somebody weighs a machine against.
 #[allow(
     clippy::integer_division,
     reason = "gibibytes to one decimal is the resolution shown; the rest is not"
@@ -369,9 +319,6 @@ fn explained(body: &Value, at: Option<u64>) -> String {
         "{}\n",
         body.get("model").and_then(Value::as_text).unwrap_or("?")
     )];
-    // Where it can go, each with the build that fits and what the device
-    // has free — the choice `--on` makes, listed before the settings it
-    // changes (§3.15).
     if let Some(placements) = body.get("placements").and_then(Value::as_list) {
         for placement in placements {
             let text = |key: &str| placement.get(key).and_then(Value::as_text).unwrap_or("?");
@@ -405,8 +352,6 @@ fn explained(body: &Value, at: Option<u64>) -> String {
     for setting in body.get("explains").and_then(Value::as_list).unwrap_or(&[]) {
         let text = |key: &str| setting.get(key).and_then(Value::as_text).unwrap_or("?");
         let (name, value, recommended) = (text("name"), text("value"), text("recommended"));
-        // Where the two differ, both are shown: what is set and what was
-        // advised are two facts (§3.15).
         let said = if value == recommended {
             value.to_owned()
         } else {
@@ -414,9 +359,6 @@ fn explained(body: &Value, at: Option<u64>) -> String {
         };
         lines.push(format!("  {name:<20} {said}"));
         lines.push(format!("  {:<20} {}", "", text("because")));
-        // What the file carries that this setting leaves in it. A model has
-        // no other way of saying it, and the plain load is the setting a
-        // person will most often keep (B-456, A7).
         if name == "started with"
             && let Some(left) = body
                 .get("declares")
@@ -429,9 +371,6 @@ fn explained(body: &Value, at: Option<u64>) -> String {
         {
             lines.push(format!("  {:<20} this file declares {left}", ""));
         }
-        // The window's cost, beside the window. A recommendation of *the
-        // largest that fits* reserved 54.6 GiB for a 17.6 GB model here, and
-        // nothing said so until the memory was gone (§3.15, §3.4).
         if name == "context window"
             && let Some(bytes) = body.get("cache_bytes").and_then(Value::as_integer)
             && bytes > 0
@@ -442,11 +381,6 @@ fn explained(body: &Value, at: Option<u64>) -> String {
                 in_gigabytes(bytes)
             ));
         }
-        // **And at a window somebody is considering rather than the one MCF
-        // chose.** Deciding how much of the machine to give a model means
-        // comparing windows, and the window MCF picked is only one of them.
-        // The rate comes from the daemon and the multiplication happens here,
-        // so asking about six sizes is one question rather than six (A22).
         if name == "context window"
             && let Some(wanted) = at
             && let Some(per) = body
@@ -468,9 +402,6 @@ fn explained(body: &Value, at: Option<u64>) -> String {
     lines.join("\n")
 }
 
-/// What is being hosted and where.
-/// What a held model is doing, from the engine's own counters where it
-/// published them: the same figures the window's Running page draws (A22).
 fn in_use_lines(body: &Value) -> Vec<String> {
     let mut lines = Vec::new();
     let Some(in_use) = body.get("use") else {
@@ -491,9 +422,6 @@ fn in_use_lines(body: &Value) -> Vec<String> {
         ));
     }
     if let Some(rate) = figure("generated_tokens_per_second") {
-        // The interval beside the rate: it is measured between two readings
-        // of the engine's counters, and how far apart they were is a
-        // condition of the figure (B-591, A6).
         let over = figure("rate_over_seconds")
             .map_or_else(String::new, |seconds| format!(" over the last {seconds} s"));
         lines.push(format!("  tokens/s       {rate} generating{over}"));
@@ -503,9 +431,6 @@ fn in_use_lines(body: &Value) -> Vec<String> {
             "                 {live} tokens produced, counting the answer in hand"
         ));
     }
-    // The card's draw and what it has spent while MCF was watching it: the
-    // card's, and over the time MCF could see rather than the whole hold
-    // (B-593, A8, A6).
     if let Some(watts) = figure("card_power_watts") {
         let whose = figure("power_is").unwrap_or_else(|| "the graphics device".to_owned());
         lines.push(format!("  power          {watts} W now, drawn by {whose}"));
@@ -590,9 +515,6 @@ fn hosting(body: &Value) -> String {
         format!("  since          {}", text("since")),
     ];
     lines.extend(in_use_lines(body));
-    // What reaches the model through the port, as the engine reported it
-    // after it came up. Absent where the engine did not answer, which is
-    // said rather than shown as nothing taken (A7).
     match body.get("takes") {
         Some(takes) if !matches!(takes, Value::Null) => {
             let takes = mcf_serve::takes::Takes::from_value(takes);
@@ -602,9 +524,6 @@ fn hosting(body: &Value) -> String {
         }
         _ => lines.push("  takes          the engine did not say what it takes".to_owned()),
     }
-    // What the engine was started with beyond the plain load, and what the
-    // file declares that it was not: a model hosted without a feature its
-    // own file carries says so, here, where a person reads it (B-456).
     let started = settings
         .as_ref()
         .map(|settings| mcf_serve::declared::Started::from_value(settings))
@@ -631,7 +550,6 @@ fn hosting(body: &Value) -> String {
         }
     }
     lines.push(String::new());
-    // Whose API it is. MCF started it and supervises it; it did not write it.
     lines.push(
         "  the interface is the provisioned engine's own, which speaks the OpenAI shape:"
             .to_owned(),
@@ -648,8 +566,6 @@ fn hosting(body: &Value) -> String {
     lines.join("\n")
 }
 
-/// What the model was last held under, where it has been: what moved off
-/// the recommendation, or that nothing did, and since when (B-475).
 fn last_held_under(body: &Value) -> Option<String> {
     let last = body
         .get("last")
@@ -673,7 +589,6 @@ fn last_held_under(body: &Value) -> Option<String> {
     ))
 }
 
-/// A timestamp to the second: what a person reads *since* by.
 fn to_the_second(at: &str) -> String {
     at.get(..19)
         .map_or_else(|| at.to_owned(), |head| format!("{head}Z"))

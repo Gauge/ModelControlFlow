@@ -1,13 +1,3 @@
-//! Code reading: the output of a short program predicted exactly, and the
-//! line of a planted bug named (B-550, D55, B-518).
-//!
-//! Writing code and reading it are different skills, and the second is
-//! what a reviewer wants. Each program is short Python with one printed
-//! result the model must predict — the reference result is stated here
-//! and the coding container is not needed — and each buggy program has
-//! one wrong line whose number the model must give. Both are whole
-//! numbers, read by the paraphrase measurement's rule.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::answer_in;
@@ -15,13 +5,10 @@ use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "code-reading";
 
-/// How many tokens a reply may take: room to trace.
 const BUDGET: usize = 400;
 
-/// Programs whose printed number is to be predicted: name, code, output.
 pub const OUTPUTS: &[(&str, &str, i64)] = &[
     (
         "loop-sum",
@@ -55,8 +42,6 @@ pub const OUTPUTS: &[(&str, &str, i64)] = &[
     ),
 ];
 
-/// Programs with one wrong line: name, code, the wrong line's number
-/// counting from one, and what the program is meant to do.
 pub const BUGS: &[(&str, &str, i64, &str)] = &[
     (
         "off-by-one",
@@ -90,7 +75,6 @@ pub const BUGS: &[(&str, &str, i64, &str)] = &[
     ),
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -212,13 +196,10 @@ pub fn measure(site: &Site<'_>) -> Found {
 mod tests {
     use super::{BUGS, OUTPUTS};
 
-    /// The recursion of the fourth program, as the test redoes it.
     fn f(n: i64) -> i64 {
         if n < 2 { 1 } else { f(n - 1) + 2 * f(n - 2) }
     }
 
-    /// The stated outputs, checked by hand here as arithmetic the test
-    /// can redo: a wrong reference would grade every model wrong.
     #[test]
     #[expect(clippy::integer_division, reason = "the program's own halving, redone")]
     fn the_reference_outputs_hold() {
@@ -230,10 +211,8 @@ mod tests {
             .filter(|(i, c)| *c == 'a' && i % 2 == 0)
             .count();
         assert_eq!(i64::try_from(count).unwrap(), OUTPUTS[1].2);
-        // xs and ys are one list: [2, 1, 4, 1, 5, 9]; 6 + 22.
         assert_eq!(6 + 22, OUTPUTS[2].2);
         assert_eq!(f(6), OUTPUTS[3].2);
-        // d becomes {a:1, b:2, aa:10, bb:20}.
         assert_eq!(1 + 2 + 10 + 20, OUTPUTS[4].2);
         let (mut n, mut steps) = (100_i64, 0_i64);
         while n > 1 {

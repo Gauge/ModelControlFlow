@@ -1,26 +1,8 @@
-//! A model small enough to work out by hand, run through the forward pass.
-//!
-//! A19 asks for an independently known answer, and for a transformer that is
-//! only possible if the model is *degenerate on purpose*: weights chosen so the
-//! output is something a person can state without running the code. So the
-//! tests below build models whose answer is known — an identity attention that
-//! passes its input through, a zeroed model whose logits are all equal, an
-//! embedding table whose rows are one-hot so the logits name the token they
-//! came from.
-//!
-//! What that establishes is the *wiring*: that the residual stream carries what
-//! it should, the projections are not transposed, the cache is attended over,
-//! and the final projection lands on the right row. What it does not establish
-//! is agreement with a vendored engine on a real model, which is B-362's
-//! cross-check laboratory and is the only thing that can.
-
 #![allow(clippy::float_cmp)]
 
 use super::{ARCHITECTURE, Cache, load};
 use crate::gguf;
 
-/// Builds a GGUF file in memory: metadata, a tensor directory, and the tensor
-/// data itself, all `f32` so the test can state every weight.
 struct Builder {
     metadata: Vec<(String, u32, Vec<u8>)>,
     tensors: Vec<(String, Vec<u64>, Vec<f32>)>,
@@ -114,11 +96,10 @@ impl Builder {
             for dimension in dimensions {
                 header.extend_from_slice(&dimension.to_le_bytes());
             }
-            header.extend_from_slice(&0_u32.to_le_bytes()); // f32
+            header.extend_from_slice(&0_u32.to_le_bytes());
             header.extend_from_slice(&offset.to_le_bytes());
             offset = offset.saturating_add(u64::try_from(values.len() * 4).unwrap_or(0));
         }
-        // Pad to the alignment, then the data in the order the directory names.
         let padding = (32 - (header.len() % 32)) % 32;
         header.extend(std::iter::repeat_n(0_u8, padding));
         for (_, _, values) in &self.tensors {
@@ -130,8 +111,6 @@ impl Builder {
     }
 }
 
-/// The weights of a block that does nothing: attention that projects to zero,
-/// a feed-forward that projects to zero, and norms that pass through.
 fn transparent_block(
     builder: Builder,
     block: usize,
@@ -207,9 +186,6 @@ fn transparent_block(
         )
 }
 
-/// A one-hot embedding table: token `i` is the vector with a one at position
-/// `i`. With a transparent block and a tied output projection, the logits are
-/// then the normalized embedding, whose largest element is the token itself.
 pub(crate) fn one_hot_model(vocabulary: usize, embedding: usize) -> Vec<u8> {
     let mut table = vec![0.0_f32; vocabulary * embedding];
     for token in 0..vocabulary {
@@ -235,8 +211,6 @@ pub(crate) fn one_hot_model(vocabulary: usize, embedding: usize) -> Vec<u8> {
     transparent_block(builder, 0, embedding, 4).build()
 }
 
-/// The model loads, reports the shape its file states, and says the output
-/// projection is tied.
 #[test]
 fn a_model_loads_with_the_shape_its_file_states() {
     let bytes = one_hot_model(4, 4);
@@ -258,13 +232,6 @@ fn a_model_loads_with_the_shape_its_file_states() {
     );
 }
 
-/// The forward pass reaches logits, one per token in the vocabulary, and the
-/// argmax is the token that went in — because the embedding is one-hot, the
-/// block contributes nothing, and the projection is the embedding again.
-///
-/// This is the *first token*, and it is the wiring that produces it: an
-/// embedding lookup, a residual stream that survives a block, a final norm and
-/// a projection that lands on the right row.
 #[test]
 fn a_first_token_comes_out_and_it_is_the_one_the_wiring_implies() {
     let bytes = one_hot_model(4, 4);
@@ -283,11 +250,6 @@ fn a_first_token_comes_out_and_it_is_the_one_the_wiring_implies() {
     }
 }
 
-/// Running twice with the same input produces the same logits to the last bit.
-///
-/// §3.12 makes reproducibility a precedence rule, and an engine that is not
-/// deterministic cannot be the second implementation A19 needs — a disagreement
-/// with the vendored engine would be unattributable.
 #[test]
 fn the_same_input_produces_the_same_logits() {
     let bytes = one_hot_model(4, 4);
@@ -301,8 +263,6 @@ fn the_same_input_produces_the_same_logits() {
     assert_eq!(one, other);
 }
 
-/// The cache grows by one entry per token, which is what makes the second token
-/// attend to the first.
 #[test]
 fn the_cache_remembers_every_token() {
     let bytes = one_hot_model(4, 4);
@@ -318,8 +278,6 @@ fn the_cache_remembers_every_token() {
     }
 }
 
-/// A token identifier outside the vocabulary is refused by name rather than
-/// reading whatever follows the embedding table.
 #[test]
 fn a_token_outside_the_vocabulary_is_refused() {
     let bytes = one_hot_model(4, 4);
@@ -335,12 +293,9 @@ fn a_token_outside_the_vocabulary_is_refused() {
     );
 }
 
-/// A file that does not state something the architecture needs is refused, and
-/// says which key was wanted. A default would be a different model.
 #[test]
 fn a_model_that_does_not_state_its_shape_is_refused() {
     let mut builder = Builder::new(1, 4, 1, 4, 4);
-    // Drop the head count, which has no defensible default.
     builder
         .metadata
         .retain(|(key, _, _)| key != "llama.attention.head_count");
@@ -360,19 +315,12 @@ fn a_model_that_does_not_state_its_shape_is_refused() {
     );
 }
 
-/// An architecture this crate does not implement is refused by name, which is
-/// D31's third state: it does not run, and MCF says which component was
-/// missing.
 #[test]
 fn another_architecture_is_refused_by_name() {
     let bytes = Builder::new(1, 4, 1, 4, 4)
         .text("general.architecture", "mamba")
         .build();
-    // The builder wrote the architecture twice; take the file it produced only
-    // as far as parsing, which is where the duplicate is caught.
     let Ok(file) = gguf::parse(&bytes) else {
-        // A duplicated key is refused by the reader, which is the other honest
-        // outcome and is tested there. Build one with a single architecture.
         let mut builder = Builder::new(1, 4, 1, 4, 4);
         builder
             .metadata

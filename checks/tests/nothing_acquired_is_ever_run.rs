@@ -1,50 +1,13 @@
-//! MCF runs nothing it downloaded (B-025, §6.4, §3.7).
-//!
-//! §6.4 allows repository code to be executed — deliberately, per artifact,
-//! with the risk stated and the choice recorded — and B-025 is where that will
-//! be built. Today MCF executes **nothing** it acquires, and that is a stronger
-//! statement than the one B-025 will eventually make. It is worth checking for
-//! exactly as long as it is true: the moment an engine is vendored (B-320) that
-//! can run a repository's own code, this file is where the boundary has to be
-//! redrawn rather than quietly crossed.
-//!
-//! What a check can hold is the act, not the intent. Every place MCF's shipped
-//! code starts a process is declared below with what it starts and why that is
-//! not an artifact.
-//!
-//! **Provisioning is where the boundary is drawn, not crossed** (B-367, §6.4).
-//! `mcf provision`, and the daemon when a window holds a model with no engine
-//! to run it, start `podman`, a platform binary, and inside the container it
-//! starts, source MCF cloned at a pinned commit is compiled and — during the
-//! build — run. That *is* repository code executing, and it is what §6.4
-//! permits: deliberately (the operator named the component, or pressed Host
-//! and was told what would be built for it), per artifact (one pin, declared
-//! in MCF's own table — never a name read from a model or a hub), with the
-//! choice recorded (`component_provisioned`). Nothing from the container
-//! reaches the host's own process, and nothing MCF *acquires as a model* is
-//! ever started by any path here.
-//!
-//! **What this does not prove.** That an artifact's *content* cannot become
-//! code some other way — a library MCF loads, a format that names a plugin. It
-//! proves that no path in the shipped tree reaches `exec`, which is where
-//! running something begins, and the laboratory's scenarios cover what MCF does
-//! with hostile content it *reads*.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use std::path::{Path, PathBuf};
 
-/// A file that starts a process, and what it starts.
 struct Spawns {
     file: &'static str,
-    /// How many places in it start something.
     sites: usize,
-    /// What is started, and why it is not something MCF downloaded.
     what: &'static str,
 }
 
-/// Every place MCF's shipped code starts a process.
 const DECLARED: &[Spawns] = &[
     Spawns {
         file: "crates/mcf-desk/build.rs",
@@ -57,19 +20,6 @@ const DECLARED: &[Spawns] = &[
                `gcc`, `clang` and `ar`, or whatever `CC` and `AR` name, which is the same \
                toolchain that built the rest of this program (B-409, D39)",
     },
-    // **The one place MCF runs something it did not build.** Everywhere else
-    // the rule holds outright: what starts is a binary MCF compiled from a
-    // pinned commit. A laboratory cannot hold to that and still answer its
-    // question — *can this model do the work* is answerable only by doing the
-    // work — so the rule becomes a boundary instead of a prohibition. What a
-    // model wrote runs inside a container with no network, no capabilities, a
-    // read-only root, a memory ceiling, a process limit and a deadline, over a
-    // scratch directory mounted read-only and thrown away afterwards. What
-    // leaves is `ok` or `no` per case, and nothing else is read.
-    //
-    // The model's file is still never executed: what runs is text the model
-    // emitted, which is a different thing from the artifact MCF acquired
-    // (B-025, §6.4, B-110).
     Spawns {
         file: "crates/mcf-cli/src/eval.rs",
         sites: 1,
@@ -222,7 +172,6 @@ const DECLARED: &[Spawns] = &[
     },
 ];
 
-/// What starting a process looks like.
 const STARTS: &[&str] = &[
     "Command::new",
     "process::Command",
@@ -233,7 +182,6 @@ const STARTS: &[&str] = &[
     "dlopen",
 ];
 
-/// Nothing starts a process except where it is written down.
 #[test]
 fn every_place_that_starts_something_is_declared() {
     let root = mcf_checks::workspace::root();
@@ -266,8 +214,6 @@ fn every_place_that_starts_something_is_declared() {
     );
 }
 
-/// And nothing is declared that has stopped starting anything, because a stale
-/// line is a budget somebody could spend later without saying so.
 #[test]
 fn nothing_is_declared_that_no_longer_starts_anything() {
     let root = mcf_checks::workspace::root();
@@ -288,12 +234,6 @@ fn nothing_is_declared_that_no_longer_starts_anything() {
     }
 }
 
-/// The one place that starts something takes the program as an argument rather
-/// than deciding it.
-///
-/// The distinction is the whole of B-025's *never implicit*: a function that
-/// chooses what to run can be pointed at an artifact by a caller who did not
-/// realize, and one that is handed a path cannot choose anything.
 #[test]
 fn the_one_place_that_starts_something_is_told_what_to_start() {
     let source = read(&mcf_checks::workspace::root().join("crates/mcf-core/src/self_cost.rs"));
@@ -308,13 +248,6 @@ fn the_one_place_that_starts_something_is_told_what_to_start() {
     );
 }
 
-/// The one library MCF loads is named by a constant, not by anything a caller,
-/// a file or a hub supplies.
-///
-/// `dlopen` is *the* way an artifact's bytes could become code without anything
-/// looking like execution, so the check on it is not that it is absent but that
-/// what it opens cannot be influenced: two `&'static str` names, and nothing
-/// joined to them.
 #[test]
 fn the_library_mcf_loads_is_a_constant() {
     let source = read(&mcf_checks::workspace::root().join("crates/mcf-core/src/hardware/nvml.rs"));
@@ -335,14 +268,6 @@ fn the_library_mcf_loads_is_a_constant() {
     }
 }
 
-/// What is in a model file is data, whatever it looks like.
-///
-/// The other half of B-025, and the one a source check cannot reach: a
-/// repository can put anything in a metadata string, and what MCF must do with
-/// a string that reads like a command is hand it back as a string. This builds
-/// a model whose fields are a shell command, a path traversal and a format
-/// specifier, reads it with MCF's own reader, and asserts each comes back
-/// exactly as written — neither run, nor resolved, nor interpolated (§3.7).
 #[test]
 fn a_model_files_contents_are_data_however_they_read() {
     let hostile = [
@@ -365,11 +290,6 @@ fn a_model_files_contents_are_data_however_they_read() {
     }
 }
 
-/// A GGUF holding these metadata strings and no tensors.
-///
-/// Written here rather than taken from a fixture: what is being asserted is
-/// what MCF does with *these* bytes, and a reader of this test should be able
-/// to see them.
 fn a_model_declaring(fields: &[(&str, &str)]) -> Vec<u8> {
     fn push_string(into: &mut Vec<u8>, text: &str) {
         into.extend_from_slice(&(text.len() as u64).to_le_bytes());
@@ -382,7 +302,6 @@ fn a_model_declaring(fields: &[(&str, &str)]) -> Vec<u8> {
     bytes.extend_from_slice(&(fields.len() as u64).to_le_bytes());
     for (key, value) in fields {
         push_string(&mut bytes, key);
-        // 8 is the format's string type.
         bytes.extend_from_slice(&8_u32.to_le_bytes());
         push_string(&mut bytes, value);
     }
@@ -394,9 +313,6 @@ fn read(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// Lines that start something, rather than pattern matches: one call written
-/// `std::process::Command::new` matches two of the names below and is still one
-/// place where MCF starts a process.
 fn starting_calls(source: &str) -> usize {
     code_only(&ships(source))
         .lines()
@@ -404,8 +320,6 @@ fn starting_calls(source: &str) -> usize {
         .count()
 }
 
-/// A file with its inline test module cut off: a test that runs a binary is a
-/// test doing its job, and the claim here is about the code that ships.
 fn ships(source: &str) -> String {
     match source.find("#[cfg(test)]") {
         Some(at) => source.get(..at).unwrap_or(source).to_owned(),
@@ -413,8 +327,6 @@ fn ships(source: &str) -> String {
     }
 }
 
-/// A file with its documentation removed: the prose names what it forbids in
-/// order to say it is absent.
 fn code_only(source: &str) -> String {
     source
         .lines()
@@ -423,16 +335,6 @@ fn code_only(source: &str) -> String {
         .join("\n")
 }
 
-/// Every `.rs` file under `crates/`, build scripts included, that is not itself
-/// a test.
-///
-/// Build scripts count: a build script runs on somebody's machine with their
-/// permissions, and *what starts a process* is the question here rather than
-/// *when*.
-///
-/// The prototypes are deliberately outside it: `prototypes/adversarial` starts
-/// children that die badly *on purpose*, which is what it is for (F1), and it
-/// is not what MCF ships.
 fn shipped_sources(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     collect(&root.join("crates"), &mut found);

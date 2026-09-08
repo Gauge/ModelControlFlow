@@ -1,41 +1,3 @@
-//! The soak tier: sustained operation, watching for what only shows up after a
-//! long time (B-191, D10, §6.34).
-//!
-//! D10 asks for *load and soak tests for a daemon that must run for months*.
-//! There is no daemon at M0 (B-030), so what can honestly be soaked is the code
-//! a daemon will spend those months in: the journal it appends to, the
-//! laboratory it runs, and the temporary state both create. What this tier
-//! looks for is not a wrong answer — the other tiers find those — but *drift*:
-//! a descriptor never closed, a directory never removed, memory that grows with
-//! the number of operations rather than with the work in flight.
-//!
-//! **This is not B-148.** That is the endurance scenario at M8: days of
-//! simulated operation with a daemon, state migration, and a machine that
-//! changes underneath. This is the part available now, and it says so rather
-//! than letting a green run here read as that claim (A19).
-//!
-//! **Against the simulated laboratory** (§6.34), so it stays cheap enough to
-//! run often and deterministic enough to believe. No real weights, no network,
-//! no clock the tier has to wait on.
-//!
-//! **Scheduled, not gating** — `scripts/ci.sh --with-soak`, which runs it on
-//! **one thread**. That is not a preference. Resident memory and open
-//! descriptors are properties of the *process*, so a second test allocating in
-//! parallel is read here as growth — the same mistake B35 names for timings,
-//! where a reading taken under contention measures the contention. Run with the
-//! harness's default parallelism this tier reported a 70 MB leak that was
-//! another test's replay, which is how the constraint was found.
-//!
-//! **What it asserts, and what it only reports.** A descriptor leak and a
-//! directory leak are counted exactly and asserted at zero. Resident memory is
-//! *reported* with a generous ceiling rather than asserted tightly: an
-//! allocator is free to keep what it has taken, and a tight assertion on
-//! somebody else's policy is how a suite becomes flaky and then ignored (A18).
-//! D24's memory ceiling is B-011's business, measured on the shipped artifact;
-//! this is a leak check, and the number it prints is the evidence.
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use mcf_checks::scratch::Scratch;
@@ -48,26 +10,12 @@ use mcf_lab::{CATALOGUE, run};
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
 
-/// How much resident growth over a whole soak is reported without comment.
-///
-/// Generous on purpose: an allocator is free to keep what it has taken, so a
-/// tight bound would be an assertion about somebody else's policy. It is still
-/// small enough to bite — a leak of even eighty bytes per operation over a
-/// hundred thousand operations clears it — and every reading taken under it is
-/// printed, so a figure that crept from half a megabyte to seven is visible
-/// long before it fails.
 const TOLERATED_GROWTH: u64 = 8 * 1024 * 1024;
 
-/// The number of open descriptors this process holds, where the platform says.
-///
-/// `None` rather than zero where it does not: A7's habit applied to a check —
-/// a leak detector that reported "no leak" because it could not count would be
-/// the vacuous green this whole tier is written against.
 fn open_descriptors() -> Option<usize> {
     Some(std::fs::read_dir("/proc/self/fd").ok()?.count())
 }
 
-/// Reports a resident reading, or says it could not take one.
 fn resident() -> Option<u64> {
     match resident_bytes() {
         Attested::Known(Bytes(bytes)) => Some(bytes),
@@ -91,18 +39,6 @@ fn report_growth(what: &str, before: Option<u64>, after: Option<u64>) {
     }
 }
 
-/// A hundred thousand entries into one journal, replayed as it goes.
-///
-/// The property is that a long record stays a complete record: every entry is
-/// there, in order, and a replay at any point reads all of it. A journal that
-/// lost its ordering or its tail after some number of appends would be the
-/// silent shortening B62 forbids, arriving through duration rather than damage.
-///
-/// No memory claim is made here — the checkpoints hold tens of thousands of
-/// entries by design, and what a *writer* costs over a long run is the next
-/// test, which does not replay at all. Keeping the two apart is the same
-/// discipline B35 states for timings: a reading taken while something else was
-/// allocating is a reading about that.
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
 fn a_long_record_stays_a_complete_record() {
@@ -147,18 +83,6 @@ fn a_long_record_stays_a_complete_record() {
     }
 }
 
-/// A hundred thousand appends do not grow the writer.
-///
-/// A `Journal` holds a file handle, a count and two clock readings; nothing
-/// about appending should accumulate. This is the leak check, so it replays
-/// nothing: a replay returns every entry it read, which is D20's design and
-/// would swamp the reading.
-///
-/// The replay's own footprint is measured here too, once, and **reported
-/// rather than asserted** — it is proportional to the journal by construction,
-/// and it is the number D6's derived index exists to stop growing (B-042,
-/// B-300). Asserting on it would be asserting that MCF never keeps a record
-/// long enough to matter.
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
 fn a_long_run_of_appends_does_not_grow_the_writer() {
@@ -166,8 +90,6 @@ fn a_long_run_of_appends_does_not_grow_the_writer() {
 
     let scratch = Scratch::new("soak-writer");
     let mut journal = Journal::open(&scratch.journal()).expect("a journal opens");
-    // One append before the baseline, so whatever the first one initializes is
-    // not read as growth.
     journal.append(&entry(0)).expect("an append succeeds");
     let before = resident();
 
@@ -200,17 +122,12 @@ fn a_long_run_of_appends_does_not_grow_the_writer() {
     }
 }
 
-/// Ten thousand journals opened and closed. A descriptor held past the handle
-/// that owned it is invisible until the process has done it thousands of times,
-/// which is exactly what a daemon does.
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
 fn opening_and_closing_a_record_ten_thousand_times_leaks_nothing() {
     const CYCLES: usize = 10_000;
 
     let scratch = Scratch::new("soak-open");
-    // One cycle first, so the baseline includes whatever the first open costs
-    // once — a lazily initialized anything would otherwise read as a leak.
     {
         let mut journal = Journal::open(&scratch.journal()).expect("a journal opens");
         journal.append(&entry(0)).expect("an append succeeds");
@@ -254,12 +171,6 @@ fn entry(sequence: u64) -> Entry {
     )
 }
 
-/// The laboratory, run for a long time, leaves nothing behind.
-///
-/// A27 applies to MCF's own suite: every scenario builds a directory and every
-/// `World` removes it. Run once that is invisible; run twenty thousand times it
-/// is either invisible or it is a full disk on a machine that runs the tier
-/// nightly. The scratch directories are counted rather than trusted.
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
 fn twenty_thousand_scenario_runs_leave_nothing_behind() {
@@ -298,7 +209,6 @@ fn twenty_thousand_scenario_runs_leave_nothing_behind() {
     report_growth("twenty thousand scenario runs", resident_before, resident());
 }
 
-/// How many laboratory scratch directories are lying about.
 fn laboratory_directories() -> usize {
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
         return 0;
@@ -309,14 +219,6 @@ fn laboratory_directories() -> usize {
         .count()
 }
 
-/// Thirty simulated days of the clock a laboratory runs on.
-///
-/// The lab's clock is supplied rather than waited on (D26), so a month of it
-/// costs nothing — which is the whole reason §6.34 puts soak against the
-/// simulated laboratory. What is checked is that a clock advanced by a month in
-/// small steps arrives where the arithmetic says: a simulated clock that
-/// drifted would make every deadline scenario a different scenario after a long
-/// run.
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
 fn a_month_of_simulated_time_arrives_where_the_arithmetic_says() {
@@ -339,24 +241,6 @@ fn a_month_of_simulated_time_arrives_where_the_arithmetic_says() {
     );
 }
 
-/// An idle daemon costs nothing, measured rather than asserted by design
-/// (B-031, B-004, D24, §3.13).
-///
-/// D24 states two of its figures as prohibitions rather than thresholds, and
-/// this is one: **zero timer wakeups while idle**. The daemon's shape is what
-/// makes it true — it blocks in `accept` and has no tick, no poll and no
-/// watcher — and a shape is a claim until something measures it. This runs a
-/// real daemon for a minute with nobody talking to it and reads three things
-/// the kernel keeps:
-///
-/// * the processor time it used, which should be indistinguishable from none;
-/// * its context switches, voluntary and involuntary, which count the times it
-///   was scheduled at all;
-/// * the record, which must be byte-for-byte what it was — B-004's condition is
-///   *writes zero records*, and a daemon that logged a heartbeat would fail
-///   here rather than in review.
-///
-/// A minute is D24's own window. It is long, and this is the tier for long.
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
 fn an_idle_daemon_costs_nothing_for_a_minute() {
@@ -364,17 +248,11 @@ fn an_idle_daemon_costs_nothing_for_a_minute() {
 
     let scratch = Scratch::new("idle-daemon");
     let journal = scratch.path().join("mcf").join("record.jsonl");
-    // A record with something in it, so that "unchanged" is a claim about a
-    // file with content rather than about an absence.
     {
         let mut writing = Journal::open(&journal).expect("a journal opens");
         writing.append(&entry(0)).expect("it appends");
     }
 
-    // The binary this workspace built, found by path rather than by
-    // `CARGO_BIN_EXE_*`: that variable exists only for a crate's own tests, and
-    // the tier this belongs to lives in the checks crate. A machine that has
-    // not built one reports that it could not measure, which is not a pass.
     let Some(binary) = the_built_binary() else {
         println!("no mcf binary is built; the idle claim stands unmeasured");
         return;
@@ -388,8 +266,6 @@ fn an_idle_daemon_costs_nothing_for_a_minute() {
         .spawn()
         .expect("the daemon starts");
 
-    // Wait until it says it is up, so the minute is a minute of *idling*
-    // rather than of starting.
     {
         let stdout = daemon.stdout.as_mut().expect("it prints where it is");
         let mut line = String::new();
@@ -447,14 +323,6 @@ fn an_idle_daemon_costs_nothing_for_a_minute() {
     }
 }
 
-/// An idle daemon with a model resident costs nothing for a minute (D41, M2's
-/// third exit criterion, §3.13).
-///
-/// The same measurement as the idle daemon's, taken after one generation has
-/// loaded the laboratory's fixture and left it resident. What must be true is
-/// that residency is memory and nothing else: no timer to unload, no watcher,
-/// no tick — the processor time and context switches over the minute are read
-/// as deltas from after the generation, and the record must not move.
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
 fn an_idle_daemon_with_a_model_resident_costs_nothing_for_a_minute() {
@@ -494,7 +362,6 @@ fn an_idle_daemon_with_a_model_resident_costs_nothing_for_a_minute() {
         assert!(line.contains("mcf is up"), "{line}");
     }
 
-    // One generation, so that a model is resident for the minute.
     let ran = std::process::Command::new(&binary)
         .args([
             "run",
@@ -559,7 +426,6 @@ fn an_idle_daemon_with_a_model_resident_costs_nothing_for_a_minute() {
     }
 }
 
-/// The `mcf` binary this workspace built, debug or release.
 fn the_built_binary() -> Option<std::path::PathBuf> {
     let root = mcf_checks::workspace::root();
     ["debug", "release"]
@@ -568,7 +434,6 @@ fn the_built_binary() -> Option<std::path::PathBuf> {
         .find(|path| path.is_file())
 }
 
-/// How many times a process has been scheduled, voluntarily or not.
 fn context_switches(pid: u32) -> Option<u64> {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
     let mut total = 0_u64;
@@ -582,14 +447,10 @@ fn context_switches(pid: u32) -> Option<u64> {
     Some(total)
 }
 
-/// How much processor time a process has used, in the platform's own ticks.
 fn processor_time(pid: u32) -> Option<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    // The command name can contain spaces and parentheses, so the fields after
-    // it are found from the last `)` rather than by splitting the whole line.
     let after_name = stat.rsplit_once(american_paren())?.1;
     let fields: Vec<&str> = after_name.split_whitespace().collect();
-    // utime and stime are the 12th and 13th fields after the state.
     let utime: u64 = fields.get(11)?.parse().ok()?;
     let stime: u64 = fields.get(12)?.parse().ok()?;
     Some(utime.saturating_add(stime))

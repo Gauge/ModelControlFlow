@@ -1,5 +1,3 @@
-//! Tests for what a listing says about a model published in parts.
-
 use super::{Entry, Listing};
 
 fn listing(paths: &[(&str, u64)]) -> Listing {
@@ -16,8 +14,6 @@ fn listing(paths: &[(&str, u64)]) -> Listing {
     }
 }
 
-/// A model published in parts is one set: every part, in order, however the
-/// listing orders them, and nothing that is not a part of it (B-590).
 #[test]
 fn the_parts_of_a_published_model_are_one_set_in_order() {
     let listing = listing(&[
@@ -57,8 +53,6 @@ fn the_parts_of_a_published_model_are_one_set_in_order() {
     assert!(listing.parts_of("README.md").is_none());
 }
 
-/// A set the repository publishes only part of is not whole, and says so
-/// rather than being fetched (B-590).
 #[test]
 fn a_set_missing_a_part_is_not_whole() {
     let listing = listing(&[
@@ -71,14 +65,10 @@ fn a_set_missing_a_part_is_not_whole() {
     assert_eq!(set.parts.len(), 2);
     assert_eq!(set.of, 3);
     assert!(!set.is_whole());
-    // A part numbered past its count, or at nought, is not a part.
     assert!(listing.parts_of("model-00004-of-00003.gguf").is_none());
     assert!(listing.parts_of("model-00000-of-00003.gguf").is_none());
 }
 
-/// A repository's variants are what a person chooses between: a
-/// quantization published in four files is one of them, named without its
-/// part suffix and weighing the whole (B-597).
 #[test]
 fn a_repositorys_variants_are_one_a_quantization_however_many_files() {
     let listing = listing(&[
@@ -101,12 +91,10 @@ fn a_repositorys_variants_are_one_a_quantization_however_many_files() {
             ("mmproj-F16.gguf", 800_000_000, 1),
         ]
     );
-    // The file to ask for is the set's first part, which fetches the whole.
     assert_eq!(variants[0].first, "BF16/model-BF16-00001-of-00003.gguf");
     assert!(variants.iter().all(|held| held.whole));
 }
 
-/// A part suffix comes off the name and nothing else does (B-597).
 #[test]
 fn the_part_suffix_comes_off_the_name_and_nothing_else_does() {
     use super::without_the_part;
@@ -116,7 +104,6 @@ fn the_part_suffix_comes_off_the_name_and_nothing_else_does() {
     );
     assert_eq!(without_the_part("model-Q4_K_M.gguf"), "model-Q4_K_M.gguf");
     assert_eq!(without_the_part("model-1-of-2.gguf"), "model.gguf");
-    // Not a part: a name that only looks like one.
     assert_eq!(
         without_the_part("model-best-of-breed.gguf"),
         "model-best-of-breed.gguf"

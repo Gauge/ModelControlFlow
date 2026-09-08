@@ -1,12 +1,8 @@
-//! The daemon's final line and the library's outcome must report as one.
-
 use super::{Came, came_from, report};
 use mcf_core::component::COMPONENTS;
 use mcf_core::failure::{Attribution, Category, Disposition, Subsystem};
 use mcf_record::json::Value;
 
-/// A build the daemon finished reads back into the same lines a local build
-/// prints, with the two things only a daemon can add.
 #[test]
 fn a_daemon_built_line_reports_like_a_local_build() {
     let component = &COMPONENTS[0];
@@ -39,7 +35,6 @@ fn a_daemon_built_line_reports_like_a_local_build() {
     }
 }
 
-/// A record that failed on the daemon's side is said, not shown as a path.
 #[test]
 fn a_failed_record_is_said() {
     let failure = mcf_core::Failure::new(
@@ -64,7 +59,6 @@ fn a_failed_record_is_said() {
     }
 }
 
-/// A prefix that was complete before the daemon ran anything is *already*.
 #[test]
 fn an_already_line_is_already() {
     let body = Value::map([
@@ -73,7 +67,6 @@ fn an_already_line_is_already() {
         ("done", Value::Bool(true)),
     ]);
     assert!(matches!(came_from(&body), Came::Already { .. }));
-    // And a final line with no prefix is a refusal, not a build at nowhere.
     assert!(matches!(
         came_from(&Value::map([("done", Value::Bool(true))])),
         Came::Refused(_)

@@ -1,26 +1,9 @@
-//! A refusal the daemon sends is read by the client that receives it (A2).
-//!
-//! **What was found.** `mcf settings <model>` printed *refused — MCF did not
-//! say why*. The daemon had said why, at length: the category, the detail,
-//! what it wanted and what it found, and the cause beneath. The client read
-//! a key named `what` from the body, the encoding writes no such key, and the
-//! fallback text was a false statement about the daemon. Six readers across
-//! the console and the window had each copied the same line (F148).
-//!
-//! **What this holds.** No shipped client source carries that fallback, and
-//! no shipped client prints a refusal body as a raw line. Reading a failure
-//! is [`mcf_record::decode::failure_said`]'s job, and a reader that wants
-//! something else from a refusal goes through it.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use std::path::{Path, PathBuf};
 
-/// The crates that talk to the daemon on a person's behalf.
 const CLIENTS: &[&str] = &["crates/mcf-cli/src", "crates/mcf-desk/src"];
 
-/// Text a client must never fall back to over a body that said why.
 const NEVER: &[&str] = &["did not say why", ".get(\"what\")"];
 
 fn root() -> PathBuf {

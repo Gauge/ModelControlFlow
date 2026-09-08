@@ -1,13 +1,3 @@
-//! The §3.4 floor, captured from a live machine, survives the record.
-//!
-//! B-007's condition. What makes it worth a test of its own rather than a
-//! property of the encoder is A7: a floor whose unknowns came back as the
-//! *word* `unknown` would compare equal to a floor that had read something, and
-//! every downstream comparison would be quietly wrong. The round trip is where
-//! that shows.
-//!
-//! B19 keeps it hermetic: a temporary directory, removed when the test ends.
-
 #![allow(clippy::panic, clippy::expect_used)]
 
 use std::path::PathBuf;
@@ -44,7 +34,6 @@ impl Drop for Scratch {
     }
 }
 
-/// Captured from this machine, written, replayed, and identical.
 #[test]
 fn a_captured_floor_survives_the_journal_unchanged() {
     let scratch = Scratch::new("live");
@@ -77,19 +66,11 @@ fn a_captured_floor_survives_the_journal_unchanged() {
     assert_eq!(&rebuilt, &captured, "the floor did not survive the record");
 }
 
-/// The same, for the machine B19 actually requires the suite to run on: one
-/// with no accelerator. Produced through the seam so the case is checked rather
-/// than waited for.
 #[test]
 fn a_floor_full_of_unknowns_survives_as_unknowns() {
     let scratch = Scratch::new("bare");
     let machine = Machine::read_through(&[]);
     let captured = capture::conditions(&machine, None, "the round-trip test", "full", None);
-    // A field that is genuinely unknown on a machine with no accelerator, so
-    // that the round trip below is carrying at least one. This used to name
-    // `thermal_state`, which was unknown only because MCF read no processor
-    // temperature at all — the defect F91 corrected, and a premise that a
-    // passing test was quietly resting on.
     assert!(!captured.floor().driver_versions.is_known());
 
     {
@@ -115,8 +96,6 @@ fn a_floor_full_of_unknowns_survives_as_unknowns() {
         .expect("the conditions are readable");
 
     assert_eq!(&rebuilt, &captured);
-    // The half that matters: an unknown came back unknown and not as a word
-    // that happens to read like one (A7).
     assert!(!rebuilt.floor().driver_versions.is_known());
     assert_ne!(
         rebuilt.floor().driver_versions,
@@ -124,16 +103,12 @@ fn a_floor_full_of_unknowns_survives_as_unknowns() {
     );
 }
 
-/// A record that does not ask the same questions is not decoded into a guess.
-/// §7.30: a line written by a version this one cannot fully interpret is the
-/// reader's problem to name, not the parser's to paper over.
 #[test]
 fn a_floor_missing_a_question_is_not_decoded() {
     let partial = Value::map([("hardware_state", Value::text("a machine"))]);
     assert!(decode::floor(&partial).is_none());
 }
 
-/// Nor is a condition written in a shape this version does not use.
 #[test]
 fn a_condition_of_an_unexpected_shape_is_not_coerced() {
     let machine = Machine::read_through(&[]);
@@ -145,15 +120,6 @@ fn a_condition_of_an_unexpected_shape_is_not_coerced() {
     assert!(decode::floor(&Value::Map(fields)).is_none());
 }
 
-/// An integral condition stays integral, in the record and on the way back.
-///
-/// The fixture for the first defect the property tier found (B-191): every
-/// known condition was rendered through `Display`, so a context length of 4096
-/// was written as `"4096"` and read back as text. Every other floor question
-/// missed it, because the rest are naturally strings. §3.3 asks the
-/// record be machine-readable first, and a number a reader has to re-parse from
-/// a string is not that; B-007's *round-trips losslessly* is the claim it
-/// falsified.
 #[test]
 fn an_integral_condition_is_recorded_as_a_number() {
     use mcf_core::measurement::{ConditionValue, Floor};

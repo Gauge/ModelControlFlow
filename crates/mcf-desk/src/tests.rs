@@ -1,13 +1,6 @@
-//! What the window may and may not do, checked without opening one.
-//!
-//! None of these draw. What they check is the layer between the daemon's
-//! answer and the sentence a person reads — which is where this surface can
-//! actually be wrong about a measurement, and the one place it must not be.
-
 use super::{ACTIONS, Caret, Desk, Model, Page, component_from, model_from};
 use mcf_record::json::Value;
 
-/// Every action reaches a control-plane request or asks MCF nothing (A22).
 #[test]
 fn every_action_reaches_a_request_or_asks_nothing() {
     assert!(!ACTIONS.is_empty());
@@ -28,11 +21,6 @@ fn every_action_reaches_a_request_or_asks_nothing() {
     assert!(ACTIONS.iter().any(|action| action.reaches.is_some()));
 }
 
-/// The navigation column offers only screens that exist.
-///
-/// A19: a column entry is an advertisement. One that leads nowhere tells
-/// somebody something false about the whole application, and the person who
-/// clicks it has no way to know which of the other entries to trust.
 #[test]
 fn nothing_in_the_menu_leads_nowhere() {
     assert!(!Page::MENU.is_empty());
@@ -44,23 +32,17 @@ fn nothing_in_the_menu_leads_nowhere() {
             "{label} is not a section, so it cannot be lit when you are on it"
         );
     }
-    // A model's own page is reached from the list and belongs to it. Host is
-    // no longer a column entry — it drew the list Models draws — so the two
-    // screens its actions lead to are lit under Models, which is where a
-    // person clicked to reach them.
     assert_eq!(Page::Adding.section(), Page::Models);
     assert_eq!(Page::Hosting.section(), Page::Hosting);
     assert_eq!(Page::Anatomy.section(), Page::Models);
     assert_eq!(Page::Vocabulary.section(), Page::Models);
     assert_eq!(Page::Host.section(), Page::Models);
-    // And nothing in the column is Host any more.
     assert!(
         !Page::MENU.iter().any(|(page, _)| *page == Page::Host),
         "Host is the list Models shows, not a second entry for it"
     );
 }
 
-/// A model MCF cannot run says so, and does not also claim to be ready.
 #[test]
 fn a_model_that_will_not_run_is_never_drawn_as_ready() {
     let refused = Model {
@@ -69,13 +51,10 @@ fn a_model_that_will_not_run_is_never_drawn_as_ready() {
         ..Model::default()
     };
     assert!(!refused.will_run());
-    // The card's sentence is the refusal itself — not a cheerful line with a
-    // warning somewhere else that has to be noticed.
     assert!(refused.in_a_sentence().contains("more memory"));
     assert!(refused.where_it_runs().contains("more memory"));
 }
 
-/// An unmeasured model says it is unmeasured everywhere it says anything.
 #[test]
 fn an_unmeasured_model_never_reports_a_speed() {
     let held = Model {
@@ -101,7 +80,6 @@ fn an_unmeasured_model_never_reports_a_speed() {
         !said.contains('0'),
         "an absent measurement must not become a figure: {said}"
     );
-    // And in the technical rows, where a zero would be read as a measurement.
     let rows = held.technical();
     let speed = rows
         .iter()
@@ -111,7 +89,6 @@ fn an_unmeasured_model_never_reports_a_speed() {
     assert_eq!(speed, crate::words::UNMEASURED);
 }
 
-/// Everything the plain sentences left out is still somewhere (A1).
 #[test]
 fn nothing_is_thrown_away_on_the_way_to_a_plain_sentence() {
     let held = Model {
@@ -140,19 +117,15 @@ fn nothing_is_thrown_away_on_the_way_to_a_plain_sentence() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    // The card said "116 words a second"; the record's own unit is still here.
     assert!(flat.contains("155.0 tokens a second"), "{flat}");
-    // It said "about 25,000 words"; the token count is still here.
     assert!(flat.contains("32,768 tokens"), "{flat}");
     assert!(flat.contains("40,960 tokens"), "{flat}");
-    // It never said which engine; a person who wants to know can find out.
     assert!(flat.contains("llama.cpp-cuda"), "{flat}");
     assert!(flat.contains("an-architecture"), "{flat}");
     assert!(flat.contains("5,020,000,000 bytes"), "{flat}");
     assert!(flat.contains(&held.path), "{flat}");
 }
 
-/// The daemon's answer becomes a model without inventing anything.
 #[test]
 fn a_daemon_answer_becomes_a_model() {
     let answered = Value::map([
@@ -187,12 +160,10 @@ fn a_daemon_answer_becomes_a_model() {
     assert_eq!(held.context, Some(8_192));
     assert!(held.on_a_card);
     assert!(held.will_run());
-    // Nothing measured it, so nothing claims to have.
     assert_eq!(held.speed, None);
     assert_eq!(held.start_up, None);
 }
 
-/// A model the daemon could not resolve carries the daemon's own reason.
 #[test]
 fn a_refusal_travels_from_the_daemon_word_for_word() {
     let answered = Value::map([
@@ -218,12 +189,9 @@ fn a_refusal_travels_from_the_daemon_word_for_word() {
     );
 }
 
-/// A machine nothing could be read from says so rather than reporting zero.
 #[test]
 fn an_unreadable_machine_is_never_reported_as_an_empty_one() {
     let desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
-    // A default `Reading` is what a machine looks like before anything has
-    // been sampled: every field absent.
     assert_eq!(desk.memory_sentence(), crate::words::UNMEASURED);
     assert_eq!(desk.processor_sentence(), crate::words::UNMEASURED);
     assert_eq!(desk.card_sentence(), "None found");
@@ -234,8 +202,6 @@ fn an_unreadable_machine_is_never_reported_as_an_empty_one() {
     );
 }
 
-/// When MCF cannot be reached the window says so in words, and does not put a
-/// socket path in front of somebody who has never heard of one.
 #[test]
 fn a_daemon_that_is_not_there_is_said_in_words() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -253,17 +219,8 @@ fn a_daemon_that_is_not_there_is_said_in_words() {
     assert_eq!(desk.doing_sentence(), "MCF is not answering");
 }
 
-/// A menu entry now exists for each of the things the window can do.
-///
-/// Each one leads to a screen that works, and the column is the console's
-/// column: B-072 makes *where things are* a fact about MCF rather than about
-/// which surface you happened to open, so an entry added here is added there
-/// in the same change. Components is the seventh — what MCF can build was
-/// reachable only from the command line, which made provisioning a thing you
-/// had to already know about (A19, A22).
 #[test]
 fn every_menu_entry_reaches_something_built() {
-    // The console's six, in the console's order — not a menu invented here.
     let named: Vec<&str> = Page::MENU.iter().map(|(_, label)| *label).collect();
     assert_eq!(
         named,
@@ -275,11 +232,6 @@ fn every_menu_entry_reaches_something_built() {
     }
 }
 
-/// Typing goes to a field only where there is one.
-///
-/// The letter `q` closes the window, and a field that ate the application when
-/// somebody typed a model name with a q in it would be a field nobody could
-/// use.
 #[test]
 fn typing_is_only_typing_where_something_takes_it() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -306,11 +258,6 @@ fn typing_is_only_typing_where_something_takes_it() {
     }
 }
 
-/// Nothing is asked for on an empty field.
-///
-/// A lookup of nothing is a request to a hub for a repository nobody named,
-/// and an empty question is a generation nobody asked for. Both cost
-/// something, so neither happens.
 #[test]
 fn an_empty_field_asks_for_nothing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -330,10 +277,6 @@ fn an_empty_field_asks_for_nothing() {
     );
 }
 
-/// One long-running thing at a time.
-///
-/// Two measurements at once would be two measurements of a machine that was
-/// running a measurement, and the second would be a reading of the first (A6).
 #[test]
 fn only_one_thing_runs_at_a_time() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -347,15 +290,6 @@ fn only_one_thing_runs_at_a_time() {
     );
 }
 
-/// A control that wears a chevron opens a list, and does not do something else.
-///
-/// **Both pickers on the diagnostics screen used to lie.** The model one ran
-/// `Act::Go(Page::Host)` — it navigated away from the screen the reader was
-/// setting up — and the window one ran a `NextWindow` that cycled to the next
-/// power of two. Each drew a chevron, which is the promise that a list will
-/// appear. A reader who wanted the third window of seven had to click six
-/// times and count, and a reader who wanted to see the models had the page
-/// taken away from them.
 #[test]
 fn a_picker_opens_a_list_rather_than_going_somewhere() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -370,17 +304,14 @@ fn a_picker_opens_a_list_rather_than_going_somewhere() {
         "opening the model picker navigated away, which is what it used to do"
     );
 
-    // The same click again shuts it, which is what every dropdown does.
     desk.act(crate::Act::Open(crate::Picker::Model));
     assert_eq!(desk.open, None, "a second click did not shut the list");
 
-    // Opening the other one replaces it: two open lists would overlap.
     desk.act(crate::Act::Open(crate::Picker::Model));
     desk.act(crate::Act::Open(crate::Picker::Window));
     assert_eq!(desk.open, Some(crate::Picker::Window));
 }
 
-/// A window is picked from the list, not counted up to.
 #[test]
 fn a_window_is_picked_and_never_cycled() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -389,20 +320,17 @@ fn a_window_is_picked_and_never_cycled() {
         offered.contains(&desk.window),
         "the window it starts on is not one of the ones offered"
     );
-    // Every option is reachable in one click, which is the whole difference.
     for wanted in offered {
         desk.act(crate::Act::Open(crate::Picker::Window));
         desk.act(crate::Act::SetWindow(wanted));
         assert_eq!(desk.window, wanted);
         assert_eq!(desk.open, None, "picking did not shut the list");
     }
-    // And they are powers of two, because a context window is asked for in them.
     for held in offered {
         assert!(held.is_power_of_two(), "{held} is not a power of two");
     }
 }
 
-/// Choosing a model from the list shuts it and leaves the reader where they were.
 #[test]
 fn choosing_a_model_shuts_the_list_and_stays_on_the_screen() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -419,11 +347,6 @@ fn choosing_a_model_shuts_the_list_and_stays_on_the_screen() {
     );
 }
 
-/// A test nobody has run has no run time and no result (A7).
-///
-/// **Not a zero, and not an empty result panel.** A zero in the run-time
-/// column reads as *instant*, which is the one thing it is not, and a results
-/// button over nothing is a button that does nothing when pressed.
 #[test]
 fn a_test_that_never_ran_reports_neither_a_time_nor_a_result() {
     for test in crate::tests() {
@@ -437,9 +360,6 @@ fn a_test_that_never_ran_reports_neither_a_time_nor_a_result() {
     }
 }
 
-/// Each card has its own cost: the throughput run's is one ladder's time
-/// and the cross-check's is its own, whatever else is on the page (D50,
-/// B-477).
 #[test]
 fn each_card_has_its_own_cost() {
     let desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -456,10 +376,6 @@ fn each_card_has_its_own_cost() {
     );
 }
 
-/// A run's card starts that run and no other: the throughput card climbs
-/// the ladder, the cross-check card reads with MCF's own engine, the prompt
-/// card opens the prompt page, and a card whose run is at the command line
-/// starts nothing (D50).
 #[test]
 fn a_card_starts_its_own_run() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -488,11 +404,6 @@ fn a_card_starts_its_own_run() {
     assert_eq!(desk.tab, crate::Tab::Statistics);
 }
 
-/// A measurement in the record reaches the model's page.
-///
-/// **Until this, a run's readings went to the screen and nowhere else**, so a
-/// model said `Unknown` about its speed the moment a run finished and a second
-/// run could not be compared with a first (B-414, A1).
 #[test]
 fn a_measurement_in_the_record_reaches_the_model() {
     let answered = Value::map([
@@ -512,9 +423,6 @@ fn a_measurement_in_the_record_reaches_the_model() {
                                 ("ms_per_token", Value::text("1.529")),
                                 ("measured", Value::Bool(true)),
                             ]),
-                            // A rung that would not separate: a result, and
-                            // not a slow one. It must not become the deepest
-                            // reading (A7, A9).
                             Value::map([
                                 ("depth", Value::Integer(1024)),
                                 ("measured", Value::Bool(false)),
@@ -536,17 +444,12 @@ fn a_measurement_in_the_record_reaches_the_model() {
     assert_eq!(held.slowest, Some(1.412));
     assert_eq!(held.speed_at_512(), "1.53 ms/token");
     assert_eq!(held.speed_at_window(), "1.41 ms/token");
-    // The rows are labelled with the depths the ends were measured at, not
-    // with a window the ladder did not climb to (A20).
     let [shallowest, deepest] = held.speed_rows();
     assert_eq!(shallowest.0, "at 512 tokens");
     assert_eq!(deepest.0, "at 2,048 tokens", "{deepest:?}");
-    // The run said nothing of a first token, so nothing claims one.
     assert_eq!(held.start_up(), crate::view::UNKNOWN);
 }
 
-/// The time to a first token is the daemon's figure or nothing — never one
-/// this side of the wire works out from the readings (B-072, A7).
 #[test]
 fn a_start_up_in_the_record_is_the_daemons_figure_or_nothing() {
     let recorded = |first_token: Value| {
@@ -581,7 +484,6 @@ fn a_start_up_in_the_record_is_the_daemons_figure_or_nothing() {
     assert!(!not_read.measured());
 }
 
-/// One rung of a run, as the daemon says it as the run climbs.
 fn a_rung() -> Value {
     Value::map([
         ("depth", Value::Integer(512)),
@@ -590,7 +492,6 @@ fn a_rung() -> Value {
     ])
 }
 
-/// A run's last line: the ladder again, and what was derived from it.
 fn a_last_line(prompt_reading: Value, first_token: Value) -> Value {
     Value::map([
         ("measuring", Value::text("a-model")),
@@ -625,7 +526,6 @@ fn a_last_line(prompt_reading: Value, first_token: Value) -> Value {
     ])
 }
 
-/// A desk holding a finished run, its rows filled from it.
 fn a_desk_that_ran(prompt_reading: Value, first_token: Value) -> Desk {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
     desk.doing = crate::Doing::Measuring(crate::job::Job::already(
@@ -639,7 +539,6 @@ fn a_desk_that_ran(prompt_reading: Value, first_token: Value) -> Desk {
     desk
 }
 
-/// What one row of the tests table shows.
 fn row(desk: &Desk, name: &str) -> Option<Vec<String>> {
     desk.tests
         .iter()
@@ -649,13 +548,6 @@ fn row(desk: &Desk, name: &str) -> Option<Vec<String>> {
         .clone()
 }
 
-/// A finished run fills the five rows the ladder answers, and leaves the
-/// one it does not alone.
-///
-/// **Five tests were listed and one ran.** The rows for prompt reading and
-/// start-up said nothing after a run that had measured both and thrown them
-/// away; the daemon now says them on its last line, and the rows read what
-/// it said (A7, A9, B-072).
 #[test]
 fn a_finished_run_fills_the_rows_the_ladder_answers() {
     let desk = a_desk_that_ran(
@@ -722,8 +614,6 @@ fn a_finished_run_fills_the_rows_the_ladder_answers() {
     );
 }
 
-/// A finished cross-check fills its own row with the daemon's sentences,
-/// and a refused one with the refusal — never a blank (A2, B-072, B-424).
 #[test]
 fn a_finished_cross_check_fills_its_row_in_the_daemons_words() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -768,7 +658,6 @@ fn a_finished_cross_check_fills_its_row_in_the_daemons_words() {
     );
 }
 
-/// What the daemon could not read is said as not read, not left blank (A9).
 #[test]
 fn a_figure_the_run_could_not_read_is_said_not_read() {
     let desk = a_desk_that_ran(
@@ -791,7 +680,6 @@ fn a_figure_the_run_could_not_read_is_said_not_read() {
     );
 }
 
-/// A model with no measurement in the record says so, and does not say zero.
 #[test]
 fn a_model_nothing_measured_stays_unmeasured() {
     let answered = Value::map([
@@ -805,10 +693,6 @@ fn a_model_nothing_measured_stays_unmeasured() {
     assert_eq!(held.speed_at_512(), crate::view::UNKNOWN);
 }
 
-/// A ladder where nothing separated is a ladder with no reading.
-///
-/// Every rung is a result (A9) and none of them is a speed, so the model's
-/// page shows what it showed before: nothing measured.
 #[test]
 fn a_ladder_that_never_separated_yields_no_speed() {
     let answered = Value::map([
@@ -837,14 +721,6 @@ fn a_ladder_that_never_separated_yields_no_speed() {
     assert_eq!(held.slowest, None);
 }
 
-/// A pasted reference arrives in the field, and arrives usable.
-///
-/// F: the window read `SDL_EVENT_TEXT_INPUT` and nothing else, so a field
-/// could be typed into and not pasted into — and an `owner/repository` name
-/// copied out of a browser is pasted, not typed. What the clipboard holds was
-/// put there by something else, so these are the shapes it actually arrives
-/// in. The references here are shaped like references and name nothing: B28
-/// keeps a model's name out of the code that would then be built around it.
 #[test]
 fn a_pasted_reference_is_taken_as_a_value() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -856,35 +732,29 @@ fn a_pasted_reference_is_taken_as_a_value() {
         "a plain reference is kept as it is"
     );
 
-    // A browser hands over a trailing newline; it is not part of the name.
     desk.typed.clear();
     desk.paste("an-owner/a-repository-GGUF\n");
     assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
 
-    // A terminal can hand over more than one line. The first is the value.
     desk.typed.clear();
     desk.paste("an-owner/a-repository-GGUF\nand a second line\n");
     assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
 
-    // Control characters are not part of any reference.
     desk.typed.clear();
     desk.paste("\tan-owner/a-repository-GGUF\r");
     assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
 
-    // A paste that is nothing but whitespace leaves the field alone.
     desk.typed.clear();
     desk.typed.push_str("an-owner/");
     desk.paste("   \n  ");
     assert_eq!(desk.typed, "an-owner/", "an empty paste changes nothing");
 
-    // Pasting appends, because a person may paste an owner and type a name.
     desk.typed.clear();
     desk.typed.push_str("an-owner/");
     desk.paste("a-repository-GGUF");
     assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
 }
 
-/// A clipboard can hold a whole document. A field cannot.
 #[test]
 fn a_paste_is_bounded() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -895,20 +765,10 @@ fn a_paste_is_bounded() {
         512,
         "a paste is capped rather than accepted whole"
     );
-    // And a second paste cannot push it past the cap either.
     desk.paste("bbbb");
     assert_eq!(desk.typed.chars().count(), 512);
 }
 
-/// A component is in one of three states, and a half-build is not a build.
-///
-/// The builder writes the provenance last, so a prefix with none beside it is
-/// a run that stopped partway. Reading that as *provisioned* is how a person
-/// comes to trust a component that is not there (F31, A7).
-///
-/// Whether MCF reaches it as an ENGINE is a separate fact: a window library is
-/// not an engine, and the first cut of this screen showed a fully provisioned
-/// one as merely "built" because the two were treated as one question.
 #[test]
 fn a_half_built_component_is_not_a_provisioned_one() {
     let read = |present: bool, provisioned: bool, engine: bool| {
@@ -927,14 +787,12 @@ fn a_half_built_component_is_not_a_provisioned_one() {
     let absent = read(false, false, false);
     assert!(!absent.present && !absent.provisioned);
 
-    // A directory with no provenance beside it: present, and not finished.
     let partway = read(true, false, false);
     assert!(
         partway.present && !partway.provisioned,
         "a prefix without its provenance is a run that stopped partway"
     );
 
-    // Finished, and not an engine — which is the ordinary case for a library.
     let library = read(true, true, false);
     assert!(
         library.provisioned,
@@ -942,18 +800,12 @@ fn a_half_built_component_is_not_a_provisioned_one() {
     );
     assert!(!library.usable_engine);
 
-    // Finished, and an engine MCF can reach.
     let engine = read(true, true, true);
     assert!(engine.provisioned && engine.usable_engine);
 
-    // The commit is shortened for reading, and never invented.
     assert_eq!(engine.commit, "0123456789ab");
 }
 
-/// The window asks the daemon where a hosted model answers.
-///
-/// The address is the one fact an API is for, and a monitor that had the model
-/// but not the address would be one a person could not act on.
 #[test]
 fn what_is_hosted_carries_where_it_answers() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -973,7 +825,6 @@ fn what_is_hosted_carries_where_it_answers() {
         in_use: None,
     });
     let hosting = desk.hosted.as_ref().expect("just set");
-    // The screen shows the name, not the path: a path is where a file is.
     assert_eq!(
         hosting.model.rsplit('/').next(),
         Some("a-file.gguf"),
@@ -982,22 +833,10 @@ fn what_is_hosted_carries_where_it_answers() {
     assert_eq!(hosting.context, Some(8192));
 }
 
-/// A daemon that is busy is not a daemon that is gone.
-///
-/// F: the window polls four times a second with a thirty-second deadline on
-/// each, and the daemon answers one thing at a time. Hosting a large model made
-/// every poll block, so the window stopped repainting entirely — no state, no
-/// events, nothing on screen — while the thing the operator had just asked for
-/// was under way. What was on screen before the freeze said "a moment".
-///
-/// Two claims have to stay apart: MCF could not be reached, and MCF has not
-/// answered yet. Reading the second as the first tells an operator their daemon
-/// died at the moment it was doing what they asked (A7).
 #[test]
 fn a_busy_daemon_is_not_a_missing_one() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
 
-    // Nothing listening at all: a refusal, and it says so.
     desk.refresh();
     assert!(
         desk.refusal.is_some(),
@@ -1007,8 +846,6 @@ fn a_busy_daemon_is_not_a_missing_one() {
     let (word, _) = desk.state_line();
     assert_eq!(word, "NOT UP");
 
-    // Busy, with a host under way: the state line says what is happening and
-    // for how long, rather than reporting the daemon as gone.
     desk.refusal = None;
     desk.busy = true;
     desk.doing = crate::Doing::Hosting(crate::job::Job::start(
@@ -1025,10 +862,6 @@ fn a_busy_daemon_is_not_a_missing_one() {
     );
 }
 
-/// A poll that went unanswered does not blank what is hosted.
-///
-/// Replacing it would report MCF's own busyness as the model being gone — on
-/// the very screen an operator is watching to see whether it arrived.
 #[test]
 fn an_unanswered_poll_keeps_what_was_hosted() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1043,7 +876,6 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
         network_address: None,
         in_use: None,
     });
-    // Nothing answers, so nothing is learned — and nothing is forgotten.
     desk.read_hosted();
     assert!(
         desk.hosted.is_some(),
@@ -1052,16 +884,6 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
     assert!(desk.busy, "and it is recorded as busy");
 }
 
-/// A silence never empties the model list.
-///
-/// F: the daemon answers one client at a time by decision (DEC-012), so while
-/// it loads a large model it answers nothing for minutes. The window emptied
-/// its list on that and showed *no models* — at the moment MCF was busy with
-/// one of them. The models were on the disk the whole time and `mcf list` found
-/// them; the only thing that had changed was that MCF was mid-answer.
-///
-/// The most misleading thing a screen can do is report its own ignorance as the
-/// absence of the thing (A7).
 #[test]
 fn an_unanswered_reading_keeps_the_models_it_had() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1075,7 +897,6 @@ fn an_unanswered_reading_keeps_the_models_it_had() {
             ..Model::default()
         },
     ];
-    // Nothing answers, so nothing is learned — and nothing is forgotten.
     desk.refresh();
     assert_eq!(
         desk.models.len(),
@@ -1084,12 +905,6 @@ fn an_unanswered_reading_keeps_the_models_it_had() {
     );
 }
 
-/// A companion file is not offered as a model.
-///
-/// F: a vision projector was listed among the models, so the window offered it
-/// to be hosted and to be measured. It carries no transformer and answers no
-/// prompt — pointed at one, an engine loads it and produces nothing, which is
-/// what a sweep of *every model on this machine* found (B-422's neighbour).
 #[test]
 fn a_companion_file_is_never_offered_as_a_model() {
     let entry = |path: &str, companion: bool| {
@@ -1123,14 +938,6 @@ fn a_companion_file_is_never_offered_as_a_model() {
     );
 }
 
-/// Host, with no engine to run the model on, builds the one MCF named rather
-/// than doing nothing or refusing.
-///
-/// **The name comes from the daemon.** What engine a machine needs is decided
-/// where `mcf provision` decides it, and the window carries the daemon's
-/// answer into the job it starts — so the sentence on the screen names what
-/// is being built and for what, before a single line of the build arrives
-/// (§3.15, B-072, B-367).
 #[test]
 fn hosting_with_no_engine_builds_the_one_mcf_named() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -1141,8 +948,6 @@ fn hosting_with_no_engine_builds_the_one_mcf_named() {
     ]);
     desk.models = vec![model_from(&answered)];
     desk.chosen = Some(0);
-    // What the daemon's settings refusal carried: no settings, and the
-    // component it would build.
     desk.settings = None;
     desk.no_settings = Some("no engine is installed yet — MCF can build one for you".to_owned());
     desk.needs_engine = Some("llama.cpp".to_owned());
@@ -1162,11 +967,6 @@ fn hosting_with_no_engine_builds_the_one_mcf_named() {
     assert!(said.contains("so far"), "{said}");
 }
 
-/// Without a name from the daemon, Host does not guess one.
-///
-/// A refusal that names no component is a refusal, and the window shows it;
-/// building *something* on the strength of a sentence would be the window
-/// deciding what MCF should have decided (A2).
 #[test]
 fn hosting_with_a_nameless_refusal_builds_nothing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -1191,12 +991,6 @@ fn hosting_with_a_nameless_refusal_builds_nothing() {
     assert!(desk.no_settings.is_some());
 }
 
-/// The Components screen builds by name, on the card, without a terminal.
-///
-/// The card used to say `mcf provision llama.cpp` — a command line shown in
-/// the window that exists so nobody needs one. Pressing Build sends the same
-/// request the command sends, names the component on the card while it runs,
-/// and refuses a second build while the first is going (A22, A6, B-367).
 #[test]
 fn build_on_the_components_screen_builds_that_component() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -1208,9 +1002,6 @@ fn build_on_the_components_screen_builds_that_component() {
     assert_eq!(job.what, "building llama.cpp");
     assert_eq!(desk.building.as_deref(), Some("llama.cpp"));
 
-    // A second press while the first runs starts nothing. The job at
-    // /nowhere may already have been refused by now, so the assertion is on
-    // what was started, not on the job's state.
     let before = desk.doing.job().map(|job| job.what.clone());
     desk.act(super::Act::Build("sdl3".to_owned()));
     let after = desk.doing.job().map(|job| job.what.clone());
@@ -1220,13 +1011,10 @@ fn build_on_the_components_screen_builds_that_component() {
     );
 }
 
-/// A build that stops badly says so on the card it was for, and nowhere else.
 #[test]
 fn a_refused_build_lands_on_its_own_card() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.build("llama.cpp");
-    // Nothing listens at /nowhere, so the job refuses itself; this waits for
-    // that refusal to arrive rather than assuming it has.
     let started = std::time::Instant::now();
     while !desk.doing.job().is_some_and(|job| job.finished) {
         assert!(
@@ -1241,17 +1029,10 @@ fn a_refused_build_lands_on_its_own_card() {
     let (failed, why) = desk.build_failed.clone().expect("the refusal is kept");
     assert_eq!(failed, "llama.cpp");
     assert!(why.contains("not answering"), "{why}");
-    // And a new build clears it.
     desk.build("llama.cpp");
     assert!(desk.build_failed.is_none());
 }
 
-/// *What is in it* asks the daemon, and draws nothing it did not say.
-///
-/// **The window counts nothing.** With no model chosen the screen says to
-/// choose one; with a daemon that is not there it says so in words, and the
-/// anatomy stays `None` rather than being made up from what the list already
-/// knows about the file (B-072, A7).
 #[test]
 fn what_is_in_it_is_asked_of_the_daemon_and_never_counted_here() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1278,8 +1059,6 @@ fn what_is_in_it_is_asked_of_the_daemon_and_never_counted_here() {
         "the socket is shown to a person: {why}"
     );
 
-    // The vocabulary is the same answer, asked again on the way to its own
-    // screen, and refused in the same words.
     desk.no_anatomy = None;
     desk.act(crate::Act::Go(Page::Vocabulary));
     assert_eq!(desk.page, Page::Vocabulary);
@@ -1288,7 +1067,6 @@ fn what_is_in_it_is_asked_of_the_daemon_and_never_counted_here() {
     assert!(why.contains("not answering"), "{why}");
 }
 
-/// What the daemon says a model is made of is read as it was said.
 #[test]
 fn an_anatomy_answer_is_read_as_the_daemon_wrote_it() {
     let line = r#"{"model":"m.gguf","counted":{"elements":100,"bytes":50,"unsized_tensors":0,"blocks":2,"output_tied":true,"active":null,"parts":[{"part":"embedding","tensors":1,"elements":40,"bytes":20}],"encodings":[{"encoding":"Q4_K","tensors":3,"elements":100,"bytes":50}],"block_shapes":[{"blocks":[0,1],"mixing":"attention","feed":"dense","experts":null,"shared_expert":false,"said":"attention over the context, keys and values kept per position; one feed-forward every token passes","ranged":"0–1","bits_hundredths":[400,400],"tensors":2,"elements":60,"bytes":30}],"attending":2,"recurrent":0},"agreements":[{"what":"blocks","declared":"2","observed":"2","agrees":true}],"work":{"multiply_adds":100,"head_width":8,"queries_per_key":1,"attention_at_context":null,"cache":{"sized":true,"per_token":64,"key_heads":1,"per_head":16,"latent":false,"kept":"16 for a key and a value","context":null,"at_context":null,"sliding_window":null,"attending":2,"blocks":2,"recurrent":0}},"vocabulary":{"tokens":3,"segmentation":"llama","merges":null,"kinds":[{"kind":"text","count":2},{"kind":"control","count":1}],"word_starts":1,"digit_tokens":0,"longest_digits":0,"digits":"none: every digit is spelled some other way","longest":{"token":"▁the","bytes":6},"named":[{"what":"end of text","identifier":2,"spelled":"</s>","beyond":null}],"adds_beginning":true,"beginning":"yes, the file says so","template":null,"no_template":"none in the file — a chat turn has no framing the file states"}}"#;
@@ -1316,8 +1094,6 @@ fn an_anatomy_answer_is_read_as_the_daemon_wrote_it() {
     assert!(said.vocabulary.template.is_err());
 }
 
-/// The window asks the same turn `mcf run` asks: what is typed reaches the
-/// request, and what is left alone is left alone (B-462, D43).
 #[test]
 fn the_window_asks_the_turn_it_was_given() {
     let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
@@ -1332,11 +1108,9 @@ fn the_window_asks_the_turn_it_was_given() {
     assert_eq!(asked.system.as_deref(), Some("Be terse."));
     assert_eq!(asked.effort.as_deref(), Some("low"));
     assert_eq!(asked.thinking, Some(true));
-    // And the field that is not the ask screen's own is untouched by it.
     assert!(desk.typed.is_empty(), "the question is still empty");
 }
 
-/// Thinking has three positions and unsaid is one of them (D43).
 #[test]
 fn thinking_rounds_through_unsaid() {
     let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
@@ -1349,8 +1123,6 @@ fn thinking_rounds_through_unsaid() {
     assert_eq!(desk.thinking, None, "back to what the template does itself");
 }
 
-/// A caret left on the ask screen's own field does not swallow what is
-/// typed into another screen's.
 #[test]
 fn a_stale_caret_does_not_take_another_screens_typing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
@@ -1363,13 +1135,6 @@ fn a_stale_caret_does_not_take_another_screens_typing() {
     assert_eq!(desk.typed, "a document");
 }
 
-/// A run under way is said on every page: what it is and how long so far, at
-/// the top right where the state word is, and where it is now on the page
-/// that started it.
-///
-/// The buttons used to press and nothing on screen changed until the first
-/// reading arrived, minutes later on a processor; an operator told nothing
-/// reasonably concludes nothing is happening (A7).
 #[test]
 fn a_run_under_way_is_said_on_every_page() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1411,16 +1176,12 @@ fn a_run_under_way_is_said_on_every_page() {
         "{step}"
     );
 
-    // Once it has finished, it is not still working.
     if let crate::Doing::Measuring(job) = &mut desk.doing {
         job.finished = true;
     }
     assert_eq!(desk.state_word(), "MCF");
 }
 
-/// A load says how far it has got in bytes read of bytes to read, after how
-/// long, and about how long is left once there is a rate to read that off —
-/// never a promise before there is one (A6, A7).
 #[test]
 fn a_load_says_how_far_and_about_how_long() {
     let said = crate::loading_said(6_100_000_000, false, Some(17_600_000_000), 12);
@@ -1442,14 +1203,10 @@ fn a_load_says_how_far_and_about_how_long() {
     let without_size = crate::loading_said(6_100_000_000, true, None, 12);
     assert_eq!(without_size, "Loading to GPU: 6.1 GB · 12 s");
 
-    // And the desk says nothing about loading where nothing loads.
     let desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
     assert!(desk.loading_line().is_none());
 }
 
-/// A setting typed into the Configure tab is taken as typed where it is a
-/// number the setting can hold, and refused with the word where it is not —
-/// never read as nought and never sent (§3.15, A7).
 #[test]
 fn a_typed_setting_is_taken_or_refused_with_the_word() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1521,13 +1278,6 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
     );
 }
 
-/// The diagnostics are one list: every probe and measurement a row of
-/// its own beside the runs, each named as the daemon names it; a probe's
-/// finding is kept with when it was taken; and the row running now is
-/// the one the daemon's step names (D53).
-/// The Challenges card's two fields are typed on the Diagnostics page and
-/// become the command line's own flags; a window below the floor is
-/// refused and the field stays as it was (B-564, D56).
 #[test]
 fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1603,8 +1353,6 @@ fn the_challenges_card_takes_the_retries_and_the_window_and_runs_with_them() {
     assert!(!desk.takes_typing(), "nothing is being typed once applied");
 }
 
-/// A run on the model the window is hosting costs a second copy, and the
-/// page says so before Run; a run on another model says nothing (B-561).
 #[test]
 fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1648,8 +1396,6 @@ fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
     );
 }
 
-/// A suite's `result:` lines are the pane's results so far, in order,
-/// without the progress lines between them (B-569).
 #[test]
 fn a_running_suite_shows_its_results_as_they_come() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1685,8 +1431,6 @@ fn a_running_suite_shows_its_results_as_they_come() {
     );
 }
 
-/// A row whose newest run stopped or was cut off offers to go on from it:
-/// the run is passed `--resume`; a finished run is not (B-571).
 #[test]
 fn a_row_whose_run_did_not_finish_resumes_it() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1748,8 +1492,6 @@ fn a_row_whose_run_did_not_finish_resumes_it() {
     );
 }
 
-/// A run's time left is its own pace scaled to what remains, and nothing
-/// until enough is done to have a pace (B-572).
 #[test]
 fn a_run_says_about_how_long_is_left_from_its_own_pace() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1769,13 +1511,9 @@ fn a_run_says_about_how_long_is_left_from_its_own_pace() {
             Value::text("progress: 14/56 challenges · easy · go · y"),
         )]));
     }
-    // A quarter done, and the job only just started: no fifteen seconds yet.
     assert_eq!(desk.time_left(), None);
 }
 
-/// The server a run holds is read off the daemon's answer as a hosted
-/// one is, and the run's cost is summed a second at a time from the
-/// card's watts and the model's tokens (B-573).
 #[test]
 fn the_model_under_test_is_read_and_its_cost_is_summed() {
     let reading = |joules: &str, over: &str, live: &str| {
@@ -1811,9 +1549,6 @@ fn the_model_under_test_is_read_and_its_cost_is_summed() {
     desk.tally();
     assert_eq!(desk.spent.seconds, 0, "nothing running: nothing spent");
 
-    // **The daemon's measurement, not a watts reading multiplied by a
-    // second nobody timed** (B-593): what the window shows is what was
-    // measured over the intervals it covers.
     let mut going = crate::job::Job::already("running".to_owned(), Vec::new());
     going.finished = false;
     desk.doing = crate::Doing::Evaluating(going);
@@ -1825,8 +1560,6 @@ fn the_model_under_test_is_read_and_its_cost_is_summed() {
     );
     assert_eq!(desk.spent.tokens_at_start, Some(1500));
 
-    // The answer in hand counts toward the run's tokens, so they do not
-    // stand still through a generation (B-591).
     desk.under_test = Some(crate::UnderTest::from_value(&reading(
         "300.000", "3.000", "1900",
     )));
@@ -1842,8 +1575,6 @@ fn the_model_under_test_is_read_and_its_cost_is_summed() {
     assert_eq!(desk.spent, crate::Spent::default());
 }
 
-/// Where the daemon says nothing about the card, the run's clock still
-/// runs and its energy stays unmeasured rather than becoming nought (A7).
 #[test]
 fn a_run_on_a_card_that_says_nothing_counts_seconds_and_no_energy() {
     let answer = Value::map([
@@ -1867,9 +1598,6 @@ fn a_run_on_a_card_that_says_nothing_counts_seconds_and_no_energy() {
     assert_eq!(desk.spent.tokens_per_kilojoule(), None);
 }
 
-/// A key still being typed when Start server is pressed is the key the
-/// hold gets; a hold open to the network with no key is refused in the
-/// fields' own words before the daemon is asked (B-578, B-577).
 #[test]
 fn start_server_takes_the_key_being_typed_and_names_the_field_it_needs() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -1903,7 +1631,6 @@ fn start_server_takes_the_key_being_typed_and_names_the_field_it_needs() {
     desk.edit(crate::Field::ApiKey);
     desk.typing().clear();
     desk.typing().push_str("mcf-home");
-    // No Return: Start server is pressed with the key still in the field.
     desk.host_it();
     assert_eq!(
         desk.settings
@@ -1966,7 +1693,6 @@ fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     desk.act(crate::Act::Show(Diagnostic::Probe(2)));
     assert_eq!(desk.diagnostic, Diagnostic::Probe(2));
 
-    // A probe run keeps what it found on the model it ran on, with when.
     desk.models = vec![Model::default()];
     desk.chosen = Some(0);
     let step = mcf_record::json::Value::map([
@@ -2021,10 +1747,6 @@ fn the_diagnostics_are_one_list_and_a_probes_finding_is_kept() {
     );
 }
 
-/// Run all takes every run in turn: the ladder first, the next as the
-/// last finishes well, and none after one refused; the strip's fraction
-/// is the run's own or the sequence's, and Stop empties the queue
-/// (B-508, B-509).
 #[test]
 fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2038,7 +1760,6 @@ fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
     );
     assert_eq!(desk.queued.len(), Desk::EVERY_RUN.len() - 1);
     assert_eq!(desk.sequence_place(), Some((1, Desk::EVERY_RUN.len())));
-    // The ladder two rungs of four in: its own fraction, and the whole's.
     let mut going = crate::job::Job::already(
         "measuring".to_owned(),
         vec![mcf_record::json::Value::map([
@@ -2051,7 +1772,6 @@ fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
     assert!((desk.run_fraction().unwrap_or(0.0) - 0.5).abs() < 0.01);
     let whole = desk.sequence_fraction().unwrap_or(0.0);
     assert!((whole - 0.5 / 7.0).abs() < 0.01, "{whole}");
-    // It finishes well: the next run starts.
     if let crate::Doing::Measuring(job) = &mut desk.doing {
         job.finished = true;
     }
@@ -2061,8 +1781,6 @@ fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
         "the cross-check did not follow the ladder"
     );
     assert_eq!(desk.sequence_place(), Some((2, Desk::EVERY_RUN.len())));
-    // A probe run's fraction is its step of how many, the step counted
-    // once its lines have landed.
     let step = |count: i64, lines: usize| {
         mcf_record::json::Value::map([
             (
@@ -2087,7 +1805,6 @@ fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
     probing.finished = false;
     desk.doing = crate::Doing::Probing(probing);
     assert!((desk.run_fraction().unwrap_or(0.0) - 2.0 / 9.0).abs() < 0.01);
-    // Refused: the sequence ends where it is.
     if let crate::Doing::Probing(job) = &mut desk.doing {
         job.finished = true;
         job.refused = Some("no".to_owned());
@@ -2095,14 +1812,11 @@ fn run_all_takes_every_run_in_turn_and_the_strip_says_how_far() {
     desk.hear();
     assert!(desk.queued.is_empty(), "a refusal did not end the sequence");
     assert_eq!(desk.sequence_place(), None);
-    // Stop empties the queue too.
     desk.act(crate::Act::RunAll);
     desk.act(crate::Act::Stop);
     assert!(desk.queued.is_empty());
 }
 
-/// A finding's columns, lined up with spaces for a terminal, are parted
-/// by a dot for a face that collapses them (D53).
 #[test]
 fn a_findings_columns_are_parted_for_the_page() {
     assert_eq!(
@@ -2115,10 +1829,6 @@ fn a_findings_columns_are_parted_for_the_page() {
     );
 }
 
-/// A family's Run all runs every measurement of it, a row's Run runs
-/// that one, and what a finished examination found joins the model's
-/// findings, a measurement taken again replacing its last reading (D52,
-/// D53).
 #[test]
 fn a_family_runs_whole_and_a_row_runs_one() {
     use crate::Diagnostic;
@@ -2201,8 +1911,6 @@ fn a_family_runs_whole_and_a_row_runs_one() {
     assert!(matches!(desk.doing, crate::Doing::CrossChecking(_)));
 }
 
-/// The settings a model was last held under come back with one press, and
-/// the recommendation with another (B-475).
 #[test]
 fn the_last_hold_settings_come_back_with_one_press() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2229,9 +1937,6 @@ fn the_last_hold_settings_come_back_with_one_press() {
     );
 }
 
-/// The search field narrows the library by the words typed, over the name,
-/// the architecture and the path, case aside; words nothing matches leave
-/// the list empty rather than whole (D51, B-485).
 #[test]
 fn the_search_field_narrows_the_library() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2266,7 +1971,6 @@ fn the_search_field_narrows_the_library() {
     desk.filter = "gemma".to_owned();
     assert!(desk.library().is_empty());
     assert!(!desk.hub_matches(), "nothing has been asked of the hub");
-    // Return with nothing here matching asks the hub for the words.
     desk.page = Page::Models;
     desk.entered();
     assert!(
@@ -2275,8 +1979,6 @@ fn the_search_field_narrows_the_library() {
     );
 }
 
-/// What the hub answered is kept for the words it was asked, listed with
-/// its downloads, and dropped from the list once the words change.
 #[test]
 fn the_hubs_answer_is_kept_for_its_words() {
     use mcf_record::json::Value;
@@ -2308,10 +2010,6 @@ fn the_hubs_answer_is_kept_for_its_words() {
     assert!(!desk.hub_matches(), "other words are another question");
 }
 
-/// Files held from one repository are one entry of the library, and the
-/// page's quantizations are those files then what the hub publishes that
-/// is not here; picking one here changes the subject, picking one on the
-/// hub makes it the subject as not downloaded (D51, B-486).
 #[test]
 fn a_model_is_a_repository_with_its_quantizations() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2376,8 +2074,6 @@ fn a_model_is_a_repository_with_its_quantizations() {
     assert_eq!(desk.chosen, Some(0));
 }
 
-/// A subject not here downloads first, and once the file is here it is the
-/// subject and the thing the button named happens on it (D51, B-487).
 #[test]
 fn a_pick_not_here_downloads_first_and_then_does_the_thing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2395,7 +2091,6 @@ fn a_pick_not_here_downloads_first_and_then_does_the_thing() {
         "the download did not go first"
     );
     assert_eq!(desk.after_download, Some(crate::Act::HostIt));
-    // The file arrives: the library is read again and holds it.
     desk.models = vec![Model {
         name: "Model-Q8_0".to_owned(),
         path: "/store/owner/Model-GGUF/Model-Q8_0.gguf".to_owned(),
@@ -2413,9 +2108,6 @@ fn a_pick_not_here_downloads_first_and_then_does_the_thing() {
     assert_eq!(desk.page, Page::Hosting, "the server was not started");
 }
 
-/// The filters narrow the library with the words: by architecture, by
-/// whether MCF says a model will run here, and by size; each is *any*
-/// until set, and *any* again when set back (D51, B-489).
 #[test]
 fn the_filters_narrow_the_library_with_the_words() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2465,9 +2157,6 @@ fn the_filters_narrow_the_library_with_the_words() {
     assert!(desk.filters.open);
 }
 
-/// A model as the daemon lists it: what it has run is under `runs`, and
-/// the window reads the probes' findings, the applied settings and when
-/// each method's readings were last taken from there (B-519).
 #[test]
 fn a_models_runs_are_read_from_under_runs() {
     let line = r#"{"path":"/models/a.gguf","bytes":10,"companion":false,"parts":1,"provenance":null,"runs":{"architecture":"llama","measured":null,"cross_checked":null,"prompt_reported":null,"probed":[{"method":"chat-template","at":"2026-09-06T02:26:33Z","engine":"provisioned llama.cpp","said":"im_start…im_end as assistant"}],"configured":{"addressing":"set by the chat-template probe","budget":null},"readings_at":{"coding":"2026-09-06T05:07:15Z","editing":"2026-09-06T05:06:35Z"},"trained_context":4096,"cache_bytes_per_token":null,"resolved":null}}"#;
@@ -2500,9 +2189,6 @@ fn a_models_runs_are_read_from_under_runs() {
     );
 }
 
-/// Against a running daemon named by `MCF_LIVE_SOCKET`: the models it
-/// lists carry, under `runs`, when each method's readings were last
-/// taken, and the window keeps them (B-519). Ignored unless asked for.
 #[test]
 #[ignore = "needs a running daemon; set MCF_LIVE_SOCKET to its control socket"]
 fn a_live_daemon_says_when_each_methods_readings_were_taken() {
@@ -2526,8 +2212,6 @@ fn a_live_daemon_says_when_each_methods_readings_were_taken() {
     assert!(with_findings > 0, "no model carried its probed findings");
 }
 
-/// A step's line carries how far the measurement is within it, and a
-/// suite's `progress:` line gives the bar its fraction (D56).
 #[test]
 fn a_step_says_how_far_it_is_and_a_suite_line_gives_a_fraction() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2554,7 +2238,6 @@ fn a_step_says_how_far_it_is_and_a_suite_line_gives_a_fraction() {
     );
     going.finished = false;
     desk.doing = crate::Doing::Examining(going);
-    // One step of four done, and half of the second: three eighths.
     let fraction = desk.run_fraction().unwrap_or(0.0);
     assert!((fraction - 0.375).abs() < 0.01, "{fraction}");
     let mut suite = crate::job::Job::already(
@@ -2573,9 +2256,6 @@ fn a_step_says_how_far_it_is_and_a_suite_line_gives_a_fraction() {
     assert!((fraction - 0.25).abs() < 0.01, "{fraction}");
 }
 
-/// Every taxonomy category renders on the System page with its subsystem
-/// and its context: one rendering for all of them, because the taxonomy
-/// gives every failure the same fields (B-074).
 #[test]
 fn every_taxonomy_category_renders_with_its_subsystem_and_context() {
     use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
@@ -2629,8 +2309,6 @@ fn every_taxonomy_category_renders_with_its_subsystem_and_context() {
     }
 }
 
-/// A failure's cause is under it, and the words for whose doing and what
-/// MCF did are the taxonomy's axes said plainly.
 #[test]
 fn a_failures_cause_and_axes_are_said_plainly() {
     use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
@@ -2667,8 +2345,6 @@ fn a_failures_cause_and_axes_are_said_plainly() {
     );
 }
 
-/// Closing the window lets go of the model MCF is holding, and lets go of
-/// nothing where it holds nothing (B-592).
 #[test]
 fn closing_lets_go_of_what_is_held_and_of_nothing_else() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -2690,7 +2366,6 @@ fn closing_lets_go_of_what_is_held_and_of_nothing_else() {
         Some("Assistant-2B-Instruct-Q4_K_M")
     );
 
-    // A model under a run is the run's to end, not the window's.
     desk.hosted = None;
     desk.under_test = Some(super::UnderTest {
         model: "/models/Assistant-2B-Instruct-Q4_K_M.gguf".to_owned(),
@@ -2701,9 +2376,6 @@ fn closing_lets_go_of_what_is_held_and_of_nothing_else() {
     assert_eq!(desk.to_let_go(), None);
 }
 
-/// A build reads as its version and the first of its revision, and as the
-/// version alone where the build environment named no revision — which is
-/// a real state and not a defect (B-595, A7).
 #[test]
 fn a_build_reads_as_its_version_and_the_first_of_its_revision() {
     assert_eq!(
@@ -2712,7 +2384,6 @@ fn a_build_reads_as_its_version_and_the_first_of_its_revision() {
     );
     assert_eq!(super::said_of("0.1.0-m0", "unknown"), "0.1.0-m0");
     assert_eq!(super::said_of("0.1.0-m0", ""), "0.1.0-m0");
-    // This window says what it is, whatever it was built from.
     let mine = Desk::build_said();
     assert!(
         mine.starts_with(env!("CARGO_PKG_VERSION")),
@@ -2720,9 +2391,6 @@ fn a_build_reads_as_its_version_and_the_first_of_its_revision() {
     );
 }
 
-/// A daemon of another age is a different line, and one of the same age is
-/// not repeated: the window shows the difference, which is the thing being
-/// asked about (B-595).
 #[test]
 fn a_daemon_of_another_age_is_shown_and_one_of_the_same_age_is_not() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));

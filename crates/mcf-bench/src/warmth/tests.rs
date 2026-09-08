@@ -1,8 +1,5 @@
-//! What reuse has to get right.
-
 use super::{Reuse, Warmth};
 
-/// The daemon's own words, matched rather than parsed loosely.
 #[test]
 fn the_daemons_states_are_read_as_it_writes_them() {
     for (said, expected) in [
@@ -16,11 +13,6 @@ fn the_daemons_states_are_read_as_it_writes_them() {
     }
 }
 
-/// **A state MCF has not been taught is not the one it superficially
-/// resembles.** A record written by a newer build could say anything, and
-/// guessing which of two it meant is A7's forbidden substitution — with the
-/// added sting that the wrong guess here silently makes a mixed run look
-/// uniform.
 #[test]
 fn a_state_mcf_does_not_know_is_unstated() {
     for said in [
@@ -38,8 +30,6 @@ fn a_state_mcf_does_not_know_is_unstated() {
     }
 }
 
-/// Trials that were all alike are a condition; trials that were not are named
-/// as not.
 #[test]
 fn a_uniform_run_is_a_condition_and_a_mixed_one_is_a_finding() {
     let cold = Reuse::over([Warmth::Cold; 8]);
@@ -63,9 +53,6 @@ fn a_uniform_run_is_a_condition_and_a_mixed_one_is_a_finding() {
     );
 }
 
-/// **One warm trial among cold ones is a mixed run**, however many there were.
-/// §6.13's concern is not proportion; it is that the result depends on hidden
-/// history, and one trial's worth of it is enough to make the set two things.
 #[test]
 fn one_trial_of_the_other_kind_makes_a_run_mixed() {
     let mut trials = vec![Warmth::Cold; 199];
@@ -76,9 +63,6 @@ fn one_trial_of_the_other_kind_makes_a_run_mixed() {
     );
 }
 
-/// An unstated trial among stated ones is mixed too: *MCF does not know what
-/// this one reused* is not the same as *it reused nothing*, and treating it as
-/// agreement would be A7's substitution wearing a different hat.
 #[test]
 fn an_unstated_trial_among_stated_ones_is_mixed() {
     assert!(!Reuse::over([Warmth::Cold, Warmth::Unstated]).is_uniform());
@@ -94,7 +78,6 @@ fn an_unstated_trial_among_stated_ones_is_mixed() {
     );
 }
 
-/// No trials is its own answer rather than a warm run with none in it.
 #[test]
 fn no_trials_is_not_a_uniform_run() {
     assert_eq!(Reuse::over([]), Reuse::Nothing);

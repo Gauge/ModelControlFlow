@@ -1,5 +1,3 @@
-//! The fixture is a model MCF's own engine really runs.
-
 use super::{TOKENS, a_model_that_runs};
 use mcf_standin::gguf;
 use mcf_standin::llama::load;
@@ -7,8 +5,6 @@ use mcf_standin::sample::Settings;
 use mcf_standin::session::{Request, Stopped, generate};
 use mcf_standin::tokenizer::Vocabulary;
 
-/// The whole path, so that a test which uses this fixture is testing the thing
-/// it means to rather than discovering the fixture is wrong.
 #[test]
 fn the_fixture_reads_loads_and_answers() {
     let bytes = a_model_that_runs();

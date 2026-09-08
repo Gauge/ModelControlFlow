@@ -1,9 +1,5 @@
 use super::*;
 
-/// Every style is closed before the next begins.
-///
-/// Reverse video that leaked past its cell would highlight the rest of the row,
-/// and the operator would read a selection that is not there.
 #[test]
 fn a_style_does_not_leak_into_the_next_cell() {
     let mut screen = Screen::new(8, 1);
@@ -18,7 +14,6 @@ fn a_style_does_not_leak_into_the_next_cell() {
     );
 }
 
-/// A figure is placed by its last character, so a column of them lines up.
 #[test]
 fn figures_line_up_on_the_right() {
     let mut screen = Screen::new(12, 2);
@@ -33,8 +28,6 @@ fn figures_line_up_on_the_right() {
     );
 }
 
-/// Right-aligning something wider than the space starts at the edge rather
-/// than underflowing.
 #[test]
 fn a_figure_wider_than_its_column_does_not_underflow() {
     let mut screen = Screen::new(6, 1);

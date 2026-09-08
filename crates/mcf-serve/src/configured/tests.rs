@@ -1,5 +1,3 @@
-//! What a derived configuration has to survive.
-
 use super::{Addressing, forget, read, write};
 use mcf_standin::tokenizer::Piece;
 
@@ -21,7 +19,6 @@ fn an_addressing() -> Addressing {
     }
 }
 
-/// Somewhere to write, that goes when the test does.
 fn scratch(name: &str) -> std::path::PathBuf {
     let at = std::env::temp_dir().join(format!("mcf-configured-{name}-{}", std::process::id()));
     let _cleared = std::fs::remove_dir_all(&at);
@@ -29,11 +26,6 @@ fn scratch(name: &str) -> std::path::PathBuf {
     at
 }
 
-/// It goes to a file and comes back the same, markers and text told apart.
-///
-/// The distinction is the whole point: a marker is a control token the model
-/// was trained on, and text is what a person wrote. A round trip that lost it
-/// would turn one into the other, which is the defect F37 is about.
 #[test]
 fn an_addressing_survives_the_round_trip() {
     let home = scratch("round-trip");
@@ -44,12 +36,6 @@ fn an_addressing_survives_the_round_trip() {
     let _gone = std::fs::remove_dir_all(&home);
 }
 
-/// A configuration that cannot say where it came from is not read at all.
-///
-/// B-059 asks that every derived value answer *why this value*. A file missing
-/// its probe answers *because it is written here*, which is the answer a
-/// default gives — and a default wearing a measurement's clothes is worse than
-/// no measurement (A21, A7).
 #[test]
 fn a_configuration_without_its_provenance_is_not_read() {
     let home = scratch("no-provenance");
@@ -69,7 +55,6 @@ fn a_configuration_without_its_provenance_is_not_read() {
     let _gone = std::fs::remove_dir_all(&home);
 }
 
-/// Nothing configured reads as nothing configured, not as an error.
 #[test]
 fn no_configuration_is_not_a_failure() {
     let home = scratch("absent");
@@ -82,7 +67,6 @@ fn no_configuration_is_not_a_failure() {
     let _gone = std::fs::remove_dir_all(&home);
 }
 
-/// Two models do not share a configuration.
 #[test]
 fn each_model_is_its_own() {
     let home = scratch("two-models");
@@ -94,7 +78,6 @@ fn each_model_is_its_own() {
     let _gone = std::fs::remove_dir_all(&home);
 }
 
-/// What was decided can be undone, and the undoing is reported.
 #[test]
 fn forgetting_says_whether_there_was_anything() {
     let home = scratch("forget");
@@ -106,8 +89,6 @@ fn forgetting_says_whether_there_was_anything() {
     let _gone = std::fs::remove_dir_all(&home);
 }
 
-/// The provenance line names the probe and the moment, because that is what a
-/// reader needs to decide whether to believe it.
 #[test]
 fn the_provenance_says_which_probe_and_when() {
     let said = an_addressing().provenance();
@@ -116,8 +97,6 @@ fn the_provenance_says_which_probe_and_when() {
     assert!(said.contains("provisioned"), "{said}");
 }
 
-/// The conditions holding and the answer holding are different questions, and
-/// this is the one that needs no trials.
 #[test]
 fn conditions_that_still_hold_say_so() {
     use super::{Since, since};
@@ -129,12 +108,6 @@ fn conditions_that_still_hold_say_so() {
     );
 }
 
-/// A different engine is a moved condition, named, with both sides kept.
-///
-/// It is deliberately *not* a divergence. F39 measured two engines returning
-/// the same verdict on this exact question, so *the evidence was gathered
-/// elsewhere* is what MCF knows and *the answer changed* is what it does not
-/// (A21).
 #[test]
 fn a_different_engine_is_a_moved_condition_not_a_disagreement() {
     use super::{Since, since};
@@ -149,7 +122,6 @@ fn a_different_engine_is_a_moved_condition_not_a_disagreement() {
     assert!(moved[0].now.contains("stand-in"), "{:?}", moved[0]);
 }
 
-/// A different build is a moved condition too, and both can move at once.
 #[test]
 fn a_different_build_is_a_moved_condition() {
     use super::{Since, since};
@@ -163,14 +135,6 @@ fn a_different_build_is_a_moved_condition() {
     assert!(moved.iter().any(|one| one.what == "build"));
 }
 
-/// Two spellings of one engine must not read as two engines.
-///
-/// The comparison is between a name a probe wrote down and a name another
-/// command computes, and when those were *different kinds of name* — "the
-/// engine I asked for" against "the engine that resolved" — `mcf explain`
-/// reported a moved condition for an engine that had not moved (F45). The
-/// spelling is the resolved one on both sides; this pins the shape so that a
-/// later change to one has to change the other.
 #[test]
 fn one_engine_under_two_names_has_not_moved() {
     use super::{Since, since};
@@ -187,8 +151,6 @@ fn one_engine_under_two_names_has_not_moved() {
     );
 }
 
-/// A different build of the same engine *has* moved, which is the whole reason
-/// the commit is part of the name.
 #[test]
 fn another_build_of_the_same_engine_has_moved() {
     use super::{Since, since};
@@ -205,12 +167,6 @@ fn another_build_of_the_same_engine_has_moved() {
     assert_eq!(moved[0].what, "engine");
 }
 
-/// A budget keeps what share of its turn was thought, and says so — or says
-/// nothing where the probe could not tell.
-///
-/// The number alone reads as the answer's size; on a model that thinks it is
-/// the thought's (F172). A budget read back without the share would carry a
-/// provenance that no longer says what the number was set against.
 #[test]
 fn a_budget_says_what_it_was_set_against() {
     let measured = super::Budget {

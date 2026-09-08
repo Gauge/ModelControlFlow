@@ -1,29 +1,9 @@
-//! The interface, checked by drawing it and reading what came out.
-//!
-//! **The window's appearance was wrong twice and every test passed.** They
-//! were tests of the layout code's arithmetic, and what was wrong was what the
-//! layout produced — a character grid in a window. Nothing could see that,
-//! because seeing it needed a display.
-//!
-//! So these render to a buffer (`mcf_desk::paper`) through the same painter the
-//! window uses, and assert about pixels. They are slower than the unit tests
-//! and there are few of them, and they cover the one thing that could not be
-//! covered before: what a person would actually have been shown.
-//!
-//! Set `MCF_LOOK=<directory>` to have each screen written out as a portable
-//! pixmap, which is how a person checks the same thing by eye.
-
-// A test that cannot fail loudly is a test that reports success it did not
-// establish, which is why the workspace's prohibition is lifted here and
-// nowhere else in this crate.
 #![allow(clippy::panic, reason = "a test says what went wrong by failing")]
 
 use mcf_desk::paint::{DAY, Ink, NIGHT, Painter};
 use mcf_desk::ui::Mouse;
 use mcf_desk::{Desk, Model, Page};
 
-/// A machine holding four models: one measured, one measured and quick, one
-/// nobody has timed, and one that will not run. The four states the list has.
 fn four_models() -> Desk {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.refusal = None;
@@ -97,14 +77,10 @@ fn four_models() -> Desk {
     desk
 }
 
-/// Renders one screen and hands back the pixels.
 fn drawn(desk: &Desk, ink: Ink, name: &str) -> mcf_desk::paper::Paper {
     let mut paint = match Painter::on_paper(1180, 760, 1.0, ink) {
         Ok(paint) => paint,
         Err(why) => {
-            // No font on this machine is a real state and not a test failure:
-            // the window itself refuses in that case and says so. Skipping is
-            // the honest outcome, and it is announced rather than silent (A2).
             eprintln!("skipped: {why}");
             return mcf_desk::paper::Paper::new(1, 1, 1.0);
         }
@@ -119,11 +95,6 @@ fn drawn(desk: &Desk, ink: Ink, name: &str) -> mcf_desk::paper::Paper {
     mcf_desk::paper::Paper::from_pixels(paper.width, paper.height, paper.pixels.clone())
 }
 
-/// Every screen draws something, in both themes.
-///
-/// The crudest check there is, and it catches the whole class of failure where
-/// a palette, a font or a coordinate is wrong enough that nothing appears —
-/// which is invisible to every other kind of test.
 #[test]
 fn every_screen_draws_something_in_both_themes() {
     let mut desk = four_models();
@@ -138,7 +109,7 @@ fn every_screen_draws_something_in_both_themes() {
             desk.page = page;
             let paper = drawn(&desk, ink, &format!("{page:?}").to_lowercase());
             if paper.width == 1 {
-                return; // no font here
+                return;
             }
             let inked = paper.inked(ink.ground);
             assert!(
@@ -149,22 +120,11 @@ fn every_screen_draws_something_in_both_themes() {
     }
 }
 
-/// A model that will not run does not look like one nobody has measured.
-///
-/// **This was wrong when the window first drew it.** Both states were the
-/// warning colour, so the two a person most needs to tell apart — *this
-/// cannot run* and *nobody has timed this* — were the same swatch. The
-/// console's layout says them differently: a refusal is the reason, in the
-/// refusal colour, where the engine would have been; an unmeasured model has
-/// `Unknown` in the quiet one. A test that read only the words would not
-/// notice either, because the words were right both times.
 #[test]
 fn a_refusal_does_not_look_like_anything_else() {
     let mut desk = four_models();
     desk.page = Page::Host;
     for ink in [NIGHT, DAY] {
-        // The second model runs and has never been timed; the third will not
-        // run at all.
         desk.chosen = Some(1);
         let unmeasured = drawn(&desk, ink, "scratch");
         if unmeasured.width == 1 {
@@ -173,9 +133,6 @@ fn a_refusal_does_not_look_like_anything_else() {
         desk.chosen = Some(2);
         let refused = drawn(&desk, ink, "scratch");
 
-        // Near the colour, not exactly it: glyphs are antialiased, so most of
-        // a letter's pixels are the ink blended with what is behind them and
-        // only the middle of a stroke lands on the value itself.
         let counted = |paper: &mcf_desk::paper::Paper, colour: (u8, u8, u8)| {
             let mut found = 0_usize;
             for y in 0..paper.height {
@@ -193,10 +150,6 @@ fn a_refusal_does_not_look_like_anything_else() {
             }
             found
         };
-        // A short sentence at thirteen points is a few hundred pixels of ink
-        // and only its stroke centres reach the colour itself, so the figures
-        // are small — what matters is that one screen has the refusal colour
-        // on it and the other has essentially none.
         let (on_refused, on_unmeasured) =
             (counted(&refused, ink.bad), counted(&unmeasured, ink.bad));
         assert!(
@@ -211,14 +164,9 @@ fn a_refusal_does_not_look_like_anything_else() {
     }
 }
 
-/// Nothing is drawn in the colour of the thing behind it.
-///
-/// Text the colour of its own background is text nobody can read, and it is
-/// what a palette edited in one theme and not the other produces.
 #[test]
 fn every_colour_can_be_seen_against_the_one_behind_it() {
     for (name, ink) in [("night", NIGHT), ("day", DAY)] {
-        // Text has to be read, so it needs real separation.
         for (what, front, behind) in [
             ("body text on a card", ink.ink, ink.card),
             ("quiet text on a card", ink.quiet, ink.card),
@@ -236,10 +184,6 @@ fn every_colour_can_be_seen_against_the_one_behind_it() {
                 "{name}: {what} is {apart:.0} apart and cannot be read"
             );
         }
-        // A rule is not text and must not be held to text's threshold — a
-        // hairline divider is *supposed* to be quiet, and demanding that it
-        // read like a word is how a tasteful interface gets shouted at. What
-        // it must not be is invisible.
         for (what, front, behind) in [
             ("a rule on the ground", ink.line, ink.ground),
             ("a rule on a card", ink.line, ink.card),
@@ -254,9 +198,6 @@ fn every_colour_can_be_seen_against_the_one_behind_it() {
     }
 }
 
-/// How far apart two colours are, as the larger of their lightness difference
-/// and their raw distance — enough to catch a colour drawn on itself, which is
-/// what this is for.
 fn separation(one: (u8, u8, u8), two: (u8, u8, u8)) -> f32 {
     let lightness = |colour: (u8, u8, u8)| {
         0.299_f32.mul_add(
@@ -267,7 +208,6 @@ fn separation(one: (u8, u8, u8), two: (u8, u8, u8)) -> f32 {
     (lightness(one) - lightness(two)).abs()
 }
 
-/// A model that will not run says so where somebody will read it.
 #[test]
 fn a_model_that_will_not_run_says_so_on_its_own_page() {
     let mut desk = four_models();
@@ -277,21 +217,12 @@ fn a_model_that_will_not_run_says_so_on_its_own_page() {
     if paper.width == 1 {
         return;
     }
-    // The heading area carries the refusal rather than a speed, so the top of
-    // the page must not be the large figure a measured model gets.
     assert!(
         paper.inked(NIGHT.ground) > 20_000,
         "the refused model's page is blank"
     );
 }
 
-/// A daemon that is not answering looks different from one that is.
-///
-/// The console puts what MCF is doing on one line under the monitor's
-/// divider, and *not up* is one of the things it can say there. What must not
-/// happen is the two states drawing identically — a window that looked the
-/// same whether or not MCF was running would be a window nobody could use to
-/// find out (A2).
 #[test]
 fn a_daemon_that_is_not_answering_looks_different() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -315,23 +246,11 @@ fn a_daemon_that_is_not_answering_looks_different() {
         differ > 300,
         "a daemon that is answering and one that is not draw the same: {differ} pixels differ"
     );
-    // And the words themselves, which pixels cannot be read for.
     let (word, said) = desk.state_line();
     assert_eq!(word, "NOT UP");
     assert!(said.contains("not answering"), "{said}");
 }
 
-/// An open dropdown appears, and appears over what is under it.
-///
-/// **This is the check the old pickers would have passed.** They drew a
-/// chevron and did something else entirely — navigated to another page,
-/// cycled a number — and every test passed, because what was wrong was that
-/// nothing appeared when you clicked. Only a picture can see that, which is
-/// what this file is for.
-///
-/// It asserts two things a wrong implementation fails differently: that the
-/// open screen differs from the closed one at all, and that the difference is
-/// **below the picker**, where the list drops down, rather than anywhere else.
 #[test]
 fn an_open_dropdown_is_drawn_over_the_page() {
     let mut desk = four_models();
@@ -340,17 +259,11 @@ fn an_open_dropdown_is_drawn_over_the_page() {
 
     let shut = drawn(&desk, NIGHT, "diagnostics-shut");
     if shut.width == 1 {
-        return; // no font here
+        return;
     }
     desk.open = Some(mcf_desk::Picker::Window);
     let open = drawn(&desk, NIGHT, "diagnostics-open");
 
-    // **The extent, not the count.** Counting changed pixels passed with the
-    // list disabled, because opening a picker also lights its own box — 28
-    // points tall. A list that dropped down changes a band several times
-    // that, so the height of the change is what says one appeared. Planting
-    // the list out is what found this: the first version of this test passed
-    // with nothing dropping down at all.
     let (mut first, mut last, mut differing) = (None, 0_u32, 0_usize);
     for y in 0..open.height {
         let mut row = false;
@@ -380,9 +293,6 @@ fn an_open_dropdown_is_drawn_over_the_page() {
     );
 }
 
-/// Words nothing here matches leave the library empty and offer the hub
-/// from the list itself; what the hub answered is pressed there too (D51,
-/// B-485).
 #[test]
 fn words_nothing_matches_offer_the_hub_from_the_list() {
     let mut desk = four_models();
@@ -405,13 +315,6 @@ fn words_nothing_matches_offer_the_hub_from_the_list() {
     );
 }
 
-/// A repository's files show after a pick even when the stream closed
-/// without saying it was done.
-///
-/// F194: the daemon answered a look-up in one line with no closing word,
-/// so the window's job took the close for MCF dying mid-sentence and the
-/// hub page drew that refusal over the files it had. Picking a repository
-/// from the hub list did nothing a person could see.
 #[test]
 fn a_repositorys_files_show_though_the_stream_closed_without_a_word() {
     use mcf_record::json::Value;
@@ -453,8 +356,6 @@ fn a_repositorys_files_show_though_the_stream_closed_without_a_word() {
     );
 }
 
-/// The filters open from the library and each picker's list drops over
-/// it (D51, B-489).
 #[test]
 fn the_filters_open_from_the_library() {
     let mut desk = four_models();
@@ -479,11 +380,6 @@ fn the_filters_open_from_the_library() {
     );
 }
 
-/// Every diagnostic is a row of one list and starts from its own pane:
-/// the ladder's Run is on the page as it opens, a probe's row is chosen
-/// from the list and its pane runs that probe, a family's heading runs
-/// every one of it, and a measurement far down the list is reached by
-/// scrolling it (D53, B-490).
 #[test]
 fn every_diagnostic_is_a_row_and_runs_from_its_pane() {
     use mcf_desk::Diagnostic;
@@ -528,11 +424,7 @@ fn every_diagnostic_is_a_row_and_runs_from_its_pane() {
         act_within(&desk, &mcf_desk::Act::Go(Page::Prompt), (60.0, 400.0)),
         "the prompt analysis pane does not open the page"
     );
-    // The last measurement's row is far down the list, which scrolls: at
-    // some offset it is in view, whatever the list has grown to.
     let last = mcf_serve::examine::MEASURES.len() - 1;
-    // Three hundred points at a time, as far as a list of sixty rows
-    // reaches: the offsets grow with the list, not with a guess.
     let reached = (3..=16_u8)
         .map(|step| 300.0 * f32::from(step))
         .any(|offset| {
@@ -554,18 +446,12 @@ fn every_diagnostic_is_a_row_and_runs_from_its_pane() {
     );
 }
 
-/// The cross-check row is a run of its own: it carries a checkbox, and its
-/// result and its progress are the daemon's sentences (B-424, B-072).
-///
-/// Drawn twice — with the check running, so the progress under the table is
-/// the daemon's two lines; and finished, with the row filled and opened.
 #[test]
 fn the_cross_check_row_runs_from_the_window() {
     use mcf_record::json::Value;
     let mut desk = four_models();
     desk.page = Page::Diagnostics;
     desk.chosen = Some(0);
-    // The cross-check's own pane, chosen from the list (D53).
     desk.diagnostic = mcf_desk::Diagnostic::CrossCheck;
     let last = Value::map([
         ("cross_checked", Value::text("a-model")),
@@ -616,16 +502,13 @@ fn the_cross_check_row_runs_from_the_window() {
             last,
         ],
     ));
-    // Still going: the daemon's last line is the reading, not the end.
     if let mcf_desk::Doing::CrossChecking(job) = &mut desk.doing {
         job.finished = false;
     }
     let running = drawn(&desk, DAY, "cross-check-running");
     if running.width == 1 {
-        return; // no font here
+        return;
     }
-    // Finished: the card says the figures are on Statistics and offers the
-    // way there, rather than opening a panel of its own (D50).
     if let mcf_desk::Doing::CrossChecking(job) = &mut desk.doing {
         job.finished = true;
     }
@@ -640,18 +523,6 @@ fn the_cross_check_row_runs_from_the_window() {
     );
 }
 
-/// A small rise is drawn as a small rise.
-///
-/// **The point of the chart, and the one way it could lie.** A plot whose
-/// vertical axis began at the smallest reading would draw this machine's
-/// 1.333 to 1.412 milliseconds a token — a rise of six per cent — as a line
-/// climbing from the floor to the ceiling. Suppressing a zero is how a picture
-/// tells a lie the numbers under it do not (A6, A11).
-///
-/// So: two ladders, one nearly flat and one that trebles, drawn into the same
-/// box. The flat one must occupy a small part of the height and the steep one
-/// most of it. If the axis were ever changed to start at the minimum, both
-/// would fill the box and this fails.
 #[test]
 fn a_six_per_cent_rise_is_not_drawn_as_a_cliff() {
     use mcf_desk::chart::{Reading, falloff};
@@ -662,7 +533,6 @@ fn a_six_per_cent_rise_is_not_drawn_as_a_cliff() {
         paint.begin();
         let _under = falloff(&mut paint, Box::new(20.0, 20.0, 360.0, 120.0), readings);
         let paper = paint.paper()?;
-        // How many rows the accent — the line and its points — appears on.
         let mut top = None;
         let mut bottom = None;
         for y in 0..paper.height {
@@ -718,7 +588,7 @@ fn a_six_per_cent_rise_is_not_drawn_as_a_cliff() {
         },
     ];
     let (Some(gentle), Some(sharp)) = (spread_of(&flat), spread_of(&steep)) else {
-        return; // no font on this machine
+        return;
     };
     assert!(
         gentle < 30,
@@ -731,7 +601,6 @@ fn a_six_per_cent_rise_is_not_drawn_as_a_cliff() {
     );
 }
 
-/// One reading is a point, and a point is not a trend.
 #[test]
 fn nothing_is_drawn_from_a_single_reading() {
     use mcf_desk::chart::{Reading, falloff};
@@ -746,8 +615,6 @@ fn nothing_is_drawn_from_a_single_reading() {
         ms: 1.5,
     }];
     let under = falloff(&mut paint, Box::new(20.0, 20.0, 360.0, 120.0), &one);
-    // The row it hands back is the row it was given: nothing was drawn, so
-    // nothing was used.
     assert!(
         (under - 20.0).abs() < f32::EPSILON,
         "a chart was drawn from one reading"
@@ -760,13 +627,6 @@ fn nothing_is_drawn_from_a_single_reading() {
     );
 }
 
-/// A name MCF cannot draw does not silently become a shorter name.
-///
-/// **The face MCF finds covers Latin and a little furniture.** A model named
-/// in Japanese, Arabic, Devanagari or Han has characters it has never seen,
-/// and skipping them drew `モデル-7B` as `-7B`: a name silently shorter than
-/// the name, and two differently-named models rendering identically. A limit
-/// is fine and a limit that hides itself is not (A1, A2, B-411).
 #[test]
 fn a_name_in_another_script_does_not_vanish() {
     use mcf_desk::font::Weight;
@@ -784,8 +644,6 @@ fn a_name_in_another_script_does_not_vanish() {
         );
     }
 
-    // And two names differing only in characters MCF cannot draw do not
-    // measure the same: a list of them stays a list of distinct things.
     let three = paint.measure("モデル-7B", Weight::Regular, 15.0);
     let five = paint.measure("نموذج-7B", Weight::Regular, 15.0);
     assert!(
@@ -793,7 +651,6 @@ fn a_name_in_another_script_does_not_vanish() {
         "a three-character name and a five-character one measure the same: {three} against {five}"
     );
 
-    // The boxes are drawn, not merely counted: something is on the screen.
     paint.begin();
     let ink = paint.ink;
     paint.say_at(16.0, 20.0, "モデル", Weight::Regular, 15.0, ink.ink);
@@ -804,23 +661,6 @@ fn a_name_in_another_script_does_not_vanish() {
     );
 }
 
-// ── Driving the interface, rather than only looking at it ──────────────────
-//
-// **Everything above renders a screen and reads the pixels. None of it presses
-// anything.** Three faults reached an operator that way: the Host button
-// returned early and did nothing at all because the settings it destructures
-// were never fetched; a reading that went unanswered emptied the model list and
-// the window said *no models exist* while sixteen sat on the disk; and a
-// control was renamed in one place and not another.
-//
-// Every one of those is invisible to a test that draws and looks, because the
-// drawing was correct. What was wrong was what happened when somebody pressed.
-
-/// Presses at a point and returns what the interface made of it.
-///
-/// A click is a press and a release inside the same thing, so both are set:
-/// a `click` with no `began` is not something a person can do, and asserting
-/// about it would be asserting about a state the window never sees.
 fn pressed_at(desk: &Desk, at: (f32, f32)) -> Option<mcf_desk::Act> {
     let mut paint = match Painter::on_paper(1180, 760, 1.0, NIGHT) {
         Ok(paint) => paint,
@@ -839,7 +679,6 @@ fn pressed_at(desk: &Desk, at: (f32, f32)) -> Option<mcf_desk::Act> {
     mcf_desk::view::draw(&mut paint, desk, &mouse)
 }
 
-/// What one frame with this mouse means, on a window of the given size.
 fn acted_with(desk: &Desk, mouse: &Mouse, size: (u32, u32)) -> Option<mcf_desk::Act> {
     let mut paint = match Painter::on_paper(size.0, size.1, 1.0, NIGHT) {
         Ok(paint) => paint,
@@ -851,7 +690,6 @@ fn acted_with(desk: &Desk, mouse: &Mouse, size: (u32, u32)) -> Option<mcf_desk::
     mcf_desk::view::draw(&mut paint, desk, mouse)
 }
 
-/// A window of the given size, drawn to paper.
 fn drawn_sized(desk: &Desk, ink: Ink, name: &str, size: (u32, u32)) -> mcf_desk::paper::Paper {
     let mut paint = match Painter::on_paper(size.0, size.1, 1.0, ink) {
         Ok(paint) => paint,
@@ -870,7 +708,6 @@ fn drawn_sized(desk: &Desk, ink: Ink, name: &str, size: (u32, u32)) -> mcf_desk:
     mcf_desk::paper::Paper::from_pixels(paper.width, paper.height, paper.pixels.clone())
 }
 
-/// A library of many models, more than a small window shows at once.
 fn many_models() -> Desk {
     let mut desk = four_models();
     for at in 0..14 {
@@ -884,9 +721,6 @@ fn many_models() -> Desk {
     desk
 }
 
-/// The library scrolls by the wheel over it and shows a bar, the splitters
-/// move by dragging, and a splitter cannot be dragged past the room an area
-/// needs (B-490).
 #[test]
 fn the_library_scrolls_and_the_splitters_move() {
     let desk = many_models();
@@ -910,8 +744,6 @@ fn the_library_scrolls_and_the_splitters_move() {
     if still.width > 1 {
         assert!(moved.pixels != still.pixels, "scrolling drew the same list");
     }
-    // The splitter between the library and the page: pressed on the band,
-    // dragged to the right.
     let band_x = desk.splits.side + 26.0 + desk.splits.list + 20.0;
     let drag = Mouse {
         at: (band_x + 60.0, 300.0),
@@ -930,9 +762,6 @@ fn the_library_scrolls_and_the_splitters_move() {
         wider.splits.list > desk.splits.list,
         "the library did not widen"
     );
-    // F195: the line has moved under the pointer and the press began
-    // outside the band where it now is; the drag goes on regardless, and
-    // stops when the button is let go.
     let further = Mouse {
         at: (band_x + 140.0, 300.0),
         ..drag
@@ -964,28 +793,11 @@ fn the_library_scrolls_and_the_splitters_move() {
     );
 }
 
-/// Finds the act a labelled control produces, by pressing everywhere it could
-/// be.
-///
-/// The window lays itself out, so a test that hard-coded a button's coordinates
-/// would be a test of arithmetic somebody copied. Sweeping asks the question a
-/// person asks — *is there something here that does this* — and fails when the
-/// answer is no, whatever the reason.
 fn act_somewhere(desk: &Desk, wanted: &mcf_desk::Act) -> bool {
-    // From the top of the window, not below the menu: the column sits at y=8
-    // and a sweep starting under it cannot press a tab — which is a test that
-    // reports the menu unreachable when what is unreachable is the sweep.
     act_within(desk, wanted, (0.0, 750.0))
 }
 
-/// The same, over a band of the window.
-///
-/// Bounded because a sweep of the whole window is thousands of renders, and a
-/// test that takes a minute is one somebody stops running.
 fn act_within(desk: &Desk, wanted: &mcf_desk::Act, band: (f32, f32)) -> bool {
-    // First the controls the frame itself was asked about, pressed at their
-    // centres, one frame each; the sweep below only where none of them is
-    // the one wanted — a control hit-tested some other way.
     let ((), asked) = mcf_desk::ui::boxes_asked(|| {
         let Ok(mut paint) = Painter::on_paper(1180, 760, 1.0, NIGHT) else {
             return;
@@ -1019,12 +831,6 @@ fn act_within(desk: &Desk, wanted: &mcf_desk::Act, band: (f32, f32)) -> bool {
     false
 }
 
-/// The window offers a way to host the model that is chosen.
-///
-/// F: `host_it` begins by destructuring `self.settings`, which nothing ever
-/// fetched — so it was `None` for the life of the window and pressing Host
-/// returned early, silently, every time. The button drew correctly, so every
-/// test that looked at it passed.
 #[test]
 fn pressing_host_asks_to_host_and_does_not_silently_do_nothing() {
     let mut desk = four_models();
@@ -1036,9 +842,6 @@ fn pressing_host_asks_to_host_and_does_not_silently_do_nothing() {
         "no control on the Models screen asks to host the chosen model"
     );
 
-    // And the act must do something. With no settings — which is what a
-    // daemon that has not answered leaves — it refuses in words rather than
-    // returning as though nothing had been pressed.
     desk.settings = None;
     desk.no_settings = None;
     desk.act(mcf_desk::Act::HostIt);
@@ -1048,18 +851,11 @@ fn pressing_host_asks_to_host_and_does_not_silently_do_nothing() {
     );
 }
 
-/// The prompt analysis is reachable, and named what it is called.
-///
-/// F: it was renamed in the button and not the heading once already. A control
-/// somebody was told to press, by a name that is not on it, is a control that
-/// is not there.
 #[test]
 fn the_prompt_analysis_is_reachable_from_diagnostics() {
     let mut desk = four_models();
     desk.page = Page::Diagnostics;
     desk.chosen = Some(0);
-    // Its row is in the list as the page opens, and its pane opens the
-    // analysis (D53).
     assert!(
         act_somewhere(&desk, &mcf_desk::Act::Show(mcf_desk::Diagnostic::Prompt)),
         "the prompt analysis has no row on Diagnostics"
@@ -1070,7 +866,6 @@ fn the_prompt_analysis_is_reachable_from_diagnostics() {
         "nothing on Diagnostics leads to the prompt analysis"
     );
 
-    // And once there, something runs it.
     desk.page = Page::Prompt;
     desk.typed = "a prompt with two sentences. And a second one.".to_owned();
     assert!(
@@ -1079,19 +874,12 @@ fn the_prompt_analysis_is_reachable_from_diagnostics() {
     );
 }
 
-/// Every screen the column offers can be reached from every other.
-///
-/// A19: a column entry is an advertisement, and one that cannot be pressed is
-/// a screen an operator is told about and cannot open.
 #[test]
 fn every_menu_entry_can_be_pressed_from_every_screen() {
     let mut desk = four_models();
     for (from, _) in Page::MENU {
         desk.page = *from;
         for (to, label) in Page::MENU {
-            // Pressed where the window draws the entry, one render an entry:
-            // a sweep of the screen for Exit at the bottom was three thousand
-            // renders a page and twenty minutes a run.
             let entry = mcf_desk::view::menu_box(*to, 760.0, desk.splits.side);
             let at = (entry.x + entry.w / 2.0, entry.y + entry.h / 2.0);
             assert_eq!(
@@ -1103,14 +891,6 @@ fn every_menu_entry_can_be_pressed_from_every_screen() {
     }
 }
 
-/// A page scrolled to its bottom, with a pane of its own inside it, asks
-/// for no scroll frame after frame, and a press on the menu still changes
-/// the page while a run fills the pane (B-575).
-///
-/// F: the Diagnostics page and its pane shared one scroll key; each frame
-/// the two clamped it to their own content, a scroll act went out every
-/// frame, and every press outside them — the menu — was lost, so the
-/// operator could not leave the page while a coding run went.
 #[test]
 fn a_scrolled_page_with_a_pane_settles_and_the_menu_still_answers() {
     let mut desk = four_models();
@@ -1140,7 +920,6 @@ fn a_scrolled_page_with_a_pane_settles_and_the_menu_still_answers() {
     ] {
         let _was = desk.scrolls.insert(region, 5_000.0);
     }
-    // The first frames clamp the offsets; after that, nothing.
     let mut settled = false;
     for _ in 0..6 {
         match pressed_at(&desk, (f32::MIN, f32::MIN)) {
@@ -1155,7 +934,7 @@ fn a_scrolled_page_with_a_pane_settles_and_the_menu_still_answers() {
         }
     }
     if drawn(&desk, NIGHT, "scroll-settled").width < 2 {
-        return; // no font here
+        return;
     }
     assert!(settled, "the page kept asking to scroll frame after frame");
     let entry = mcf_desk::view::menu_box(Page::Models, 760.0, desk.splits.side);
@@ -1167,12 +946,6 @@ fn a_scrolled_page_with_a_pane_settles_and_the_menu_still_answers() {
     );
 }
 
-/// A window holding models draws them, and one holding none looks different.
-///
-/// F: a reading that went unanswered emptied the list, and the window said *no
-/// models exist* while sixteen sat on the disk and `mcf list` found them. The
-/// screen drew correctly in both cases — which is the point: what was wrong was
-/// which of the two it drew.
 #[test]
 fn a_window_holding_models_does_not_look_like_one_holding_none() {
     let mut desk = four_models();
@@ -1183,7 +956,7 @@ fn a_window_holding_models_does_not_look_like_one_holding_none() {
     desk.chosen = None;
     let without = drawn(&desk, NIGHT, "models-none");
     if with.width < 2 || without.width < 2 {
-        return; // no font on this machine; `drawn` said so
+        return;
     }
 
     let differing = with
@@ -1199,11 +972,6 @@ fn a_window_holding_models_does_not_look_like_one_holding_none() {
     );
 }
 
-/// While a model is being held, the window says so.
-///
-/// F: hosting a large model blocked every reading, the window stopped
-/// repainting, and what was on screen said "a moment". An operator who has been
-/// told *a moment* and waits five minutes concludes it has failed.
 #[test]
 fn a_window_holding_a_model_says_that_it_is() {
     let mut desk = four_models();
@@ -1233,19 +1001,12 @@ fn a_window_holding_a_model_says_that_it_is() {
          differ), so nothing on screen said it was working"
     );
 
-    // And the state line says which it is, rather than reporting the daemon
-    // as gone while it does what was asked.
     desk.busy = true;
     let (word, said) = desk.state_line();
     assert_eq!(word, "HOLDING");
     assert!(said.contains("so far"), "{said}");
 }
 
-/// The arithmetic behind the figure, on its own.
-///
-/// A window costs what a token of cache costs multiplied by the window, and
-/// the weights sit beside it because what the operator is deciding is how much
-/// of the machine this model will take altogether (B-423).
 #[test]
 fn a_window_costs_the_cache_it_reserves() {
     let held = &four_models().models[0];
@@ -1260,16 +1021,10 @@ fn a_window_costs_the_cache_it_reserves() {
         Some(5_020_000_000 + 114_688 * 32_768),
         "what it comes to is the window and the weights"
     );
-    // Doubling the window doubles the cache: the point of showing it is that
-    // it is the term that moves.
     let (twice, _) = mcf_desk::view::reserve_of(held, 65_536).expect("still priced");
     assert_eq!(twice, cache * 2);
 }
 
-/// A model whose header does not price a token is not priced.
-///
-/// A7: a blank where a number belongs, rather than a zero that reads as a
-/// measurement of nothing.
 #[test]
 fn a_model_that_cannot_be_priced_is_not_given_a_price() {
     let mut held = four_models().models[0].clone();
@@ -1278,11 +1033,8 @@ fn a_model_that_cannot_be_priced_is_not_given_a_price() {
     assert!(mcf_desk::view::reserve_line(&held, 32_768).is_none());
 }
 
-/// The price is on the screen where the window is chosen, before it is paid.
 #[test]
 fn the_price_of_a_window_is_shown_where_it_is_chosen() {
-    // The settings table only draws once the daemon has said what it would
-    // run this model under, which is also when a window can be chosen.
     let settings = mcf_serve::hosting::Hosting::recommended(
         "llama.cpp-cuda",
         "a-device",
@@ -1316,7 +1068,6 @@ fn the_price_of_a_window_is_shown_where_it_is_chosen() {
     );
 }
 
-/// And on Running, for the window actually being held.
 #[test]
 fn running_says_what_the_held_window_costs() {
     let mut desk = four_models();
@@ -1332,8 +1083,6 @@ fn running_says_what_the_held_window_costs() {
         network_address: None,
         in_use: None,
     });
-    // The same window, held under a model this list does not carry: the
-    // address and the context still show, the price cannot.
     let mut unknown = four_models();
     unknown.page = Page::Hosting;
     unknown.hosted = Some(mcf_desk::Hosted {
@@ -1358,7 +1107,6 @@ fn running_says_what_the_held_window_costs() {
     );
 }
 
-/// One ablated part of a served report, as the daemon writes it.
 fn a_clause(text: &str, moved: i64) -> mcf_record::json::Value {
     use mcf_record::json::Value;
     let clause = |text: &str, moved: i64| {
@@ -1380,8 +1128,6 @@ fn a_clause(text: &str, moved: i64) -> mcf_record::json::Value {
     clause(text, moved)
 }
 
-/// The rank reading grouped by part, for six parts of which four were
-/// removed (B-433).
 fn a_grouping() -> mcf_record::json::Value {
     use mcf_record::json::Value;
     Value::map([
@@ -1411,8 +1157,6 @@ fn a_grouping() -> mcf_record::json::Value {
     ])
 }
 
-/// A finished prompt report, as a person would be shown one.
-/// The floor drawn at every position, and its spread (B-434).
 fn a_spread() -> (mcf_record::json::Value, mcf_record::json::Value) {
     use mcf_record::json::Value;
     let at = |position: i64, moved: i64| {
@@ -1437,7 +1181,6 @@ fn a_spread() -> (mcf_record::json::Value, mcf_record::json::Value) {
     )
 }
 
-/// What one part did asked as the whole prompt (B-435).
 fn a_reading(moved: i64, answer: &str) -> mcf_record::json::Value {
     use mcf_record::json::Value;
     Value::map([
@@ -1457,8 +1200,6 @@ fn a_reading(moved: i64, answer: &str) -> mcf_record::json::Value {
     ])
 }
 
-/// The prompt of `a_report` grown from the front, and its neighbours
-/// swapped.
 fn grown_and_swapped() -> (mcf_record::json::Value, mcf_record::json::Value) {
     use mcf_record::json::Value;
     let prefixes = Value::List(vec![
@@ -1485,8 +1226,6 @@ fn grown_and_swapped() -> (mcf_record::json::Value, mcf_record::json::Value) {
     (prefixes, swaps)
 }
 
-/// The four sentences of `a_report` in each form: five read, and the one
-/// the prompt is written in already said as not rendered (B-444).
 fn in_forms() -> mcf_record::json::Value {
     use mcf_record::json::Value;
     let formed = |form: &str, moved: i64, answer: &str| {
@@ -1529,7 +1268,6 @@ fn in_forms() -> mcf_record::json::Value {
     ])
 }
 
-/// The four sentences of `a_report` asked alone, and the control alone.
 fn each_alone() -> (mcf_record::json::Value, mcf_record::json::Value) {
     use mcf_record::json::Value;
     (
@@ -1543,7 +1281,6 @@ fn each_alone() -> (mcf_record::json::Value, mcf_record::json::Value) {
     )
 }
 
-/// The rank reading of `a_report`: seven tokens, two past the depth.
 fn some_expected() -> mcf_record::json::Value {
     use mcf_record::json::Value;
     let ranked = |text: &str, rank: Option<i64>| {
@@ -1564,8 +1301,6 @@ fn some_expected() -> mcf_record::json::Value {
     ])
 }
 
-/// The rank reading of `a_report` by word: five words, one past the depth,
-/// one the model would have written whole (B-443).
 fn some_words() -> mcf_record::json::Value {
     use mcf_record::json::Value;
     let word = |text: &str, pieces: i64, rank: Option<i64>, first: i64, part: Option<i64>| {
@@ -1689,9 +1424,6 @@ fn a_report() -> mcf_desk::Desk {
     desk
 }
 
-/// A prompt analysis under way says which generation it is on, of how
-/// many, and can be cut short from the page; one that has finished offers
-/// no Stop (B-479, B-468, A7).
 #[test]
 fn a_prompt_analysis_under_way_says_its_step_and_offers_stop() {
     use mcf_record::json::Value;
@@ -1736,18 +1468,12 @@ fn a_prompt_analysis_under_way_says_its_step_and_offers_stop() {
     );
 }
 
-/// Every figure the console prints is on the screen too.
-///
-/// The window drew bars and named no number, no floor and no answer, so a
-/// reader was shown a distinction with nothing to read it by — while the
-/// console had printed all three from the start (A22, §3.15).
 #[test]
 fn a_prompt_report_shows_its_numbers() {
     let desk = a_report();
     let with = drawn(&desk, DAY, "prompt-report");
     let ground = DAY.ground;
     let mut bare = a_report();
-    // The same report with nothing measured: fewer marks must reach the glass.
     bare.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(
         "prompt analysis".to_owned(),
         vec![mcf_record::json::Value::map(Vec::<(
@@ -1764,14 +1490,9 @@ fn a_prompt_report_shows_its_numbers() {
     );
 }
 
-/// The rank reading grouped by part is a third figure on each row, and a
-/// report without the reading draws the rows without it rather than as
-/// wholly expected (B-433, A7).
 #[test]
 fn each_row_says_how_much_of_it_the_model_expected() {
     use mcf_record::json::Value;
-    // The rows sit under the readings table, past the window's foot until
-    // the report is scrolled up to them.
     let mut desk = a_report();
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 330.0);
     let found = match &desk.doing {
@@ -1794,18 +1515,12 @@ fn each_row_says_how_much_of_it_the_model_expected() {
         let _taken = fields.remove("expected_by_part");
     }
     let without = drawn(&unread, DAY, "prompt-report-unread").inked(ground);
-    // Without the reading the rows lose a cell and the foot loses its
-    // "least expected" line, so what follows moves up into the viewport;
-    // the glass differs either way, and that difference is the reading.
     assert_ne!(
         with, without,
         "the third figure and its legend change no ink on the glass: {with} against {without}"
     );
 }
 
-/// The word table comes first under the conditions (B-443): the words the
-/// model did not expect, least expected first, and a report with no word
-/// reading says so rather than drawing an empty table (A7).
 #[test]
 fn the_words_the_model_did_not_expect_come_first() {
     use mcf_record::json::Value;
@@ -1831,14 +1546,8 @@ fn the_words_the_model_did_not_expect_come_first() {
     );
 }
 
-/// Pressing a sentence shows what the model wrote without it.
-///
-/// The figures are checkable only beside the answer they are about, and MCF
-/// has held both since the measurement was written (A19).
 #[test]
 fn pressing_a_sentence_shows_the_answer_without_it() {
-    // The rows sit under the readings table, past the window's foot until
-    // the report is scrolled up to them.
     let mut desk = a_report();
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 330.0);
     assert!(
@@ -1846,8 +1555,6 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
         "no sentence in the report could be pressed"
     );
 
-    // And what is drawn changes: the answer without a sentence is not the
-    // answer to the prompt as written.
     let mut chosen = a_report();
     let _was = chosen.scrolls.insert(mcf_desk::Region::Prompt, 330.0);
     chosen.shown = Some(mcf_desk::Shown::Without(1));
@@ -1860,13 +1567,9 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
     );
 }
 
-/// Beside each sentence removed is the sentence alone, where that was asked,
-/// and pressing it shows what the model wrote to it alone (B-435).
 #[test]
 fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
     use mcf_record::json::Value;
-    // The alone table sits under the removed and floors tables, past the
-    // window's foot: the page is scrolled to it, as a reader would.
     let mut desk = a_report();
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 780.0);
     let rows = (520.0, 640.0);
@@ -1874,7 +1577,6 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
         act_within(&desk, &mcf_desk::Act::ShowAlone(1), rows),
         "no sentence alone in the report could be pressed"
     );
-    // The answer has a page of its own under the tables.
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut alone = a_report();
     let _was = alone.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
@@ -1895,8 +1597,6 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
         "the answer to a sentence alone drew as the answer as written"
     );
 
-    // A report that did not ask has no alone line to press and none drawn
-    // (A7): the lines say what was read, not what could have been.
     let mut unasked = a_report();
     let _was = unasked.scrolls.insert(mcf_desk::Region::Prompt, 780.0);
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
@@ -1917,14 +1617,9 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
     );
 }
 
-/// The prompt grown from the front is a row a prefix, and pressing one
-/// shows the answer to that much of the prompt (B-436).
 #[test]
 fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
     use mcf_record::json::Value;
-    // The rows sit under the steering rows and their legend, past the
-    // window's foot: the page is scrolled to them, which is how a reader
-    // reaches them too.
     let mut desk = a_report();
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 980.0);
     let rows = (520.0, 640.0);
@@ -1932,7 +1627,6 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         act_within(&desk, &mcf_desk::Act::ShowPrefix(1), rows),
         "no prefix in the report could be pressed"
     );
-    // The answer has a page of its own under the tables.
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut prefix = a_report();
     let _was = prefix.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
@@ -1962,13 +1656,9 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
     );
 }
 
-/// Neighbours swapped is a row a pair, and pressing one shows the answer
-/// with the two in each other's places (B-437).
 #[test]
 fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
     use mcf_record::json::Value;
-    // The rows sit under the prefixes, past the window's foot: the page is
-    // scrolled to them, which is how a reader reaches them too.
     let mut desk = a_report();
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1105.0);
     let rows = (520.0, 640.0);
@@ -1976,7 +1666,6 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
         act_within(&desk, &mcf_desk::Act::ShowSwap(1), rows),
         "no swap in the report could be pressed"
     );
-    // The answer has a page of its own under the tables.
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
     let mut swap = a_report();
     let _was = swap.scrolls.insert(mcf_desk::Region::Prompt, 1400.0);
@@ -2006,13 +1695,9 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
     );
 }
 
-/// The forms are a row a form read, a line for the one not rendered, and
-/// pressing a row shows the answer to the parts in that form (B-444).
 #[test]
 fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
     use mcf_record::json::Value;
-    // The rows sit under the swaps, past the window's foot: the page is
-    // scrolled to them, which is how a reader reaches them too.
     let mut desk = a_report();
     let _was = desk.scrolls.insert(mcf_desk::Region::Prompt, 1250.0);
     let rows = (400.0, 700.0);
@@ -2053,8 +1738,6 @@ fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
     );
 }
 
-/// The report scrolls under the controls and never over them: scrolled,
-/// the controls' band is pixel for pixel what it was, and the body is not.
 #[test]
 fn the_report_scrolls_under_the_controls_and_not_over_them() {
     let still = a_report();
@@ -2072,8 +1755,6 @@ fn the_report_scrolls_under_the_controls_and_not_over_them() {
             .get(y * wide..(y + 1) * wide)
             .map(<[u8]>::to_vec)
     };
-    // The controls end above the run's verdict; everything up to there is
-    // untouched by the scroll.
     for y in 0..430 {
         assert_eq!(
             row(&before, y),
@@ -2089,8 +1770,6 @@ fn the_report_scrolls_under_the_controls_and_not_over_them() {
     );
 }
 
-/// The seeds section says how each seeded draw was cut, and a report from
-/// before the cut was stated says it is not recorded rather than nothing.
 #[test]
 fn the_seeds_section_says_how_the_draws_were_cut() {
     use mcf_record::json::Value;
@@ -2126,7 +1805,6 @@ fn the_seeds_section_says_how_the_draws_were_cut() {
     );
 }
 
-/// Pressing the sentence already shown puts the answer as written back.
 #[test]
 fn pressing_it_again_goes_back_to_the_answer_as_written() {
     let mut desk = a_report();
@@ -2138,11 +1816,6 @@ fn pressing_it_again_goes_back_to_the_answer_as_written() {
     );
 }
 
-/// What leaves the window is the report the window is showing.
-///
-/// What a hybrid mixture's anatomy comes over the socket as: one dense block
-/// and forty-six of experts, latent attention, a cache sized as the key
-/// alone — the shape of the answer the daemon gave for a real file.
 fn an_anatomy_answer() -> mcf_serve::anatomy::Said {
     let line = concat!(
         r#"{"model":"/models/Assistant-8B.gguf","counted":{"elements":29943393920,"#,
@@ -2197,13 +1870,6 @@ fn an_anatomy_answer() -> mcf_serve::anatomy::Said {
     }
 }
 
-/// What a model is made of is reachable from its list, and drawn as the
-/// daemon said it.
-///
-/// **The window had no explain page.** Everything `mcf explain` counts was
-/// on the console and nowhere else, so the primary surface said less about
-/// a file than the command line did (A22). The screen draws what came over
-/// the socket and counts nothing itself (B-072).
 #[test]
 fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
     let mut desk = four_models();
@@ -2214,17 +1880,15 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
         "nothing on Models leads to what the model is made of"
     );
 
-    // Refused, in words, where nothing was said.
     desk.page = Page::Anatomy;
     desk.anatomy = None;
     desk.no_anatomy = Some("MCF is not answering".to_owned());
     let refused = drawn(&desk, NIGHT, "anatomy-refused");
     if refused.width == 1 {
-        return; // no font here
+        return;
     }
     let refused = refused.inked(NIGHT.ground);
 
-    // And the whole of it where the daemon answered.
     desk.anatomy = Some(an_anatomy_answer());
     desk.no_anatomy = None;
     for ink in [NIGHT, DAY] {
@@ -2237,8 +1901,6 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
         );
     }
 
-    // The vocabulary is the other half of the same answer, on its own screen
-    // reached from this one — and back.
     assert!(
         act_somewhere(&desk, &mcf_desk::Act::Go(Page::Vocabulary)),
         "nothing on What is in it leads to the vocabulary"
@@ -2251,9 +1913,6 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
     for ink in [NIGHT, DAY] {
         let paper = drawn(&desk, ink, "vocabulary");
         let inked = paper.inked(ink.ground);
-        // A shorter screen than the anatomy — a token list is a dozen
-        // figures, not three tables — so the bar is the refusal plus a
-        // screenful of figures, not the anatomy's.
         assert!(
             inked > refused + 15_000,
             "the vocabulary drew {inked} pixels against {refused} for a refusal: the \
@@ -2262,8 +1921,6 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
     }
 }
 
-/// The prompt field takes a document: a paste keeps its lines, Return adds
-/// one, and Control-Return is what runs the analysis (B-430).
 #[test]
 fn the_prompt_field_takes_a_document() {
     let mut desk = four_models();
@@ -2285,17 +1942,12 @@ fn the_prompt_field_takes_a_document() {
         "Return without Control ran the analysis"
     );
 
-    // And the name field is still a name field.
     let mut adding = four_models();
     adding.page = Page::Adding;
     adding.paste("owner/repository\nsecond line");
     assert_eq!(adding.typed, "owner/repository");
 }
 
-/// The prompt is one field and all of it is analysed — there is no second
-/// field holding a question out — typing goes where the caret is, and the
-/// unit and the cap are choices on the page that reach the request exactly
-/// as chosen (§3.15, B-430).
 #[test]
 fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
     use mcf_serve::prompt::Unit;
@@ -2306,8 +1958,6 @@ fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
         .map(|at| format!("Rule {at}: do the thing the rule says."))
         .collect::<Vec<_>>()
         .join("\n\n");
-    // The document is what typing goes into, and its last line is a part of
-    // it like any other: Return starts a new line, Ctrl+Return runs it.
     desk.typing().push_str("\n\nRoll for initiative.");
     desk.returned(false);
     assert!(
@@ -2321,12 +1971,8 @@ fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
         "Ctrl+Return runs the analysis"
     );
     desk.doing = mcf_desk::Doing::Nothing;
-    // Under the document field and above the report: a sweep of the whole
-    // window is thousands of renders of a thirteen-paragraph document.
     let controls = (350.0, 430.0);
 
-    // The text decided paragraphs; the page offers the other unit, and the
-    // cap in steps up to every part.
     let taken = desk.taken();
     assert_eq!(taken.unit(), (Unit::Paragraph, false));
     assert_eq!(taken.parts().len(), 13);
@@ -2357,9 +2003,6 @@ fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
     assert_eq!(taken.unit(), (Unit::Sentence, true));
     assert_eq!(taken.cap(), 13);
 
-    // The temperature the seeds are drawn at is a field under the choices:
-    // empty asks nothing, a decimal is the condition, and what is not a
-    // temperature holds Analyse rather than being dropped (B-431, §3.15).
     assert_eq!(desk.settle(), Ok(None));
     let lower = (520.0, 620.0);
     assert!(
@@ -2390,10 +2033,6 @@ fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
     let _looked = drawn(&desk, DAY, "prompt-choices");
 }
 
-/// Each further reading is a choice on the page that says what it costs
-/// and reaches the request as chosen; the floor at every position is read
-/// back as a spread in the legend — or, left off, as the one draw it was
-/// (B-434, B-435, §3.15, §3.4).
 #[test]
 fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     use mcf_record::json::Value;
@@ -2405,8 +2044,6 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
         .map(|at| format!("Rule {at}: do the thing the rule says."))
         .collect::<Vec<_>>()
         .join("\n\n");
-    // The rows of the readings table under the removed row; a sweep of the
-    // whole window is thousands of renders.
     let controls = (420.0, 580.0);
     for extra in Extra::ALL {
         assert!(!desk.taken().extras.has(extra), "{extra:?} unless asked");
@@ -2431,9 +2068,6 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     let off = drawn(&desk, DAY, "prompt-floors-off").inked(ground);
     assert_ne!(on, off, "the cost line does not say which was chosen");
 
-    // A report that drew the spread reads it back; one that did not says so.
-    // The legend sits under the rows, past the window's foot until the
-    // report is scrolled up to it.
     let mut with = a_report();
     let _was = with.scrolls.insert(mcf_desk::Region::Prompt, 480.0);
     let found = match &with.doing {
@@ -2464,7 +2098,6 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     );
 }
 
-/// A document is drawn as its lines, and a long one shows its tail.
 #[test]
 fn a_long_prompt_is_drawn_as_lines_and_the_tail_is_what_shows() {
     let mut short = four_models();
@@ -2489,13 +2122,6 @@ fn a_long_prompt_is_drawn_as_lines_and_the_tail_is_what_shows() {
     );
 }
 
-/// The ask screen carries the turn a question will be sent under, and says
-/// what a picture was when one was shown (A22, B-462).
-///
-/// Two screens: one with nothing switched, one with a system turn, an
-/// effort, thinking and a picture. The second says more, because every one
-/// of those is a condition of the answer and §3.15 will not have a
-/// condition that is invisible.
 #[test]
 fn the_ask_screen_carries_the_turn_and_the_picture() {
     let mut plain = four_models();
@@ -2515,19 +2141,12 @@ fn the_ask_screen_carries_the_turn_and_the_picture() {
         bare.inked(DAY.ground) > 0,
         "the ask screen drew nothing at all"
     );
-    // **A condition that changes the answer changes the screen.** The two
-    // differ in nothing but the turn and the picture, so a screen that drew
-    // them the same would be sending a condition it never showed (§3.15,
-    // A22, B-462).
     assert!(
         full.pixels != bare.pixels,
         "the turn a question goes under is not on the screen that asks it"
     );
 }
 
-/// Every page, in the states a person meets, written out as images when
-/// `MCF_LOOK` names a directory — the review pass over the window that
-/// reads what it draws rather than asking a person to (D49).
 #[test]
 #[allow(clippy::too_many_lines, reason = "one page after another, each drawn")]
 fn every_page_is_drawn_for_review() {
@@ -2545,7 +2164,6 @@ fn every_page_is_drawn_for_review() {
     );
     let placements = three_placements();
 
-    // Configure, with one setting moved and the mouse over a row.
     let mut desk = four_models();
     desk.page = Page::Models;
     desk.chosen = Some(0);
@@ -2569,7 +2187,6 @@ fn every_page_is_drawn_for_review() {
     let _ = drawn(&desk, NIGHT, "review-configure-refused");
     desk.edit_refused = None;
 
-    // Statistics, with a measurement, a cross-check and a last hold.
     desk.models[0].measured_body = Some(a_measurement());
     desk.models[0].ladder = vec![
         mcf_desk::chart::Reading {
@@ -2599,12 +2216,10 @@ fn every_page_is_drawn_for_review() {
     desk.tab = mcf_desk::Tab::Statistics;
     let _ = drawn(&desk, DAY, "review-statistics");
 
-    // Contents.
     desk.tab = mcf_desk::Tab::Contents;
     desk.anatomy = Some(an_anatomy_answer());
     let _ = drawn(&desk, DAY, "review-contents");
 
-    // Server, running, with the engine's counters and a rate line.
     desk.page = Page::Hosting;
     desk.hosted = Some(an_engine_in_use(&desk.models[0].path));
     for at in 0..90_u32 {
@@ -2614,8 +2229,6 @@ fn every_page_is_drawn_for_review() {
     }
     let _ = drawn(&desk, DAY, "review-server-running");
     let _ = drawn(&desk, NIGHT, "review-server-running-night");
-    // The same page while a run holds the model under test beside what is
-    // hosted: its counters as tiles and what the run has cost (B-573).
     desk.under_test = Some(mcf_desk::UnderTest {
         model: "/models/Assistant-2B-Instruct-Q4_K_M.gguf".to_owned(),
         engine: "provisioned llama.cpp @925e1179947e".to_owned(),
@@ -2654,7 +2267,6 @@ fn every_page_is_drawn_for_review() {
     desk.under_test = None;
     desk.spent = mcf_desk::Spent::default();
 
-    // Diagnostics: the cards, and the throughput card with a run going.
     desk.page = Page::Diagnostics;
     desk.tab = mcf_desk::Tab::Configure;
     desk.placements = placements.clone();
@@ -2669,8 +2281,6 @@ fn every_page_is_drawn_for_review() {
     review_small_windows();
 }
 
-/// The pages in a small window, where the library, the model page and the
-/// Diagnostics page overflow and show their bars (B-490).
 fn review_small_windows() {
     let small = (900, 560);
     let mut desk = many_models();
@@ -2684,11 +2294,9 @@ fn review_small_windows() {
     let _was = desk.scrolls.insert(mcf_desk::Region::Library, 120.0);
     let _was = desk.scrolls.insert(mcf_desk::Region::Page, 80.0);
     let _ = drawn_sized(&desk, DAY, "review-small-scrolled", small);
-    // A daemon older than the window says so under the name (B-595).
     desk.daemon_build = Some("0.1.0-m0 · 74ca562".to_owned());
     let _ = drawn(&desk, DAY, "review-older-daemon");
     desk.daemon_build = None;
-    // The System page carries the record's failures, newest first (B-074).
     desk.faults = vec![
         mcf_desk::Fault {
             at: "2026-09-07T15:20:04".to_owned(),
@@ -2721,9 +2329,6 @@ fn review_small_windows() {
     desk.faults_in_record = 7;
     desk.page = Page::Diagnostics;
     let _ = drawn_sized(&desk, NIGHT, "review-small-diagnostics", small);
-    // Any size: a small window and a large one, the same pages laid out
-    // for each, nothing cut and nothing left in a fixed-width island
-    // (B-510).
     for (name, size) in [("tiny", (700, 500)), ("wide", (2200, 1300))] {
         for (page, tab, called) in [
             (Page::Diagnostics, mcf_desk::Tab::Configure, "diagnostics"),
@@ -2739,11 +2344,8 @@ fn review_small_windows() {
     }
 }
 
-/// A repository's files as the daemon lists them, for the hub page.
 fn a_files_answer() -> mcf_desk::Doing {
     use mcf_record::json::Value;
-    // One row a variant, with the parts under it where there are several
-    // (B-597).
     let variant = |name: &str, first: &str, bytes: i64, parts: i64, fits: bool| {
         Value::map([
             ("file", Value::text(first)),
@@ -2766,8 +2368,6 @@ fn a_files_answer() -> mcf_desk::Doing {
                 Value::List(vec![
                     file("gemma-4-12B-it-qat-Q4_K_M.gguf", 7_300_000_000, true),
                     file("gemma-4-12B-it-qat-Q8_0.gguf", 12_500_000_000, true),
-                    // A quantization published in four files is one row
-                    // that says so, and its size is the whole (B-597).
                     variant(
                         "BF16/gemma-4-12B-it-qat-BF16.gguf",
                         "BF16/gemma-4-12B-it-qat-BF16-00001-of-00004.gguf",
@@ -2783,9 +2383,6 @@ fn a_files_answer() -> mcf_desk::Doing {
     ))
 }
 
-/// The library filtered and searched: the filters open with a list
-/// dropped, words nothing here matches, the hub asked and answered, and
-/// one of its repositories opened (D51).
 fn review_the_search() {
     let mut searched = four_models();
     searched.page = Page::Models;
@@ -2809,9 +2406,6 @@ fn review_the_search() {
     let _ = drawn(&searched, DAY, "review-library-hub-files");
 }
 
-/// A model as a repository: its quantizations picked on Configure, the
-/// ones here and the ones the hub publishes, and one not here as the
-/// page's subject (D51, B-486).
 fn review_the_library(recommended: &mcf_serve::hosting::Hosting) {
     let mut grouped = four_models();
     grouped.page = Page::Models;
@@ -2852,7 +2446,6 @@ fn review_the_library(recommended: &mcf_serve::hosting::Hosting) {
     let _ = drawn(&grouped, DAY, "review-diagnostics-pending");
 }
 
-/// Where a hold can go on this machine: as resolved, the processor, the card.
 fn three_placements() -> Vec<mcf_desk::Placement> {
     vec![
         mcf_desk::Placement {
@@ -2879,7 +2472,6 @@ fn three_placements() -> Vec<mcf_desk::Placement> {
     ]
 }
 
-/// The probes three in: the daemon has announced the third.
 fn a_probe_run_under_way() -> mcf_desk::job::Job {
     let mut going = mcf_desk::job::Job::already(
         "probing Assistant-8B".to_owned(),
@@ -2901,9 +2493,6 @@ fn a_probe_run_under_way() -> mcf_desk::job::Job {
     going
 }
 
-/// The Diagnostics list with a probe running, its row marked and its pane
-/// showing the step; then a measurement running, with a finding from an
-/// earlier run under its card (D53).
 fn review_the_diagnostics(desk: &mut Desk) {
     desk.doing = mcf_desk::Doing::Probing(a_probe_run_under_way());
     desk.diagnostic = mcf_desk::Diagnostic::Probe(2);
@@ -2924,7 +2513,6 @@ fn review_the_diagnostics(desk: &mut Desk) {
             ],
         });
     }
-    // And the run's readings as a table under the finding (D54).
     let rows: Vec<mcf_record::readings::Reading> = [64_i64, 256, 1024, 2048]
         .iter()
         .flat_map(|batch| {
@@ -2969,9 +2557,6 @@ fn review_the_diagnostics(desk: &mut Desk) {
     review_the_coding_row(desk);
 }
 
-/// The coding suites' rows: the catalogue's, run through the command
-/// line, its readings under `challenges` and when it last ran from the
-/// model's summary (B-519, B-563).
 fn review_the_coding_row(desk: &mut Desk) {
     desk.doing = mcf_desk::Doing::Nothing;
     review_the_challenges_row(desk);
@@ -2979,9 +2564,6 @@ fn review_the_coding_row(desk: &mut Desk) {
     desk.readings = None;
 }
 
-/// The catalogue's row: two challenges in two languages, one solved at
-/// the second attempt and one never, the rows under `challenges` with
-/// the retries and the languages as the run's conditions (B-563, D56).
 #[allow(clippy::too_many_lines, reason = "one fixture, each row named")]
 fn review_the_challenges_row(desk: &mut Desk) {
     use mcf_record::json::Value;
@@ -3085,8 +2667,6 @@ fn review_the_challenges_row(desk: &mut Desk) {
     }
     desk.readings = Some((path, vec![run]));
     let _ = drawn(desk, DAY, "review-diagnostics-challenges");
-    // The same row while its suite runs: the results so far under Run,
-    // a line a result as the stream said them (B-569).
     let mut going = mcf_desk::job::Job::already(
         "running the Challenges: easy suite on Assistant-8B".to_owned(),
         [
@@ -3115,7 +2695,6 @@ fn review_the_challenges_row(desk: &mut Desk) {
     desk.evaluating = None;
 }
 
-/// The measurements two in: the daemon has announced the second.
 fn an_examination_under_way() -> mcf_desk::job::Job {
     let mut going = mcf_desk::job::Job::already(
         "examining Assistant-8B".to_owned(),
@@ -3137,8 +2716,6 @@ fn an_examination_under_way() -> mcf_desk::job::Job {
     going
 }
 
-/// A ladder two rungs in: its estimate, one reading, and the second rung
-/// announced.
 fn a_ladder_under_way() -> mcf_desk::job::Job {
     let mut going = mcf_desk::job::Job::already(
         "measuring Assistant-8B".to_owned(),
@@ -3189,7 +2766,6 @@ fn a_ladder_under_way() -> mcf_desk::job::Job {
     going
 }
 
-/// A measurement as the daemon answers it: three rungs on the card.
 fn a_measurement() -> mcf_record::json::Value {
     let reading = |depth: i64, ms: &str| {
         mcf_record::json::Value::map([
@@ -3257,7 +2833,6 @@ fn a_measurement() -> mcf_record::json::Value {
     ])
 }
 
-/// A server an hour up, with the engine's counters.
 fn an_engine_in_use(path: &str) -> mcf_desk::Hosted {
     mcf_desk::Hosted {
         model: path.to_owned(),
@@ -3294,7 +2869,6 @@ fn an_engine_in_use(path: &str) -> mcf_desk::Hosted {
     }
 }
 
-/// A hub search, answered.
 fn a_search_answer() -> mcf_desk::Doing {
     mcf_desk::Doing::Listing(mcf_desk::job::Job::already(
         "searching the hub for \"gemma\"".to_owned(),

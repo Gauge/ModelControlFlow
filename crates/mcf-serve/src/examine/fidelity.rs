@@ -1,23 +1,3 @@
-//! Quantization fidelity: a file of a repository read against the
-//! highest-precision file of the same repository here (B-491, D52).
-//!
-//! **What decides a quantization had no figure.** The library lists
-//! every file a repository publishes with its size and whether it fits;
-//! what a smaller file gives up was nowhere. Here the reference —
-//! the most precise sibling on this machine — generates greedily from a
-//! fixed prompt, and the file under measurement is made to read those
-//! tokens and say, at every position, where it ranks the reference's
-//! choice and how likely it found it. That is the cross-check's method
-//! turned on two files of one model rather than two engines on one file
-//! (B-362): texts cannot be compared once two generations part, and
-//! ranks under teacher forcing can.
-//!
-//! **Two figures, both counts.** How many positions the file would have
-//! chosen the same token at, and the bits it spent on the reference's
-//! tokens — nought would be the reference itself. Neither says the file
-//! is *worse*; a reader with the ordering can decide what a bit a token
-//! is worth to them.
-
 use std::path::{Path, PathBuf};
 
 use mcf_record::json::Value;
@@ -26,18 +6,12 @@ use super::{Found, Reading, Site, as_integer, gigabytes, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "quantization-fidelity";
 
-/// How many tokens the reference produces, and so how many positions are
-/// read.
 pub const POSITIONS: usize = 96;
 
-/// How many ranked candidates the file is asked for at each position; a
-/// reference token past them is bounded rather than lost.
 pub const RANKED: usize = 64;
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -71,8 +45,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     let reference_name = reference
         .file_name()
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    // The reference generates, then goes: two servers on one card at once
-    // would be a fit nobody planned.
     let (prompt, reference_tokens) = match reference_words(site, &reference, POSITIONS) {
         Ok(produced) => produced,
         Err(why) => {
@@ -158,8 +130,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// What the reference said from the prompt: the prompt's identifiers and
-/// the tokens it produced, greedily.
 pub(crate) fn reference_words(
     site: &Site<'_>,
     reference: &Path,
@@ -191,24 +161,15 @@ pub(crate) fn reference_words(
     Ok((prompt, completed.words().to_vec()))
 }
 
-/// What the file under measurement made of the reference's tokens.
 #[derive(Debug, Default)]
 pub(crate) struct Read {
-    /// Positions where its first choice was the reference's.
     pub agreed: usize,
-    /// The worst rank it gave a reference token, and where.
     pub worst: Option<(usize, usize)>,
-    /// Positions where the reference's token was past what was ranked.
     pub bounded: usize,
-    /// Millibits spent on the reference's tokens, in all.
     pub spent: i64,
-    /// Every position: the rank given the reference's token, the millibits
-    /// spent on it, and whether it was past what was ranked (D16).
     pub positions: Vec<(usize, i64, bool)>,
 }
 
-/// Reads the reference's tokens with the file under measurement, position
-/// by position.
 pub(crate) fn read_against(
     site: &Site<'_>,
     prompt: Vec<usize>,
@@ -217,8 +178,6 @@ pub(crate) fn read_against(
     read_with(site, site.model, prompt, reference_tokens)
 }
 
-/// The same, with the file named reading rather than the site's own
-/// (B-538).
 pub(crate) fn read_with(
     site: &Site<'_>,
     model: &Path,
@@ -269,15 +228,12 @@ pub(crate) fn read_with(
     Ok(read)
 }
 
-/// Millibits as bits to three places.
 pub(crate) fn millibits_said(millibits: i64) -> String {
     #[expect(clippy::integer_division, reason = "whole bits and thousandths")]
     let (whole, part) = (millibits / 1_000, (millibits % 1_000).abs());
     format!("{whole}.{part:03}")
 }
 
-/// The GGUF files in the model's directory that are models of it: not a
-/// projector, and of a sharded file only its first part.
 pub(crate) fn siblings_of(model: &Path) -> Vec<PathBuf> {
     let Some(directory) = model.parent() else {
         return Vec::new();
@@ -303,7 +259,6 @@ pub(crate) fn siblings_of(model: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// The most precise sibling that is more precise than the model itself.
 pub(crate) fn reference_among(model: &Path, siblings: &[PathBuf]) -> Option<PathBuf> {
     let own = precision_of(model)?;
     siblings
@@ -320,8 +275,6 @@ pub(crate) fn reference_among(model: &Path, siblings: &[PathBuf]) -> Option<Path
         .map(|(_, held)| held.clone())
 }
 
-/// Bits a weight, read off a file's name: `F32` is thirty-two, `Q4_K_M`
-/// four, `IQ1_M` one. A name that says nothing is `None`.
 pub(crate) fn precision_of(model: &Path) -> Option<u32> {
     let name = model.file_name()?.to_string_lossy().to_ascii_uppercase();
     name.split(['-', '_', '.', ' '])

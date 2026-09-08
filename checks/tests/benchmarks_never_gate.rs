@@ -1,62 +1,12 @@
-//! Tests gate correctness; benchmarks produce measurements; neither is the
-//! other (A18, §6.7, B-080).
-//!
-//! A18's violation is *a throughput assertion in the test suite, which is how
-//! suites become flaky and then ignored*. Both halves are checked here,
-//! because both are the kind of thing that arrives one line at a time in a
-//! change that looked reasonable:
-//!
-//! * a benchmark that can fail — most easily by an exit status that depends on
-//!   which verdict came back, at which point *not decided* becomes a red build
-//!   and the ceiling becomes a threshold;
-//! * a test that asserts on a wall-clock reading, at which point the suite's
-//!   greenness depends on what else the machine was doing.
-//!
-//! **The measured tiers are exempt, and say so.** B-011's budget tier exists to
-//! measure MCF's own cost against D24's ceilings and therefore *does* assert on
-//! timings — under D30's attributability rule, in release, in an exclusive
-//! window, and **scheduled rather than gating**. That is the third thing A18
-//! names: a regression detector, whose thresholds are statistical judgments.
-//! It is exempt by name below, and the naming is the point: an exemption
-//! written down is one somebody can argue with.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use std::path::{Path, PathBuf};
 
-/// The tiers that are allowed to assert on a timing, and why.
-///
-/// Each is scheduled rather than gating, so a machine that was busy makes a
-/// scheduled run say so rather than making a change unmergeable.
-const MEASURED: [&str; 4] = [
-    // B-011: MCF's own cost against D24's ceilings, in release, in a window.
-    "budget.rs",
-    // B-191: drift over a long run — descriptors, directories, memory.
-    "soak.rs",
-    // B-191: MCF's claims under many callers at once.
-    "load.rs",
-    // The prototypes are not MCF and are not run by any tier.
-    "prototypes",
-];
+const MEASURED: [&str; 4] = ["budget.rs", "soak.rs", "load.rs", "prototypes"];
 
-/// **The benchmark runner has no verdict that fails.**
-///
-/// Its exit status is `served`, and every verdict must set it true. The two
-/// ways this breaks are a `served: false` reached from a verdict, and a
-/// verdict consulted at all when the status is decided — so the check is that
-/// the one place the status is set for a finished run says so in a line a
-/// reader will see.
 #[test]
 fn no_verdict_makes_the_benchmark_fail() {
     let source = read("crates/mcf-cli/src/bench.rs");
-    // From where the verdict is taken to the end of the command: everything
-    // before it is MCF failing to *run* the benchmark, which is a refusal and
-    // is allowed to fail.
-    // Anchored on a line that must appear exactly once, and checked to: an
-    // anchor that silently matches an earlier occurrence would move this
-    // check's window somewhere it was never meant to look, and it would still
-    // pass or fail with confidence.
     assert_eq!(
         source
             .matches("let finding = held.finding(resolving);")
@@ -81,19 +31,12 @@ fn no_verdict_makes_the_benchmark_fail() {
     );
 }
 
-/// The refusals a benchmark *does* have are about MCF being unable to measure,
-/// never about what it measured.
-///
-/// Named so that a fifth one added later has to be argued for here rather than
-/// slipped in beside the four.
 #[test]
 fn the_only_refusals_are_about_being_unable_to_measure() {
     let source = read("crates/mcf-cli/src/bench.rs");
     for refusal in [
         "there is no model at",
         "none is listening",
-        // Split across a line by the formatter, so the check looks for the
-        // half that cannot be reflowed away.
         "can never be a",
         "did not run",
     ] {
@@ -104,19 +47,8 @@ fn the_only_refusals_are_about_being_unable_to_measure() {
     }
 }
 
-/// **No gating test asserts on a wall-clock reading.**
-///
-/// What is caught is an *assertion whose truth depends on how fast the machine
-/// was*: an `assert!` that both names an elapsed interval and bounds it. The
-/// bound is the part that matters — an equality on a simulated duration is
-/// deterministic and is not this, which is why the laboratory's own
-/// `assert_eq!(elapsed.as_nanos(), 1_000_000_000)` is not flagged and should
-/// not be. A11 already keeps the two kinds of duration in different types; this
-/// catches the case where a real one is compared against a number somebody
-/// chose.
 #[test]
 fn no_gating_test_asserts_on_a_timing() {
-    /// The words an elapsed interval arrives under.
     const NAMED: [&str; 6] = [
         "elapsed",
         "took",
@@ -130,15 +62,11 @@ fn no_gating_test_asserts_on_a_timing() {
         let Ok(source) = std::fs::read_to_string(&path) else {
             continue;
         };
-        // Whitespace inside an assertion is a formatter's choice, so it is
-        // removed before the shapes are looked for.
         let squeezed: String = source
             .chars()
             .filter(|held| !held.is_whitespace())
             .collect();
         for assertion in squeezed.split("assert!(").skip(1) {
-            // The condition, up to whatever follows it. A message may name a
-            // duration innocently; a condition may not bound one.
             let condition = assertion
                 .split_once(",\"")
                 .map_or(assertion, |(before, _)| before);
@@ -159,13 +87,6 @@ fn no_gating_test_asserts_on_a_timing() {
     );
 }
 
-/// **A correctness test cannot emit a measurement into the record.**
-///
-/// The other half of B-080's done-when. A `Measurement` built in a test is
-/// fine — it is how the type is tested — but a *gating* test that appends one
-/// to the real record would be a correctness run producing a measurement, and
-/// the record would then hold figures taken in debug, under a suite, on
-/// whatever machine ran it (§3.4, A11).
 #[test]
 fn no_gating_test_writes_to_the_real_record() {
     let mut offenders = Vec::new();
@@ -184,10 +105,6 @@ fn no_gating_test_writes_to_the_real_record() {
     );
 }
 
-/// The benchmark runner is not run by the gating tier.
-///
-/// A benchmark in the gate is a benchmark that gates, whatever its exit status
-/// says — it takes minutes, and a gate people skip does not gate (B38).
 #[test]
 fn the_gating_tier_does_not_run_the_benchmark() {
     let script = read("scripts/ci.sh");
@@ -200,8 +117,6 @@ fn the_gating_tier_does_not_run_the_benchmark() {
     );
 }
 
-/// Every test file in the gating tier: the workspace's `tests` directories and
-/// the checks, minus the tiers that are allowed to measure.
 fn gating_tests() -> Vec<PathBuf> {
     let root = mcf_checks::workspace::root();
     let mut found = rust_sources(&root.join("checks/tests"));
@@ -213,7 +128,6 @@ fn gating_tests() -> Vec<PathBuf> {
     }
     found.retain(|path| {
         let shown = path.display().to_string();
-        // This file names the shapes it forbids, so it matches itself.
         !shown.ends_with("benchmarks_never_gate.rs")
             && !MEASURED.iter().any(|exempt| shown.contains(exempt))
     });

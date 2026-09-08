@@ -1,21 +1,7 @@
-//! An artifact handle cannot exist without its provenance.
-//!
-//! B-006's condition, and A7's: *unknown fields are the `Unknown` variant,
-//! never a plausible default*. The type is written so that both hold — one
-//! constructor, a private field, no setter, no `Default` — and this reads the
-//! module to check that it still is.
-//!
-//! A source check rather than a compile-fail harness, for the reason given in
-//! `measurement_has_one_way_in.rs`.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
-/// Every way to obtain an `Artifact` takes a `Provenance`.
 #[test]
 fn every_constructor_takes_a_provenance() {
-    // Only `impl Artifact`. `ArtifactName::new` lives in the same file and
-    // takes a name, which is correct: a name is not an artifact.
     let source = block(&provenance_source("artifact.rs"), "impl Artifact {");
     let mut constructors = Vec::new();
     for signature in public_functions(&source) {
@@ -35,9 +21,6 @@ fn every_constructor_takes_a_provenance() {
     }
 }
 
-/// Nothing manufactures one, and nothing replaces one after the fact. A
-/// mutable provenance would make an artifact's origin a claim the current
-/// holder can restate, where §3.6 wants a record.
 #[test]
 fn nothing_manufactures_or_replaces_a_provenance() {
     let source = provenance_source("artifact.rs");
@@ -56,28 +39,14 @@ fn nothing_manufactures_or_replaces_a_provenance() {
     }
 }
 
-/// Every field of `Provenance` that MCF has to *read* is `Attested`, so an
-/// unread one has no representation other than `Unknown` (A7).
-///
-/// The origin is exempt and named here: `Origin::Unattributed` already carries
-/// the not-known case for it. The retrieval time stopped being exempt with
-/// B-019 — a link in the chain MCF never fetched has no retrieval time, and the
-/// type said otherwise until §XII's requantization was written down.
 #[test]
 fn every_readable_field_is_attested() {
     let body = block(&provenance_source("mod.rs"), "pub struct Provenance {");
 
-    // `origin` is exempt because `Origin::Unattributed` already carries the
-    // not-known case; the two lists and the chain are exempt because an empty
-    // one *is* the absence — nobody transformed it, nobody has looked upstream,
-    // it derives from nothing — and `Provenance::last_observation` is where
-    // *nobody has checked* is told from *nothing has changed* (A7, D37).
     let exempt = ["origin", "transformations", "observed", "derived_from"];
     let mut checked = 0;
     for line in body.lines() {
         let line = line.trim();
-        // A doc comment is prose, and prose has colons in it. Before this the
-        // check read one as a field and failed on a sentence.
         if line.starts_with("//") {
             continue;
         }
@@ -99,8 +68,6 @@ fn every_readable_field_is_attested() {
     );
 }
 
-/// The body of a block, from its opening line to the first line that closes it
-/// at column zero.
 fn block(source: &str, opening: &str) -> String {
     let (_, rest) = source
         .split_once(opening)

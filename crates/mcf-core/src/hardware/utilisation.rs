@@ -1,38 +1,12 @@
-//! How busy each accelerator is, from whatever interface its vendor offers
-//! (B-216, DEC-007, A7, §3.4, §3.8).
-//!
-//! **Every vendor exposes this differently, and one of them not at all.** AMD
-//! publishes `gpu_busy_percent` in sysfs, which any process can read. NVIDIA
-//! publishes nothing in sysfs and requires NVML, which MCF already loads for
-//! memory and temperature. Intel's `i915` has no equivalent single figure —
-//! utilisation there is derived from perf counters that need elevated
-//! privilege — so on an Intel graphics machine this is honestly `Unknown`.
-//!
-//! **Unknown is a reading.** A machine whose accelerator MCF cannot poll is
-//! not an idle machine, and rendering it as zero would be the same failure
-//! `Energy` exists to prevent: a plausible number with nothing behind it
-//! (B39, A7). Every absence here carries the reason, so an operator can tell
-//! *nothing was competing* from *MCF could not see*.
-//!
-//! **On demand only** (B4, F85). Nothing here runs on a timer.
-//!
-//! **Cross-checked by test:** `accelerator_occupancy_agrees_with_the_vendor` — the
-//! vendor's own tool, where one is installed.
-
 use core::fmt;
 
 use crate::attested::Attested;
 
-/// One accelerator's occupancy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Busy {
-    /// Which card, as the kernel numbers them.
     pub card: String,
-    /// The driver that owns it.
     pub driver: String,
-    /// How busy, in per cent, where the vendor publishes it.
     pub percent: Attested<u64>,
-    /// Why it is not known, where it is not.
     pub because: Option<String>,
 }
 
@@ -54,11 +28,6 @@ impl fmt::Display for Busy {
     }
 }
 
-/// Every accelerator this machine has, and how busy each is.
-///
-/// Reads sysfs only. NVIDIA cards appear here with `Unknown` and the reason;
-/// their occupancy comes through NVML on the [`crate::hardware::Machine`],
-/// which is where the vendor put it.
 #[must_use]
 pub fn accelerators() -> Vec<Busy> {
     let mut found = Vec::new();
@@ -69,7 +38,6 @@ pub fn accelerators() -> Vec<Busy> {
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            // `card1` is a device; `card1-DP-1` is a connector on it.
             (name.starts_with("card") && !name.contains('-')).then_some(name)
         })
         .collect();
@@ -107,12 +75,6 @@ pub fn accelerators() -> Vec<Busy> {
     found
 }
 
-/// The drivers here whose occupancy MCF cannot read.
-///
-/// What a support request is assembled from, for the same reason
-/// [`crate::hardware::thermal::unrecognised`] exists: the driver name is the
-/// whole of what is needed to close the gap, and it is on the operator's
-/// machine rather than on MCF's.
 #[must_use]
 pub fn unreadable(found: &[Busy]) -> Vec<String> {
     let mut named: Vec<String> = found

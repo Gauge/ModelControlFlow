@@ -1,28 +1,9 @@
-//! The route that reads what a driver publishes as files.
-//!
-//! No `unsafe`, no linkage, no vendor library — and, as F1 established, no
-//! live state. This route supplies a device's identity and its driver version
-//! and stops, which under D25 means a machine on which it is the only working
-//! route reports every device as *attempted, uncharacterized*. That is the
-//! honest outcome and it is stated in [`Route::covers`] rather than discovered
-//! from what the route happens to return.
-//!
-//! One vendor is read, and the narrowness is deliberate rather than hidden:
-//! adding a vendor is adding a route (D25), and a route that pretended to be
-//! general by guessing at unfamiliar files would be inventing readings, which
-//! A7 forbids.
-//!
-//! **Cross-checked by:** the vendor-library route in `nvml`, which reads the
-//! same devices by another means; `accelerator` compares them and records
-//! where they differ.
-
 use std::path::Path;
 
 use crate::attested::Attested;
 
 use super::accelerator::{Missing, Reading, Route};
 
-/// Reads `/proc/driver/nvidia`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Files;
 
@@ -44,10 +25,6 @@ impl Route for Files {
 
         let mut devices: Vec<std::path::PathBuf> =
             entries.flatten().map(|entry| entry.path()).collect();
-        // The directory order is the filesystem's, which is not stable. Sorted
-        // by bus location so that device #0 is the same device between runs —
-        // an index that moved would make two readings of one machine look like
-        // readings of two.
         devices.sort();
 
         devices
@@ -70,7 +47,6 @@ fn field(path: &Path, key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// `NVRM version: NVIDIA UNIX x86_64 Kernel Module  610.57.04  …`
 fn driver_version() -> Option<String> {
     let text = std::fs::read_to_string("/proc/driver/nvidia/version").ok()?;
     text.lines().next()?.split_whitespace().find_map(|token| {

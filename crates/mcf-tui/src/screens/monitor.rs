@@ -1,25 +1,15 @@
-//! The machine, live — and the only screen that moves.
-
 use crate::machine::Reading;
 use crate::screen::{Ink, Screen};
 use crate::screens::{UNKNOWN, columns, gigabytes, or_unknown};
 
-/// What MCF is doing, which decides what the lower half says.
 #[derive(Debug, Clone)]
 pub enum Doing {
-    /// Nothing in particular.
     Idle,
-    /// Holding a model for callers.
     Serving {
-        /// The model.
         model: String,
-        /// The engine and backend.
         engine: String,
-        /// The device.
         device: String,
-        /// The window it was given.
         context: u64,
-        /// How long it has been up, in seconds.
         uptime: u64,
     },
 }
@@ -36,7 +26,6 @@ fn clock(seconds: u64) -> String {
     }
 }
 
-/// Draws the machine into rows `from`..
 pub fn draw(into: &mut Screen, from: usize, reading: &Reading, doing: &Doing) {
     let mut row = processors(into, from + 1, reading);
     row = memory(into, row + 1, reading);
@@ -44,11 +33,9 @@ pub fn draw(into: &mut Screen, from: usize, reading: &Reading, doing: &Doing) {
     footer(into, doing);
 }
 
-/// The processor and every card: the things with a load and a temperature.
 fn processors(into: &mut Screen, from: usize, reading: &Reading) -> usize {
     let mut row = from;
 
-    // ── the processor and the card ───────────────────────────────────────
     let head = [
         ("PROCESSOR", 17, false, Ink::Heading),
         ("LOAD", 8, true, Ink::Quiet),
@@ -94,7 +81,6 @@ fn processors(into: &mut Screen, from: usize, reading: &Reading) -> usize {
                 true,
                 Ink::Plain,
             ),
-            // Package power needs a counter this platform keeps for root.
             (UNKNOWN, 8, true, Ink::Quiet),
             (&clock_text, 11, true, Ink::Plain),
             (&or_unknown(processor.cores, ""), 9, true, Ink::Plain),
@@ -128,7 +114,6 @@ fn processors(into: &mut Screen, from: usize, reading: &Reading) -> usize {
     row
 }
 
-/// System memory and each card's, which share used, total and free.
 fn memory(into: &mut Screen, from: usize, reading: &Reading) -> usize {
     let mut row = from;
     columns(
@@ -176,7 +161,6 @@ fn memory(into: &mut Screen, from: usize, reading: &Reading) -> usize {
     row
 }
 
-/// The disks, which share read, write and temperature.
 fn storage(into: &mut Screen, from: usize, reading: &Reading) {
     let mut row = from;
     columns(
@@ -222,7 +206,6 @@ fn storage(into: &mut Screen, from: usize, reading: &Reading) {
     }
 }
 
-/// What MCF is doing, below a rule of its own.
 fn footer(into: &mut Screen, doing: &Doing) {
     let last = into.height().saturating_sub(1);
     let divider = last.saturating_sub(7);

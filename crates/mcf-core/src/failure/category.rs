@@ -1,81 +1,29 @@
-//! The failure classification, as types.
-//!
-//! This module is `doc/taxonomy.md` expressed so that the compiler can hold
-//! it. A2 requires every failure be classified against the taxonomy,
-//! attributed to a subsystem and persisted with its context; a classification
-//! that lives only in a document is a classification a tired author will
-//! approximate with a string.
-//!
-//! Three axes, not one tree, exactly as the taxonomy argues: [`Category`] says
-//! *what failed*, [`Attribution`] says *whose failure it is*, and
-//! [`Disposition`] says *what MCF did*. A single tree would have to encode the
-//! product of the three.
-//!
-//! **This file is generated from the taxonomy and then committed.** It is not
-//! regenerated at build time: a build that reads a Markdown file to decide what
-//! compiles is a build with an undeclared input (§3.12). The check that the two
-//! have not drifted is a test — `checks/tests/taxonomy_agreement.rs` — which
-//! fails when a code, a meaning, a domain or an axis value differs. Adding a
-//! leaf therefore means editing both, in one change, with a laboratory scenario
-//! (A13).
-//!
-//! Codes are stable for life (C5): never reused, never renamed, deprecated only
-//! in favour of a named successor, because once §XIV ships they travel between
-//! machines and versions.
-
-// Three exhaustive matches over 110 variants each. `too_many_lines` and
-// `match_same_arms` are both true of them and both wrong to act on: the value
-// of these tables is that they can be read top to bottom against the taxonomy,
-// and splitting them or collapsing the arms of `domain` — where identical
-// bodies are the whole point, since a domain is what a set of codes shares —
-// would destroy the property the agreement check depends on.
 #![allow(clippy::too_many_lines, clippy::match_same_arms)]
 
 use core::fmt;
 
-/// The sixteen domains of the taxonomy.
-///
-/// Domains are the part consumers switch on, which is why the taxonomy makes
-/// adding one a decision rather than a cheap edit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Domain {
-    /// `hub.*` — the model source.
     Hub,
-    /// `transfer.*` — getting bytes here.
     Transfer,
-    /// `artifact.*` — a local model artifact.
     Artifact,
-    /// `engine.*` — the supervised inference process.
     Engine,
-    /// `accel.*` — the accelerator.
     Accel,
-    /// `resource.*` — the machine's own limits.
     Resource,
-    /// `record.*` — the record store.
     Record,
-    /// `config.*` — configuration.
     Config,
-    /// `probe.*` — capability probing.
     Probe,
-    /// `lab.*` — laboratory execution.
     Lab,
-    /// `model.*` — the model under test's behaviour.
     Model,
-    /// `sandbox.*` — containment.
     Sandbox,
-    /// `platform.*` — the operating system and privilege.
     Platform,
-    /// `time.*` — the clock.
     Time,
-    /// `exchange.*` — identifiers and contributions.
     Exchange,
-    /// `internal.*` — MCF's own invariants.
     Internal,
 }
 
 impl Domain {
-    /// Every domain, in the taxonomy's own order.
     pub const ALL: [Self; 16] = [
         Self::Hub,
         Self::Transfer,
@@ -95,7 +43,6 @@ impl Domain {
         Self::Internal,
     ];
 
-    /// The domain's prefix, as it appears in a code.
     #[must_use]
     pub const fn prefix(self) -> &'static str {
         match self {
@@ -118,7 +65,6 @@ impl Domain {
         }
     }
 
-    /// What the domain covers, as the taxonomy states it.
     #[must_use]
     pub const fn subject(self) -> &'static str {
         match self {
@@ -148,243 +94,124 @@ impl fmt::Display for Domain {
     }
 }
 
-/// What failed: the taxonomy's 112 leaf codes.
-///
-/// `#[non_exhaustive]` because the taxonomy's extension policy makes adding a
-/// leaf cheap, and a caller outside this crate that matches exhaustively today
-/// would break on the next leaf — which is a reason not to add one, and A13
-/// wants the opposite pressure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Category {
-    /// No route to the hub
     HubUnreachable,
-    /// Throttled, with or without a retry hint
     HubRateLimited,
-    /// Credentials absent
     HubAuthRequired,
-    /// Credentials present and refused
     HubAuthRejected,
-    /// Terms not accepted for this account
     HubAccessGated,
-    /// Repository or revision does not exist
     HubRefNotFound,
-    /// Tag repointed between resolve and fetch
     HubRefMoved,
-    /// No config, card or licence
     HubMetadataAbsent,
-    /// Present and unparseable
     HubMetadataMalformed,
-    /// Declares an architecture the weights are not
     HubMetadataDeceptive,
-    /// Licence text present, terms unmatchable
     HubLicenceUnparseable,
-    /// Terms forbid the attempted use
     HubLicenceForbidsUse,
-    /// No progress past the deadline
     TransferStalled,
-    /// Stream ended before the declared length
     TransferTruncated,
-    /// Content changed between manifest and fetch
     TransferMutated,
-    /// Bytes arrived and do not verify
     TransferChecksumMismatch,
-    /// Connection lost; resumable
     TransferInterrupted,
-    /// Certificate or handshake failure
     TransferTls,
-    /// Referenced and not present
     ArtifactMissing,
-    /// Present and fails verification (§7.49's re-check)
     ArtifactCorrupt,
-    /// Present and cannot be read at all
     ArtifactUnreadable,
-    /// A format MCF does not read
     ArtifactFormatUnsupported,
-    /// A format MCF reads, malformed
     ArtifactFormatMalformed,
-    /// Some shards present, others absent
     ArtifactIncomplete,
-    /// Member escapes the extraction root
     ArtifactArchiveTraversal,
-    /// Expands beyond its declared size
     ArtifactArchiveOversized,
-    /// Held, with unknown fields (§3.6)
     ArtifactProvenanceIncomplete,
-    /// Binary absent at spawn
     EngineSpawnNotFound,
-    /// Permission or platform refusal
     EngineSpawnRefused,
-    /// Died before first output
     EngineExitImmediate,
-    /// Died after partial output
     EngineExitMidstream,
-    /// Killed by signal, including the OOM killer
     EngineExitSignal,
-    /// Alive, silent, past deadline
     EngineHangNoOutput,
-    /// Output MCF cannot parse
     EngineProtocolMalformed,
-    /// Incompatible engine interface
     EngineProtocolVersion,
-    /// Engine declines the model
     EngineLoadRefused,
-    /// No vendored engine supports this artifact (D23)
     EngineUnavailable,
-    /// None present
     AccelAbsent,
-    /// Present, not characterized (§7.8)
     AccelUnrecognized,
-    /// No driver
     AccelDriverAbsent,
-    /// Driver present, interrogation failed
     AccelDriverQueryFailed,
-    /// Runtime and driver disagree
     AccelDriverVersionMismatch,
-    /// Allocation refused
     AccelMemoryExhausted,
-    /// Free but unallocatable
     AccelMemoryFragmented,
-    /// Sustained throttle
     AccelThermalCeiling,
-    /// Device reset mid-operation
     AccelReset,
-    /// Disappeared from the bus
     AccelLost,
-    /// No space, operation in flight
     ResourceDiskExhausted,
-    /// Volume remounted read-only
     ResourceDiskReadonly,
-    /// Quota refused the write
     ResourceDiskQuota,
-    /// Host allocation refused
     ResourceMemoryExhausted,
-    /// Allocatable but degraded
     ResourceMemoryPressure,
-    /// Descriptor limit
     ResourceFdExhausted,
-    /// Another process holds what was needed (B24)
     ResourceContended,
-    /// Store cannot be opened for writing
     RecordUnwritable,
-    /// Derived database damaged; journal intact (D20)
     RecordCorruptIndex,
-    /// Journal damaged
     RecordCorruptJournal,
-    /// Rebuilt, with a stated gap
     RecordReplayIncomplete,
-    /// Written by a version this one cannot read (§7.30)
     RecordSchemaUnknown,
-    /// Retention limit reached (§7.5)
     RecordBudgetExhausted,
-    /// Content filed beside the record is there and will not be read (F105)
     RecordContentUnreadable,
-    /// Value outside the permitted domain
     ConfigInvalid,
-    /// Coherent and impossible on this machine
     ConfigUnsatisfiable,
-    /// Two settings that cannot both hold
     ConfigConflict,
-    /// Declared, never probed, and required to be (A21)
     ConfigUnverified,
-    /// Realized differs from declared (D23, placement)
     ConfigIdentityMismatch,
-    /// Neither confirms nor denies (§3.18)
     ProbeInconclusive,
-    /// No result within its bound
     ProbeTimeout,
-    /// Output the probe cannot grade
     ProbeMalformedResponse,
-    /// Probe does not apply to this artifact
     ProbeUnsupported,
-    /// Declared and verified disagree — a *finding*, not an error
     ProbeDivergence,
-    /// Environment could not be constructed
     LabSetupFailed,
-    /// Residue left behind (B58)
     LabTeardownFailed,
-    /// Capability verified absent (B40) — not a failure
     LabGateNotApplicable,
-    /// Capability unestablished (B40)
     LabGateUnknown,
-    /// Machine not quiet for a timing run (B-217)
     LabPreconditionContended,
-    /// Declared maximum duration reached
     LabBudgetExceeded,
-    /// Stopped by the operator; partial preserved
     LabInterrupted,
-    /// Supplied workload cannot be graded (B42)
     LabWorkloadUngradable,
-    /// Conditions moved mid-run; result unsound
     LabConditionsInvalidated,
-    /// Unparseable or missing required arguments
     ModelToolMalformedCall,
-    /// Plausible but incorrect tool
     ModelToolWrongSelection,
-    /// Tool that does not exist
     ModelToolHallucinated,
-    /// Repeats an action with unchanged state
     ModelLoopNoProgress,
-    /// Runs to the turn or token budget
     ModelStopNever,
-    /// Stops with the task incomplete
     ModelStopPremature,
-    /// Receives an error and repeats unchanged
     ModelRecoveryNone,
-    /// Correct content, wrong required format
     ModelFormatViolated,
-    /// A stated constraint unmet
     ModelInstructionIgnored,
-    /// Declined the task
     ModelRefused,
-    /// Produced nothing
     ModelOutputEmpty,
-    /// Reached for something absent (A14) — recorded, never permitted
     SandboxEscapeAttempted,
-    /// Environment quota refused a write
     SandboxQuotaDisk,
-    /// Environment limit reached
     SandboxQuotaMemory,
-    /// Turn limit reached
     SandboxTurnBudget,
-    /// Environment could not be built
     SandboxConstructFailed,
-    /// Outside §7.35's declared scope
     PlatformUnsupported,
-    /// Elevation refused (A26)
     PlatformPrivilegeDenied,
-    /// No mechanism on this platform
     PlatformPrivilegeUnavailable,
-    /// Boxing, pinning or yielding unsupported here (§7.43)
     PlatformMechanismUnavailable,
-    /// Something changed could not be restored (A27)
     PlatformRestoreFailed,
-    /// Wall clock stepped back mid-measurement
     TimeJumpBackward,
-    /// Large forward step
     TimeJumpForward,
-    /// No monotonic source (D9)
     TimeMonotonicUnavailable,
-    /// Unparseable
     ExchangeIdentifierMalformed,
-    /// Names something unobtainable (§XV)
     ExchangeIdentifierUnresolvable,
-    /// Resolvable and cannot run here — a complete answer (§6.3)
     ExchangeReproduceImpossible,
-    /// Reproduced; numbers differ — a *finding* (§6.29)
     ExchangeReproduceDivergent,
-    /// Contribution written by an uninterpretable version
     ExchangeSchemaUnreadable,
-    /// Terms not shown before sending — a defect (D21)
     ExchangeTermsAbsent,
-    /// A state the type system was meant to prevent
     InternalInvariantViolated,
-    /// A failure that fits nothing above
     InternalUnclassified,
 }
 
 impl Category {
-    /// Every category, in the taxonomy's own order.
     pub const ALL: [Self; 112] = [
         Self::HubUnreachable,
         Self::HubRateLimited,
@@ -500,8 +327,6 @@ impl Category {
         Self::InternalUnclassified,
     ];
 
-    /// The dotted code, which is what travels in a record and between
-    /// machines (§XIV).
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
@@ -620,7 +445,6 @@ impl Category {
         }
     }
 
-    /// What the code means, as the taxonomy states it.
     #[must_use]
     pub const fn meaning(self) -> &'static str {
         match self {
@@ -745,7 +569,6 @@ impl Category {
         }
     }
 
-    /// The domain the code belongs to.
     #[must_use]
     pub const fn domain(self) -> Domain {
         match self {
@@ -863,12 +686,6 @@ impl Category {
         }
     }
 
-    /// The category a dotted code names, if it names one.
-    ///
-    /// Returns `None` rather than a fallback to
-    /// [`Category::InternalUnclassified`]: a code this version cannot read is
-    /// `record.schema.unknown`, and deciding which of those it is belongs to
-    /// the caller that has the context, not to a parser (A7).
     #[must_use]
     pub fn from_code(code: &str) -> Option<Self> {
         Self::ALL
@@ -883,55 +700,12 @@ impl fmt::Display for Category {
     }
 }
 
-/// Whose failure this is (B-233, B49, §7.10, §3.1).
-///
-/// **The failure this exists to prevent.** An out-of-memory caused by another
-/// process competing for the machine is a condition of the run. Recorded as
-/// the model's, it becomes *this model gave up* — a claim about a model
-/// arrived at by measuring a busy afternoon. B-233: every failure of a
-/// yielding run classifies to one branch or the other, never ambiguously.
-///
-/// **Four branches, not two.** *Environment or model* would force MCF's own
-/// bugs into *environment*, which is the same error in the other direction —
-/// blaming the machine for what MCF did. And an artifact that is corrupt on
-/// disk is neither: the run never happened, so there is nothing to attribute
-/// to a model that was never asked.
-///
-/// **Read from the attribution and never from the category**, which is a
-/// correction worth stating because the other way round is the obvious design
-/// and it is wrong. `probe.inconclusive` is MCF's when its own logic could not
-/// decide and the machine's when the machine misbehaved; `engine.unavailable`
-/// is MCF's when its stand-in does not implement a format and the machine's
-/// when nothing is installed; `config.invalid` is the operator's. A category
-/// says *what went wrong*. Only the attribution says *whose*, which is why it
-/// is a separate axis that every failure must supply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Branch {
-    /// The model under test did this: it looped, it ignored the format, it
-    /// never stopped, it emitted a call to a tool that does not exist.
-    ///
-    /// The only branch that is evidence about a model.
     TheModel,
-    /// The machine or its surroundings did this: memory exhausted, an
-    /// accelerator lost, a disk full, a network unreachable, a clock that
-    /// jumped.
-    ///
-    /// A condition of the run (§3.4). It says what happened *around* a
-    /// measurement, and nothing whatever about the thing measured.
     TheEnvironment,
-    /// The artifact was not what it needed to be: absent, corrupt, truncated,
-    /// in a format nothing here reads.
-    ///
-    /// Distinct from the model, because the run never happened: there is no
-    /// behaviour to attribute to something that was never asked a question.
     TheArtifact,
-    /// MCF did this.
-    ///
-    /// Its own record it cannot write, its own configuration it cannot make
-    /// sense of, its own laboratory machinery. Kept separate so that MCF's
-    /// bugs cannot be read as the machine's bad luck — which is the same
-    /// laundering B-233 forbids, pointed inwards.
     McfItself,
 }
 

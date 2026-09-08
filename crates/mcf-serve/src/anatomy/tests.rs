@@ -1,11 +1,7 @@
-//! The anatomy on the wire says what the counting said, and no more.
-
 use super::{Said, SaidCache, encode};
 use mcf_record::json::Value;
 use mcf_standin::gguf::{Model, Tensor, TensorKind, Value as Header};
 
-/// Four blocks, three keeping a recurrent state and one attending, with a
-/// dense feed-forward in each; an embedding table outside them.
 fn a_hybrid() -> Model {
     let tensor = |name: String, dimensions: &[u64]| Tensor {
         name,
@@ -60,7 +56,6 @@ fn the_counting_reaches_the_wire_as_it_was_counted() {
         counted.get("recurrent").and_then(Value::as_integer),
         Some(3)
     );
-    // 64×256 + 3×(64×64 + 64×128) + (64×32 + 64×128)
     assert_eq!(
         counted.get("elements").and_then(Value::as_integer),
         Some(16_384 + 3 * (4_096 + 8_192) + (2_048 + 8_192))
@@ -96,8 +91,6 @@ fn the_counting_reaches_the_wire_as_it_was_counted() {
     }));
 }
 
-/// The header's declarations sit beside what the directory shows, never
-/// merged into one figure (A21).
 #[test]
 fn declared_and_observed_sit_side_by_side() {
     let said = encode("hybrid.gguf", &a_hybrid());
@@ -114,8 +107,6 @@ fn declared_and_observed_sit_side_by_side() {
     assert_eq!(blocks.get("agrees"), Some(&Value::Bool(true)));
 }
 
-/// The cache is sized over the one block that attends, and the wire says
-/// so — the same figure placement uses (F150).
 #[test]
 fn the_cache_on_the_wire_is_the_one_placement_sizes() {
     let said = encode("hybrid.gguf", &a_hybrid());
@@ -159,8 +150,6 @@ fn the_cache_on_the_wire_is_the_one_placement_sizes() {
     );
 }
 
-/// What the window reads is what the daemon wrote — through the JSON it
-/// crosses the socket as, not the value in memory.
 #[test]
 fn the_window_reads_what_the_daemon_wrote() {
     let said = encode("hybrid.gguf", &a_hybrid());
@@ -202,8 +191,6 @@ fn the_window_reads_what_the_daemon_wrote() {
     }
 }
 
-/// The hybrid with a token list: five tokens, typed, a template that spells
-/// one control token, and an end-of-turn the header names past the list.
 fn a_hybrid_that_speaks() -> Model {
     let mut model = a_hybrid();
     let text = |held: &str| Header::Text(held.to_owned());
@@ -252,8 +239,6 @@ fn the_vocabulary_on_the_wire_is_the_one_the_console_prints() {
     assert!(spoken.digits.starts_with("1 tokens, the longest 2 digits"));
     assert_eq!(spoken.longest, Some(("<|im_end|>".to_owned(), 10)));
     assert_eq!(spoken.beginning, "no, the file says so");
-    // The end of text is spelled from the list; the end of turn is beyond it,
-    // and the wire says so in the sentence the console prints (A2).
     let end = spoken
         .named
         .iter()
@@ -277,7 +262,6 @@ fn the_vocabulary_on_the_wire_is_the_one_the_console_prints() {
     assert_eq!(template.mentions, vec!["system", "add_generation_prompt"]);
     assert_eq!(template.markers, Ok(vec!["<|im_end|>".to_owned()]));
 
-    // Without a token list, the wire still says what there is to say.
     let quiet = Said::from_value(&encode("hybrid.gguf", &a_hybrid())).expect("reads back");
     assert_eq!(quiet.vocabulary.tokens, 0);
     assert_eq!(quiet.vocabulary.kinds, None);

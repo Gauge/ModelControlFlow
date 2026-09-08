@@ -1,26 +1,10 @@
-//! Vocabulary coverage: how much of a mixed corpus the tokenizer spells
-//! with byte fallbacks or the unknown token, text by text (B-541, D55,
-//! B-502).
-//!
-//! A vocabulary that has no piece for a script spells it one byte at a
-//! time, three or four tokens a character, and a model reads and writes
-//! that script at a third of its speed and with less of its window; a
-//! vocabulary with no byte fallback loses the character to its unknown
-//! token. Each text of the corpus is tokenized and its tokens counted
-//! three ways — all, byte fallbacks, unknowns — beside its length in
-//! bytes and in characters, so a person can see what a script costs on
-//! this model before they send it one.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, ppm};
 use crate::served::Startup;
 
-/// The measurement's name.
 pub const NAME: &str = "vocabulary";
 
-/// The corpus: the round-trip texts and longer passages in several
-/// scripts, code and symbols.
 pub const CORPUS: [(&str, &str); 12] = [
     (
         "english",
@@ -69,7 +53,6 @@ pub const CORPUS: [(&str, &str); 12] = [
     ("symbols", "∑ ≤ ∞ → ¬ ≈ π ∀x∈ℝ: x² ≥ 0 — 🙂 🏳️‍🌈 👩‍💻 ✓ ✗"),
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -189,8 +172,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// Whether a piece is a byte the vocabulary could not spell, as the
-/// engine writes one: `<0xE2>`.
 #[must_use]
 pub fn is_byte_piece(piece: &str) -> bool {
     piece.len() == 6

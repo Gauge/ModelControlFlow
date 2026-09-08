@@ -1,17 +1,3 @@
-//! Multi-step tool use: chains where each argument comes from the last
-//! result, parallel calls in one turn, and an error result the model
-//! must react to (B-520, D55, A19).
-//!
-//! **The agent question.** The tool-use suite asks for one call and one
-//! answer. An agent is a model that makes the next call from what the
-//! last one returned, makes two calls at once when two are wanted, and
-//! does something sensible when a tool says no. Each is a parser's
-//! question put over several turns: at every step the call the model made
-//! is judged by exact match against the step's expected tool and
-//! arguments, the tool's stated result goes back as a caller of the hosted
-//! server would send it, and the run ends where the model stops calling
-//! rightly. Every step is a row.
-
 use mcf_record::json::Value;
 
 use super::tooluse::{Arg, Call, Tool, argument_matches, as_read, calls_in, tool_value};
@@ -20,16 +6,12 @@ use crate::generation::{Draw, Truncation};
 use crate::served::{Prompt, Served, Startup};
 use mcf_core::configuration::Thousandths;
 
-/// The measurement's name.
 pub const NAME: &str = "multi-step-tool-use";
 
-/// How many trials each task has: one greedy, one drawn.
 pub const TRIALS: usize = 2;
 
-/// How many tokens a turn may take.
 const TURN_BUDGET: usize = 220;
 
-/// One call a step expects, and what the tool answers it with.
 #[derive(Debug, Clone, Copy)]
 struct Expected {
     tool: &'static str,
@@ -37,23 +19,18 @@ struct Expected {
     result: &'static str,
 }
 
-/// One step: the calls the turn should make, at once where there are
-/// several.
 #[derive(Debug, Clone, Copy)]
 struct Step {
     calls: &'static [Expected],
 }
 
-/// One task.
 #[derive(Debug, Clone, Copy)]
 struct Task {
     name: &'static str,
-    /// What kind of ask: for the rows and the report.
     kind: &'static str,
     tools: &'static [Tool],
     asks: &'static str,
     steps: &'static [Step],
-    /// What the final answer must carry, each from a tool's result.
     carries: &'static [&'static str],
 }
 
@@ -221,12 +198,9 @@ const TASKS: [Task; 5] = [
     },
 ];
 
-/// What one trial read.
 #[derive(Debug, Default)]
 struct Read {
-    /// Per step: how many of its expected calls were made, and rightly.
     steps: Vec<(usize, usize, usize)>,
-    /// How many calls the first turn made.
     first_turn_calls: usize,
     completed: bool,
     carried: bool,
@@ -234,7 +208,6 @@ struct Read {
     ns: u64,
 }
 
-/// Whether a call matches an expected one.
 fn matches(call: &Call, expected: &Expected) -> (bool, bool) {
     let tool = call.name == expected.tool;
     let args = tool
@@ -246,17 +219,12 @@ fn matches(call: &Call, expected: &Expected) -> (bool, bool) {
     (tool, args)
 }
 
-/// The calls a turn made against the calls a step expected: how many
-/// named the right tool, how many with the right arguments, and the
-/// messages that send each right call back with its result.
 fn matched(calls: &[Call], step: &Step) -> (usize, usize, Vec<Value>, Vec<Value>) {
     let mut made = 0_usize;
     let mut right = 0_usize;
     let mut tool_calls = Vec::new();
     let mut results = Vec::new();
     for (which, expected) in step.calls.iter().enumerate() {
-        // The nth call naming this tool, for a step that wants the same
-        // tool twice; any nth call otherwise.
         let named: Vec<&Call> = calls
             .iter()
             .filter(|call| call.name == expected.tool)
@@ -297,7 +265,6 @@ fn matched(calls: &[Call], step: &Step) -> (usize, usize, Vec<Value>, Vec<Value>
     (made, right, tool_calls, results)
 }
 
-/// Runs one trial of one task: turn by turn until a step is missed.
 fn one_trial(site: &Site<'_>, engine: &Served, task: &Task, trial: usize) -> Result<Read, String> {
     let said = |failure: mcf_core::Failure| failure.detail().to_owned();
     let tools = Value::List(task.tools.iter().map(tool_value).collect());
@@ -364,7 +331,6 @@ fn one_trial(site: &Site<'_>, engine: &Served, task: &Task, trial: usize) -> Res
     Ok(read)
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

@@ -1,28 +1,3 @@
-//! `mcf serve` and `mcf stop`: the daemon, from the command line (B-030,
-//! B-210, D1).
-//!
-//! **What `serve` is.** It starts the process D1 settled MCF is: what `mcf
-//! pull` hands a model to, what `mcf run` asks, what `mcf host` holds a model
-//! in, and what §3.13's idle rule is *about*.
-//!
-//! This paragraph said *that process cannot serve a model — there is no
-//! engine*, and went on saying it after `mcf provision` built one and `mcf
-//! host` began serving models on a port. What a daemon cannot do is a state,
-//! not a property: `cannot()` computes it from what is actually installed, and
-//! says nothing where an engine is. A sentence in prose cannot do that, which
-//! is why the one here now describes what `serve` is for rather than what this
-//! milestone had not reached yet (F135).
-//!
-//! **`stop` is the other half of A26.** A process that can only be killed is a
-//! process that leaves no account of why it stopped; `stop` asks, gets an
-//! answer, and the daemon says what it was told. B-210 grows this into draining
-//! work and releasing held resources when there is work to drain.
-//!
-//! **Where it listens is where this user can reach and nobody else can.**
-//! `$XDG_RUNTIME_DIR/mcf/control.sock` — a directory the platform makes for one
-//! user and clears at logout — falling back to the data home, and refusing when
-//! neither is set rather than inventing a path (A7, B-036).
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -36,18 +11,8 @@ use mcf_serve::daemon::{Daemon, Places, Stopped};
 use crate::Response;
 use crate::models;
 
-/// How long a client waits for the daemon to answer.
-///
-/// Longer than the daemon's own patience with a silent client, so that a
-/// command which arrives while another connection is being waited out is
-/// delayed rather than refused (B7's shape: bounded, not absent).
 const PATIENCE: Duration = Duration::from_secs(10);
 
-/// Where the control socket lives.
-///
-/// `None` when neither `XDG_RUNTIME_DIR` nor a data home is set, which is the
-/// same answer the record and the model store give in the same situation: MCF
-/// does not invent a place to put something (A7).
 #[must_use]
 pub(crate) fn socket_path() -> Option<PathBuf> {
     if let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from)
@@ -55,14 +20,9 @@ pub(crate) fn socket_path() -> Option<PathBuf> {
     {
         return Some(runtime.join("mcf").join("control.sock"));
     }
-    // The data home is not where a socket belongs — it is for things that
-    // outlive a login — but it is somewhere this user owns, and a daemon that
-    // refused to start on a machine with no runtime directory would be refusing
-    // over a detail of the platform's tidiness.
     models::default_root().map(|models| models.parent().unwrap_or(&models).join("control.sock"))
 }
 
-/// Where a daemon should look for everything.
 fn places() -> Option<Places> {
     Some(Places {
         socket: socket_path()?,
@@ -71,39 +31,16 @@ fn places() -> Option<Places> {
     })
 }
 
-/// Starts the daemon and stays there.
-/// Makes sure a daemon is up, starting one where there is not.
-///
-/// **A person opening a window expects the tools to be working.** MCF's
-/// surfaces are clients of a daemon, which is right — but it was the operator
-/// who had to know that, and a console that draws *MCF is not running* at
-/// somebody who has just opened it is a console reporting its own architecture
-/// as their problem.
-///
-/// So a surface asks for a daemon and gets one. If something is already
-/// listening, that is the daemon and nothing is started. If a socket is there
-/// with nothing behind it — a daemon that was killed, which is a state this
-/// machine reached more than once — the stale file is cleared first, because
-/// otherwise the new daemon refuses to bind over it.
-///
-/// Returns what went wrong in words, or nothing where a daemon is now there.
 pub(crate) fn ensure_running(socket: &Path) -> Option<String> {
     if UnixStream::connect(socket).is_ok() {
         return None;
     }
-    // Something is at that path and nothing is behind it.
     if socket.exists() {
         let _cleared = std::fs::remove_file(socket);
     }
     let Ok(binary) = std::env::current_exe() else {
         return Some("MCF could not find its own program to start a daemon with".to_owned());
     };
-    // The same binary, asked to serve. Detached, so closing the window does not
-    // take the daemon with it — a model held resident should outlive the thing
-    // that was looking at it. Under a memory cap where the system offers one
-    // (B-561): a transient scope of the person's own session manager, so
-    // that what the kernel reclaims and kills under pressure is MCF's
-    // scope and not the desktop's (F243).
     let mut command = match memory_cap() {
         Some(cap) => {
             let mut scoped = Command::new(SYSTEMD_RUN);
@@ -129,8 +66,6 @@ pub(crate) fn ensure_running(socket: &Path) -> Option<String> {
     if let Err(error) = started {
         return Some(format!("a daemon could not be started: {error}"));
     }
-    // Binding is quick but not instant, and answering before it is ready would
-    // be reporting a failure that has not happened.
     for _ in 0..100 {
         if UnixStream::connect(socket).is_ok() {
             return None;
@@ -140,8 +75,6 @@ pub(crate) fn ensure_running(socket: &Path) -> Option<String> {
     Some("a daemon was started and did not begin listening".to_owned())
 }
 
-/// What holds the daemon's memory, in one line: the cap its scope carries
-/// and whether the kernel agreed to take it first.
 #[expect(clippy::integer_division, reason = "whole gigabytes are the unit said")]
 fn memory_line(cap: Option<u64>, dies_first: &Result<(), String>) -> String {
     let capped = match cap {
@@ -158,17 +91,8 @@ fn memory_line(cap: Option<u64>, dies_first: &Result<(), String>) -> String {
     format!("{capped}, {first}")
 }
 
-/// The session manager's runner, where the system has one.
 const SYSTEMD_RUN: &str = "/usr/bin/systemd-run";
 
-/// The most memory the daemon and its servers may hold together, in bytes,
-/// where this machine offers a scope to hold them to; `None` where it does
-/// not, or where the machine's memory is not known (A7).
-///
-/// The cap leaves the desktop a reserve: an eighth of the machine, and
-/// never less than eight gigabytes. Under it the kernel reclaims MCF's own
-/// pages first and, at the cap, kills inside the scope — so a model that
-/// does not fit takes the daemon down and not the session (B-561, F243).
 #[expect(
     clippy::integer_division,
     reason = "an eighth of the machine, whole bytes"
@@ -188,20 +112,12 @@ fn memory_cap() -> Option<u64> {
     total.checked_sub(reserve).filter(|cap| *cap > 0)
 }
 
-/// The least the desktop keeps for itself beside a capped daemon.
 const RESERVE_AT_LEAST: u64 = 8 * 1024 * 1024 * 1024;
 
-/// Asks the kernel to take this process, and every server it starts, before
-/// anything else when memory runs out: the highest adjustment there is,
-/// which a process may set on itself without any right (B-561, F243). What
-/// the kernel does with it is said back, so that a machine that refused is
-/// not reported as one that agreed (A7).
 fn prefer_to_die_first() -> Result<(), String> {
     std::fs::write("/proc/self/oom_score_adj", "1000\n").map_err(|error| error.to_string())
 }
 
-/// The memory cap this process runs under, in bytes, read from its own
-/// control group; `None` where there is none or it cannot be read.
 fn cap_in_force() -> Option<u64> {
     let groups = std::fs::read_to_string("/proc/self/cgroup").ok()?;
     let path = groups
@@ -212,11 +128,6 @@ fn cap_in_force() -> Option<u64> {
     held.trim().parse::<u64>().ok()
 }
 
-/// What engines this machine has, in one line a person can read.
-///
-/// The daemon used to say "no vendored engine yet" whatever was on the disk,
-/// which is how two provisioned engines sat here while it reported none. This
-/// reads the disk instead of repeating a sentence.
 fn engines_line() -> String {
     const NONE: &str = "no engine is installed yet — `mcf provision llama.cpp` builds one";
     let Some(models) = crate::models::default_root() else {
@@ -272,14 +183,7 @@ pub(crate) fn run() -> Response {
     let dies_first = prefer_to_die_first();
     let cap = cap_in_force();
 
-    // Printed before serving rather than after, because after is never: the
-    // next thing this process does is block in `accept` until somebody asks it
-    // for something.
     let recovered = daemon.recovered();
-    // No rule identifiers here. This is the first thing a person ever sees from
-    // MCF, and a citation in it sends them to a document they have never read
-    // to explain a sentence they could have understood. The rules are cited in
-    // the code and carried in the record, which is where a citation is useful.
     println!(
         "mcf is up on {}\n  \
          recovered {} record entr{} and {} model file{}{}{}\n  \
@@ -319,12 +223,6 @@ pub(crate) fn run() -> Response {
     }
 }
 
-/// What another program can reach.
-///
-/// Separate from the rest of a status because it is a different kind of fact:
-/// everything else is what MCF holds for itself, and this is what it holds for
-/// anybody else. A status that omitted it would leave the most consequential
-/// thing about the process to be found by looking at the ports (§6.12, B-418).
 fn exposed(status: &Value) -> Vec<String> {
     let mut lines = Vec::new();
     match status.get("hosting").and_then(|held| held.get("hosting")) {
@@ -358,11 +256,6 @@ fn exposed(status: &Value) -> Vec<String> {
     lines
 }
 
-/// Asks a running daemon what it is and what it is holding.
-///
-/// A22: the headless surface is the complete one. A daemon that answered
-/// questions no command could ask would be a capability reachable only through
-/// a client, which is what that rule forbids.
 pub(crate) fn status() -> Response {
     let Some(socket) = socket_path() else {
         return Response {
@@ -397,8 +290,6 @@ pub(crate) fn status() -> Response {
         lines.push(format!("  build: {}", one_line(build)));
     }
     if let Some(up) = status.get("up_nanoseconds").and_then(Value::as_integer) {
-        // Seconds, computed without dividing: the workspace denies integer
-        // division because a truncated quotient is a silently wrong number.
         lines.push(format!(
             "  up for {} seconds",
             up.checked_div(1_000_000_000).unwrap_or(0)
@@ -436,8 +327,6 @@ pub(crate) fn status() -> Response {
         lines.push(format!("  it cannot: {cannot}"));
     }
 
-    // What it is holding, asked separately because they are separate questions
-    // and a client that wanted one should not be sent the other.
     match ask(&socket, &Request::Holding) {
         Ok(answer) if answer.served => {
             let models = answer
@@ -457,14 +346,6 @@ pub(crate) fn status() -> Response {
     }
 }
 
-/// What the daemon is carrying right now (D48, B-460).
-///
-/// A daemon in the middle of a long turn answers status rather than making
-/// the caller wait behind the turn; what it says is what it is carrying, for
-/// whom, for how long, and — where the engine is a served one — how far the
-/// engine has read. A busy daemon that said nothing about being busy would
-/// leave the operator to guess whether the run they started an hour ago is
-/// still going.
 fn what_is_running(status: &Value) -> Vec<String> {
     let running = status
         .get("running")
@@ -498,14 +379,6 @@ fn what_is_running(status: &Value) -> Vec<String> {
     lines
 }
 
-/// What the daemon is holding, counted the way `mcf list` counts it.
-///
-/// **Models and companions apart.** B-422 settled that a projector belongs to
-/// a model rather than being one, and `mcf list` says so — while this said
-/// *holding 11 model file(s)*, so two surfaces gave two counts of one store
-/// and neither mentioned the other. The daemon has always sent the
-/// distinction on every entry; this was the half that dropped it (B-072,
-/// F143).
 fn what_is_held(models: &[Value]) -> Vec<String> {
     let companions = models
         .iter()
@@ -527,14 +400,6 @@ fn what_is_held(models: &[Value]) -> Vec<String> {
     lines
 }
 
-/// A value on one line, for a surface that is showing rather than recording.
-/// A build as one line: the version, the revision it was built from where
-/// the build environment named one, and the target.
-///
-/// **The revision, because the version alone cannot answer *is this the
-/// latest*** (B-595). Every build between two releases says `0.1.0-m0`,
-/// and a daemon left running from this morning says it too; the revision
-/// is the field that differs (F276).
 fn one_line(value: &Value) -> String {
     let text = |key: &str| value.get(key).and_then(Value::as_text);
     match text("version") {
@@ -551,7 +416,6 @@ fn one_line(value: &Value) -> String {
     }
 }
 
-/// Asks a running daemon to stop.
 pub(crate) fn stop(reason: &str) -> Response {
     let Some(socket) = socket_path() else {
         return Response {
@@ -593,12 +457,6 @@ pub(crate) fn stop(reason: &str) -> Response {
     }
 }
 
-/// Asks a running daemon one thing.
-///
-/// The failure is text rather than a classified failure because what goes wrong
-/// here is *there is nothing there*, which is a fact about this machine rather
-/// than about MCF — and saying it plainly beats classifying it (A2's spirit:
-/// what matters is that the operator is told).
 pub(crate) fn ask(socket: &std::path::Path, request: &Request) -> Result<Answer, String> {
     let mut connection = UnixStream::connect(socket).map_err(|error| {
         format!(
@@ -623,7 +481,6 @@ pub(crate) fn ask(socket: &std::path::Path, request: &Request) -> Result<Answer,
     })
 }
 
-/// What the daemon recovered at its start, as the status shows it.
 fn recovered_lines(recovered: &Value, lines: &mut Vec<String>) {
     lines.push(format!(
         "  recovered {} record entries and {} model files",
@@ -651,9 +508,6 @@ fn recovered_lines(recovered: &Value, lines: &mut Vec<String>) {
     }
 }
 
-/// One line per engine server the daemon stopped at its start because the
-/// daemon that started it was gone (B-574), each on its own line under the
-/// recovery line; nothing where there were none, which is the ordinary case.
 fn engines_stopped_lines(stopped: &[mcf_serve::orphans::Orphan]) -> String {
     stopped.iter().fold(String::new(), |mut lines, orphan| {
         lines.push_str("\n  stopped an engine server whose daemon was gone: ");
@@ -662,7 +516,6 @@ fn engines_stopped_lines(stopped: &[mcf_serve::orphans::Orphan]) -> String {
     })
 }
 
-/// The words for one stopped server, read back from its row in the record.
 fn stopped_said(row: &Value) -> String {
     let text = |key: &str| row.get(key).and_then(Value::as_text).map(str::to_owned);
     let model = text("model").map_or_else(

@@ -1,11 +1,3 @@
-//! Acquisitions against sources that behave badly.
-//!
-//! The source here is a stand-in written in this file rather than the
-//! laboratory's — `mcf-hub` is below `mcf-lab` in the layering, and a crate
-//! cannot test against something above it. The laboratory's scenarios drive the
-//! same code through the real simulated hub, which is where the end-to-end
-//! claim is made; these are the unit-level cases.
-
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
@@ -15,15 +7,10 @@ use crate::source::{Entry, Fetched, Listing, Source};
 use mcf_core::digest::sha256;
 use mcf_core::failure::{Category, Result};
 
-/// How a stand-in source behaves on each attempt.
 enum Serves {
-    /// The whole file, every time.
     Everything,
-    /// This many bytes per attempt, continuing where asked.
     ThisMany(u64),
-    /// The whole file, but a different one from what it declared.
     SomethingElse,
-    /// Everything, and refuses to continue from an offset.
     EverythingButNeverResumes,
 }
 
@@ -42,7 +29,6 @@ impl StandIn {
         }
     }
 
-    /// How many transfers this source was asked for.
     fn attempts(&self) -> usize {
         *self.attempts.borrow()
     }
@@ -157,7 +143,6 @@ fn a_reference() -> Reference {
     parse("owner/model").expect("a reference")
 }
 
-/// The ordinary case: it arrives, it verifies, it gets the artifact's name.
 #[test]
 fn a_whole_transfer_is_verified_and_named() {
     let scratch = Scratch::new("whole");
@@ -178,8 +163,6 @@ fn a_whole_transfer_is_verified_and_named() {
     assert!(!partial_path(&into).exists(), "nothing is left behind");
 }
 
-/// A source that stops repeatedly is carried across by resuming, and the result
-/// says how many attempts it took — a fact about the source worth keeping.
 #[test]
 fn a_transfer_that_keeps_stopping_is_resumed_to_the_end() {
     let scratch = Scratch::new("resumes");
@@ -197,8 +180,6 @@ fn a_transfer_that_keeps_stopping_is_resumed_to_the_end() {
     );
 }
 
-/// Interrupted at ninety per cent, it continues from ninety per cent — which is
-/// B-021's condition, stated as a partial file that a second call finishes.
 #[test]
 fn a_transfer_interrupted_near_the_end_continues_from_there() {
     let scratch = Scratch::new("ninety");
@@ -206,7 +187,6 @@ fn a_transfer_interrupted_near_the_end_continues_from_there() {
     let source = StandIn::new(whole, Serves::Everything);
     let into = scratch.at("model.gguf");
 
-    // What a crash leaves: thirty-six of forty bytes in the partial file.
     std::fs::write(partial_path(&into), &whole[..36]).expect("a partial transfer");
 
     let acquired = acquire(&source, &a_reference(), &source.entry(), &into).expect("it finishes");
@@ -215,9 +195,6 @@ fn a_transfer_interrupted_near_the_end_continues_from_there() {
     assert_eq!(std::fs::read(&into).expect("it is there"), whole);
 }
 
-/// A file that changed under the transfer is a classified failure, and the
-/// mixture is not kept: half of one file and half of another is the one thing
-/// worse than no file.
 #[test]
 fn a_file_that_changed_under_the_transfer_is_refused_and_not_kept() {
     let scratch = Scratch::new("changed");
@@ -251,8 +228,6 @@ fn a_file_that_changed_under_the_transfer_is_refused_and_not_kept() {
     );
 }
 
-/// A source that cannot resume is a fact about the source, not a failure: MCF
-/// starts again and finishes.
 #[test]
 fn a_source_that_cannot_resume_is_restarted_rather_than_refused() {
     let scratch = Scratch::new("norange");
@@ -269,12 +244,9 @@ fn a_source_that_cannot_resume_is_restarted_rather_than_refused() {
     assert_eq!(std::fs::read(&into).expect("it is there"), whole);
 }
 
-/// A source that never delivers enough gives up, saying how far it got and
-/// leaving the partial file to continue from later.
 #[test]
 fn a_transfer_that_never_finishes_says_how_far_it_got() {
     let scratch = Scratch::new("never");
-    // One byte per attempt against a ten-byte file: five attempts reach five.
     let source = StandIn::new(b"0123456789", Serves::ThisMany(1));
     let into = scratch.at("model.gguf");
 
@@ -310,8 +282,6 @@ fn a_transfer_that_never_finishes_says_how_far_it_got() {
     );
 }
 
-/// A hub that declares no digest leaves the artifact *held* rather than
-/// verified, and says so — A21 keeps that a state rather than a weaker success.
 #[test]
 fn an_artifact_nobody_could_check_is_held_rather_than_verified() {
     let scratch = Scratch::new("undeclared");
@@ -332,7 +302,6 @@ fn an_artifact_nobody_could_check_is_held_rather_than_verified() {
     }
 }
 
-/// Acquiring something already held and verified costs nothing.
 #[test]
 fn an_artifact_already_held_is_not_fetched_again() {
     let scratch = Scratch::new("already");
@@ -346,8 +315,6 @@ fn an_artifact_already_held_is_not_fetched_again() {
     assert_eq!(*source.attempts.borrow(), 1, "the source was asked twice");
 }
 
-/// The artifact's own name means verified, and the partial name means in
-/// progress. That is the whole structural claim.
 #[test]
 fn the_partial_name_is_never_the_artifacts_name() {
     let into = Path::new("/models/owner/model.gguf");
@@ -361,14 +328,10 @@ fn the_partial_name_is_never_the_artifacts_name() {
     );
 }
 
-/// A file larger than the filesystem is refused before a byte moves, with the
-/// arithmetic in the refusal rather than a verdict (§3.11, A6).
 #[test]
 fn a_file_larger_than_the_disk_is_refused_before_the_transfer() {
     let scratch = Scratch::new("no-room");
     let source = StandIn::new(b"weights", Serves::Everything);
-    // Larger than any filesystem: what the hub *declares* is what a plan is
-    // made against (A21), and this one declares more than there is.
     let enormous = Entry::new("model.gguf", u64::MAX.wrapping_shr(1));
 
     let failure = acquire(
@@ -393,8 +356,6 @@ fn a_file_larger_than_the_disk_is_refused_before_the_transfer() {
     );
 }
 
-/// And a file that fits is not refused, which is the other half of the claim:
-/// the check is a bound, not an obstacle.
 #[test]
 fn a_file_that_fits_is_not_refused() {
     let scratch = Scratch::new("room-enough");

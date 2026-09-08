@@ -1,14 +1,3 @@
-//! `mcf data`: a model's readings as a table (D54, B-515).
-//!
-//! **The rows are what a person compares models by.** Every diagnostic
-//! writes its findings as readings — one row a figure, with the
-//! dimensions it was taken under, in one schema — and this is the
-//! command that hands them over as a table any tool can load:
-//! comma-separated by default, one row a line, the dimensions as columns,
-//! newest run first; or JSON lines, one row an object, where a program is
-//! the reader. Nothing is summarized on the way (D16): a median is the
-//! reader's arithmetic over the rows.
-
 use mcf_record::json::Value;
 use mcf_record::readings::{Reading, csv_cell, dims_of, rows_of};
 use mcf_serve::control::Request;
@@ -17,13 +6,10 @@ use crate::Response;
 use crate::hosting::ask;
 use crate::run::{ambiguous, resolve};
 
-/// The columns every row has before its dimensions.
 const FIXED: [&str; 3] = ["method", "taken_at", "engine"];
 
-/// The columns every row has after them.
 const FIGURE: [&str; 3] = ["metric", "value", "unit"];
 
-/// Writes a model's readings as a table.
 pub(crate) fn run(model: &str, method: Option<&str>, as_json: bool) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
@@ -76,7 +62,6 @@ pub(crate) fn run(model: &str, method: Option<&str>, as_json: bool) -> Response 
     }
 }
 
-/// What a run's rows share: the method, when, and the engine.
 fn shared(run: &Value) -> (String, String, String) {
     let text = |key: &str| {
         run.get(key)
@@ -84,14 +69,11 @@ fn shared(run: &Value) -> (String, String, String) {
             .map(str::to_owned)
             .unwrap_or_default()
     };
-    // The moment alone: the record writes the local offset in words after
-    // it, which is not a cell a table can sort.
     let at = text("at");
     let at = at.split(' ').next().unwrap_or_default().to_owned();
     (text("method"), at, text("engine"))
 }
 
-/// Every run's rows as one table with the union of their dimensions.
 fn as_csv(runs: &[Value]) -> String {
     let all: Vec<(String, String, String, Vec<Reading>)> = runs
         .iter()
@@ -125,8 +107,6 @@ fn as_csv(runs: &[Value]) -> String {
     out.trim_end().to_owned()
 }
 
-/// Every row as one JSON object a line, with the run's method, time and
-/// engine on each so a line stands on its own.
 fn as_json_lines(runs: &[Value]) -> String {
     let mut lines = Vec::new();
     for run in runs {
@@ -151,8 +131,6 @@ mod tests {
     use mcf_record::json::Value;
     use mcf_record::readings::{Reading, run_body};
 
-    /// The table has the fixed columns, the union of the runs' dimensions,
-    /// and the figure; a run's rows carry the run's method and time.
     #[test]
     fn the_table_is_one_row_a_reading() {
         let mut first = run_body(

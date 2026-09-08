@@ -1,7 +1,3 @@
-//! Tests for re-verification.
-//!
-//! B19 keeps them hermetic: files this test writes, in a directory it removes.
-
 use std::path::PathBuf;
 
 use super::{checksum_of, verify};
@@ -32,8 +28,6 @@ impl Drop for Scratch {
     }
 }
 
-/// A19: the digest of a known file against the published vector for those
-/// bytes, so the file path is checked and not just the hasher.
 #[test]
 fn a_files_digest_is_the_digest_of_its_bytes() {
     let scratch = Scratch::new("known");
@@ -45,7 +39,6 @@ fn a_files_digest_is_the_digest_of_its_bytes() {
     );
 }
 
-/// The file that has not changed verifies.
 #[test]
 fn unchanged_bytes_verify() {
     let scratch = Scratch::new("unchanged");
@@ -54,9 +47,6 @@ fn unchanged_bytes_verify() {
     assert!(verify(&path, &recorded).is_ok());
 }
 
-/// §7.49's case: a handful of flipped bits, caught before the run rather than
-/// after it. The failure names both digests, because which bytes it got is
-/// what a reader needs (B21).
 #[test]
 fn a_single_flipped_bit_is_caught_and_both_digests_are_named() {
     let scratch = Scratch::new("corrupt");
@@ -80,8 +70,6 @@ fn a_single_flipped_bit_is_caught_and_both_digests_are_named() {
     );
 }
 
-/// A file that is not there is missing, not corrupt: A2 wants the failure that
-/// happened rather than the nearest one.
 #[test]
 fn an_absent_file_is_missing_and_not_corrupt() {
     let expected =
@@ -95,14 +83,8 @@ fn an_absent_file_is_missing_and_not_corrupt() {
     assert_eq!(failure.category(), Category::ArtifactMissing);
 }
 
-/// A file that is there and cannot be read is neither missing nor corrupt.
-/// That distinction is why `artifact.unreadable` was added: the attribution
-/// differs, and B24's whole point is that attribution is a verdict.
 #[test]
 fn a_file_that_cannot_be_read_is_unreadable_and_not_corrupt() {
-    // A directory is present, is not a file, and refuses a read — the most
-    // portable way to produce "there and unreadable" without changing
-    // permissions on a machine the suite does not own (A27).
     let scratch = Scratch::new("unreadable");
     let expected =
         Checksum::sha256("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
@@ -113,9 +95,6 @@ fn a_file_that_cannot_be_read_is_unreadable_and_not_corrupt() {
     assert!(failure.context_value("os_error").is_some());
 }
 
-/// Verification streams, so an artifact larger than one block is handled the
-/// same as one smaller. §XII's reference model is measured in gigabytes and
-/// D24 budgets MCF at twenty megabytes resident.
 #[test]
 fn an_artifact_larger_than_one_block_verifies_the_same_way() {
     let scratch = Scratch::new("large");

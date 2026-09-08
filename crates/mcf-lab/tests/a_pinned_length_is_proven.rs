@@ -1,16 +1,3 @@
-//! A timing's request pins how many tokens, and the account proves it (B-396).
-//!
-//! The defect this holds shut: a duration divided by a count the request
-//! asked for, when the engine stopped at the model's end of text well short
-//! of it. The pin travels with the request, the engine is told to run past
-//! its ending, and the count that comes back is the engine's own — so a reader
-//! dividing by it is dividing by what happened (A21, A7).
-//!
-//! Hermetic (B19): the model is the laboratory's own one-hot fixture, and the
-//! engine is MCF's stand-in — which is the same generation path a client's
-//! request runs, and the one whose ending was never honoured under a pin.
-
-// A test says what went wrong by failing.
 #![allow(clippy::expect_used, clippy::panic)]
 
 use std::io::{BufRead as _, BufReader, Write as _};
@@ -23,7 +10,6 @@ use mcf_record::json::Value;
 use mcf_serve::control::{Request, Streamed};
 use mcf_serve::daemon::{Daemon, Places};
 
-/// A machine of this test's own, removed when it is dropped.
 struct Machine(PathBuf);
 
 impl Machine {
@@ -53,7 +39,6 @@ impl Drop for Machine {
     }
 }
 
-/// One generation of `<s>` from the model that ends on it, and its account.
 fn generated(socket: &Path, model: &Path, limit: usize, pinned: bool) -> Value {
     let mut connection = UnixStream::connect(socket).expect("the daemon is listening");
     connection
@@ -64,7 +49,6 @@ fn generated(socket: &Path, model: &Path, limit: usize, pinned: bool) -> Value {
         prompt: String::new(),
         limit: Some(limit),
         seed: 0,
-        // The token the model answers with itself, and its end of text.
         tokens: Some(vec![0]),
         pieces: None,
         engine: Some("stand-in".to_owned()),
@@ -104,8 +88,6 @@ fn condition(account: &Value, key: &str) -> String {
     said(account.get("conditions").expect("conditions"), key)
 }
 
-/// Unpinned, the model's end of text ends the turn; pinned, the engine runs
-/// to the limit — and either way the account says which, and counts.
 #[test]
 fn a_ceiling_ends_at_the_models_ending_and_a_pin_runs_past_it() {
     let machine = Machine::new();
@@ -117,21 +99,16 @@ fn a_ceiling_ends_at_the_models_ending_and_a_pin_runs_past_it() {
     let mut daemon = Daemon::start(places).expect("it starts");
     let serving = thread::spawn(move || daemon.serve());
 
-    // A ceiling: the first token the model produces is its ending, so the
-    // turn ends there with nothing produced, and the account says so.
     let ceiling = generated(&socket, &model, 3, false);
     assert_eq!(count(&ceiling, "tokens"), 0, "{}", ceiling.to_line());
     assert_eq!(said(&ceiling, "stopped"), "stop_token");
     assert_eq!(condition(&ceiling, "length"), "at_most");
 
-    // A pin: the ending is not an ending, and the count is the one asked for.
     let pinned = generated(&socket, &model, 3, true);
     assert_eq!(count(&pinned, "tokens"), 3, "{}", pinned.to_line());
     assert_eq!(said(&pinned, "stopped"), "limit");
     assert_eq!(condition(&pinned, "length"), "exactly");
 
-    // And the pin is a condition of the *account*, not of the model: the
-    // same model, asked again without it, ends where it ends.
     let again = generated(&socket, &model, 3, false);
     assert_eq!(count(&again, "tokens"), 0, "{}", again.to_line());
 

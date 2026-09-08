@@ -1,25 +1,5 @@
-//! An unattributable run names what it competed with, and MCF never watches
-//! (B-216, PR5, §3.8, B24, B4, D5, D25).
-//!
-//! **Two rules meeting.** §3.8 says MCF must know the difference between *this
-//! model is slow* and *this machine was busy*, and B24 makes the second a
-//! verdict. B4 refuses ambient sampling and D5 settled it: MCF does not watch
-//! the machine, it looks when there is a reason. A contention snapshot is the
-//! narrow thing that satisfies both — a diagnosis taken **because** a
-//! measurement could not decide, and at no other time.
-//!
-//! The failure this guards is the natural one: a snapshot is useful, so
-//! somebody takes it more often, and then on a timer, and then MCF is a
-//! monitor. The check is that the only thing that triggers one is a run that
-//! could not decide.
-//!
-//! A source check rather than a compile-fail harness, for the reason given in
-//! `measurement_has_one_way_in.rs`.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
-/// Nothing samples on a timer.
 #[test]
 fn there_is_no_monitor() {
     let source = code_only(&read("crates/mcf-core/src/hardware/contention.rs"));
@@ -35,8 +15,6 @@ fn there_is_no_monitor() {
     );
 }
 
-/// A snapshot is taken **because** a run could not decide, and at no other
-/// time.
 #[test]
 fn only_an_undecided_run_takes_one() {
     let source = code_only(&read("crates/mcf-cli/src/bench.rs"));
@@ -55,7 +33,6 @@ fn only_an_undecided_run_takes_one() {
     );
 }
 
-/// It is taken **after** the run, or MCF is one of the competitors it reports.
 #[test]
 fn it_is_taken_after_the_run() {
     let source = read("crates/mcf-cli/src/bench.rs");
@@ -68,12 +45,6 @@ fn it_is_taken_after_the_run() {
     );
 }
 
-/// **It names names**, and MCF's own process is one of them.
-///
-/// A snapshot whose answer is *the machine was busy* is a number; one that says
-/// which processes and what they took is a diagnosis. And MCF competing with
-/// itself is the one thing a reader can act on, so it is marked rather than
-/// filtered out.
 #[test]
 fn it_names_what_was_competing_including_mcf() {
     let source = code_only(&read("crates/mcf-core/src/hardware/contention.rs"));
@@ -91,7 +62,6 @@ fn it_names_what_was_competing_including_mcf() {
     );
 }
 
-/// **D25's boundary.** What MCF cannot read is unknown, not zero.
 #[test]
 fn an_unreadable_accelerator_is_not_reported_as_idle() {
     let source = code_only(&read("crates/mcf-core/src/hardware/contention.rs"));
@@ -106,7 +76,6 @@ fn an_unreadable_accelerator_is_not_reported_as_idle() {
     );
 }
 
-/// The snapshot persists with the record rather than on a screen (PR5, §3.1).
 #[test]
 fn the_snapshot_is_written_down() {
     let source = code_only(&read("crates/mcf-cli/src/bench.rs"));
@@ -121,8 +90,6 @@ fn the_snapshot_is_written_down() {
     );
 }
 
-/// The source with its documentation comments removed, so that a sentence
-/// quoting a forbidden shape is not read as the shape itself.
 fn code_only(source: &str) -> String {
     source
         .lines()

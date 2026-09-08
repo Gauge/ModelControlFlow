@@ -1,25 +1,3 @@
-//! `mcf run`: a model on this machine answers something (B-040, D31, B65).
-//!
-//! **What this is, and what it is emphatically not.** It is the whole path —
-//! model file, vocabulary, forward pass, sampler, tokens, text — driven by
-//! MCF's own stand-in engine, which D31 put there so that a model no vendored
-//! engine will run still runs, *marked*. It is not a benchmark and cannot
-//! become one: B65 forbids a stand-in from producing a speed, the type refuses
-//! to hand over a bare result, and this surface prints the mark beside every
-//! answer rather than under it.
-//!
-//! **Why it exists before a vendored engine does.** §VI asks that having a
-//! model and using a model be one command apart, and B-040 is that command.
-//! What MCF can honestly do today is the behaviour half: *what does this model
-//! say*, on this machine, from these weights, with a stated seed. What it
-//! cannot do is tell you how fast — and saying which half you are getting is
-//! the difference between an instrument and a demo.
-//!
-//! **The conditions travel with the answer.** A generation is a thing somebody
-//! could try to reproduce, so the surface prints what would be needed to: the
-//! model's digest, the sampler, the seed, the token budget, and the engine that
-//! produced it. §3.4's habit at the smallest scale.
-
 use std::path::{Path, PathBuf};
 
 use mcf_core::attested::Attested;
@@ -35,14 +13,8 @@ use mcf_standin::tokenizer::Vocabulary;
 use crate::Response;
 use crate::models;
 
-/// How many tokens a generation produces when nobody says.
-///
-/// A budget in tokens rather than in seconds, which is B49's shape: a stand-in
-/// is slow by design, and a limit in time would make the answer a property of
-/// the machine rather than of the model.
 pub(crate) const TOKENS: usize = 32;
 
-/// Runs a model and prints what it said.
 #[allow(
     clippy::too_many_arguments,
     reason = "what a person asked, each of which the account names back"
@@ -70,17 +42,6 @@ pub(crate) fn run(
     )
 }
 
-/// The same, told where a daemon would be.
-///
-/// Where the daemon is, is an *input* rather than something looked up in the
-/// middle. It was ambient, and a test asserting on the refusal MCF gives for
-/// an unreadable file therefore reported on whether a daemon happened to be
-/// running on the machine — passing alone and failing beside one, for reasons
-/// nothing in the test could see (F46, B-378). §3.12 does not allow a suite
-/// whose answer depends on the state it found.
-///
-/// `None` means *no daemon*, which is both what a machine with no runtime
-/// directory gives and what a test wants to say.
 #[allow(
     clippy::too_many_arguments,
     reason = "what a person asked, each of which the account names back"
@@ -115,10 +76,6 @@ pub(crate) fn run_where(
         }
     };
 
-    // A daemon that is listening serves the generation; this process runs it
-    // only when nothing is (B-034, PR9). Which one did is part of the account,
-    // because it is a condition: the same file through the same engine in
-    // another process is another process's memory, cache and clock.
     let listening = socket.and_then(|socket| {
         std::os::unix::net::UnixStream::connect(&socket)
             .ok()
@@ -131,10 +88,6 @@ pub(crate) fn run_where(
             &path,
             prompt,
             &Asked {
-                // Not `unwrap_or(TOKENS)`: the daemon may have a budget
-                // somebody derived for this model, and it can only use it
-                // if it can tell a caller who said nothing from one who
-                // said thirty-two (D43).
                 limit,
                 seed,
                 engine,
@@ -151,11 +104,6 @@ pub(crate) fn run_where(
         };
     }
 
-    // The directory first, from a bounded read: whether this model can run on
-    // MCF's own engine is answerable from the header, and answering it after
-    // reading sixteen gigabytes is a seventy-second refusal (B-372). Only here,
-    // where MCF's own engine is the one that will run: a daemon decides for
-    // itself, and a provisioned engine covers what it covers (B-032).
     if let Err(failure) = examined(&path) {
         return Response {
             text: refused(&path, &failure),
@@ -186,13 +134,6 @@ pub(crate) fn run_where(
     }
 }
 
-/// Why this run cannot happen in this process, where it cannot.
-///
-/// **Said rather than quietly done differently.** Every one of these is a
-/// condition the provisioned engine carries and MCF's own engine has not:
-/// a picture needs a projector, a switch of the template needs a template
-/// rendered, a draft head and a scaling are the engine's own start. Running
-/// the words without them would answer a question nobody asked (A2, §3.15).
 fn needs_the_daemon(
     engine: Option<&str>,
     turn: &mcf_serve::turn::Turn,
@@ -229,28 +170,16 @@ fn needs_the_daemon(
     })
 }
 
-/// What a person asked of the run, beside the prompt: the conditions the
-/// account will name back.
 #[derive(Clone, Copy)]
 struct Asked<'a> {
     limit: Option<usize>,
     seed: u64,
     engine: Option<&'a str>,
     turn: &'a mcf_serve::turn::Turn,
-    /// A picture to show the model, where the person named one (B-452).
     image: Option<&'a Path>,
-    /// What the engine is started with beyond the plain load, where the
-    /// person asked for either (B-456).
     started: mcf_serve::declared::Started,
 }
 
-/// The generation through the daemon: tokens printed as they arrive, the
-/// account printed when it comes.
-///
-/// The tokens go to the terminal *as they are read* — that is the whole point
-/// of a stream (B-035, D24) — and the conditions block follows the last one,
-/// so what a person sees is what `render` prints for an in-process run, with
-/// one more line saying which process produced it.
 #[allow(
     clippy::too_many_lines,
     reason = "the client side of one protocol exchange: send, stream, account. Splitting it \
@@ -276,8 +205,6 @@ fn served(
         image,
         started,
     } = *asked;
-    // The daemon reads the file, so the path it is given has to be the
-    // file's whole name and not one relative to where this process sits.
     let image = match image.map(|image| image.canonicalize().map_err(|error| (image, error))) {
         Some(Err((image, error))) => {
             return Response {
@@ -292,21 +219,12 @@ fn served(
         None => None,
     };
 
-    // **A run that was asked for is waited for** (D48). The served engine
-    // says every ten seconds how far it has read, and MCF's own engine
-    // writes each token as it has it, so an hour with nothing heard at all
-    // is a daemon that has stopped answering, not a long turn — and that is
-    // the only thing this bound is for. It used to be ten minutes, which a
-    // long turn on a large model on a processor exceeds while working
-    // perfectly well.
     let patience = std::time::Duration::from_secs(3600);
     let _deadline = connection.set_read_timeout(Some(patience));
     let _writing = connection.set_write_timeout(Some(patience));
     let mut connection = connection;
 
     let request = Request::Generate {
-        // A person typed this prompt: their text, and the model's answer to
-        // it. The category §6.8 protects (B-146).
         whose: mcf_record::content::Whose::User,
         model: path.display().to_string(),
         prompt: prompt.to_owned(),
@@ -315,8 +233,6 @@ fn served(
         tokens: None,
         pieces: None,
         engine: engine.map(str::to_owned),
-        // A ceiling: a person asking a model a question wants its answer,
-        // which ends where the model ends it.
         pinned: false,
         turn: turn.asks_anything().then(|| turn.clone()),
         image: image.as_ref().map(|whole| whole.display().to_string()),
@@ -346,8 +262,6 @@ fn served(
                 let _printed = write!(out, "{text}");
                 let _flushed = out.flush();
             }
-            // The engine's own progress, on the other stream so the answer
-            // stays the answer (B-458).
             Ok(Streamed::Progress {
                 read,
                 of,
@@ -368,9 +282,6 @@ fn served(
     }
     let _newline = writeln!(out);
 
-    // The stream ended without its account: the daemon died, or the wire
-    // did. What was received was received (A4), and the absence of the
-    // account is said rather than filled in (A7).
     let Some(account) = account else {
         return Response {
             text: format!(
@@ -384,9 +295,6 @@ fn served(
         };
     };
 
-    // A failure with tokens before it is an engine that died mid-answer: what
-    // arrived is kept and printed above, and the account says how it ended
-    // (A4, B-033). A failure with none is a refusal.
     if let Some(failure) = account.get("failure")
         && account
             .get("tokens")
@@ -440,9 +348,6 @@ fn served(
             condition("engine"),
             socket.display(),
             condition("loaded"),
-            // MCF addressing a model other than plainly must never be
-            // something a reader has to go looking for (§3.15, D43). The
-            // account carries it either way; this is where a person sees it.
             match account
                 .get("conditions")
                 .and_then(|conditions| conditions.get("addressed_as"))
@@ -482,10 +387,6 @@ fn served(
     }
 }
 
-/// The picture the model was shown, as a line, where one was: the file and
-/// its size, the projector that read it, and that the turn went as text
-/// with every marker read as one — the one condition of a picture a person
-/// would not guess (B-452).
 fn shown_line(account: &mcf_record::json::Value) -> String {
     let Some(shown) = account
         .get("conditions")
@@ -516,14 +417,6 @@ fn shown_line(account: &mcf_record::json::Value) -> String {
     )
 }
 
-/// What the file declares beyond what the engine was started with, and what
-/// it was started with beyond the plain load.
-///
-/// **Two lines that are usually one or none.** A model whose file carries a
-/// draft head runs perfectly well without it and only a line like this says
-/// so; a run that started one is a run under a condition that is not the
-/// ordinary one, and the two must not be told apart by their speed alone
-/// (B-456, A7, §3.15).
 fn beyond_the_load(account: &mcf_record::json::Value) -> String {
     let under = |key: &str| {
         account
@@ -543,10 +436,6 @@ fn beyond_the_load(account: &mcf_record::json::Value) -> String {
     format!("{asked}{left}")
 }
 
-/// What the model spent before its answer, as a line, where it spent
-/// anything: how many tokens inside which marker, who opened it, and whether
-/// it closed — a turn that did not close was cut by the budget, and what is
-/// printed above is all of it and none of an answer (F106).
 fn before_the_answer(account: &mcf_record::json::Value) -> String {
     let Some(before) = account.get("before_the_answer") else {
         return String::new();
@@ -570,42 +459,22 @@ fn before_the_answer(account: &mcf_record::json::Value) -> String {
         if closed {
             "closed, and the answer followed"
         } else {
-            // A way out travels with the fact: a thought is the size of its
-            // question, and a budget measured on a probe's questions bounds
-            // theirs and not this one's (F173).
             "NOT closed: the budget ran out inside it, and no answer came — a thought is the \
              size of its question, and --limit allows more"
         }
     )
 }
 
-/// What a run produced, with everything a reader needs to judge it.
 struct Said {
     text: String,
     tokens: usize,
     prompt_tokens: usize,
     stopped: Stopped,
-    /// How many processors the engine divided its work across, and whose number
-    /// that was.
-    ///
-    /// A condition of the run's *cost* and never of its answer: the same input
-    /// gives the same bytes at any count (B-366). It is printed because a
-    /// reader comparing two runs' durations would otherwise have no way to know
-    /// the machines differed in how much of themselves they gave.
     threads: String,
-    /// What the engine's own mark says was lost, rendered.
     mark: String,
     engine: String,
 }
 
-/// Reads a file's directory from a bounded prefix and refuses early what can
-/// be refused early: an architecture MCF has not been taught, and a model that
-/// cannot fit dequantized (B-372).
-///
-/// The reading and the arithmetic are [`mcf_serve::crosscheck::examined`],
-/// which the daemon's cross-check applies too (B-072); what this adds is the
-/// observation — what the machine says is free — which B4 keeps out of the
-/// library and at the surface.
 pub(crate) fn examined(path: &Path) -> Result<(), Failure> {
     let free = match Machine::read().memory.available {
         Attested::Known(available) => Some(available.0),
@@ -614,13 +483,6 @@ pub(crate) fn examined(path: &Path) -> Result<(), Failure> {
     mcf_serve::crosscheck::examined(path, free).map(|_| ())
 }
 
-/// Refuses a file the stand-in cannot hold, before a tensor is read (B-372).
-///
-/// The observation lives here and the arithmetic in the library: this reads
-/// what the machine says is free, and [`gguf::Model::fits_dequantized`] is the
-/// same judgement wherever it is asked. Where the machine's memory is unknown,
-/// MCF proceeds — refusing on an unknown would turn A7's honesty about not
-/// knowing into a limit nobody measured.
 pub(crate) fn fits_in_memory(file: &gguf::Model) -> Result<(), Failure> {
     match Machine::read().memory.available {
         Attested::Known(available) => file.fits_dequantized(available.0),
@@ -628,22 +490,11 @@ pub(crate) fn fits_in_memory(file: &gguf::Model) -> Result<(), Failure> {
     }
 }
 
-/// Reads the model, runs it, and keeps the mark.
 fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, Failure> {
     let file = gguf::parse(bytes)?;
     fits_in_memory(&file)?;
-    // Asked before the vocabulary, because when both are unsupported the
-    // architecture is what the operator needs to hear: a vocabulary MCF cannot
-    // read is one component of a model it might otherwise run, and an
-    // architecture it cannot read is the whole model. An embedding model
-    // refused for its tokenizer sounds like a tokenizer problem.
     mcf_standin::llama::covers(&file)?;
     let vocabulary = Vocabulary::read(&file)?;
-    // Every processor the machine reports, and the engine spends only as many
-    // of them per product as that product's size earns (B-366, F99). The answer
-    // is the same bytes at any count — that is the property the partition was
-    // built around — so this changes what the run costs and nothing about what
-    // it says.
     let threads = Threads::what_the_machine_reports();
     let model = load(&file, bytes)?.across(threads);
 
@@ -655,22 +506,12 @@ fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, F
         &Request {
             prompt: prompt_tokens.clone(),
             limit,
-            // Greedy, and stated: a sampler MCF chose without saying would make
-            // two runs of one model differ for a reason nobody recorded (D19,
-            // §3.15).
             settings: Settings::Greedy,
             seed,
-            // The model's own end of text, which the file states and MCF was
-            // reading and never using: without it a generation always runs to
-            // the budget, and *the model finished* is unobservable — which is
-            // what the chat-template probe found first (F37).
             stop: vocabulary.ending.into_iter().collect(),
         },
     )?;
 
-    // The mark cannot be unwrapped away: `Degraded` hands back the value only
-    // with its degradation, and this is where both are turned into something a
-    // person reads (A5, B-008).
     let degradation = generated.degradation().to_string();
     let behaviour = generated.value();
     let produced = behaviour.observed();
@@ -686,21 +527,11 @@ fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, F
     })
 }
 
-/// Where a model is: a path, or something under one of the stores.
-///
-/// `Ok(None)` means nothing of that name is held anywhere. `Err` means it is
-/// held in **more than one** store, and MCF will not choose for the operator:
-/// two files under one name are two artifacts, possibly of different sizes and
-/// certainly with two provenances, and picking the first silently would make
-/// every measurement taken afterwards a measurement of whichever one MCF
-/// happened to reach (§3.15, A1).
 pub(crate) fn resolve(named: &str) -> Result<Option<PathBuf>, Vec<PathBuf>> {
     let given = Path::new(named);
     if given.is_file() {
         return Ok(Some(given.to_path_buf()));
     }
-    // `owner/name:file`, the way a reference is written, and `owner/name/file`,
-    // the way it sits on the disk. Both are things somebody will type.
     let relative = named.replace(':', "/");
     let found: Vec<PathBuf> = models::stores()
         .into_iter()
@@ -714,7 +545,6 @@ pub(crate) fn resolve(named: &str) -> Result<Option<PathBuf>, Vec<PathBuf>> {
     }
 }
 
-/// What a surface says when a name is held in more than one store.
 pub(crate) fn ambiguous(named: &str, found: &[PathBuf]) -> String {
     let mut lines = vec![format!(
         "mcf: {named} names {} files, in different stores:",
@@ -732,7 +562,6 @@ pub(crate) fn ambiguous(named: &str, found: &[PathBuf]) -> String {
     lines.join("\n")
 }
 
-/// What a reader is told, answer and conditions together.
 fn render(path: &Path, prompt: &str, seed: u64, said: &Said) -> String {
     let stopped = match said.stopped {
         Stopped::AtStopToken { token } => format!("the model stopped, at token {token}"),
@@ -768,15 +597,11 @@ fn render(path: &Path, prompt: &str, seed: u64, said: &Said) -> String {
     .replace("{prompt}", prompt)
 }
 
-/// A refusal, said the shared way, plus the sentence that is this command's
-/// own: MCF's reader is strict because there is nothing else to fall back to.
 fn refused(path: &Path, failure: &Failure) -> String {
     format!(
         "{}\n  MCF's own reader handles {}. A model it refuses may still run on a \
          provisioned engine — `mcf provision llama.cpp` builds one",
         crate::say::refusal(&format!("{} did not run", path.display()), failure),
-        // Said rather than counted, so that the sentence cannot go stale the
-        // way "one architecture" did once there were four.
         mcf_standin::llama::FAMILIES.join(", ")
     )
 }

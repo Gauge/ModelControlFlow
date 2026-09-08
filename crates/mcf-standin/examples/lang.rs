@@ -1,18 +1,3 @@
-//! What a language costs this model's vocabulary (B-379, B-057).
-//!
-//! The same sentence in several languages, and how many tokens each one
-//! spends. No generation, no judgement, no rater — it is the tokenizer, and it
-//! answers in milliseconds.
-//!
-//! It is not a claim about how well a model speaks a language. It is what that
-//! language *costs*: tokens are money, they are context, and they are time. On
-//! the corpus, three models spend sixteen tokens each on an English sentence,
-//! and on a Japanese one the first spends fifty-two where another spends twenty.
-//!
-//!   cargo run -p mcf-standin --example lang -- <model.gguf>
-
-/// The same meaning, in each language, so the comparison is of vocabularies
-/// rather than of sentences.
 const SAMPLES: [(&str, &str); 6] = [
     (
         "English",

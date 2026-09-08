@@ -1,22 +1,3 @@
-//! A run says what it has while it still has it (B-227, A4, §3.1).
-//!
-//! **The failure.** A benchmark that takes minutes and says nothing until it
-//! finishes is one an operator cannot tell from a hung one, and one whose
-//! forty pairs are first heard of when it stops. A4 already keeps what an
-//! interrupted run produced — the pairs are kept and what stopped it travels
-//! with them — but *keeping* is not *reporting*, and B-227 asks for both.
-//!
-//! **Three properties, each of which could quietly be lost:**
-//!
-//! 1. progress goes to standard error, because the result is what goes to
-//!    standard output and a pipeline reading a verdict must not have to
-//!    filter progress out of it;
-//! 2. an interim line says how many pairs it rests on, so that a reader who
-//!    scrolls back cannot mistake it for the answer;
-//! 3. reporting cannot change what the run does — no branch, no early exit, no
-//!    pass condition wearing a progress line (A18).
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 fn bench() -> String {
@@ -24,7 +5,6 @@ fn bench() -> String {
         .expect("bench.rs is readable")
 }
 
-/// Progress is on standard error, and the verdict is not.
 #[test]
 fn progress_does_not_reach_standard_output() {
     let source = bench();
@@ -32,8 +12,6 @@ fn progress_does_not_reach_standard_output() {
         source.contains("fn so_far(") && source.contains("eprintln!"),
         "the run must report as it goes, on standard error (B-227)"
     );
-    // `eprintln!` ends in `println!`, so a substring check would forbid the
-    // very thing it is asking for. Counting is what tells them apart.
     assert_eq!(
         source.matches("println!").count(),
         source.matches("eprintln!").count(),
@@ -42,7 +20,6 @@ fn progress_does_not_reach_standard_output() {
     );
 }
 
-/// An interim line carries the count it rests on.
 #[test]
 fn an_interim_line_says_how_far_it_got() {
     let source = bench();
@@ -62,7 +39,6 @@ fn an_interim_line_says_how_far_it_got() {
     );
 }
 
-/// Reporting is not a decision.
 #[test]
 fn reporting_cannot_change_what_the_run_does() {
     let source = bench();

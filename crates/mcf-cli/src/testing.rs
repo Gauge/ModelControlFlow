@@ -1,41 +1,20 @@
-//! Test writing: the model writes tests for a stated function, and the
-//! tests are run against a correct implementation and against several
-//! deliberately broken ones — how many pass on the good one, and how many
-//! of the broken ones are caught (B-524, D55).
-//!
-//! A test that fails on the correct implementation is a wrong test; a
-//! suite that passes on a broken implementation missed its bug. Both
-//! counts are rows, task by task, and neither is a mark: a suite of one
-//! test that catches every bug and a suite of ten that catch none are
-//! both written down as what they are.
-
 use std::path::Path;
 
 use mcf_record::json::Value;
 use mcf_serve::examine::Reading;
 
-/// How many times each task is asked for.
 pub(crate) const ATTEMPTS: usize = 2;
 
-/// The token budget for a suite of tests.
 const BUDGET: usize = 1000;
 
-/// One task: a function in words, its correct implementation, and the
-/// broken implementations a good suite would catch.
 pub(crate) struct Task {
-    /// Its name.
     pub name: &'static str,
-    /// The function's name, which the ask states.
     pub function: &'static str,
-    /// What the function does, in words, as the model is told.
     pub spec: &'static str,
-    /// A correct implementation.
     pub good: &'static str,
-    /// Implementations with one bug each, named by the bug.
     pub broken: &'static [(&'static str, &'static str)],
 }
 
-/// The tasks.
 pub(crate) const TASKS: &[Task] = &[
     Task {
         name: "palindrome",
@@ -148,7 +127,6 @@ pub(crate) const TASKS: &[Task] = &[
     },
 ];
 
-/// What the model is asked.
 #[must_use]
 pub(crate) fn prompt_for(task: &Task) -> String {
     format!(
@@ -159,11 +137,6 @@ pub(crate) fn prompt_for(task: &Task) -> String {
     )
 }
 
-/// The program the container runs: a small `pytest` stand-in for `raises`,
-/// `approx` and `parametrize`, then, for the correct implementation and
-/// each broken one, the implementation, the tests, and one line `impl
-/// <index> <passed> <of>` — or `impl <index> x` where the tests could not
-/// be loaded — and nothing else.
 #[must_use]
 pub(crate) fn checker(task: &Task, tests: &str) -> String {
     let mut out = String::from(
@@ -228,7 +201,6 @@ pub(crate) fn checker(task: &Task, tests: &str) -> String {
     out
 }
 
-/// A Python string literal holding the text.
 fn python_string(text: &str) -> String {
     format!(
         "'''{}'''",

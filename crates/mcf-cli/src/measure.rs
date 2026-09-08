@@ -1,16 +1,3 @@
-//! `mcf measure`: how quickly a model produces text, and how that changes as
-//! the conversation gets longer.
-//!
-//! **The command the window's button presses.** A22 asks that everything a
-//! surface can do, the headless path can do; this is that path for the
-//! measurement, and both send the same control request to the same daemon.
-//! Nothing is measured here — the daemon does it, because the daemon is where
-//! the model and the engine are (B-072).
-//!
-//! **The estimate comes before the work**, as a range, and it is printed
-//! rather than swallowed: a person who is told a run will take four minutes
-//! can decide not to start it, and one who is told nothing cannot.
-
 use crate::say::refused_because;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
@@ -20,7 +7,6 @@ use mcf_serve::control::{Answer, Request};
 
 use crate::Response;
 
-/// Times a model at doubling depths and prints what came back.
 pub(crate) fn run(
     model: &str,
     deepest: u64,
@@ -51,8 +37,6 @@ pub(crate) fn run(
             };
         }
     };
-    // No read timeout: a measurement is minutes by design, and a deadline
-    // here would turn a long run into a lie about a broken daemon.
     let line = Request::Measure {
         model: model.to_owned(),
         engine: engine.map(str::to_owned),
@@ -68,11 +52,6 @@ pub(crate) fn run(
         };
     }
 
-    // **Printed as it comes, not at the end.** A measurement is minutes and
-    // says where it is at every generation; a terminal that showed nothing
-    // until the last line showed a run that looked stopped, and gave nobody
-    // a moment to cut it short (A7). What ends the run — the conditions, or
-    // a refusal — is the response; the way there is printed on the way.
     let mut lines: Vec<String> = Vec::new();
     let mut served = true;
     let reader = BufReader::new(&connection);
@@ -104,7 +83,6 @@ pub(crate) fn run(
     }
 }
 
-/// One answer, as a line or two of terminal output.
 fn said(body: &Value) -> Vec<String> {
     let text = |key: &str| body.get(key).and_then(Value::as_text).map(str::to_owned);
     let number = |held: &Value, key: &str| held.get(key).and_then(Value::as_integer);
@@ -133,8 +111,6 @@ fn said(body: &Value) -> Vec<String> {
         ];
     }
 
-    // Where the run is, as the daemon announces it: the same words the
-    // console and the window use for the same line (A22, B-072).
     if let Some(step) = mcf_tui::screens::diagnostics::step_line(body) {
         return vec![format!("  {step}")];
     }
@@ -143,8 +119,6 @@ fn said(body: &Value) -> Vec<String> {
         let depth = number(reading, "depth").unwrap_or(0);
         return vec![
             if matches!(reading.get("measured"), Some(Value::Bool(true))) {
-                // A spread is between two: a rung read off one pair has none,
-                // and says so rather than wearing a nought (A7, F174).
                 let spread = reading
                     .get("spread_ms")
                     .and_then(Value::as_text)
@@ -162,8 +136,6 @@ fn said(body: &Value) -> Vec<String> {
                     mcf_tui::screens::diagnostics::pairs_note(reading),
                 )
             } else {
-                // A9: a depth that would not separate is a result, and it is
-                // printed as one rather than left out of the list.
                 format!(
                     "  {depth:>7} tokens deep — not measured: {}",
                     reading.get("why").and_then(Value::as_text).unwrap_or("?")
@@ -178,8 +150,6 @@ fn said(body: &Value) -> Vec<String> {
     Vec::new()
 }
 
-/// The conditions the measurement was taken under, which is the half of it
-/// that makes the figures usable (§3.4, A6).
 fn under_what(body: &Value) -> Vec<String> {
     let number = |held: &Value, key: &str| held.get(key).and_then(Value::as_integer);
     {
@@ -224,10 +194,6 @@ fn under_what(body: &Value) -> Vec<String> {
                     .and_then(Value::as_text)
                     .unwrap_or("?")
             ),
-            // What the engine was started with beyond the plain load: two
-            // runs are only comparable if each says which it was, and this
-            // is the line that makes a switch's cost a measurement rather
-            // than a claim (A6, B-463).
             format!(
                 "  started with  {}",
                 conditions
@@ -238,9 +204,6 @@ fn under_what(body: &Value) -> Vec<String> {
             ),
         ];
         out.extend(read_off_the_rungs(body));
-        // B65 and D31: a timing taken from MCF's own reference implementation
-        // measures the reference implementation, which is written to be read
-        // rather than to be fast. Saying so is not a footnote.
         if matches!(conditions.get("is_the_stand_in"), Some(Value::Bool(true))) {
             out.push(String::new());
             out.push(
@@ -254,9 +217,6 @@ fn under_what(body: &Value) -> Vec<String> {
     }
 }
 
-/// The figures the run reads off its rungs and derives on the daemon's side,
-/// printed in the daemon's words (B-072); where it could not read one, its
-/// reason is the line (A7, A9).
 fn read_off_the_rungs(body: &Value) -> Vec<String> {
     let mut out = vec![String::new(), "read off the rungs:".to_owned()];
     for (what, lines) in [

@@ -1,55 +1,9 @@
-//! What MCF is licensed under, stated by the artifact itself (B-330, D28).
-//!
-//! B-330's condition has two halves. The first — no vendored component ships
-//! without a recorded compatibility finding — is [vendored.md] and the check
-//! that reads it. This is the second: **the licence is stated in the artifact
-//! and surfaced to a redistributor**.
-//!
-//! **Why the artifact and not the repository.** A redistributor has a binary.
-//! GPL-3.0 §4 asks that whoever conveys a copy of the Program give its
-//! recipients a copy of the License, and §6 that they be told how to get the
-//! source. A licence that lives only in a file next to the code is a licence
-//! the person with the obligation does not have, so the whole text is compiled
-//! in and `mcf licence --full` prints it. It costs about 35 KiB of a 40 MiB
-//! ceiling (D24), which is the cheapest obligation MCF has.
-//!
-//! **What it says about source is what MCF knows.** A24 and A7 both apply: the
-//! source is the tree the binary was built from, named by `MCF_BUILD_COMMIT`
-//! where the builder set one and stated as unknown where nobody did. MCF does
-//! not invent a repository URL it cannot verify — an offer nobody can act on is
-//! worse than a stated absence.
-//!
-//! **The vendored list is the TLS stack.** It appears here *and* in
-//! [vendored.md], and a check requires the two agree: a component whose terms a
-//! redistributor cannot read is exactly the failure B-330 exists to prevent.
-//! What is listed is what is *compiled in* — the tree also holds crates cargo
-//! requires to be present and nothing builds, and a conveyor is not conveying
-//! those.
-//!
-//! [vendored.md]: ../../../doc/vendored.md
-
 use mcf_core::build_identity::{BuildIdentity, SourceRevision};
 
-/// The licence MCF is under, as SPDX names it (D28).
 pub(crate) const SPDX: &str = "GPL-3.0-only";
 
-/// The whole licence, compiled in.
 const FULL_TEXT: &str = include_str!("../../../LICENSE");
 
-/// A component MCF ships that it did not write.
-///
-/// The TLS stack, and nothing else: fourteen crates that are *compiled into
-/// this binary*, which is what a redistributor conveys and therefore what they
-/// need the terms of. The vendored tree also holds crates no target compiles —
-/// cargo requires them present — and those are in [vendored.md] rather than
-/// here, because a list of what somebody is conveying should not include what
-/// they are not.
-///
-/// `checks/tests/the_licence_is_what_it_says.rs` requires this list and the
-/// register to agree, so a vendored tree cannot arrive without the artifact
-/// learning to say what its terms are.
-///
-/// [vendored.md]: ../../../doc/vendored.md
 pub(crate) const VENDORED: &[Component] = &[
     Component {
         name: "cfg-if",
@@ -123,29 +77,17 @@ pub(crate) const VENDORED: &[Component] = &[
     },
 ];
 
-/// What a redistributor needs to know about one shipped component.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Component {
-    /// What it is called.
     pub(crate) name: &'static str,
-    /// The terms it is under, as SPDX names them.
     pub(crate) terms: &'static str,
-    /// The revision MCF ships, so the terms can be checked against the tree
-    /// they came from rather than against the project's current one.
     pub(crate) revision: &'static str,
 }
 
-/// The licence statement, rendered.
-///
-/// `full` prints the entire text after it — what GPL-3.0 §4 asks a conveyor to
-/// hand on.
 pub(crate) fn render(identity: BuildIdentity, full: bool) -> String {
     use std::fmt::Write as _;
 
     let mut out = String::new();
-    // The writes below cannot fail: the target is a `String`. The results are
-    // bound rather than discarded because A2's habit does not have exceptions
-    // for the cases where the author is sure.
     let _written = write!(
         out,
         "MCF is free software under the GNU General Public License, version 3 only \
@@ -211,7 +153,6 @@ mod tests {
     use super::{FULL_TEXT, SPDX, VENDORED, render};
     use mcf_core::build_identity::BuildIdentity;
 
-    /// The text compiled in is the licence MCF declares, not a placeholder.
     #[test]
     fn the_text_in_the_artifact_is_the_gpl_version_three() {
         assert!(FULL_TEXT.contains("GNU GENERAL PUBLIC LICENSE"));
@@ -223,8 +164,6 @@ mod tests {
         assert!(FULL_TEXT.lines().count() > 600);
     }
 
-    /// The short form names the licence, the warranty position and the source
-    /// obligation — the three things a redistributor has to act on.
     #[test]
     fn the_statement_names_what_a_redistributor_must_act_on() {
         let text = render(BuildIdentity::current(), false);
@@ -237,7 +176,6 @@ mod tests {
         );
     }
 
-    /// The long form is the short form and then the licence itself.
     #[test]
     fn the_full_form_carries_the_licence_with_it() {
         let text = render(BuildIdentity::current(), true);
@@ -249,10 +187,6 @@ mod tests {
         assert!(text.len() > FULL_TEXT.len());
     }
 
-    /// What MCF ships that it did not write is named, with its terms and the
-    /// revision — which is what a person conveying the binary is obliged to
-    /// pass on, and what they cannot get from a repository they do not have
-    /// (GPL-3.0 §4, B-330).
     #[test]
     fn what_is_shipped_is_named_with_its_terms() {
         assert!(
@@ -281,8 +215,6 @@ mod tests {
         }
     }
 
-    /// The TLS stack is what is shipped, and the reader is pointed at the
-    /// register for what MCF verified about each of them (A21).
     #[test]
     fn the_shipped_list_is_the_stack_and_points_at_the_register() {
         let text = render(BuildIdentity::current(), false);

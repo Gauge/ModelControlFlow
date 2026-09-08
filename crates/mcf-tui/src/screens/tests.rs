@@ -1,6 +1,5 @@
 use super::*;
 
-/// Every menu item has a word and a title, and no two share either.
 #[test]
 fn every_place_is_named_once() {
     for (index, item) in Where::ALL.iter().enumerate() {
@@ -17,10 +16,6 @@ fn every_place_is_named_once() {
     }
 }
 
-/// The menu fits eighty columns with room for the state on the right.
-///
-/// It is the one row that must hold every item at once, so it is the row that
-/// decides whether a name can be added.
 #[test]
 fn the_menu_fits_the_smallest_terminal() {
     let width: usize = Where::ALL
@@ -33,7 +28,6 @@ fn the_menu_fits_the_smallest_terminal() {
     );
 }
 
-/// A size is exact, and never a rounded float.
 #[test]
 fn a_size_is_exact() {
     assert_eq!(gigabytes(5_020_000_000), "5.02 GB");
@@ -41,7 +35,6 @@ fn a_size_is_exact() {
     assert_eq!(gigabytes(0), "0.00 GB");
 }
 
-/// A reading MCF could not take renders as a dash, never as a zero (A7).
 #[test]
 fn an_unknown_reading_is_a_dash() {
     assert_eq!(or_unknown(None::<u32>, " %"), UNKNOWN);
@@ -49,7 +42,6 @@ fn an_unknown_reading_is_a_dash() {
     assert_ne!(or_unknown(None::<u32>, " %"), "0 %");
 }
 
-/// Columns start where the table says, not where the last value ended.
 #[test]
 fn a_column_does_not_move_under_the_reader() {
     let mut screen = Screen::new(40, 2);
@@ -76,7 +68,6 @@ fn a_column_does_not_move_under_the_reader() {
         screen.line(0),
         screen.line(1)
     );
-    // And the long label was clipped rather than pushing the figure along.
     assert!(
         !screen.line(1).contains("longer label"),
         "a label overran its column: {:?}",

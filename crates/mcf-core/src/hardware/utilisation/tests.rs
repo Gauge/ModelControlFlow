@@ -1,5 +1,3 @@
-//! An accelerator MCF cannot poll is not an idle accelerator.
-
 use crate::attested::Attested;
 
 use super::{Busy, unreadable};
@@ -43,8 +41,6 @@ fn every_absence_carries_its_reason() {
         held.to_string().contains("NVML"),
         "an operator must be able to tell *nothing was competing* from *MCF could not see*"
     );
-    // And an absence with no reason says even that much rather than passing
-    // silently.
     assert!(
         busy("card9", "mystery", None, None)
             .to_string()
@@ -71,7 +67,6 @@ fn the_unreadable_drivers_are_what_a_support_request_names() {
     assert_eq!(unreadable(&held), ["i915".to_owned(), "nvidia".to_owned()]);
 }
 
-/// This machine, read for real.
 #[test]
 fn this_machine_is_read_without_inventing_anything() {
     for one in super::accelerators() {

@@ -1,23 +1,3 @@
-//! MCF in a window: its own control surface, for a mouse and a keyboard.
-//!
-//! **This is not the console at a larger scale, and the first one was.** That
-//! design shared `mcf_tui`'s character grid so that one layout served both
-//! surfaces; what it produced was a terminal with a mouse pointer over it. A
-//! console is a table of cells read top to bottom, and an application is cards
-//! and buttons that are scanned and clicked, and no amount of adjustment turns
-//! one into the other. So the drawing is now this crate's own — a rasteriser
-//! ([`font`]), a painter ([`paint`]) and six widgets ([`ui`]) — and what the
-//! two surfaces share is the daemon they both ask and the record it keeps.
-//!
-//! **It is written for somebody who has never heard of a token.** [`words`]
-//! turns measurements into sentences: tokens a second become words a second,
-//! a context length becomes how much of a conversation a model remembers, and
-//! a missing measurement becomes *Not measured yet* beside the button that
-//! takes it — never a zero, which reads as a fact (A7).
-//!
-//! **It is a client, and adds nothing.** Every action turns into a request the
-//! command line already sends, and [`ACTIONS`] names which (A22, B-072).
-
 pub mod chart;
 pub mod font;
 pub mod job;
@@ -37,23 +17,13 @@ use mcf_record::json::Value;
 use crate::job::refused_because;
 use mcf_serve::control::{Answer, Request};
 
-/// One thing the operator can do, and the control-plane request it reaches.
 #[derive(Debug, Clone, Copy)]
 pub struct Action {
-    /// What it is called where it is shown.
     pub key: &'static str,
-    /// What it does.
     pub does: &'static str,
-    /// The `Request` variant it reaches, or `None` where it only moves about.
     pub reaches: Option<&'static str>,
 }
 
-/// Every action, and there are no others.
-///
-/// A22: the headless path can do everything a surface can. What keeps that
-/// true is that this table exists and a check reads it — a window that grew an
-/// action the command line could not perform would be a window that had become
-/// the only way to do something.
 pub const ACTIONS: &[Action] = &[
     Action {
         key: "click a model",
@@ -107,90 +77,43 @@ pub const ACTIONS: &[Action] = &[
     },
 ];
 
-/// What is being held, as the monitor needs it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hosted {
-    /// Which model, by the path the daemon holds it under.
     pub model: String,
-    /// Where a caller reaches it. The one fact an API is for.
     pub address: String,
-    /// Since when, as the daemon stamped it.
     pub since: String,
-    /// The context window it is held at, where the daemon said.
     pub context: Option<u64>,
-    /// The projector loaded beside it, by file name, where one was.
     pub projector: Option<String>,
-    /// What the engine said it takes for this model, where it answered.
     pub takes: Option<mcf_serve::takes::Takes>,
-    /// Whether callers must present a key.
     pub api_key: bool,
-    /// Where a caller on the network reaches it, where the hold is open to
-    /// the network (B-577).
     pub network_address: Option<String>,
-    /// What it is doing now, where the daemon read the engine's counters.
     pub in_use: Option<Use>,
 }
 
-/// What a held model is doing right now, as the daemon read it off the
-/// engine's own counters and the machine. Every figure is optional: the
-/// engine publishes them only where it was started with counters on, and a
-/// tile that has nothing says so rather than showing nought (A7).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Use {
-    /// Tokens the engine has predicted since it came up.
     pub generated: Option<u64>,
-    /// Tokens of prompt it has read since it came up.
     pub prompted: Option<u64>,
-    /// Tokens it has produced, counting the request it is answering now:
-    /// the total moves only when a request finishes, and this moves as it
-    /// generates (B-591).
     pub generated_live: Option<u64>,
-    /// Its predicting rate, measured by MCF over the seconds between two
-    /// readings of the count above (B-591). `None` on the first reading,
-    /// which is no rate at all.
     pub generated_per_second: Option<f32>,
-    /// How long the rates above were measured over, in seconds.
     pub rate_over_seconds: Option<f32>,
-    /// What the chip is drawing now, in watts, where it says (B-593).
-    /// Not this model's alone: whatever else draws on the same chip is in
-    /// it, and on a processor whose graphics are part of it that includes
-    /// the processor (B-596).
     pub card_power_watts: Option<f32>,
-    /// The short word for whose draw that is — `card` or `package` — as
-    /// the driver's own label says (B-596).
     pub power_named: Option<String>,
-    /// The same in a sentence, for a surface with room for one.
     pub power_is: Option<String>,
-    /// The card's energy while MCF has been watching this engine, in
-    /// joules.
     pub card_energy_joules: Option<f32>,
-    /// How much of the engine's life that energy covers, in seconds. Less
-    /// than the whole where nobody was asking, because MCF reads the card
-    /// when it is asked and never on a timer.
     pub card_energy_over_seconds: Option<f32>,
-    /// Its prompt-reading rate now, tokens a second.
     pub prompted_per_second: Option<f32>,
-    /// How much of its cache is in use, nought to one.
     pub cache_used: Option<f32>,
-    /// Requests it is answering now.
     pub processing: Option<u64>,
-    /// Requests waiting behind them.
     pub queued: Option<u64>,
-    /// What the engine holds in memory.
     pub resident: Option<u64>,
-    /// What this hold has on the card.
     pub card: Option<u64>,
-    /// How long it has been up.
     pub uptime_seconds: Option<u64>,
-    /// Tokens in the cache now.
     pub cache_tokens: Option<u64>,
-    /// Decode steps the engine has taken since it came up: one a token
-    /// produced, so the count of answers' tokens by another road.
     pub decodes: Option<u64>,
 }
 
 impl Use {
-    /// Reads one from the daemon's answer.
     #[must_use]
     pub fn from_value(value: &Value) -> Self {
         let count = |key: &str| match value.get(key) {
@@ -246,8 +169,6 @@ impl Use {
 }
 
 impl Hosted {
-    /// The name, not the path: the question a screen answers is what is
-    /// answering.
     #[must_use]
     pub fn name(&self) -> String {
         self.model
@@ -259,23 +180,16 @@ impl Hosted {
     }
 }
 
-/// What was last held, as the record has it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LastHold {
-    /// The model's path.
     pub model: String,
-    /// The device it was on.
     pub device: String,
-    /// The build it ran through.
     pub engine: String,
-    /// Whether a stop was recorded after it.
     pub stopped: bool,
-    /// How long ago it ended, or began where no end was recorded.
     pub ago_seconds: Option<u64>,
 }
 
 impl LastHold {
-    /// Reads one from the daemon's answer.
     #[must_use]
     pub fn from_value(value: &Value) -> Option<Self> {
         let text = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
@@ -291,7 +205,6 @@ impl LastHold {
         })
     }
 
-    /// The name, not the path.
     #[must_use]
     pub fn name(&self) -> String {
         self.model
@@ -302,7 +215,6 @@ impl LastHold {
             .to_owned()
     }
 
-    /// One line: what, on what, and when it ended.
     #[must_use]
     pub fn said(&self) -> String {
         let ago = self.ago_seconds.map_or_else(String::new, |seconds| {
@@ -321,7 +233,6 @@ impl LastHold {
     }
 }
 
-/// Seconds as a span a person says: *40 s*, *12 min*, *2 h 5 min*.
 #[must_use]
 pub fn ago_said(seconds: u64) -> String {
     #[expect(
@@ -336,23 +247,16 @@ pub fn ago_said(seconds: u64) -> String {
     }
 }
 
-/// One place a hold can put the model, as the daemon listed it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placement {
-    /// `resolved`, `processor` or `card`.
     pub on: String,
-    /// The build that fits it.
     pub engine: String,
-    /// The device.
     pub device: String,
-    /// How much of the model goes on a card there.
     pub gpu_layers: u32,
-    /// What the device has free, where the engine said.
     pub free: Option<u64>,
 }
 
 impl Placement {
-    /// Reads one from the daemon's list.
     #[must_use]
     pub fn from_value(value: &Value) -> Option<Self> {
         let text = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
@@ -372,10 +276,6 @@ impl Placement {
     }
 }
 
-/// What a hold will take against what the device it goes to has free, as
-/// a sentence with a verdict: the weights and the cache for the window,
-/// against the free figure the engine reported for the device the settings
-/// name (§3.15). `None` where either side is unknown.
 #[must_use]
 pub fn will_take(
     held: &Model,
@@ -410,11 +310,6 @@ pub fn will_take(
     ))
 }
 
-/// A load's progress as a sentence: what has been read of the weights, after
-/// how long, and about how long is left once a twentieth is read and there
-/// is a rate to read that off; past the weights, that the cache and the
-/// engine's buffers follow. Said with *about* because it is arithmetic on
-/// what has happened and not a promise (A6, A7).
 #[must_use]
 pub fn loading_said(read: u64, on_card: bool, of: Option<u64>, seconds: u64) -> String {
     let where_ = if on_card { " to GPU" } else { "" };
@@ -449,8 +344,6 @@ pub fn loading_said(read: u64, on_card: bool, of: Option<u64>, seconds: u64) -> 
     }
 }
 
-/// A version and a revision as a surface writes them: the version, and
-/// the first seven of the revision where there is one (B-595).
 fn said_of(version: &str, revision: &str) -> String {
     let short: String = revision.chars().take(7).collect();
     if short.is_empty() || short == "unknown" {
@@ -460,39 +353,22 @@ fn said_of(version: &str, revision: &str) -> String {
     }
 }
 
-/// How many failures the System page shows at most.
 pub const FAULTS_SHOWN: usize = 12;
 
-/// A classified failure as the record holds it, for the System page
-/// (B-074): every field the taxonomy gives a failure, so that what went
-/// wrong is inspectable from the window rather than only from `mcf log`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Fault {
-    /// When it was recorded, as the record writes it.
     pub at: String,
-    /// The taxonomy code — `engine.exit.immediate`.
     pub category: String,
-    /// What the code means, in the taxonomy's words.
     pub meaning: String,
-    /// Whose doing it was: the machine, the user, MCF itself.
     pub attribution: String,
-    /// What MCF did about it: refused, degraded, failed.
     pub disposition: String,
-    /// Where in MCF it was classified.
     pub subsystem: String,
-    /// What happened, in a sentence.
     pub detail: String,
-    /// The context to rebuild it from, key by key, as recorded.
     pub context: Vec<(String, String)>,
-    /// What caused it, where the failure carries one.
     pub caused_by: Option<Box<Fault>>,
-    /// What was being asked when the daemon refused, where the record says
-    /// (B-588); empty for a failure recorded another way.
     pub asked: String,
 }
 
-/// A failure from the record's entry: the body's fields under the entry's
-/// time.
 #[must_use]
 pub fn fault_from(entry: &Value) -> Fault {
     let body = entry.get("body").unwrap_or(entry);
@@ -544,11 +420,6 @@ fn fault_body(body: &Value) -> Fault {
     }
 }
 
-/// A failure as the System page says it, line by line: the code and its
-/// meaning, whose doing and what MCF did about it and where, the detail,
-/// every line of context, and the cause under it (B-074). One rendering
-/// for every category, because the taxonomy gives every one the same
-/// fields; what differs is what they say.
 #[must_use]
 pub fn fault_lines(fault: &Fault) -> Vec<String> {
     let mut lines = vec![
@@ -575,7 +446,6 @@ pub fn fault_lines(fault: &Fault) -> Vec<String> {
     lines
 }
 
-/// The taxonomy's attribution axis, said plainly.
 fn attribution_said(held: &str) -> String {
     match held {
         "machine" => "the machine's doing".to_owned(),
@@ -589,7 +459,6 @@ fn attribution_said(held: &str) -> String {
     }
 }
 
-/// The taxonomy's disposition axis, said plainly.
 fn disposition_said(held: &str) -> String {
     match held {
         "refused" => "refused".to_owned(),
@@ -601,32 +470,18 @@ fn disposition_said(held: &str) -> String {
     }
 }
 
-/// One component MCF can build, as this window needs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component {
-    /// What it is called.
     pub name: String,
-    /// Which source, exactly — the first twelve of the commit, as the command
-    /// line prints it.
     pub commit: String,
-    /// What having it lets MCF claim.
     pub role: String,
-    /// The base image it is built in.
     pub image: String,
-    /// Whether it is here and finished — the provenance beside it, which the
-    /// builder writes last.
     pub provisioned: bool,
-    /// Whether anything is there at all. A prefix with no provenance is a run
-    /// that stopped partway, which is a third state and not an absence.
     pub present: bool,
-    /// Whether MCF can actually reach it as an engine. A directory that exists
-    /// is not the same as a build that finished.
     pub usable_engine: bool,
-    /// Where it went, or where it would go.
     pub prefix: String,
 }
 
-/// Reads one component out of what the daemon said.
 #[must_use]
 pub fn component_from(held: &Value) -> Component {
     let text = |key: &str| {
@@ -648,73 +503,34 @@ pub fn component_from(held: &Value) -> Component {
     }
 }
 
-/// Which field on the prompt screen typing goes into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Caret {
-    /// A setting on the model page's Configure tab.
     Setting,
-    /// The prompt being taken apart.
     #[default]
     Document,
-    /// The temperature the settledness seeds are drawn at (B-431).
     Temperature,
-    /// The system turn a question is asked inside (B-462).
     System,
-    /// How hard to reason, in the template's own word (B-462).
     Effort,
-    /// The picture to show the model (B-462, B-452).
     Picture,
 }
 
-/// Which screen is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
-    /// The machine, live.
     Monitor,
-    /// Choosing a model, and everything known about it.
     Host,
-    /// Setting up a measurement.
     Diagnostics,
-    /// Everything held — the same screen as [`Self::Host`], as the console
-    /// has it, because *what is held* and *what to host* are one list.
     Models,
-    /// What MCF can build, and what it has.
     Components,
-    /// How MCF is set up.
     Settings,
-    /// Leave.
     Exit,
-    /// Fetching a model that is not here yet. Reached from Host's actions
-    /// rather than the menu, the way the console's screens lead onward.
     Adding,
-    /// A model, held and answering.
     Hosting,
-    /// What a prompt does to a model.
-    ///
-    /// Reached from Diagnostics rather than from the column: it is a
-    /// diagnostic about a prompt, it needs the model Diagnostics already has
-    /// chosen, and the console's menu row has four columns of slack where a
-    /// seventh entry needs nine (B-072).
     Prompt,
-    /// What a model is made of: what `mcf explain` counts, as the daemon
-    /// says it (A22, B-072). Reached from Models' actions, for the model
-    /// chosen there.
     Anatomy,
-    /// What a model says with: its token list and chat template, counted by
-    /// the daemon in the same answer as [`Self::Anatomy`], on a screen of its
-    /// own because the two do not fit on one (B-072). Reached from there.
     Vocabulary,
 }
 
 impl Page {
-    /// The navigation column, in order.
-    ///
-    /// The console's menu, in the console's order.
-    ///
-    /// Not a menu invented for the window: an operator worked this one out,
-    /// and a second surface that rearranged the same six entries would make
-    /// *where things are* a fact about which surface you happened to open
-    /// (B-072).
     pub const MENU: &'static [(Self, &'static str)] = &[
         (Self::Monitor, "System"),
         (Self::Models, "Models"),
@@ -723,151 +539,76 @@ impl Page {
         (Self::Exit, "Exit"),
     ];
 
-    /// Which entry in the column should be lit while this page shows.
     #[must_use]
     pub fn section(self) -> Self {
         match self {
-            // Host was a second entry for the list Models already shows —
-            // `view::host` draws both — so the column carried one screen
-            // twice. The screens its actions lead to belong to Models now,
-            // and the menu still shows where you came from.
             Self::Host | Self::Adding | Self::Anatomy | Self::Vocabulary | Self::Models => {
                 Self::Models
             }
-            // Running is what is held: its own place (D49).
             Self::Hosting => Self::Hosting,
             Self::Diagnostics | Self::Prompt => Self::Diagnostics,
-            // The engines are part of the machine, and the empty settings
-            // page went with the redesign; both land on Machine.
             Self::Monitor | Self::Components | Self::Settings => Self::Monitor,
             Self::Exit => Self::Exit,
         }
     }
 }
 
-/// One probe's or measurement's last finding on a model: the lines the
-/// daemon wrote for it — or the record's one sentence, where the finding
-/// is from before this window opened — with when it was taken and on
-/// what engine (D53).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Finding {
-    /// The probe's or measurement's name, as the daemon lists it.
     pub name: String,
-    /// When it was taken, as the record wrote it; `None` where the record
-    /// did not say.
     pub at: Option<String>,
-    /// The engine it was taken through, where the record said.
     pub engine: Option<String>,
-    /// What it found, a line each.
     pub lines: Vec<String>,
 }
 
-/// One model, as this window needs it.
-///
-/// Every field that can be absent is an `Option`, and nothing is defaulted to
-/// zero on the way in. A zero here would be drawn as a measurement.
 #[derive(Debug, Clone, Default)]
 pub struct Model {
-    /// What to call it: the file's name, without the path or the extension.
     pub name: String,
-    /// Where it is, for the technical disclosure.
     pub path: String,
-    /// How large the file is.
     pub bytes: Option<u64>,
-    /// What kind of model it is, as its own header says.
     pub architecture: Option<String>,
-    /// The longest conversation it was trained for.
     pub trained: Option<u64>,
-    /// The longest conversation it can hold on this machine.
     pub context: Option<u64>,
-    /// Bytes of cache one token of context costs — what the largest window is
-    /// arithmetic over, and a figure the console shows because it is what
-    /// makes the answer checkable rather than a claim (A6).
     pub cache_per_token: Option<u64>,
-    /// The engine MCF would use.
     pub engine: Option<String>,
-    /// The device it would run on.
     pub device: Option<String>,
-    /// What that device had free when MCF resolved it.
     pub device_free: Option<u64>,
-    /// The last measurement taken of it, whole, as the daemon keeps it: the
-    /// readings and what was read off them, for the Statistics tab.
     pub measured_body: Option<Value>,
-    /// When the last measurement was taken, as the record wrote it (D53).
     pub measured_at: Option<String>,
-    /// What the last cross-check said, sentence by sentence.
     pub cross_checked: Vec<String>,
-    /// When it was taken (D53).
     pub cross_checked_at: Option<String>,
-    /// Whether a prompt report has been taken of it.
     pub prompt_reported: bool,
-    /// When the last one was (D53).
     pub prompt_reported_at: Option<String>,
-    /// The addressing a probe applied, by provenance, where one was.
     pub applied_addressing: Option<String>,
-    /// The budget a probe applied, by provenance, where one was.
     pub applied_budget: Option<String>,
-    /// What the probes and the measurements last found on it, one entry
-    /// a method: the lines the daemon wrote for it, when and through what
-    /// (B-478, D52, D53).
     pub probed: Vec<Finding>,
-    /// When each method's readings were last taken on it, by method: how
-    /// a row the daemon does not run says when it last ran (B-519).
     pub readings_at: std::collections::BTreeMap<String, String>,
-    /// The hub repository it came from, where its provenance names one: a
-    /// model is a repository with its quantizations, and this is which
-    /// (D51, B-486).
     pub repository: Option<String>,
-    /// The file it is, by name: which quantization of its repository.
     pub file: String,
-    /// Whether that device is a graphics card.
     pub on_a_card: bool,
-    /// Why it will not run, where it will not.
     pub refused: Option<String>,
-    /// Tokens a second, where it has been measured.
     pub speed: Option<f64>,
-    /// Milliseconds to the first token at the shallowest depth the ladder
-    /// measured, as the daemon said it — a warm figure, taken with the file
-    /// already in the page cache (see `mcf_serve::ladder`).
     pub start_up: Option<String>,
-    /// Milliseconds a token at the shortest depth measured.
     pub fastest: Option<f64>,
-    /// Milliseconds a token at the longest.
     pub slowest: Option<f64>,
-    /// Every depth that separated, in order — the shape rather than its ends.
-    ///
-    /// Kept whole because a table can say what a cost is at a depth and only a
-    /// picture can say whether it is going anywhere, which is the question
-    /// somebody actually has (B-410).
     pub ladder: Vec<crate::chart::Reading>,
 }
 
-/// One measurement that can be asked for — the console's row, with what its
-/// last run found (B-072).
 pub use mcf_tui::screens::diagnostics::Test;
 
-/// What runs a test — the console's word for it.
 pub use mcf_tui::screens::diagnostics::Run;
 
-/// The tests MCF knows how to run.
-///
-/// The console's list, read from the console rather than copied from it: the
-/// same set of measurements in the same order, because a second surface
-/// offering a different five would make *what MCF can measure* a fact about
-/// which surface you opened (B-072).
 #[must_use]
 pub fn tests() -> Vec<Test> {
     mcf_tui::screens::diagnostics::tests()
 }
 
 impl Model {
-    /// Whether MCF found a way to run it here.
     #[must_use]
     pub fn will_run(&self) -> bool {
         self.refused.is_none() && self.engine.is_some()
     }
 
-    /// Where it would run, in a phrase.
     #[must_use]
     pub fn where_it_runs(&self) -> String {
         if let Some(why) = &self.refused {
@@ -882,10 +623,6 @@ impl Model {
         }
     }
 
-    /// The sentence on the card: what this model is, for this machine.
-    ///
-    /// Built from whatever is known, and it says less when less is known
-    /// rather than filling the gap.
     #[must_use]
     pub fn in_a_sentence(&self) -> String {
         if let Some(why) = &self.refused {
@@ -902,7 +639,6 @@ impl Model {
         }
     }
 
-    /// What it takes out of the machine.
     #[must_use]
     pub fn memory_sentence(&self) -> String {
         words::size_in_words(self.bytes).map_or_else(
@@ -911,7 +647,6 @@ impl Model {
         )
     }
 
-    /// What was measured at the shallowest depth, or that nothing was.
     #[must_use]
     pub fn speed_at_512(&self) -> String {
         self.fastest.map_or_else(
@@ -920,7 +655,6 @@ impl Model {
         )
     }
 
-    /// What was measured at the deepest rung the latest ladder climbed.
     #[must_use]
     pub fn speed_at_window(&self) -> String {
         self.slowest.map_or_else(
@@ -929,11 +663,6 @@ impl Model {
         )
     }
 
-    /// What the two speed rows are rows of: the depth each end was measured
-    /// at, since the deepest rung is as deep as the ladder was asked to climb
-    /// and not the model's window — a Quick Run's 1,024 said *at the largest
-    /// window* until the label came from the reading (A20). The console
-    /// labels its card the same way (B-072).
     #[must_use]
     pub fn speed_rows(&self) -> [(String, String); 2] {
         let at = |reading: Option<&crate::chart::Reading>, or: &str| {
@@ -954,7 +683,6 @@ impl Model {
         ]
     }
 
-    /// How long the first token takes, warm.
     #[must_use]
     pub fn start_up(&self) -> String {
         self.start_up
@@ -962,16 +690,11 @@ impl Model {
             .map_or_else(|| crate::view::UNKNOWN.to_owned(), |ms| format!("{ms} ms"))
     }
 
-    /// Whether anything has been measured about it.
     #[must_use]
     pub fn measured(&self) -> bool {
         self.fastest.is_some() || self.slowest.is_some() || self.start_up.is_some()
     }
 
-    /// Everything the screen decided not to lead with.
-    ///
-    /// Nothing is dropped on the way to a plain sentence — it is put here
-    /// (A1), in the units it was measured in.
     #[must_use]
     pub fn technical(&self) -> Vec<(String, String)> {
         let mut rows = Vec::new();
@@ -1013,8 +736,6 @@ impl Model {
     }
 }
 
-/// Reads a model out of what the daemon answered.
-/// The hub repository a held model's provenance names, where it names one.
 fn repository_of(held: &Value) -> Option<String> {
     held.get("provenance")
         .and_then(|provenance| provenance.get("origin"))
@@ -1024,8 +745,6 @@ fn repository_of(held: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// When each method's readings were last taken, as the daemon lists them
-/// beside the model (B-519).
 fn readings_at_of(held: &Value) -> std::collections::BTreeMap<String, String> {
     match held.get("readings_at") {
         Some(Value::Map(entries)) => entries
@@ -1036,8 +755,6 @@ fn readings_at_of(held: &Value) -> std::collections::BTreeMap<String, String> {
     }
 }
 
-/// What the record holds of the probes and the measurements, one
-/// sentence each, with when and through what (B-483, D53).
 fn probed_of(held: &Value) -> Vec<Finding> {
     held.get("probed")
         .and_then(Value::as_list)
@@ -1130,10 +847,6 @@ fn model_from(held: &Value) -> Model {
         prompt_reported: results.2,
         prompt_reported_at: results.4,
         // **What the daemon says of a model's runs is under `runs`.** The
-        // probes' findings and the settings they applied were read at the
-        // top of the entry, where the daemon never put them, so a window
-        // opened after a probe run listed every probe as never run and no
-        // applied setting at all until it ran one itself (B-519).
         applied_addressing: runs
             .and_then(|runs| runs.get("configured"))
             .and_then(|applied| applied.get("addressing"))
@@ -1151,10 +864,6 @@ fn model_from(held: &Value) -> Model {
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
-        // What was measured, from the record, and absent where nothing was
-        // (A7). The shallowest reading and the deepest are what the console's
-        // MEASURED table shows; the whole ladder is in the entry for anything
-        // that wants the shape rather than the ends.
         speed: measured
             .as_ref()
             .and_then(|held| held.fastest)
@@ -1166,17 +875,12 @@ fn model_from(held: &Value) -> Model {
     }
 }
 
-/// When a run's body says it was recorded, where the daemon dated it (D53).
 fn at_in(body: Option<&Value>) -> Option<String> {
     body.and_then(|body| body.get("at"))
         .and_then(Value::as_text)
         .map(str::to_owned)
 }
 
-/// What the daemon keeps of a model's runs, for the Statistics tab and the
-/// diagnostics list: the last measurement whole, what the cross-check
-/// said, whether a prompt report was taken, and when the last two were
-/// (D53).
 fn results_of(
     runs: Option<&Value>,
 ) -> (
@@ -1214,14 +918,6 @@ fn results_of(
     )
 }
 
-/// Milliseconds a token, as tokens a second.
-/// Where the answer's first token went with a sentence gone, as a table
-/// cell: `1` where the model would still have begun the same way, `17`
-/// where it fell to its seventeenth choice, `>60` where it was outside the
-/// depth read, and `—` where no reading was taken — which is a state and
-/// not a rank (A7, B-429).
-///
-/// One implementation for the glass and the console (B-072).
 #[must_use]
 pub fn held_mark(held: Option<&Value>, depth: i64) -> String {
     let Some(held) = held.filter(|held| !matches!(held, Value::Null)) else {
@@ -1233,10 +929,6 @@ pub fn held_mark(held: Option<&Value>, depth: i64) -> String {
     }
 }
 
-/// How much of the answer's opening stayed the model's first choice with a
-/// sentence gone, as `kept/of`, or `—` where no reading was taken (A7).
-///
-/// One implementation for the glass and the console (B-072).
 #[must_use]
 pub fn open_mark(held: Option<&Value>) -> String {
     let Some(held) = held.filter(|held| !matches!(held, Value::Null)) else {
@@ -1246,13 +938,6 @@ pub fn open_mark(held: Option<&Value>) -> String {
     format!("{}/{}", count("kept"), count("of"))
 }
 
-/// What the answer as written amounted to: how many tokens, and what ended
-/// it — its own stop token, the cap, or what the engine said. An answer
-/// with neither under a 600-token cap left a reader to guess whether the
-/// model said nothing or the report lost it (A7, F160). Empty where the
-/// report served no account.
-///
-/// One implementation for the glass and the console (B-072).
 #[must_use]
 pub fn answer_marks(body: &Value) -> Vec<String> {
     let mut marks = Vec::new();
@@ -1274,27 +959,13 @@ pub fn answer_marks(body: &Value) -> Vec<String> {
     marks
 }
 
-/// The line that stands where an answer would, when the model wrote
-/// nothing a reader can see: said, rather than left blank (A7).
 pub const NOTHING_WRITTEN: &str = "nothing written";
 
-/// The pair a swap changed the places of, as `1&2` for the first swap:
-/// the parts counted from one, the way the removed rows count them
-/// (B-437). An ampersand rather than an arrow because the window's face is
-/// whichever the machine has, and the arrows are the glyphs it goes without.
-///
-/// One implementation for the glass and the console (B-072).
 #[must_use]
 pub fn pair_mark(at: usize) -> String {
     format!("{}&{}", at.saturating_add(1), at.saturating_add(2))
 }
 
-/// How much of one part the model would have written itself, as `1/4`: one
-/// of its four tokens was the model's first choice (B-433). `None` where the
-/// reading was not taken or has no such part, which the row then shows as
-/// nothing rather than as a prompt wholly expected (A7).
-///
-/// One implementation for the glass and the text that leaves it (B-072).
 #[must_use]
 pub fn expected_mark(grouped: Option<&Value>, at: usize) -> Option<String> {
     let part = grouped?.get("parts")?.as_list()?.get(at)?;
@@ -1307,29 +978,15 @@ fn per_second(ms: f64) -> f64 {
     if ms > 0.0 { 1000.0 / ms } else { 0.0 }
 }
 
-/// The ends of a measured ladder: the shallowest reading and the deepest.
 #[derive(Debug, Default)]
 struct Measured {
-    /// Milliseconds a token at the shallowest depth that separated.
     fastest: Option<f64>,
-    /// The same at the deepest.
     slowest: Option<f64>,
-    /// Every depth that separated, in order.
     ladder: Vec<crate::chart::Reading>,
-    /// Milliseconds to the first token at the shallowest rung, where the
-    /// daemon read one.
     start_up: Option<String>,
 }
 
-/// Reads the ends out of what the record kept.
-///
-/// Only the depths that *separated*: a rung the arithmetic could not measure
-/// is not a slow one, and letting it stand in for the deepest reading would
-/// put a number where there is none (A7, A9).
 fn measured_ends(held: &Value) -> Measured {
-    // The start-up figure is the daemon's, derived on its side of the wire
-    // so that no surface derives it differently (B-072); a run that could not
-    // read one says so there, and reads as nothing here.
     let mut ends = Measured {
         start_up: held
             .get("first_token")
@@ -1368,29 +1025,12 @@ fn measured_ends(held: &Value) -> Measured {
     ends
 }
 
-/// Asks the daemon one question.
 fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
     ask_within(socket, request, std::time::Duration::from_secs(30))
 }
 
-/// How long a reading waits before giving up on a busy daemon.
-///
-/// **Long enough to answer, short enough not to freeze the window.** The
-/// daemon answers one thing at a time, so while it loads a large model every
-/// reading waits — and with the thirty-second deadline a deliberate act
-/// deserves, the window stopped repainting and stopped taking events entirely.
-///
-/// Four hundred milliseconds was the first attempt at that and was wrong:
-/// *what this machine is holding* reads sixteen model headers off disk and
-/// takes about a second and a half, so the list came back empty every time and
-/// the window showed no models at all. A deadline shorter than the work is not
-/// a deadline, it is a guarantee of failure (A7).
-///
-/// Five seconds: several times what the slowest reading takes, and a pause
-/// rather than a freeze when the daemon is busy elsewhere.
 const POLL: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// Asks, waiting no longer than this for the answer.
 fn ask_within(
     socket: &Path,
     request: &Request,
@@ -1409,75 +1049,43 @@ fn ask_within(
     Answer::read(line.trim_end()).map_err(|failure| failure.to_string())
 }
 
-/// Which dropdown a click was about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
-    /// Which model the measurement is of.
     Model,
-    /// How deep a context it is set up for.
     Window,
-    /// Where the model goes: as MCF resolves it, the processor, or the card.
     On,
-    /// Where a hold puts the model, from the daemon's list of placements.
     Placement,
-    /// The rope scaling a hold starts with.
     Rope,
-    /// Which quantization of the repository the page is about (B-486).
     Quantization,
-    /// The filters' architecture (B-489).
     Architecture,
-    /// The filters' *fits here*.
     Fits,
-    /// The filters' size.
     Size,
 }
 
-/// A region of the window that scrolls on its own (B-490).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Region {
-    /// The library's rows.
     Library,
-    /// The model page under its tabs.
     Page,
-    /// A hub repository's page, or a pending file's.
     Hub,
-    /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
     Diagnostics,
-    /// The Diagnostics page itself, around its list and its pane. Its own
-    /// key: the page and the pane once shared one, and each frame the two
-    /// clamped it to their own content, so a scroll act went out every
-    /// frame and every press outside them — the menu — was lost (B-575).
     DiagnosticsPage,
-    /// The Diagnostics page's list of every diagnostic (D53).
     Checks,
-    /// The Server page.
     Server,
-    /// The prompt page's report.
     Prompt,
-    /// The System page.
     Monitor,
 }
 
-/// A boundary a person can drag (B-490).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Splitter {
-    /// Between the column down the left and the page.
     Side,
-    /// Between the library and the model page.
     List,
-    /// Between the Diagnostics page's two columns.
     Diagnostics,
 }
 
-/// Where the splitters sit: the column's width, the library's width, and
-/// the Diagnostics page's left column's width, in points (B-490).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Splits {
-    /// The column down the left.
     pub side: f32,
-    /// The library.
     pub list: f32,
-    /// The Diagnostics page's left column.
     pub diagnostics: f32,
 }
 
@@ -1491,7 +1099,6 @@ impl Default for Splits {
     }
 }
 
-/// Whole points as the screen measures them.
 fn as_points(whole: i32) -> f32 {
     #[allow(
         clippy::cast_precision_loss,
@@ -1501,13 +1108,9 @@ fn as_points(whole: i32) -> f32 {
     at
 }
 
-/// The room around a page, which a splitter's position is measured past.
 const PAGE_PAD: f32 = 26.0;
 
 impl Splits {
-    /// Moves one splitter to a position along the window, kept inside the
-    /// room each area needs: a column narrower than its words or a page
-    /// narrower than a control is no layout at all.
     pub fn set(&mut self, splitter: Splitter, to: f32) {
         match splitter {
             Splitter::Side => self.side = to.clamp(120.0, 320.0),
@@ -1521,30 +1124,21 @@ impl Splits {
     }
 }
 
-/// The filters beside the library's search field: applied with the words
-/// to what is here, each *any* until somebody sets it, so an empty list is
-/// a list nothing matched and not one a filter hid (D51, B-489).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Filters {
-    /// Whether the row of pickers is shown.
     pub open: bool,
-    /// Only models of this architecture, where set.
     pub architecture: Option<String>,
-    /// Only models MCF says will run here (`true`), or will not (`false`).
     pub fits: Option<bool>,
-    /// Only models of at most this many bytes, where set.
     pub size: Option<u64>,
 }
 
 impl Filters {
-    /// Whether any filter is set.
     #[must_use]
     pub const fn any_set(&self) -> bool {
         self.architecture.is_some() || self.fits.is_some() || self.size.is_some()
     }
 }
 
-/// The sizes the filter offers: any, then three ceilings in bytes.
 pub const SIZE_CHOICES: [Option<u64>; 4] = [
     None,
     Some(8_000_000_000),
@@ -1552,30 +1146,21 @@ pub const SIZE_CHOICES: [Option<u64>; 4] = [
     Some(50_000_000_000),
 ];
 
-/// The *fits here* choices: any, will run here, will not.
 pub const FITS_CHOICES: [Option<bool>; 3] = [None, Some(true), Some(false)];
 
-/// What the hub answered a search with: the words, and the repositories
-/// with GGUF files it lists for them, most downloaded first (D51).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HubList {
-    /// The words the hub was asked for.
     pub query: String,
-    /// What it listed.
     pub repositories: Vec<HubRepo>,
 }
 
-/// One repository the hub listed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HubRepo {
-    /// `owner/name`, as the hub names it.
     pub id: String,
-    /// Downloads the hub counts, where it says.
     pub downloads: Option<u64>,
 }
 
 impl HubRepo {
-    /// One repository as the daemon lists it.
     #[must_use]
     pub fn from_value(value: &Value) -> Option<Self> {
         Some(Self {
@@ -1588,19 +1173,14 @@ impl HubRepo {
     }
 }
 
-/// One GGUF file a repository publishes, as the daemon lists it (B-486).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OfferedFile {
-    /// The file's name in the repository.
     pub file: String,
-    /// Its size, where the hub says.
     pub bytes: Option<u64>,
-    /// Whether MCF says it would run here; `None` where it could not say.
     pub fits: Option<bool>,
 }
 
 impl OfferedFile {
-    /// One file as the daemon lists it.
     #[must_use]
     pub fn from_value(value: &Value) -> Option<Self> {
         Some(Self {
@@ -1617,47 +1197,29 @@ impl OfferedFile {
     }
 }
 
-/// A quantization picked that is not here yet: the page's subject as *not
-/// downloaded* (B-486, B-487).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {
-    /// The repository it is a file of.
     pub repository: String,
-    /// The file.
     pub file: String,
-    /// Its size, where the hub says.
     pub bytes: Option<u64>,
-    /// Whether it would run here, where MCF could say.
     pub fits: Option<bool>,
 }
 
-/// One quantization of the page's repository, as the picker lists it:
-/// here, by its place in the library, or on the hub (B-486).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Quant {
-    /// The file.
     pub file: String,
-    /// Its size, where known.
     pub bytes: Option<u64>,
-    /// Which held model it is, where it is here.
     pub here: Option<usize>,
-    /// Whether it would run here, where MCF said.
     pub fits: Option<bool>,
 }
 
-/// One entry of the library: a repository and the held files that are its
-/// quantizations, or a file no repository is known for (D51, B-486).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
-    /// The repository, where the members' provenance names one.
     pub repository: Option<String>,
-    /// The held models in it, by their place in the list.
     pub members: Vec<usize>,
 }
 
 impl Group {
-    /// The name the list shows: the repository's own name, or the one
-    /// member's.
     #[must_use]
     pub fn name(&self, models: &[Model]) -> String {
         match &self.repository {
@@ -1675,36 +1237,20 @@ impl Group {
     }
 }
 
-/// One run the Diagnostics page offers, each on its own card with its own
-/// controls, cost and Run (D50, B-477).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Card {
-    /// The depth ladder: speed at each depth, and what a window costs.
     Throughput,
-    /// MCF's own engine reading what the provisioned one produced.
     CrossCheck,
-    /// The probes: what the template and the model do.
     Capabilities,
-    /// The performance measurements: offload, prefill, prefix reuse,
-    /// memory, concurrency, cold start (D52).
     Performance,
-    /// The fidelity measurements: against a reference file, bits a byte,
-    /// determinism, the tokenizer (D52).
     Fidelity,
-    /// The behaviour measurements: retrieval, degeneration, grammar, an
-    /// image's cost (D52).
     Behaviour,
-    /// What each part of a prompt does to the answer.
     Prompt,
-    /// Two models on one question under one engine.
     Comparison,
-    /// The coding suites, run through the command line's container
-    /// (B-519, D54).
     Coding,
 }
 
 impl Card {
-    /// Every card, in the order the page shows them.
     pub const ALL: [Self; 9] = [
         Self::Throughput,
         Self::CrossCheck,
@@ -1717,9 +1263,6 @@ impl Card {
         Self::Coding,
     ];
 
-    /// The measurements this card runs, where it is one of the three that
-    /// run them (D52): the daemon's own family list, so the card and the
-    /// run cannot disagree about what is in it.
     #[must_use]
     pub fn measures(self) -> &'static [&'static str] {
         let family = match self {
@@ -1733,7 +1276,6 @@ impl Card {
             .map_or(&[][..], |(_, members)| members)
     }
 
-    /// The card's name.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -1749,7 +1291,6 @@ impl Card {
         }
     }
 
-    /// What the run answers, in one line.
     #[must_use]
     pub const fn answers(self) -> &'static str {
         match self {
@@ -1777,9 +1318,6 @@ impl Card {
         }
     }
 
-    /// The command that runs it, for the runs the daemon does not carry
-    /// yet (B-478): the window says so and offers the command rather than
-    /// a button that does nothing (§3.15).
     #[must_use]
     pub fn command(self, model: &str) -> Option<String> {
         match self {
@@ -1796,29 +1334,17 @@ impl Card {
     }
 }
 
-/// One diagnostic MCF can take of a model: a row of the Diagnostics
-/// page's list, and the whole of it when chosen (D53).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Diagnostic {
-    /// The depth ladder.
     Throughput,
-    /// MCF's own engine reading the provisioned one's tokens.
     CrossCheck,
-    /// What each part of a prompt does to the answer.
     Prompt,
-    /// Two models on one question, at the command line.
     Comparison,
-    /// One probe, by its place in the daemon's list.
     Probe(usize),
-    /// One measurement, by its place in the daemon's list.
     Measure(usize),
-    /// One of the command line's coding suites, by its place in `SUITES`
-    /// (B-519).
     Eval(usize),
 }
 
-/// The coding suites `mcf eval --only` runs, each with the row's name and
-/// the method the record keeps its readings under (B-519, D54).
 pub const SUITES: [(&str, &str, &str); 7] = [
     ("challenges-easy", "Challenges: easy", "challenges-easy"),
     (
@@ -1837,19 +1363,12 @@ pub const SUITES: [(&str, &str, &str); 7] = [
     ("queries", "SQL and patterns", "queries"),
 ];
 
-/// How many attempts a challenge gets unless the person types otherwise:
-/// the command line's own default (D56).
 pub const RETRIES_DEFAULT: usize = 10;
 
-/// The smallest window the Challenges card takes, in tokens: the daemon's
-/// own floor.
 pub const SMALLEST_WINDOW: u64 = 4096;
 
-/// The languages the catalogue runs in, by the name `--languages` takes:
-/// the command line's own list.
 pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 
-/// What each suite answers, in one line, in `SUITES` order.
 const SUITE_ANSWERS: [&str; 7] = [
     "The catalogue's fourteen easy challenges in Python, JavaScript, Rust and Go, up to ten attempts each: the attempt that solved it, the corrections, the tokens and the time",
     "The seventeen medium challenges — parsing, geometry, dynamic programming, bits — in the same four languages, with retries",
@@ -1860,7 +1379,6 @@ const SUITE_ANSWERS: [&str; 7] = [
     "SQL queries run against a fixed table beside the reference, and patterns run against match and no-match cases",
 ];
 
-/// What each probe answers, in one line, in the daemon's order.
 const PROBE_ANSWERS: [&str; 9] = [
     "How the model is addressed: which form of its template ends its turn",
     "How much of the declared context the engine accepts",
@@ -1873,7 +1391,6 @@ const PROBE_ANSWERS: [&str; 9] = [
     "Whether a picture reaches the model at all",
 ];
 
-/// What each measurement answers, in one line, in the daemon's order.
 const MEASURE_ANSWERS: [&str; 47] = [
     "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
     "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
@@ -1925,7 +1442,6 @@ const MEASURE_ANSWERS: [&str; 47] = [
 ];
 
 impl Diagnostic {
-    /// Every diagnostic, in the order the list shows them.
     #[must_use]
     pub fn all() -> Vec<Self> {
         Self::families()
@@ -1934,8 +1450,6 @@ impl Diagnostic {
             .collect()
     }
 
-    /// The list's families: each with its heading, the card whose Run
-    /// runs every one of it where there is such a run, and its members.
     #[must_use]
     pub fn families() -> Vec<(&'static str, Option<Card>, Vec<Self>)> {
         let probes = (0..mcf_serve::probes::run::PROBES.len())
@@ -1979,7 +1493,6 @@ impl Diagnostic {
         ]
     }
 
-    /// The diagnostic's name, as the daemon and the record know it.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -1996,7 +1509,6 @@ impl Diagnostic {
         }
     }
 
-    /// The suite's own name, as `mcf eval --only` takes it.
     #[must_use]
     pub fn suite(self) -> Option<&'static str> {
         match self {
@@ -2005,7 +1517,6 @@ impl Diagnostic {
         }
     }
 
-    /// What it answers, in one line.
     #[must_use]
     pub fn answers(self) -> &'static str {
         match self {
@@ -2019,7 +1530,6 @@ impl Diagnostic {
         }
     }
 
-    /// The run it belongs to.
     #[must_use]
     pub fn card(self) -> Card {
         match self {
@@ -2039,8 +1549,6 @@ impl Diagnostic {
         }
     }
 
-    /// The method the record keeps its finding under, where it is a probe
-    /// or a measurement.
     #[must_use]
     pub fn method(self) -> Option<&'static str> {
         match self {
@@ -2049,18 +1557,12 @@ impl Diagnostic {
         }
     }
 
-    /// The method the record keeps its readings under: the probes' and
-    /// measurements' own names, and the ladder's and cross-check's (D54).
     #[must_use]
     pub fn readings_method(self) -> Option<&'static str> {
         match self {
             Self::Throughput => Some("throughput"),
             Self::CrossCheck => Some("cross-check"),
             Self::Prompt | Self::Comparison => None,
-            // A probe's record name is not always its run name: the
-            // usable-context probe runs as `context` and records as
-            // `usable-context`, the tool probe as `tool-calls` and
-            // `tool-calling`.
             Self::Probe(at) => mcf_serve::probes::run::RECORDED.get(at).copied(),
             Self::Measure(_) => Some(self.name()),
             Self::Eval(at) => SUITES.get(at).map(|(_, _, method)| *method),
@@ -2068,23 +1570,17 @@ impl Diagnostic {
     }
 }
 
-/// Which tab of the model page is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
-    /// Every setting a hold takes, with a control on each.
     #[default]
     Configure,
-    /// Everything measured or read about the model.
     Statistics,
-    /// What the file holds: tensors and vocabulary.
     Contents,
 }
 
 impl Tab {
-    /// The three, in order.
     pub const ALL: [Self; 3] = [Self::Configure, Self::Statistics, Self::Contents];
 
-    /// The word on the tab.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -2095,50 +1591,28 @@ impl Tab {
     }
 }
 
-/// A setting on the Configure tab that takes typing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
-    /// The context window, in tokens.
     Context,
-    /// Processor threads.
     Threads,
-    /// The prompt batch.
     Batch,
-    /// The port.
     Port,
-    /// The key callers present.
     ApiKey,
-    /// The rope scaling's factor.
     RopeFactor,
-    /// How many attempts a challenge gets in a language, on the
-    /// Challenges card of the Diagnostics page (B-564).
     Retries,
-    /// The window every challenge ask is made in, on the same card; empty
-    /// is sized to each turn.
     Window,
-    /// The languages a challenge run asks in, on the same card, separated
-    /// by commas; empty is every language MCF has an image for.
     Languages,
 }
 
-/// A setting on the Configure tab that is a switch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Switch {
-    /// The attention kernel that reads less memory.
     FlashAttention,
-    /// Holding the pages in memory.
     KeepResident,
-    /// Starting the draft head the file carries.
     DraftHead,
-    /// Loading the projector beside the file.
     Projector,
-    /// Answering every address this machine has, not the loopback one
-    /// alone; a key is required with it (B-577).
     Open,
 }
 
-/// The rope scalings a hold can start with, in the order the list offers
-/// them: as the file has it, off, linear, yarn.
 pub const ROPE_CHOICES: [Option<mcf_serve::declared::Scaling>; 4] = [
     None,
     Some(mcf_serve::declared::Scaling::Off),
@@ -2146,236 +1620,98 @@ pub const ROPE_CHOICES: [Option<mcf_serve::declared::Scaling>; 4] = [
     Some(mcf_serve::declared::Scaling::Yarn),
 ];
 
-/// The context windows a measurement can be set up for.
-///
-/// **Powers of two, because a context window is asked for in them**, and every
-/// one below the chosen depth is sampled — which is why this is a list to pick
-/// from rather than a number to type.
 #[must_use]
 pub const fn windows() -> [u64; 7] {
     [1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536]
 }
 
-/// Which answer the prompt screen shows beside the figures: the one without
-/// a part, or the one to a part alone (B-435).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shown {
-    /// The answer without this part.
     Without(usize),
-    /// The answer to this part alone.
     Alone(usize),
-    /// The answer to the first `n + 1` parts, the prompt grown from the
-    /// front (B-436).
     Prefix(usize),
-    /// The answer with this part and the one after it in each other's
-    /// places (B-437).
     Swap(usize),
-    /// The answer to the parts in this form, counted among the forms as
-    /// served (B-444).
     Form(usize),
 }
 
-/// One thing a screen asks the window to do.
-///
-/// Immediate mode has no callbacks: a screen draws, notices it was clicked,
-/// and says what that meant. Everything that changes state happens in one
-/// place, which is why a click can never leave the window half-changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Act {
-    /// Show another screen.
     Go(Page),
-    /// Thinking on, off, or unsaid: the next position of the switch a
-    /// question is asked under (B-462).
     CycleThinking,
-    /// Ask a hub what it publishes under what has been typed.
     LookUp,
-    /// Fetch one published file.
-    Download {
-        /// The repository.
-        reference: String,
-        /// The file within it.
-        file: String,
-    },
-    /// Time the chosen model: a quick climb of the ladder, whatever is
-    /// ticked.
-    Measure {
-        /// The deepest context to sample.
-        deepest: u64,
-    },
-    /// Start one run's card on the chosen model (D50).
+    Download { reference: String, file: String },
+    Measure { deepest: u64 },
     Run(Card),
-    /// Search the hub for the words in the library's field (D51).
     SearchHub,
-    /// Scroll one region to an offset, in whole points (B-490).
     Scroll(Region, i32),
-    /// Move one splitter to a position along its axis, in whole points.
     Split(Splitter, i32),
-    /// Show or hide the filters beside the search field (B-489).
     ToggleFilters,
-    /// Set the architecture filter, by its place in the list offered.
     SetArchitecture(usize),
-    /// Set the *fits here* filter, by its place in the list offered.
     SetFits(usize),
-    /// Set the size filter, by its place in the list offered.
     SetSize(usize),
-    /// Pick one quantization of the page's repository, by its place in
-    /// the list the page offers: here first, then the hub's (B-486).
     Quantization(usize),
-    /// Pick one file of the hub repository whose page is open, by its
-    /// place in the hub's list: the page's subject as not downloaded.
     PickOffered(usize),
-    /// Download the subject that is not here, then do the thing named:
-    /// start the server, or a run (B-487).
     DownloadThen(std::boxed::Box<Act>),
-    /// Open the page of one repository the hub listed, by its place.
     PickHub(usize),
-    /// Flip whether the probes apply what they find.
     ApplyProbes,
-    /// Choose one diagnostic of the list, to show it whole (D53).
     Show(Diagnostic),
-    /// Run one diagnostic from its own pane: a probe or a measurement on
-    /// its own, or the run it is (D53).
     RunOne(Diagnostic),
-    /// Run every diagnostic in turn (B-508).
     RunAll,
-    /// Read a run's figures where they are kept: the model's Statistics tab.
     SeeStatistics,
-    /// Cut the run that is going short.
     Stop,
-    /// Hold the model that was last held, again.
     HostAgain,
-    /// Look up this repository, picked from a search.
     Pick(String),
-    /// Open a tab of the model page.
     Tab(Tab),
-    /// Show this half of Contents: the tensors or the vocabulary.
     Contents(Page),
-    /// Start typing into a setting.
     Edit(Field),
-    /// Flip a switch.
     Switch(Switch),
-    /// Put the hold where the daemon's list says, by index.
     Place(usize),
-    /// Start with this rope scaling, by index into `ROPE_CHOICES`.
     Rope(usize),
-    /// Put this text on the clipboard — the loop's, because the clipboard is
-    /// the window's and not the desk's.
     Copy(String),
-    /// Where the next run puts the model; `None` is where MCF resolves it.
     SetOn(Option<mcf_serve::control::On>),
-    /// Open a dropdown, or close it if it is the one already open.
-    ///
-    /// **The screen had two controls drawn as dropdowns that were not
-    /// dropdowns**: the model picker navigated to another page and the window
-    /// picker cycled to the next power of two. Both wore a chevron, which is
-    /// the promise that a list will appear. A control that looks like a
-    /// dropdown and does something else teaches the operator that the
-    /// furniture is decoration.
     Open(Picker),
-    /// Show the answer the model gave without one sentence, or the answer to
-    /// the prompt as written when that sentence is already the one shown.
-    ///
-    /// **The figures were the whole report and the evidence for them was on
-    /// the wire, unread.** A row saying a sentence moved 96% of the answer is
-    /// checkable only beside the answer it moved, and MCF has held both since
-    /// the measurement was written (A19).
     ShowWithout(usize),
-    /// Show the answer to one part alone, where each was asked (B-435).
     ShowAlone(usize),
-    /// Show the answer to the prompt grown through this many parts, or put
-    /// the answer as written back.
     ShowPrefix(usize),
-    /// Show the answer with this part and the next swapped, where the
-    /// swaps were asked (B-437).
     ShowSwap(usize),
-    /// Show the answer to the parts in one form, where the forms were
-    /// asked (B-444).
     ShowForm(usize),
-    /// Close whatever dropdown is open, choosing nothing.
     Shut,
-    /// Set the context window to one of the offered powers of two.
     SetWindow(u64),
-    /// Move one hosting setting on to its next value.
     Cycle(usize),
-    /// Put every setting back to what MCF recommended.
     Recommended,
-    /// Put every setting back to what the model was last held under.
     LastSettings,
-    /// Hold the chosen model under the settings as they stand.
     HostIt,
-    /// Build one component, by name, from the Components screen.
-    ///
-    /// The window is the surface; a card that said *mcf provision llama.cpp*
-    /// was sending the operator to a terminal for what the daemon behind the
-    /// window could do on request (A22, B-367).
     Build(String),
-    /// Stop holding it.
     StopHosting,
-    /// Close the window.
     Close,
-    /// Analyse the typed prompt on the chosen model.
     ReportPrompt,
-    /// Put the caret in one of the prompt screen's fields.
     Focus(Caret),
-    /// Remove at most this many parts of the document (B-430).
     MostParts(usize),
-    /// Take the document apart by this unit, or let the text decide.
     TakeApartBy(Option<mcf_serve::prompt::Unit>),
-    /// Ask for a further reading, or stop asking (B-434, B-435).
     Extra(mcf_serve::prompt::Extra, bool),
-    /// Ask a model what has been typed.
-    Ask {
-        /// Which, by position in the list.
-        at: usize,
-    },
-    /// Choose a model without leaving the screen.
+    Ask { at: usize },
     Choose(usize),
-    /// Empty the field — on the prompt screen, the document.
     Clear,
-    /// Forget what just ran, so the screen goes back to its resting state.
     Dismiss,
 }
 
-/// What long-running thing the window is waiting on, if any.
-///
-/// One at a time, deliberately. Two measurements at once would be two
-/// measurements of a machine that was running a measurement, and the second
-/// would be a reading of the first (A6).
 #[derive(Debug)]
 pub enum Doing {
-    /// Nothing.
     Nothing,
-    /// Starting a model on a port.
     Hosting(job::Job),
-    /// Building the engine a model needs, so that it can then be held.
-    ///
-    /// Started by Host, never on its own: the window builds only when the
-    /// operator asked for a model to be held and MCF had nothing to hold it
-    /// with — and it says what it is building while it does (§3.15, B-367).
     Provisioning(job::Job),
-    /// Asking a hub what it publishes.
     Listing(job::Job),
-    /// Fetching a model.
     Downloading(job::Job),
-    /// Timing one.
     Measuring(job::Job),
-    /// Reading what the provisioned engine produced with MCF's own.
     CrossChecking(job::Job),
-    /// Waiting for a model to answer.
     Answering(job::Job),
-    /// Taking a prompt apart.
     Reporting(job::Job),
-    /// The probes are running on the chosen model (B-478).
     Probing(job::Job),
-    /// The measurements are running on the chosen model (D52).
     Examining(job::Job),
-    /// A coding suite is running on the chosen model, through the command
-    /// line and its container (B-519).
     Evaluating(job::Job),
 }
 
 impl Doing {
-    /// The job behind it, whatever it is.
     #[must_use]
     pub fn job(&self) -> Option<&job::Job> {
         match self {
@@ -2394,29 +1730,21 @@ impl Doing {
         }
     }
 
-    /// Whether something is still running.
     #[must_use]
     pub fn busy(&self) -> bool {
         self.job().is_some_and(|job| !job.finished)
     }
 }
 
-/// The server the daemon holds for a run — the model under test — shown
-/// the way a hosted one is (B-573).
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnderTest {
-    /// The model, by path.
     pub model: String,
-    /// The engine it runs through.
     pub engine: String,
-    /// The window it was opened at.
     pub window: Option<u64>,
-    /// What it is doing, off its own counters.
     pub in_use: Use,
 }
 
 impl UnderTest {
-    /// Read from the daemon's answer.
     #[must_use]
     pub fn from_value(value: &Value) -> Self {
         Self {
@@ -2438,7 +1766,6 @@ impl UnderTest {
         }
     }
 
-    /// The model's file name, for a heading.
     #[must_use]
     pub fn name(&self) -> String {
         std::path::Path::new(&self.model).file_stem().map_or_else(
@@ -2448,35 +1775,20 @@ impl UnderTest {
     }
 }
 
-/// What a run has cost so far: the card's power summed a second at a time
-/// while the run went, and the tokens the model under test produced in
-/// that time, so that a cost a token is a figure and not a feeling
-/// (B-573). Whole millijoules: no fraction reaches the record (D24).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Spent {
-    /// Millijoules the card drew while the run was watched, as the daemon
-    /// measured them: each interval's mean draw over its own length, which
-    /// is not the same as a watts reading a second assumed to be a second
-    /// (B-593).
     pub millijoules: u64,
-    /// Seconds those intervals cover.
     pub seconds: u64,
-    /// The model under test's generated tokens when the run began, where
-    /// its counters were readable then.
     pub tokens_at_start: Option<u64>,
-    /// Its generated tokens at the last sample.
     pub tokens_now: Option<u64>,
 }
 
 impl Spent {
-    /// Tokens produced since the run began, where both ends were read.
     #[must_use]
     pub fn tokens(&self) -> Option<u64> {
         Some(self.tokens_now?.saturating_sub(self.tokens_at_start?))
     }
 
-    /// Tokens a kilojoule, whole, where both are known and energy is not
-    /// nought.
     #[must_use]
     #[expect(
         clippy::integer_division,
@@ -2491,231 +1803,85 @@ impl Spent {
     }
 }
 
-/// The window's state.
 #[derive(Debug)]
 pub struct Desk {
     socket: std::path::PathBuf,
-    /// Which screen is showing.
     pub page: Page,
-    /// Every model this computer holds.
     pub models: Vec<Model>,
-    /// Which answer is being shown on the prompt screen: one part's absence,
-    /// or one part alone. `None` is the answer to the prompt as written.
     pub shown: Option<Shown>,
-    /// How far each region that scrolls has been scrolled, in points
-    /// (B-490).
     pub scrolls: std::collections::BTreeMap<Region, f32>,
-    /// Where the splitters between the window's areas sit.
     pub splits: Splits,
-    /// The splitter a press took hold of, until the button is let go: the
-    /// line follows the pointer however far it goes, not only while the
-    /// press is still inside the band (F195).
     pub grabbed: Option<Splitter>,
-    /// The last reading of the machine.
     pub reading: mcf_tui::machine::Reading,
-    /// Why MCF could not be reached, when it could not.
     pub refusal: Option<String>,
-    /// Whether the last poll went unanswered in time.
-    ///
-    /// **Busy and absent are different facts.** A daemon loading a large model
-    /// answers nothing for minutes, and a window that read that as *not up*
-    /// would tell an operator their daemon had died at the exact moment it was
-    /// doing what they asked (A7).
     pub busy: bool,
-    /// What is being typed, on the screen that has a field.
     pub typed: String,
-    /// What the library is being searched for: filters what is held as it
-    /// is typed, and is the words the hub is asked for (D51, B-485).
     pub filter: String,
-    /// What the hub answered for the words in the field, where it was
-    /// asked: listed under what is here until the words change.
     pub hub: Option<HubList>,
-    /// Which hub repository's page is open, where one is, by its place in
-    /// the hub's list; `None` is a held model's page (B-485).
     pub hub_chosen: Option<usize>,
-    /// What the hub publishes for each repository asked about, by
-    /// repository: every GGUF file with its size and whether it would run
-    /// here, kept for the window's life (B-486).
     pub offered: std::collections::BTreeMap<String, Vec<OfferedFile>>,
-    /// A quantization picked that is not here: the page's subject as *not
-    /// downloaded*, until it is got or another is picked (B-486).
     pub pending: Option<Pending>,
-    /// What to do once the download going has finished: the thing the
-    /// button named, on the file once it is here (B-487).
     pub after_download: Option<Act>,
-    /// The filters beside the search field, each *any* until set (D51,
-    /// B-489).
     pub filters: Filters,
-    /// The temperature to draw the settledness seeds at, as typed; empty
-    /// asks the question nothing, and the page says so (B-431).
     pub temperature: String,
-    /// The system turn a question is asked inside, as typed; empty asks for
-    /// none, which is not the same as an empty one (B-462, D43).
     pub system: String,
-    /// How hard to reason, in the model's template's own vocabulary, as
-    /// typed; empty asks for nothing (B-462).
     pub effort: String,
-    /// Thinking on, off, or unsaid — three states, and unsaid is what the
-    /// template does of its own accord (B-462, D43).
     pub thinking: Option<bool>,
-    /// The picture to show the model, as a path typed; empty shows none
-    /// (B-462, B-452).
     pub picture: String,
-    /// Which field on the prompt screen typing goes into.
     pub caret: Caret,
-    /// How many parts to remove at most, where the person chose; `None` is
-    /// the report's default and the page says what that is.
     pub most: Option<usize>,
-    /// What to take the document apart into, where the person chose; `None`
-    /// lets the text decide.
     pub by: Option<mcf_serve::prompt::Unit>,
-    /// The further readings asked for, each costing generations (B-434,
-    /// B-435).
     pub extras: mcf_serve::prompt::Extras,
-    /// Which model a measurement or a question is about.
     pub chosen: Option<usize>,
-    /// What is running.
     pub doing: Doing,
-    /// What a model has said so far, this turn.
     pub said: String,
-    /// The tests offered on the diagnostics screen.
     pub tests: Vec<Test>,
-    /// Whether the probes apply what they find, which is an act (D43).
     pub probes_apply: bool,
-    /// The diagnostic chosen on the Diagnostics page, shown whole (D53).
     pub diagnostic: Diagnostic,
-    /// Which coding suite is running, by its place in `SUITES`, or none
-    /// for every one (B-519).
     pub evaluating: Option<usize>,
-    /// Whether a finished suite's readings have been read again.
     evaluation_kept: bool,
-    /// The chosen model's readings runs, newest first, as the daemon
-    /// answered them, with the path they are of (D54, B-516).
     pub readings: Option<(String, Vec<Value>)>,
-    /// The runs still to start after the one going, where a Run all is
-    /// under way; and how many the whole sequence had (B-508).
     pub queued: std::collections::VecDeque<Card>,
-    /// How many runs the Run all under way began with, for the strip's
-    /// *run 2 of 6*; nought where no Run all is going.
     pub queued_of: usize,
-    /// What MCF can build, and which of it is here.
     pub components: Vec<Component>,
-    /// What the daemon says it was built from, where it has been asked
-    /// (B-595): its version and the first of its revision, as this window
-    /// would write its own. `None` before it has answered.
     pub daemon_build: Option<String>,
-    /// The newest classified failures in the record, newest first (B-074).
     pub faults: Vec<Fault>,
-    /// How many failures the record holds in all.
     pub faults_in_record: usize,
-    /// When the failures were last read, so that the once-a-second reading
-    /// of the machine does not ask the record every second.
     faults_read: Option<std::time::Instant>,
-    /// What the chosen model would be hosted under, and what MCF advised.
-    ///
-    /// Both, because a run under a changed setting is not a run under the
-    /// recommended one and a person needs to see which they have (§3.15).
     pub settings: Option<mcf_serve::hosting::Hosting>,
-    /// What MCF recommended for the chosen model.
     pub recommended: Option<mcf_serve::hosting::Hosting>,
-    /// Why there are no settings, where there are none.
     pub no_settings: Option<String>,
-    /// The settings the chosen model was last held under, and since when,
-    /// where it has been held: offered on Configure as *as you set it last
-    /// time* beside the recommendation (B-475).
     pub last_settings: Option<(mcf_serve::hosting::Hosting, String)>,
-    /// The engine MCF said it would build for the chosen model, where there
-    /// are no settings because there is nothing to run it on. Named by the
-    /// daemon, not worked out here, so that what Host builds is what MCF
-    /// would have built from the command line (B-072).
     pub needs_engine: Option<String>,
-    /// A card this computer has that no provisioned engine drives: the
-    /// component that would, and the daemon's sentence saying so. Read
-    /// beside the models, because it is a fact about the machine and not
-    /// about any one of them (A21).
     pub card_unused: Option<(String, String)>,
-    /// Where a hold can put the chosen model, as the daemon listed them:
-    /// each with the build that fits and what the device has free.
     pub placements: Vec<Placement>,
-    /// Where the next run puts the model, where the person chose: `None` is
-    /// where MCF resolves it to.
     pub on: Option<mcf_serve::control::On>,
-    /// Which tab of the model page is open.
     pub tab: Tab,
-    /// Which half of Contents is shown: the tensors or the vocabulary.
     pub contents: Page,
-    /// The setting being typed into, and what has been typed so far. Applied
-    /// on Enter or when another control is pressed; a value that is not a
-    /// number is said to be one and not sent (§3.15).
     pub editing: Option<(Field, String)>,
-    /// Why the last typed value was not taken.
     pub edit_refused: Option<String>,
-    /// How many attempts a challenge gets in a language, passed to the
-    /// suite as `--retries`; ten unless typed (D56, B-564).
     pub retries: usize,
-    /// The window every challenge ask is made in, passed as `--window`;
-    /// sized to each turn where none is typed.
     pub challenge_window: Option<u64>,
-    /// The languages a challenge run asks in, passed as `--languages`;
-    /// every one MCF has an image for where none is typed.
     pub challenge_languages: Option<String>,
-    /// What the chosen model's file declares that a hold may start.
     pub declared: Option<mcf_serve::declared::Declared>,
-    /// The model to hold once the engine being built is there — the one Host
-    /// was pressed for, so that a model chosen meanwhile is not held by a
-    /// press that was for another.
     host_after: Option<String>,
-    /// The component being built, by name, while a build runs — so the
-    /// Components screen can show the build on the card it is for rather
-    /// than somewhere else. Set on every build, whichever screen started it.
     pub building: Option<String>,
-    /// Which build last stopped badly, and why, in the daemon's words: the
-    /// component's name and the refusal. The card for it says so, and a new
-    /// build clears it.
     pub build_failed: Option<(String, String)>,
-    /// What is being hosted: where it is reachable, and since when.
     pub hosted: Option<Hosted>,
-    /// The server the daemon holds for a run, where one is (B-573).
     pub under_test: Option<UnderTest>,
-    /// What the run going has spent so far (B-573).
     pub spent: Spent,
-    /// What was last held, where nothing is: read from the daemon, which
-    /// read it from the record, so it survives a restart of either (A1).
     pub last_hold: Option<LastHold>,
-    /// The held engine's predicting rate, one reading a second while the
-    /// Running page is looked at, newest last, for the line that shows it
-    /// moving. Cleared when the hold changes.
     pub rates: std::collections::VecDeque<f32>,
-    /// Why the last hold was refused, kept until the next is pressed for:
-    /// a person who went to ask the model a question is owed the reason it
-    /// is not there to ask, on that page (A2).
     pub host_refused: Option<String>,
-    /// What the last stop freed, in the daemon's figure, until something
-    /// else is held.
     pub freed: Option<String>,
-    /// What the chosen model is made of, as the daemon counted it — read
-    /// when the screen for it is opened, never counted here (B-072).
     pub anatomy: Option<mcf_serve::anatomy::Said>,
-    /// Why there is no anatomy, where there is none: the daemon's refusal,
-    /// or that it could not be asked (A2).
     pub no_anatomy: Option<String>,
-    /// The context window a measurement is set up for.
-    ///
-    /// Choosing it implies every power of two below it, which is why the
-    /// depths are stated under it rather than offered as a second set of
-    /// choices somebody could contradict the first with.
     pub window: u64,
-    /// Which dropdown is expanded, if any.
-    ///
-    /// **One at a time.** Two open lists would overlap each other and the
-    /// screen under both, and a click landing in the overlap would belong to
-    /// whichever happened to be drawn second.
     pub open: Option<Picker>,
     sampler: mcf_tui::machine::Sampler,
 }
 
 impl Desk {
-    /// A window that has not asked anything yet.
     #[must_use]
     pub fn new(socket: std::path::PathBuf) -> Self {
         Self {
@@ -2796,7 +1962,6 @@ impl Desk {
         }
     }
 
-    /// Whether the screen showing has a field somebody could be typing into.
     #[must_use]
     pub fn takes_typing(&self) -> bool {
         matches!(
@@ -2805,38 +1970,10 @@ impl Desk {
         ) || (matches!(self.page, Page::Host | Page::Diagnostics) && self.editing.is_some())
     }
 
-    /// The longest a pasted value may be, on a screen whose field takes a
-    /// name.
-    ///
-    /// An owner/repository reference and a hub URL are both far shorter than
-    /// this. The cap is here because a clipboard can hold a whole document and
-    /// a field that accepted one would be a field that stopped drawing.
     const PASTE_LIMIT: usize = 512;
 
-    /// The longest the prompt may be.
-    ///
-    /// **A prompt is a document.** What somebody analyses is a persona or an
-    /// instruction sheet — pages, not a line — and the field it goes into
-    /// takes a document (B-430). Sixty-four thousand characters is more than
-    /// any context this window's models take, and the daemon says what a
-    /// prompt past a model's window costs before it is spent (B-382).
     pub const PROMPT_LIMIT: usize = 65_536;
 
-    /// Adds pasted text to the field, as much of it as is a value.
-    ///
-    /// **What is on the clipboard was put there by something else.** A
-    /// reference copied out of a browser arrives with a trailing newline; one
-    /// copied out of a terminal can arrive with a tab or a stray control
-    /// character. None of those are part of a name, and a field that kept them
-    /// would send them to a hub and report a refusal the person could not see
-    /// the cause of. So on a screen whose field takes a name, this takes the
-    /// text's first line and drops what is not printable, rather than refusing
-    /// a paste that is almost right.
-    ///
-    /// **On the prompt screen the whole document is the value.** Its line
-    /// breaks are where the sentences end and its paragraphs are what a report
-    /// takes apart, so they are kept, and only what is neither text nor a
-    /// break is dropped.
     pub fn paste(&mut self, text: &str) {
         if self.page == Page::Prompt && self.caret == Caret::Document {
             let kept: String = text
@@ -2866,8 +2003,6 @@ impl Desk {
         into.extend(kept.chars().take(room));
     }
 
-    /// The field typing goes into: whichever of the prompt screen's fields
-    /// has the caret, the one field every other screen has otherwise.
     pub fn typing(&mut self) -> &mut String {
         if let (Page::Models | Page::Host | Page::Diagnostics, Some((_, typed))) =
             (self.page, self.editing.as_mut())
@@ -2876,19 +2011,14 @@ impl Desk {
         }
         match (self.page, self.caret) {
             (Page::Prompt, Caret::Temperature) => &mut self.temperature,
-            // The ask screen's own fields, and only there: a caret left
-            // pointing at one of them by a screen that has them must not
-            // swallow what is typed into a screen that does not.
             (Page::Hosting, Caret::System) => &mut self.system,
             (Page::Hosting, Caret::Effort) => &mut self.effort,
             (Page::Hosting, Caret::Picture) => &mut self.picture,
-            // The library's search field, when no setting is being edited.
             (Page::Models, _) => &mut self.filter,
             _ => &mut self.typed,
         }
     }
 
-    /// The same field, to read.
     #[must_use]
     pub fn being_typed(&self) -> &str {
         if let (Page::Models | Page::Host | Page::Diagnostics, Some((_, typed))) =
@@ -2906,16 +2036,6 @@ impl Desk {
         }
     }
 
-    /// The temperature the settledness seeds would be drawn at: `None` where
-    /// the field is empty and the question is not asked, `Err` with what was
-    /// typed where it is not a temperature — which Analyse refuses rather
-    /// than runs without, because a choice dropped on the way is a hidden
-    /// one (§3.15, A2).
-    ///
-    /// # Errors
-    ///
-    /// The text as typed, where it is not a decimal above nought to three
-    /// places.
     pub fn settle(&self) -> Result<Option<mcf_core::configuration::Thousandths>, &str> {
         let typed = self.temperature.trim();
         if typed.is_empty() {
@@ -2927,9 +2047,6 @@ impl Desk {
         }
     }
 
-    /// What is asked of the daemon from the prompt screen as it stands, or
-    /// why nothing would be: the prompt, the unit and the cap, exactly as
-    /// Analyse would send them (§3.15).
     #[must_use]
     pub fn taken(&self) -> mcf_serve::prompt::Taken<'_> {
         mcf_serve::prompt::Taken {
@@ -2940,13 +2057,6 @@ impl Desk {
         }
     }
 
-    /// What pressing Return means on the screen showing.
-    ///
-    /// **In a document, Return is a line break.** The prompt field holds
-    /// paragraphs, and a Return that ran the analysis would make a field
-    /// nobody could write a second line into; the analysis runs from its
-    /// button, or from Return with Control held. A field that takes one name
-    /// runs on Return as it always has.
     pub fn returned(&mut self, with_control: bool) {
         if self.page == Page::Prompt && !with_control && self.caret == Caret::Document {
             if self.typed.chars().count() < Self::PROMPT_LIMIT {
@@ -2957,11 +2067,8 @@ impl Desk {
         self.entered();
     }
 
-    /// What Return runs on the screen showing.
     pub fn entered(&mut self) {
         match self.page {
-            // A setting being typed is applied; otherwise Return searches
-            // the hub for words nothing here matches (D51).
             Page::Models if self.editing.is_some() => self.apply_edit(),
             Page::Models => {
                 if !self.filter.trim().is_empty() && self.library().is_empty() {
@@ -2980,7 +2087,6 @@ impl Desk {
         }
     }
 
-    /// Takes whatever a running job has said. Returns whether anything had.
     #[allow(clippy::too_many_lines, reason = "one arm a kind of job, each named")]
     pub fn hear(&mut self) -> bool {
         let before = self.doing.job().map_or(0, |job| job.answers.len());
@@ -2998,15 +2104,10 @@ impl Desk {
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => job.drain(),
         };
-        // A run that finished without a last word — or one whose end was
-        // heard a frame ago — still hands on to the next queued run (B-508).
         if !heard {
             self.start_the_next_queued();
             return false;
         }
-        // A suite's rows land in the record as each result is known, so the
-        // readings are read again each time one arrives and the table grows
-        // while the run goes (B-570).
         if let Doing::Evaluating(job) = &self.doing
             && job
                 .answers
@@ -3018,9 +2119,6 @@ impl Desk {
         {
             self.fetch_readings();
         }
-        // A generation arrives a token at a time, so the text is built as it
-        // comes rather than waiting for the end — which is the difference
-        // between watching a model answer and watching a blank panel.
         if let Doing::Answering(job) = &self.doing {
             self.said = job
                 .answers
@@ -3029,8 +2127,6 @@ impl Desk {
                 .collect::<Vec<_>>()
                 .concat();
         }
-        // A model that has just arrived is one this window is holding, and
-        // the list says so without anybody asking it to.
         if let Doing::Downloading(job) = &self.doing
             && job.finished
             && job.refused.is_none()
@@ -3038,13 +2134,9 @@ impl Desk {
             self.refresh();
             self.settle_download();
         }
-        // A model that has just started answering is one MCF is holding, and
-        // the screen says where it is without anybody asking it to.
         if let Doing::Hosting(job) = &self.doing
             && job.finished
         {
-            // A refusal stays on the page the model would have answered on,
-            // until the next hold is pressed for (A2).
             if let Some(why) = &job.refused {
                 self.host_refused = Some(why.clone());
             }
@@ -3060,8 +2152,6 @@ impl Desk {
         {
             self.keep_the_cross_check();
         }
-        // A prompt report's row reads when it last ran off the summary, which
-        // is read again once the report is in (B-576).
         if let Doing::Reporting(job) = &self.doing
             && job.finished
         {
@@ -3090,17 +2180,11 @@ impl Desk {
             self.keep_the_hub();
             self.keep_the_files();
         }
-        // The engine just built is what the model was waiting for: the
-        // settings are asked again, now that there is something to run it
-        // on, and the hold that was pressed for goes ahead — for the model it
-        // was pressed for, if it is still the one chosen.
         if let Doing::Provisioning(job) = &self.doing
             && job.finished
         {
             let refused = job.refused.clone();
             let wanted = self.host_after.take();
-            // The card the build was for flips on what the daemon now says
-            // of it, which is read rather than assumed (A21).
             let built = self.building.take();
             self.read_components();
             self.read_settings();
@@ -3111,8 +2195,6 @@ impl Desk {
             if refused.is_none() && still_chosen {
                 self.host_it();
             } else if let Some(why) = refused {
-                // Said where it was asked for: on Host when Host started the
-                // build, on the component's card either way.
                 if wanted.is_some() {
                     self.no_settings = Some(format!("the engine could not be built: {why}"));
                 }
@@ -3122,19 +2204,6 @@ impl Desk {
         true
     }
 
-    /// Writes a finished measurement onto the test it was a run of.
-    ///
-    /// **A run of the whole ladder is a run of one test**, "Generation speed
-    /// against depth" — that is what `Request::Measure` asks for, so that is
-    /// the row whose run time and result it fills. Nothing is written onto the
-    /// other four, because nothing measured them: a screen that spread one
-    /// run's timing across five rows would be reporting four measurements that
-    /// never happened (A7).
-    ///
-    /// **The lines are the daemon's, not the window's.** Each is a depth and
-    /// what was read at it, and a depth MCF could not measure says so rather
-    /// than being dropped from the list — an absent row would read as a run
-    /// that had nothing to say about that depth.
     fn keep_the_run(&mut self) {
         let Doing::Measuring(job) = &self.doing else {
             return;
@@ -3143,8 +2212,6 @@ impl Desk {
         self.refresh_readings_at();
     }
 
-    /// Writes a finished cross-check onto the row that asked for it, in the
-    /// console's words (B-072).
     fn keep_the_cross_check(&mut self) {
         let Doing::CrossChecking(job) = &self.doing else {
             return;
@@ -3153,9 +2220,6 @@ impl Desk {
         self.refresh_readings_at();
     }
 
-    /// Shows one answer beside the figures, or — pressing the one already
-    /// shown — puts the answer as written back, so the rows are one control
-    /// rather than a mode nothing leaves.
     fn show(&mut self, shown: Shown) {
         self.shown = if self.shown == Some(shown) {
             None
@@ -3164,7 +2228,6 @@ impl Desk {
         };
     }
 
-    /// Does what a screen said a click meant.
     pub fn act(&mut self, act: Act) {
         match act {
             Act::Go(page) => {
@@ -3222,8 +2285,6 @@ impl Desk {
                 self.page = Page::Models;
                 self.tab = Tab::Statistics;
             }
-            // A second click on the open picker shuts it, which is what every
-            // dropdown does and what a reader tries first.
             Act::Open(picker) => self.open_picker(picker),
             Act::Shut => self.open = None,
             Act::SetWindow(window) => {
@@ -3240,7 +2301,6 @@ impl Desk {
             Act::HostIt => self.host_it(),
             Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
-            // The loop's: closing is the window's own, and so is the clipboard.
             Act::Close | Act::Copy(_) => {}
             Act::ShowWithout(at) => self.show(Shown::Without(at)),
             Act::ShowAlone(at) => self.show(Shown::Alone(at)),
@@ -3252,17 +2312,9 @@ impl Desk {
                 self.chosen = Some(at);
                 self.open = None;
                 self.tab = Tab::Configure;
-                // A held model chosen is the page's subject: nothing pending
-                // and no hub page over it (B-485, B-486).
                 self.pending = None;
                 self.hub_chosen = None;
                 let _was = self.scrolls.remove(&Region::Page);
-                // **What this model would be held under.** `host_it` needs it
-                // and nothing fetched it: `read_settings` existed, was never
-                // called, and so `settings` was `None` for the life of the
-                // window — which made the Host button return early and do
-                // nothing at all, silently. A control that does nothing is
-                // worse than one that refuses (§3.15, A7).
                 self.read_settings();
             }
             Act::ReportPrompt => self.report_prompt(),
@@ -3276,11 +2328,6 @@ impl Desk {
         }
     }
 
-    /// Asks MCF what the chosen model would run under.
-    ///
-    /// Nothing is started: this fills in a form. It is asked again whenever
-    /// the chosen model changes, because a recommendation is about a model
-    /// and a machine and neither is the one it was computed for any more.
     pub fn read_settings(&mut self) {
         self.settings = None;
         self.recommended = None;
@@ -3316,7 +2363,6 @@ impl Desk {
                         let against = recommended.as_ref()?;
                         let held =
                             mcf_serve::hosting::Hosting::from_value(last.get("settings")?, against);
-                        // To the second: what a person reads *since* by.
                         let since = last
                             .get("since")
                             .and_then(|at| mcf_record::decode::timestamp(at).ok())
@@ -3352,11 +2398,6 @@ impl Desk {
         }
     }
 
-    /// Asks MCF what the chosen model is made of.
-    ///
-    /// Synchronous, like [`Self::read_settings`]: the daemon reads a header
-    /// and a tensor directory, which is milliseconds, and the answer is
-    /// wanted before the screen it was asked for draws.
     pub fn read_anatomy(&mut self) {
         self.anatomy = None;
         self.no_anatomy = None;
@@ -3383,14 +2424,8 @@ impl Desk {
         }
     }
 
-    /// Asks MCF what it is holding.
     pub fn read_hosted(&mut self) {
-        // Held rather than replaced: a poll that went unanswered says nothing
-        // about what is hosted, and blanking the screen on it would report
-        // MCF's own busyness as the model being gone.
         let answered = ask_within(&self.socket, &Request::Hosted, POLL).ok();
-        // The server the daemon holds for a run, beside whatever is hosted
-        // (B-573).
         if let Some(answer) = answered.as_ref().filter(|answer| answer.served) {
             self.under_test = answer
                 .body
@@ -3447,16 +2482,13 @@ impl Desk {
                             .map(str::to_owned),
                         in_use: answer.body.get("use").map(Use::from_value),
                     }),
-                // Served, and nothing is held: that is an answer, and it clears.
                 Ok(answer) if answer.served => None,
-                // Unanswered. Keep what was there and say the daemon is busy.
                 _ => {
                     self.busy = true;
                     return;
                 }
             };
         self.busy = false;
-        // The rate, kept: a hold that changed starts its line afresh.
         match (&self.hosted, &read) {
             (Some(was), Some(now)) if was.model == now.model => {}
             _ => self.rates.clear(),
@@ -3478,15 +2510,7 @@ impl Desk {
             .and_then(LastHold::from_value);
     }
 
-    /// Holds the chosen model under the settings as they stand, and goes to
-    /// the page that shows it loading, then answering: one page for the
-    /// thing being held rather than a button here, a clock there and an ask
-    /// box somewhere else.
     pub fn host_it(&mut self) {
-        // Whatever is still being typed — a key, a port — is taken first:
-        // a value in a field the person has not left is what they meant,
-        // and a hold started without it was refused for a key they had
-        // typed (B-578).
         self.apply_edit();
         if let Some(why) = &self.edit_refused {
             self.host_refused = Some(why.clone());
@@ -3496,8 +2520,6 @@ impl Desk {
             self.no_settings = Some("choose a model first".to_owned());
             return;
         };
-        // A hold open to the network is refused by the daemon without a
-        // key; said here first, in the words of the fields above (B-577).
         if self
             .settings
             .as_ref()
@@ -3514,10 +2536,6 @@ impl Desk {
         self.host_refused = None;
         self.freed = None;
         self.page = Page::Hosting;
-        // No engine is not a refusal but a step: MCF names what it would
-        // build, and Host builds it — on screen, with the name, and recorded —
-        // and holds the model once it is there. The operator pressed Host;
-        // the build is what holding costs on this machine (B-367, §3.15).
         if self.settings.is_none()
             && let Some(engine) = self.needs_engine.clone()
         {
@@ -3530,9 +2548,6 @@ impl Desk {
             ));
             return;
         }
-        // Refused in words rather than by doing nothing. What settings a model
-        // would run under is the daemon's to say, and where it will not say,
-        // that is the answer and it belongs on the screen.
         let Some(settings) = self.settings.clone() else {
             self.no_settings = Some(self.no_settings.clone().unwrap_or_else(|| {
                 "MCF has not said what this model would run under, so there is nothing to \
@@ -3545,19 +2560,12 @@ impl Desk {
             &self.socket,
             Request::Host {
                 model: held.path.clone(),
-                // The request's form, which carries the key; the record's
-                // form says only that one is set (B-579).
                 settings: settings.to_request(),
             },
             format!("holding {}", held.name),
         ));
     }
 
-    /// Builds one component the operator named on the Components screen.
-    ///
-    /// One job at a time: while anything else runs, the button is not drawn,
-    /// and a press that reached here anyway does nothing rather than start a
-    /// second build beside a first (A6).
     pub fn build(&mut self, name: &str) {
         if self.doing.job().is_some_and(|job| !job.finished) {
             return;
@@ -3574,18 +2582,11 @@ impl Desk {
         ));
     }
 
-    /// What closing the window would let go of: the model MCF is holding,
-    /// by name, or `None` where it holds nothing (B-592).
-    ///
-    /// A model held for a diagnostic rather than for somebody to ask is
-    /// not this: the run that asked for it is what ends it, and a window
-    /// that let go of the model under a run would be stopping the run.
     #[must_use]
     pub fn to_let_go(&self) -> Option<String> {
         self.hosted.as_ref().map(Hosted::name)
     }
 
-    /// Stops holding whatever is held.
     pub fn stop_hosting(&mut self) {
         let answered = ask(&self.socket, &Request::Unhost);
         let was = self.hosted.take();
@@ -3612,9 +2613,6 @@ impl Desk {
         });
     }
 
-    /// How the load is going, where one is: what the engine holds of the
-    /// model so far, after how long, and about how long is left once there
-    /// is a rate to read that off. `None` where nothing is loading.
     #[must_use]
     pub fn loading_line(&self) -> Option<String> {
         let Doing::Hosting(job) = &self.doing else {
@@ -3634,8 +2632,6 @@ impl Desk {
                 .and_then(Value::as_integer)
                 .and_then(|held| u64::try_from(held).ok())
         };
-        // Onto a card, the card's memory is the figure that grows; the
-        // engine's own does not show weights that went there.
         let read = match figure("card_bytes") {
             Some(on_card) => Some((on_card, true)),
             None => figure("resident_bytes").map(|resident| (resident, false)),
@@ -3646,32 +2642,16 @@ impl Desk {
         })
     }
 
-    /// The model behind whatever is being held, where this window is also
-    /// listing it.
-    ///
-    /// `Hosted` carries the path the daemon holds it under; everything else
-    /// worth saying about it — what a token of context costs, how large the
-    /// weights are — is already on the list entry, and asking the daemon again
-    /// for figures this window has would be a second answer to a settled
-    /// question.
     #[must_use]
     pub fn hosted_model(&self) -> Option<&Model> {
         let hosting = self.hosted.as_ref()?;
         self.models.iter().find(|held| held.path == hosting.model)
     }
 
-    /// What a diagnostic on the chosen model costs while that model is
-    /// hosted through the window: a second copy beside the first, said
-    /// before Run is pressed rather than after the machine ran out
-    /// (B-561, F243). `None` where the chosen model is not the hosted one.
     #[must_use]
     pub fn second_copy(&self) -> Option<String> {
         let chosen = self.chosen.and_then(|at| self.models.get(at))?;
         let hosted = self.hosted_model()?;
-        // One model runs at a time (D57, B-582): a run on another model
-        // than the hosted one is refused by the daemon, and the page says
-        // so before Run is pressed; a run on the hosted one lets the hold
-        // go for its run and takes it up again after.
         if hosted.path != chosen.path {
             return Some(format!(
                 "{} is hosted, and one model runs at a time: diagnostics run on the hosted model. \
@@ -3686,11 +2666,6 @@ impl Desk {
         )
     }
 
-    /// Moves one setting on to its next value.
-    ///
-    /// Cycling rather than typing, because every one of these has a small set
-    /// of values that make sense and a field would let somebody type a
-    /// context of seven.
     pub fn cycle(&mut self, at: usize) {
         let (Some(settings), Some(recommended)) =
             (self.settings.as_mut(), self.recommended.as_ref())
@@ -3698,7 +2673,6 @@ impl Desk {
             return;
         };
         match at {
-            // Powers of two, never past what MCF worked out fits.
             0 => {
                 settings.context = if settings.context >= recommended.context {
                     512
@@ -3706,10 +2680,6 @@ impl Desk {
                     settings.context.saturating_mul(2)
                 };
             }
-            // Where the model goes, in the daemon's own list: the next
-            // placement after the one the settings are at, and with it the
-            // build that fits — never the card's build with its layers moved
-            // (F176). Without a list, the layers alone, as before.
             1 => {
                 if self.placements.is_empty() {
                     settings.gpu_layers = if settings.gpu_layers == 0 { 999 } else { 0 };
@@ -3745,23 +2715,15 @@ impl Desk {
             6 => settings.flash_attention = !settings.flash_attention,
             7 => settings.keep_resident = !settings.keep_resident,
             8 => settings.port = settings.port.saturating_add(1),
-            // The engine, the device and the key are not cycled: the first
-            // two are what MCF resolved and changing one without the other
-            // would be asking for a build to use a device it cannot, and a
-            // key is typed rather than chosen.
             _ => {}
         }
     }
 
-    /// Asks a hub what it publishes under what has been typed.
     pub fn look_up(&mut self) {
         let asked = self.typed.trim().to_owned();
         if asked.is_empty() {
             return;
         }
-        // A reference — owner/name, or a hub URL — lists a repository's
-        // files; anything else is a word, and a word searches the hub for
-        // repositories to pick from (A2).
         let is_reference = mcf_serve::control::is_reference(&asked);
         self.doing = Doing::Listing(job::Job::start(
             &self.socket,
@@ -3786,20 +2748,12 @@ impl Desk {
         ));
     }
 
-    /// Asks what the typed prompt does to the chosen model.
-    ///
-    /// Many generations behind one request, so it is a job like a measurement
-    /// rather than something the window waits on: a screen that froze for
-    /// minutes is one a person cannot tell from a broken one (B-227).
     pub fn report_prompt(&mut self) {
-        // A new run: its cost is summed afresh (B-573).
         self.tally_afresh();
         let taken = self.taken();
         if taken.text.is_empty() {
             return;
         }
-        // Not a temperature is not *no temperature*: the page says what was
-        // typed is not one, and nothing runs until it is or is gone.
         let Ok(temperature) = self.settle() else {
             return;
         };
@@ -3809,8 +2763,6 @@ impl Desk {
         self.doing = Doing::Reporting(job::Job::start(
             &self.socket,
             Request::PromptReport {
-                // The window has no way to ask for a turn yet; the socket
-                // takes one (B-455), and the window's turn is B-462.
                 turn: None,
                 model: held.path.clone(),
                 prompt: taken.text.to_owned(),
@@ -3824,7 +2776,6 @@ impl Desk {
         ));
     }
 
-    /// Fetches one published file.
     pub fn download(&mut self, reference: &str, file: &str) {
         self.doing = Doing::Downloading(job::Job::start(
             &self.socket,
@@ -3837,9 +2788,7 @@ impl Desk {
         ));
     }
 
-    /// Times the chosen model.
     pub fn measure(&mut self, at: usize, deepest: u64) {
-        // A new run: its cost is summed afresh (B-573).
         self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
@@ -3848,9 +2797,6 @@ impl Desk {
         self.doing = Doing::Measuring(job::Job::start(
             &self.socket,
             Request::Measure {
-                // The plain load: the window times what the model does as
-                // its file lays it out, and a switch is asked for at the
-                // prompt (B-463).
                 started: mcf_serve::declared::Started::default(),
                 model: held.path.clone(),
                 engine: None,
@@ -3861,12 +2807,6 @@ impl Desk {
         ));
     }
 
-    /// Runs what is ticked: the ladder, then the cross-check, each only if a
-    /// row it answers is chosen.
-    ///
-    /// One after the other rather than at once, because both want the engine
-    /// and the machine's memory to themselves, and a cross-check that ran
-    /// beside a timing would have changed the timing (A6).
     pub fn run_card(&mut self, card: Card) {
         let Some(at) = self.chosen else {
             return;
@@ -3874,8 +2814,6 @@ impl Desk {
         self.run_card_on(at, card);
     }
 
-    /// Runs one diagnostic on the chosen model: a probe or a measurement
-    /// on its own, else the run it is (D53).
     pub fn run_one(&mut self, diagnostic: Diagnostic) {
         let Some(at) = self.chosen else {
             return;
@@ -3895,9 +2833,6 @@ impl Desk {
         }
     }
 
-    /// Runs every diagnostic in turn: the ladder, the cross-check, every
-    /// probe, every measurement — the next starting as the last finishes,
-    /// the whole stopping where one is refused or stopped (B-508).
     pub fn run_all(&mut self) {
         if self.chosen.is_none() || self.doing.busy() {
             return;
@@ -3907,9 +2842,6 @@ impl Desk {
         self.start_the_next_queued();
     }
 
-    /// The runs a Run all takes, in order. The prompt analysis needs a
-    /// prompt and the comparison runs at the command line, so neither is
-    /// in it.
     pub const EVERY_RUN: [Card; 7] = [
         Card::Throughput,
         Card::CrossCheck,
@@ -3920,9 +2852,6 @@ impl Desk {
         Card::Coding,
     ];
 
-    /// Starts the next queued run where the one going has finished well;
-    /// a run refused or stopped ends the sequence, and says so by leaving
-    /// the refusal where it is (A7).
     fn start_the_next_queued(&mut self) {
         if self.queued.is_empty() {
             return;
@@ -3948,10 +2877,6 @@ impl Desk {
         }
     }
 
-    /// How far the run going has got, as a fraction, where its stream
-    /// says: a step of how many for the probes and the measurements, a
-    /// rung of how many for the ladder, the cross-check's two halves.
-    /// `None` where nothing is running or the run does not say (B-509).
     #[must_use]
     pub fn run_fraction(&self) -> Option<f32> {
         let job = self.doing.job().filter(|job| !job.finished)?;
@@ -3966,7 +2891,6 @@ impl Desk {
                 .is_some_and(|lines| !lines.is_empty());
             let done = if lines { count } else { count - 1 };
             let whole = fraction_of(done.max(0), of)?;
-            // Within the step, where the step says how far it is (D56).
             let within = latest?.get("progress").and_then(|progress| {
                 let done = progress.get("done").and_then(Value::as_integer)?;
                 let parts = progress.get("of").and_then(Value::as_integer)?;
@@ -3978,8 +2902,6 @@ impl Desk {
         };
         match &self.doing {
             Doing::Probing(_) | Doing::Examining(_) => of_step(),
-            // A suite says how far it is in its own lines: `progress: a/b`
-            // (D56).
             Doing::Evaluating(_) => {
                 let line = latest?.get("line").and_then(Value::as_text)?;
                 let (done, of) = line.strip_prefix("progress: ")?.split_once('/')?;
@@ -3995,15 +2917,10 @@ impl Desk {
                 }
             }
             Doing::CrossChecking(job) => Some(if job.answers.len() >= 2 { 0.5 } else { 0.05 }),
-            // A prompt report's stream does not say how far it is.
             _ => None,
         }
     }
 
-    /// About how long the run going has left, in seconds, from its own
-    /// pace so far: the time it has run, scaled by what is left over what
-    /// is done. `None` until a twentieth is done and fifteen seconds have
-    /// passed, since a pace from less is a guess (A7, B-572).
     #[must_use]
     pub fn time_left(&self) -> Option<u64> {
         let job = self.doing.job().filter(|job| !job.finished)?;
@@ -4022,8 +2939,6 @@ impl Desk {
         Some(left)
     }
 
-    /// The whole sequence's fraction while a Run all goes: the runs done
-    /// and the one going's own fraction over how many there were (B-509).
     #[must_use]
     pub fn sequence_fraction(&self) -> Option<f32> {
         if self.queued_of == 0 {
@@ -4040,7 +2955,6 @@ impl Desk {
         Some(whole.clamp(0.0, 1.0))
     }
 
-    /// Which run of how many the Run all is on, where one is going.
     #[must_use]
     pub fn sequence_place(&self) -> Option<(usize, usize)> {
         if self.queued_of == 0 {
@@ -4074,22 +2988,15 @@ impl Desk {
                 self.examine(at, card);
             }
             Card::Coding => self.evaluate(at, None),
-            // Run at the command line until the daemon carries it; its
-            // card says so and offers the command.
             Card::Comparison => {}
         }
     }
 
-    /// How far a region has been scrolled.
     #[must_use]
     pub fn scrolled(&self, region: Region) -> f32 {
         self.scrolls.get(&region).copied().unwrap_or(0.0)
     }
 
-    /// The library's entries, one a repository, each with the held models
-    /// that are its quantizations and pass the search field: every one where
-    /// the field is empty; else those whose name, architecture or path carry
-    /// the words, case aside (D51, B-485, B-486).
     #[must_use]
     pub fn library(&self) -> Vec<Group> {
         let wanted = self.filter.trim().to_lowercase();
@@ -4145,8 +3052,6 @@ impl Desk {
         groups
     }
 
-    /// One act on the filters: the toggle, or one picker set by its place
-    /// in the list it offers, the first of which is *any* (B-489).
     fn filter_act(&mut self, act: &Act) {
         match *act {
             Act::ToggleFilters => self.filters.open = !self.filters.open,
@@ -4162,8 +3067,6 @@ impl Desk {
         self.open = None;
     }
 
-    /// The architectures held, each once, in order: what the architecture
-    /// filter offers after *any* (B-489).
     #[must_use]
     pub fn architectures(&self) -> Vec<String> {
         let mut found: Vec<String> = self
@@ -4176,9 +3079,6 @@ impl Desk {
         found
     }
 
-    /// The quantizations of the page's repository: the files held, then the
-    /// files the hub publishes that are not here, where the hub has been
-    /// asked (B-486).
     #[must_use]
     pub fn quantizations(&self) -> Vec<Quant> {
         let repository = self.subject_repository();
@@ -4214,8 +3114,6 @@ impl Desk {
         listed
     }
 
-    /// The repository the page is about: the pending quantization's, or the
-    /// chosen model's.
     #[must_use]
     pub fn subject_repository(&self) -> Option<String> {
         if let Some(pending) = &self.pending {
@@ -4226,7 +3124,6 @@ impl Desk {
             .and_then(|held| held.repository.clone())
     }
 
-    /// Which quantization the page is on, by its place in the list.
     #[must_use]
     pub fn quantization_at(&self) -> Option<usize> {
         let listed = self.quantizations();
@@ -4236,9 +3133,6 @@ impl Desk {
         }
     }
 
-    /// A second click on the open picker shuts it, which is what every
-    /// dropdown does and what a reader tries first. Opening the quantization
-    /// list asks the hub what else the repository publishes, once (B-486).
     fn open_picker(&mut self, picker: Picker) {
         self.open = if self.open == Some(picker) {
             None
@@ -4250,8 +3144,6 @@ impl Desk {
         }
     }
 
-    /// Picks one quantization: one here becomes the page's subject; one on
-    /// the hub becomes the subject as not downloaded (B-486).
     pub fn pick_quantization(&mut self, at: usize) {
         self.open = None;
         let Some(quant) = self.quantizations().get(at).cloned() else {
@@ -4275,8 +3167,6 @@ impl Desk {
         }
     }
 
-    /// Makes one file of the open hub repository the page's subject as not
-    /// downloaded, by its place in what the hub publishes (B-487).
     pub fn pick_offered(&mut self, at: usize) {
         let Some(repository) = self
             .hub
@@ -4305,9 +3195,6 @@ impl Desk {
         self.chosen = None;
     }
 
-    /// Downloads the subject that is not here, and keeps what to do once
-    /// it is: the download goes first, and the thing follows on the file
-    /// (B-487, D51).
     pub fn download_then(&mut self, then: Act) {
         let Some(pending) = self.pending.clone() else {
             return;
@@ -4319,9 +3206,6 @@ impl Desk {
         self.download(&pending.repository, &pending.file);
     }
 
-    /// Once a download has finished and the library has been read again:
-    /// the file that was pending is the subject now, and what the button
-    /// named happens on it (B-487).
     pub fn settle_download(&mut self) {
         let Some(pending) = self.pending.clone() else {
             self.after_download = None;
@@ -4341,8 +3225,6 @@ impl Desk {
         }
     }
 
-    /// Asks the hub what the page's repository publishes, where it has not
-    /// been asked and nothing else is going.
     pub fn look_up_files(&mut self) {
         let Some(repository) = self.subject_repository() else {
             return;
@@ -4361,7 +3243,6 @@ impl Desk {
         ));
     }
 
-    /// Keeps what the hub publishes for a repository, once the job has it.
     fn keep_the_files(&mut self) {
         let Doing::Listing(job) = &self.doing else {
             return;
@@ -4381,7 +3262,6 @@ impl Desk {
         );
     }
 
-    /// Whether the hub's answer on show is for the words in the field.
     #[must_use]
     pub fn hub_matches(&self) -> bool {
         self.hub
@@ -4389,8 +3269,6 @@ impl Desk {
             .is_some_and(|hub| hub.query == self.filter.trim())
     }
 
-    /// Asks the hub for the words in the field — the request `mcf pull
-    /// <word>` sends — and lists what it answers under what is here.
     pub fn search_hub(&mut self) {
         let query = self.filter.trim().to_owned();
         if query.is_empty() || self.doing.busy() {
@@ -4409,8 +3287,6 @@ impl Desk {
         ));
     }
 
-    /// Opens one hub repository's page: its files are looked up, and the
-    /// page shows them with a way to get each (B-485).
     pub fn pick_hub(&mut self, at: usize) {
         let Some(id) = self
             .hub
@@ -4433,14 +3309,11 @@ impl Desk {
         ));
     }
 
-    /// What a frame does when the search job has answered, for a review
-    /// that builds the state by hand rather than through a socket.
     pub fn hear_for_review(&mut self) {
         self.keep_the_hub();
         self.keep_the_files();
     }
 
-    /// Keeps what the hub answered a search with, once the job has it.
     fn keep_the_hub(&mut self) {
         let Doing::Listing(job) = &self.doing else {
             return;
@@ -4462,15 +3335,11 @@ impl Desk {
         });
     }
 
-    /// Runs every probe on the chosen model — the same request `mcf probe`
-    /// sends (B-478, A22).
     pub fn probe(&mut self, at: usize) {
         self.probe_only(at, Vec::new());
     }
 
-    /// Runs the probes named on the chosen model; none named is every one.
     pub fn probe_only(&mut self, at: usize, only: Vec<String>) {
-        // A new run: its cost is summed afresh (B-573).
         self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
@@ -4489,8 +3358,6 @@ impl Desk {
         ));
     }
 
-    /// Runs a family's measurements on the chosen model — the same request
-    /// `mcf examine` sends (D52, A22).
     pub fn examine(&mut self, at: usize, card: Card) {
         let only = card
             .measures()
@@ -4503,9 +3370,7 @@ impl Desk {
         self.examine_only(at, only);
     }
 
-    /// Runs the measurements named on the chosen model.
     pub fn examine_only(&mut self, at: usize, only: Vec<String>) {
-        // A new run: its cost is summed afresh (B-573).
         self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
@@ -4522,8 +3387,6 @@ impl Desk {
         ));
     }
 
-    /// The diagnostic running now, where one is: which row the list marks
-    /// and which pane shows a Stop (D53).
     #[must_use]
     pub fn running_diagnostic(&self) -> Option<Diagnostic> {
         let step_name = |job: &job::Job| {
@@ -4558,12 +3421,7 @@ impl Desk {
         }
     }
 
-    /// Runs one coding suite, or every one where none is named, through
-    /// the command line: MCF's own binary with `eval`, read line by line
-    /// as a job (B-519). The record's readings and the model's summary are
-    /// read again when it ends.
     fn evaluate(&mut self, at: usize, suite: Option<usize>) {
-        // A new run: its cost is summed afresh (B-573).
         self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
@@ -4587,10 +3445,6 @@ impl Desk {
         self.doing = Doing::Evaluating(job::Job::spawned(command, what));
     }
 
-    /// The arguments `mcf eval` is run with: the model, the suite where
-    /// one row was pressed, and the retries and the window the Challenges
-    /// card holds — the command line's own flags, so that what the window
-    /// runs is what the console would (B-564).
     #[must_use]
     pub fn eval_arguments(&self, path: &str, suite: Option<usize>) -> Vec<String> {
         let mut arguments = vec!["eval".to_owned(), path.to_owned()];
@@ -4599,7 +3453,6 @@ impl Desk {
             .map(|(name, _, _)| *name)
         {
             arguments.push("--only".to_owned());
-            // A tier's row is the catalogue held to that tier (B-569).
             match name.strip_prefix("challenges-") {
                 Some(tier) => {
                     arguments.push("challenges".to_owned());
@@ -4613,8 +3466,6 @@ impl Desk {
             arguments.push("--languages".to_owned());
             arguments.push(languages.clone());
         }
-        // A row whose newest run stopped or was cut off goes on from it
-        // (B-571).
         if suite.is_some_and(|at| self.resumable(Diagnostic::Eval(at))) {
             arguments.push("--resume".to_owned());
         }
@@ -4629,9 +3480,6 @@ impl Desk {
         arguments
     }
 
-    /// Whether a diagnostic's newest run on the chosen model can be gone on
-    /// with: recorded a part at a time and not finished — stopped at
-    /// somebody's asking, or cut off (B-571).
     #[must_use]
     pub fn resumable(&self, diagnostic: Diagnostic) -> bool {
         self.readings_of(diagnostic).is_some_and(|run| {
@@ -4640,19 +3488,10 @@ impl Desk {
         })
     }
 
-    /// Adds one second of the card's power to what the run going has spent,
-    /// and reads the model under test's tokens, so that the Server page can
-    /// say what the run costs (B-573). Called once a second while a run
-    /// goes; nothing is added where the card reports no power.
     pub fn tally(&mut self) {
         if !self.doing.busy() {
             return;
         }
-        // **What the daemon measured, not what this window assumed.** The
-        // energy used to be a watts reading multiplied by a second that was
-        // taken on faith; the daemon now measures each interval's mean draw
-        // over its own length and says how much of the run that covers
-        // (B-593, F275).
         let under = self.under_test.as_ref().map(|under| &under.in_use);
         if let Some(joules) = under.and_then(|in_use| in_use.card_energy_joules) {
             #[expect(
@@ -4674,8 +3513,6 @@ impl Desk {
         } else {
             self.spent.seconds = self.spent.seconds.saturating_add(1);
         }
-        // The answer in hand counted, so the tokens do not stand still
-        // through a generation and jump at the end (B-591).
         let tokens = under.and_then(|in_use| in_use.generated_live.or(in_use.generated));
         if self.spent.tokens_at_start.is_none() {
             self.spent.tokens_at_start = tokens;
@@ -4683,15 +3520,10 @@ impl Desk {
         self.spent.tokens_now = tokens;
     }
 
-    /// Starts the run's tally afresh: the first second of a new run.
     pub fn tally_afresh(&mut self) {
         self.spent = Spent::default();
     }
 
-    /// What a running or just-finished suite has said so far, a result a
-    /// line, in the order it came: the `result:` lines of its stream, so
-    /// that the pane shows each challenge's outcome the moment it is known
-    /// rather than the readings at the end (B-569).
     #[must_use]
     pub fn results_so_far(&self) -> Vec<String> {
         let Doing::Evaluating(job) = &self.doing else {
@@ -4705,16 +3537,12 @@ impl Desk {
             .collect()
     }
 
-    /// Reads the readings and the model's summary again once a suite has
-    /// finished, so that its rows and when it last ran are on the page.
     fn keep_the_evaluation(&mut self) {
         self.evaluation_kept = true;
         self.fetch_readings();
         self.refresh_readings_at();
     }
 
-    /// Asks the daemon for the chosen model's summary again and keeps
-    /// only when each method's readings were last taken from it.
     fn refresh_readings_at(&mut self) {
         let Some(at) = self.chosen else {
             return;
@@ -4728,11 +3556,6 @@ impl Desk {
         let Some(path) = self.models.get(at).map(|held| held.path.clone()) else {
             return;
         };
-        // The whole summary again, and every *last ran* it carries copied
-        // onto the model held: the readings' times, and the ladder's, the
-        // cross-check's and the prompt report's, which the rows read and
-        // which stayed at *never run* after a run until something else
-        // asked (B-576).
         let fresh = answer
             .body
             .get("models")
@@ -4754,21 +3577,16 @@ impl Desk {
         }
     }
 
-    /// The last finding of a probe or a measurement on the chosen model.
     #[must_use]
     pub fn finding_of(&self, diagnostic: Diagnostic) -> Option<&Finding> {
         let method = diagnostic.method()?;
         let recorded = diagnostic.readings_method();
         let held = self.chosen.and_then(|at| self.models.get(at))?;
-        // A finding from a run this window made carries the run's name;
-        // one from the record carries the record's, and both are it.
         held.probed.iter().find(|finding| {
             finding.name == method || recorded.is_some_and(|name| finding.name == name)
         })
     }
 
-    /// When a diagnostic last ran on the chosen model, as the record wrote
-    /// it, and through what where the record said (D53).
     #[must_use]
     pub fn last_run(&self, diagnostic: Diagnostic) -> Option<(String, Option<String>)> {
         let held = self.chosen.and_then(|at| self.models.get(at))?;
@@ -4797,9 +3615,6 @@ impl Desk {
         }
     }
 
-    /// Keeps what a finished examination found on the model it ran on,
-    /// beside the probes' findings: a measurement taken again replaces
-    /// its last reading, and one not taken keeps it (D52).
     fn keep_the_examination(&mut self) {
         let Doing::Examining(job) = &self.doing else {
             return;
@@ -4811,16 +3626,12 @@ impl Desk {
         self.fetch_readings();
     }
 
-    /// Shows one diagnostic whole: its pane from the top, with the chosen
-    /// model's readings fetched where they are not held yet (D53, D54).
     fn show_diagnostic(&mut self, diagnostic: Diagnostic) {
         self.diagnostic = diagnostic;
         let _was = self.scrolls.insert(Region::Diagnostics, 0.0);
         self.read_readings();
     }
 
-    /// Asks the daemon for the chosen model's readings, where they are not
-    /// held already for this model (D54, B-516).
     pub fn read_readings(&mut self) {
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             self.readings = None;
@@ -4836,8 +3647,6 @@ impl Desk {
         self.fetch_readings();
     }
 
-    /// Asks the daemon for the chosen model's readings again, after a run
-    /// wrote some.
     fn fetch_readings(&mut self) {
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             self.readings = None;
@@ -4859,8 +3668,6 @@ impl Desk {
         self.readings = Some((held.path.clone(), runs));
     }
 
-    /// The newest readings run of a diagnostic on the chosen model, where
-    /// the daemon has answered with one.
     #[must_use]
     pub fn readings_of(&self, diagnostic: Diagnostic) -> Option<&Value> {
         let method = diagnostic.readings_method()?;
@@ -4873,8 +3680,6 @@ impl Desk {
             .find(|run| run.get("method").and_then(Value::as_text) == Some(method))
     }
 
-    /// Keeps what a finished probe run found on the model it ran on, and
-    /// reads the settings again, since the probes may have applied some.
     fn keep_the_probes(&mut self) {
         let Doing::Probing(job) = &self.doing else {
             return;
@@ -4887,16 +3692,12 @@ impl Desk {
         self.fetch_readings();
     }
 
-    /// One act on the Configure tab. Whatever was being typed is applied
-    /// first, so that a value left in a field is not lost to the next press.
     fn configure(&mut self, act: &Act) {
         match *act {
             Act::Tab(tab) => {
                 self.apply_edit();
                 self.tab = tab;
                 self.open = None;
-                // The file's contents are counted when first looked at,
-                // and kept for the model chosen.
                 if tab == Tab::Contents && self.anatomy.is_none() {
                     self.read_anatomy();
                 }
@@ -4925,11 +3726,8 @@ impl Desk {
         }
     }
 
-    /// Starts typing into a setting, with what it holds now as the text;
-    /// whatever was being typed before is applied first.
     pub fn edit(&mut self, field: Field) {
         self.apply_edit();
-        // The Challenges card's fields are the desk's own, on any model.
         let card = match field {
             Field::Retries => Some(self.retries.to_string()),
             Field::Window => Some(
@@ -4965,15 +3763,11 @@ impl Desk {
         self.caret = Caret::Setting;
     }
 
-    /// Takes what was typed into the setting it was typed for, or says why
-    /// not and leaves the setting as it was. A number is a number: a window
-    /// of *lots* is refused with the word, not read as nought (A7, §3.15).
     #[allow(clippy::too_many_lines, reason = "one arm a field, each named")]
     pub fn apply_edit(&mut self) {
         let Some((field, typed)) = self.editing.take() else {
             return;
         };
-        // A list keeps its commas; a number loses its grouping.
         let listed = typed.trim().to_owned();
         let typed = typed.trim().replace([',', '_'], "");
         let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
@@ -5083,7 +3877,6 @@ impl Desk {
         };
     }
 
-    /// Flips a switch on the Configure tab.
     pub fn flip(&mut self, switch: Switch) {
         let Some(settings) = self.settings.as_mut() else {
             return;
@@ -5093,8 +3886,6 @@ impl Desk {
             Switch::KeepResident => settings.keep_resident = !settings.keep_resident,
             Switch::Open => settings.open = !settings.open,
             Switch::DraftHead => settings.started.draft_head = !settings.started.draft_head,
-            // Text only, or the one beside the file: the recommendation
-            // knows which projector that is, and *on* means that one.
             Switch::Projector => {
                 settings.projector = if settings.projector.is_some() {
                     None
@@ -5107,8 +3898,6 @@ impl Desk {
         }
     }
 
-    /// Puts the hold where the daemon's list says, engine, device and layers
-    /// together (F176).
     pub fn place(&mut self, at: usize) {
         let Some(placement) = self.placements.get(at) else {
             return;
@@ -5120,7 +3909,6 @@ impl Desk {
         }
     }
 
-    /// Which placement the settings are at, where they are at one.
     #[must_use]
     pub fn placed_at(&self) -> Option<usize> {
         let settings = self.settings.as_ref()?;
@@ -5131,8 +3919,6 @@ impl Desk {
         })
     }
 
-    /// Holds again what was last held: the model is chosen by its path, its
-    /// settings read as they would be for any hold, and Host pressed.
     pub fn host_again(&mut self) {
         let Some(path) = self.last_hold.as_ref().map(|last| last.model.clone()) else {
             return;
@@ -5146,10 +3932,6 @@ impl Desk {
         self.host_it();
     }
 
-    /// Cuts the run that is going short: the ladder, the cross-check or the
-    /// prompt analysis. The daemon stops the engine at its next glance and
-    /// asks no further generation, and what was heard stays on the page
-    /// (A7, B-479).
     pub fn stop_run(&mut self) {
         self.queued.clear();
         self.queued_of = 0;
@@ -5166,10 +3948,7 @@ impl Desk {
         }
     }
 
-    /// Reads what the provisioned engine produces from the chosen model with
-    /// MCF's own engine — the same request `mcf cross-check` sends (B-072).
     pub fn cross_check(&mut self, at: usize) {
-        // A new run: its cost is summed afresh (B-573).
         self.tally_afresh();
         let Some(held) = self.models.get(at) else {
             return;
@@ -5184,9 +3963,6 @@ impl Desk {
         ));
     }
 
-    /// What the window asks of the model's own template, where anything was
-    /// asked: `None` is nothing switched, which is not the same as every
-    /// switch at its default position said out loud (D43, §3.15).
     #[must_use]
     pub fn asked_turn(&self) -> Option<mcf_serve::turn::Turn> {
         let word = |held: &str| {
@@ -5202,8 +3978,6 @@ impl Desk {
         turn.asks_anything().then_some(turn)
     }
 
-    /// Thinking on, off, or unsaid, in that round: three positions, because
-    /// *unsaid* is a position and not the absence of one (D43).
     pub fn cycle_thinking(&mut self) {
         self.thinking = match self.thinking {
             None => Some(true),
@@ -5212,7 +3986,6 @@ impl Desk {
         };
     }
 
-    /// Asks the chosen model what has been typed.
     pub fn ask(&mut self, at: usize) {
         let Some(held) = self.models.get(at) else {
             return;
@@ -5236,20 +4009,9 @@ impl Desk {
                 tokens: None,
                 pieces: None,
                 engine: None,
-                // A person's, which is what this window is for. B-146 and
-                // §6.8: whose text it is travels with the request rather than
-                // being inferred at the far end, and a window is never a
-                // probe.
                 whose: mcf_record::content::Whose::User,
                 pinned: false,
-                // The template's own switches, as `mcf run` sends them: a
-                // question asked inside a system turn is a question asked
-                // where it will live, and nothing is switched unless
-                // somebody switched it (B-462, D43, D47).
                 turn: turn.clone(),
-                // A picture, where a path was typed. The daemon reads the
-                // file and refuses in its own words where it cannot, which
-                // is what the panel shows (B-452, A2).
                 image: picture,
                 started: mcf_serve::declared::Started::default(),
             },
@@ -5257,12 +4019,6 @@ impl Desk {
         ));
     }
 
-    /// Asks MCF what it is holding.
-    /// Asks what MCF can build and what is already here.
-    ///
-    /// A refusal leaves the list alone rather than emptying it: a daemon that
-    /// stopped answering has not un-built anything, and a screen that went
-    /// blank would say it had.
     pub fn read_components(&mut self) {
         if let Ok(answer) = ask_within(&self.socket, &Request::Components, POLL)
             && answer.served
@@ -5272,27 +4028,11 @@ impl Desk {
         }
     }
 
-    /// Asks MCF what it is holding.
-    ///
-    /// **An unanswered reading leaves the list alone.** The daemon answers one
-    /// client at a time by decision (DEC-012), so while it loads a model —
-    /// minutes, for a large one — it answers nothing at all. Emptying the list
-    /// on that told an operator *no models exist* at the moment MCF was busy
-    /// with one of them, which is the most misleading thing this screen can
-    /// say: the models are on the disk, `mcf list` finds them, and the only
-    /// thing that changed is that MCF was mid-answer.
-    ///
-    /// So a reading replaces the list and a silence does not (A7).
     pub fn refresh(&mut self) {
         match ask_within(&self.socket, &Request::Holding, POLL) {
             Ok(answer) if answer.served => {
                 self.refusal = None;
                 self.busy = false;
-                // **A companion is not a model and is not offered.** A vision
-                // projector carries no transformer and answers no prompt:
-                // pointed at one, an engine loads it and produces nothing. It
-                // was in this list, so the window offered it to be hosted and
-                // to be measured, and both could only ever fail.
                 let mut read: Vec<Model> = answer
                     .body
                     .get("models")
@@ -5318,10 +4058,6 @@ impl Desk {
             Ok(answer) => {
                 self.refusal = Some(refused_because(&answer.body));
             }
-            // **Unanswered in time is not *not up*.** A daemon loading a
-            // large model answers nothing for minutes; reporting that as a
-            // dead daemon tells an operator the opposite of what is happening.
-            // Only a connection that could not be made at all is a refusal.
             Err(why) if why.contains("not answering on this computer") => {
                 self.busy = false;
                 self.refusal = Some(why);
@@ -5330,21 +4066,13 @@ impl Desk {
         }
     }
 
-    /// Takes a reading of the machine.
     pub fn sample(&mut self) {
         self.reading = self.sampler.read();
-        // The failures with the machine, at the poll's cadence rather than
-        // the reading's: a failure is an event and the record does not
-        // change between them.
         if self.faults_read.is_none_or(|read| read.elapsed() >= POLL) {
             self.read_faults();
         }
     }
 
-    /// This window's own version and revision, as it shows them (B-595):
-    /// `0.1.0-m0 · 52b825a`, or the version alone where the build
-    /// environment named no revision, which is a real state and not a
-    /// defect (A7).
     #[must_use]
     pub fn build_said() -> String {
         said_of(
@@ -5355,15 +4083,6 @@ impl Desk {
         )
     }
 
-    /// Asks the daemon what it was built from, so that a window and a
-    /// daemon of different ages can be told apart (B-595).
-    ///
-    /// **They are two processes and they do not change together.** A
-    /// daemon started this morning goes on running this morning's code
-    /// while the window beside it is new, and every figure the window
-    /// draws comes from the daemon — so a window that showed only its own
-    /// version would answer *have I got the latest* with the wrong half of
-    /// the truth (F276).
     pub fn read_build(&mut self) {
         if let Ok(answer) = ask_within(&self.socket, &Request::Status, POLL)
             && answer.served
@@ -5374,10 +4093,6 @@ impl Desk {
         }
     }
 
-    /// Asks MCF for the newest classified failures in the record (B-074).
-    ///
-    /// A silence leaves what was read alone, as every other reading does:
-    /// a daemon busy loading a model has not lost its record (A7).
     pub fn read_faults(&mut self) {
         self.faults_read = Some(std::time::Instant::now());
         if let Ok(answer) = ask_within(
@@ -5397,7 +4112,6 @@ impl Desk {
         }
     }
 
-    /// The word at the right of the menu bar.
     #[must_use]
     pub fn state_word(&self) -> String {
         if self.refusal.is_some() {
@@ -5409,19 +4123,12 @@ impl Desk {
         }
     }
 
-    /// What is running and how long it has run, where anything is: the
-    /// job's own sentence and the seconds since it was asked for. On every
-    /// page rather than the one that started it, because a measurement is
-    /// minutes and the operator may have gone to look at something else
-    /// (A7). `None` where nothing is running.
     #[must_use]
     pub fn under_way(&self) -> Option<String> {
         let job = self.doing.job().filter(|job| !job.finished)?;
         Some(format!("{}, {} s so far", job.what, job.ran()))
     }
 
-    /// The line under the monitor's divider: what MCF is doing, and what that
-    /// means. The console's two states, in the console's words.
     #[must_use]
     pub fn state_line(&self) -> (String, String) {
         if let Some(why) = &self.refusal {
@@ -5477,7 +4184,6 @@ impl Desk {
         }
     }
 
-    /// The depths a run would sample, as the console states them.
     #[must_use]
     pub fn ladder_line(&self) -> String {
         let mut depths = Vec::new();
@@ -5489,23 +4195,13 @@ impl Desk {
         depths.join(" · ")
     }
 
-    /// The window a Quick Run uses: the shallowest rung and one above it, so
-    /// that it is a fall-off rather than a single number, and quick.
     #[must_use]
     pub fn quick_depth(&self) -> u64 {
         mcf_tui::screens::diagnostics::QUICK_DEPTH
     }
 
-    /// Roughly how long the throughput run takes, as a range: the whole
-    /// ladder to the chosen window, or the quick climb.
-    ///
-    /// A range because MCF's own estimates land between 0.58× and 1.42× of
-    /// what runs actually take, and a single number would be a promise it
-    /// cannot keep.
     #[must_use]
     pub fn estimate(&self, quick: bool) -> (u64, u64) {
-        // A quick run is the ladder only, and only to `QUICK_DEPTH`; the
-        // console prints the same two figures (B-072).
         let seconds: u64 = if quick {
             mcf_tui::screens::diagnostics::quick_seconds(&self.tests)
         } else {
@@ -5514,13 +4210,11 @@ impl Desk {
         Self::spread(seconds)
     }
 
-    /// Roughly how long the cross-check takes, as a range.
     #[must_use]
     pub fn cross_check_estimate(&self) -> (u64, u64) {
         Self::spread(self.seconds_of(Run::CrossCheck))
     }
 
-    /// The console's own estimate for one run, on the row that names it.
     fn seconds_of(&self, run: Run) -> u64 {
         self.tests
             .iter()
@@ -5529,7 +4223,6 @@ impl Desk {
             .unwrap_or(30)
     }
 
-    /// The range MCF's estimates land in against what runs take.
     fn spread(seconds: u64) -> (u64, u64) {
         #[expect(
             clippy::integer_division,
@@ -5543,11 +4236,6 @@ impl Desk {
         bounds
     }
 
-    /// The headline on *Your computer*: what this machine can run.
-    ///
-    /// Derived from the free memory on the largest card, or from system memory
-    /// where there is no card. It says *about* because the figure moves as
-    /// other programs come and go.
     #[must_use]
     pub fn capability_sentence(&self) -> String {
         let card = self
@@ -5572,7 +4260,6 @@ impl Desk {
         }
     }
 
-    /// The graphics card, in a phrase.
     #[must_use]
     pub fn card_sentence(&self) -> String {
         let Some(card) = self.reading.cards.first() else {
@@ -5588,7 +4275,6 @@ impl Desk {
         }
     }
 
-    /// System memory, in a phrase.
     #[must_use]
     pub fn memory_sentence(&self) -> String {
         match (self.reading.memory.available, self.reading.memory.total) {
@@ -5601,7 +4287,6 @@ impl Desk {
         }
     }
 
-    /// The processor, in a phrase.
     #[must_use]
     pub fn processor_sentence(&self) -> String {
         self.reading.processor.cores.map_or_else(
@@ -5610,7 +4295,6 @@ impl Desk {
         )
     }
 
-    /// Whether MCF is doing anything.
     #[must_use]
     pub fn doing_sentence(&self) -> String {
         if self.refusal.is_some() {
@@ -5621,12 +4305,6 @@ impl Desk {
     }
 }
 
-/// Opens the window and runs until it is closed.
-///
-/// # Errors
-///
-/// What SDL said, that the window library is not provisioned, or that no font
-/// could be found on this computer.
 #[allow(clippy::too_many_lines, reason = "the one loop, each event named")]
 pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut paint = paint::Painter::open("MCF", 1180, 760, paint::NIGHT)?;
@@ -5643,21 +4321,12 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
 
     let mut mouse = ui::Mouse::default();
     let mut last = std::time::Instant::now();
-    // **A frame is drawn when something happened, and not otherwise**
-    // (B-586). Drawing every sixteen milliseconds regardless cost
-    // forty-three per cent of a core with nothing on the screen changing
-    // (F267): an idle window should not be why a fan is running (B-071).
-    // The first frame, an event, a word from a job, a reading due, or an
-    // act taken on the last frame are what make one.
     let mut dirty = true;
-    // The event the wait at the end of the loop came back with, handed to
-    // the next pass so that it is handled like any other.
     let mut waiting: Option<[u8; sdl::EVENT_BYTES]> = None;
     loop {
         mouse.settle();
         let mut acted = dirty;
         dirty = false;
-        // The window is there: this loop only runs where one was opened.
         while let Some(event) = waiting
             .take()
             .or_else(|| paint.window().and_then(sdl::Window::next_event))
@@ -5684,9 +4353,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     desk.released();
                 }
                 sdl::EVENT_MOUSE_WHEEL => mouse.wheel = sdl::event_wheel(&event),
-                // Typing. It arrives already composed, so a layout, a
-                // modifier or an input method is the platform's business and
-                // not something this spells out of keycodes.
                 sdl::EVENT_TEXT_INPUT => {
                     if desk.takes_typing()
                         && let Some(text) = sdl::event_text(&event)
@@ -5699,12 +4365,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                         closing(&mut paint, &mut desk);
                         return Ok(());
                     }
-                    // Paste. Typing arrives already composed as text input,
-                    // but a paste never does: Ctrl+V is a key event and the
-                    // characters are on the clipboard, so a field that only
-                    // read text input could be typed into and not pasted
-                    // into — which is what a person hits first with an
-                    // owner/repository name they copied from a browser.
                     key if key == u32::from(b'v')
                         && sdl::event_has_ctrl(&event)
                         && desk.takes_typing() =>
@@ -5713,10 +4373,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                             desk.paste(&text);
                         }
                     }
-                    // Copy. The window draws its own text, so nothing in it
-                    // is a thing a window manager can select: the document
-                    // in the prompt field leaves by Ctrl+C, whole, or it
-                    // does not leave at all.
                     key if key == u32::from(b'c')
                         && sdl::event_has_ctrl(&event)
                         && desk.page == Page::Prompt
@@ -5732,10 +4388,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     sdl::KEY_RETURN if desk.takes_typing() => {
                         desk.returned(sdl::event_has_ctrl(&event));
                     }
-                    // `q` closes the window — except where somebody is
-                    // typing, when it is a letter. A field that ate the
-                    // application on the letter q would be a field nobody
-                    // could type a name into.
                     key if key == u32::from(b'q') && !desk.takes_typing() => {
                         closing(&mut paint, &mut desk);
                         return Ok(());
@@ -5754,25 +4406,16 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
             }
         }
 
-        // Anything a running job has said since the last frame.
         if desk.hear() {
             acted = true;
         }
 
-        // A second between readings, and only where they are shown — the same
-        // rule the console follows, for the same reason: an idle window should
-        // not be why a fan is running (B-071).
-        // And once a second while a run goes, whatever page shows: the
-        // machine and the model under test, so that the run's cost is
-        // summed as it is spent (B-573).
         let a_run = desk.doing.busy();
         let due = (matches!(desk.page, Page::Monitor | Page::Hosting) || a_run)
             && last.elapsed() >= std::time::Duration::from_secs(1);
         if due {
             match desk.page {
                 Page::Monitor => desk.sample(),
-                // Running: what the held engine is doing, read off its own
-                // counters once a second while somebody is looking (B-071).
                 _ => desk.read_hosted(),
             }
             if a_run {
@@ -5790,13 +4433,9 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
 
         if acted && let Some(act) = view::draw(&mut paint, &desk, &mouse) {
             taken(&mut paint, &mut desk, act);
-            // What the act changed is on the next frame.
             dirty = true;
         }
 
-        // Nothing to do until something happens: asleep in the platform
-        // until an event, or for a second so that a reading due and a
-        // job's words are not waited on for longer than that.
         if !dirty {
             waiting = paint
                 .window()
@@ -5805,20 +4444,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     }
 }
 
-/// What closing the window does before it goes: lets go of the model MCF
-/// is holding, so that shutting the window gives the memory back (B-592).
-///
-/// **A held model outlives the window that asked for it, and that is the
-/// point of the daemon** — a program on another machine goes on asking it
-/// questions with nobody at this screen. It is also how tens of gigabytes
-/// stay spent after somebody thinks they have finished: the operator shuts
-/// the window and the card is still full. So the window lets go on its way
-/// out, which is the same act as the Stop button on the hosting page and is
-/// recorded the same way; what it does not do is stop the daemon, which
-/// costs nothing while nobody is asking (F267).
-///
-/// A daemon that does not answer is not a reason to hang about: the ask has
-/// its own deadline, and the window goes either way.
 fn closing(paint: &mut paint::Painter, desk: &mut Desk) {
     let Some(held) = desk.to_let_go() else {
         return;
@@ -5827,8 +4452,6 @@ fn closing(paint: &mut paint::Painter, desk: &mut Desk) {
     desk.stop_hosting();
 }
 
-/// A count over a count as a fraction between nought and one; `None` of
-/// nothing.
 fn fraction_of(done: i64, of: i64) -> Option<f32> {
     if of <= 0 {
         return None;
@@ -5837,8 +4460,6 @@ fn fraction_of(done: i64, of: i64) -> Option<f32> {
     Some((done as f32 / of as f32).clamp(0.0, 1.0))
 }
 
-/// Findings just taken join the ones held: a method taken again replaces
-/// its last finding, and one not taken keeps it (D52, D53).
 fn keep_findings(held: &mut Vec<Finding>, found: Vec<Finding>) {
     for finding in found {
         match held.iter_mut().find(|had| had.name == finding.name) {
@@ -5848,8 +4469,6 @@ fn keep_findings(held: &mut Vec<Finding>, found: Vec<Finding>) {
     }
 }
 
-/// What a stepped run said, by step: each step's name with the lines the
-/// daemon wrote for it, taken now, the steps with none left out.
 fn findings_of(job: &job::Job) -> Vec<Finding> {
     let now = mcf_core::time::Timestamp::now().to_string();
     job.answers
@@ -5873,8 +4492,6 @@ fn findings_of(job: &job::Job) -> Vec<Finding> {
         .collect()
 }
 
-/// A record's time as a person reads it: the day and the minute, without
-/// the nanoseconds and the offset the record keeps (D53).
 #[must_use]
 pub fn when_said(at: &str) -> String {
     at.get(..16)
@@ -5882,21 +4499,16 @@ pub fn when_said(at: &str) -> String {
 }
 
 impl Desk {
-    /// A splitter dragged to a position: it is held from here until the
-    /// button is let go (F195).
     fn split(&mut self, splitter: Splitter, to: i32) {
         self.grabbed = Some(splitter);
         self.splits.set(splitter, as_points(to));
     }
 
-    /// The button was let go: whatever a press took hold of is dropped.
     pub fn released(&mut self) {
         self.grabbed = None;
     }
 }
 
-/// One act from the screen, done: by the window where it is the window's —
-/// the clipboard — and by the desk otherwise.
 fn taken(paint: &mut paint::Painter, desk: &mut Desk, act: Act) {
     if let Act::Copy(text) = &act
         && let Some(window) = paint.window()
@@ -5906,7 +4518,6 @@ fn taken(paint: &mut paint::Painter, desk: &mut Desk, act: Act) {
     desk.act(act);
 }
 
-/// A pointer position in pixels, as the points everything is laid out in.
 fn points(paint: &paint::Painter, at: (f32, f32)) -> (f32, f32) {
     let scale = if paint.scale > 0.0 { paint.scale } else { 1.0 };
     (at.0 / scale, at.1 / scale)

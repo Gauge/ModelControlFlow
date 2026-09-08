@@ -1,14 +1,7 @@
-//! The three properties that keep a rule of thumb from reading as a result
-//! (B-380, DEC-002, A21).
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
 
 use super::CATALOGUE;
 
-/// A touchstone carries no digit: every number a reader sees came from a
-/// measurement.
 #[test]
 fn no_touchstone_contains_a_number() {
     for held in CATALOGUE {
@@ -22,7 +15,6 @@ fn no_touchstone_contains_a_number() {
     }
 }
 
-/// Every rendering carries the mark and the limits — there is no other one.
 #[test]
 fn every_rendering_says_it_is_not_a_result_and_what_was_not_measured() {
     for held in CATALOGUE {
@@ -42,7 +34,6 @@ fn every_rendering_says_it_is_not_a_result_and_what_was_not_measured() {
     }
 }
 
-/// Each names the item that would replace it, and no two describe one subject.
 #[test]
 fn each_names_what_would_replace_it_and_describes_its_own_subject() {
     let mut subjects = Vec::new();

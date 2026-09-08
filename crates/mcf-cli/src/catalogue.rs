@@ -1,14 +1,3 @@
-//! The coding catalogue: challenges with a tier, a category, a statement
-//! in words, and cases in a form no language owns, run in every language
-//! MCF has an image for (B-563, D56).
-//!
-//! A challenge names a function, its parameters' kinds and its return
-//! kind; a case gives the arguments and the result as literals. Each
-//! language renders those in its own words. Every case is held by a
-//! reference solution in Python that a test runs in the container, so no
-//! model is graded against a case nobody can pass.
-
-/// How hard a challenge is meant to be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tier {
     Easy,
@@ -18,7 +7,6 @@ pub(crate) enum Tier {
 }
 
 impl Tier {
-    /// The tier's name, as the rows' dimension and the flag's word.
     #[must_use]
     pub(crate) const fn name(self) -> &'static str {
         match self {
@@ -29,7 +17,6 @@ impl Tier {
         }
     }
 
-    /// The tier of a name.
     #[must_use]
     pub(crate) fn named(name: &str) -> Option<Self> {
         match name {
@@ -42,8 +29,6 @@ impl Tier {
     }
 }
 
-/// The kinds a parameter or a result can be, small enough that every
-/// language renders them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Int,
@@ -54,7 +39,6 @@ pub(crate) enum Kind {
     OptInt,
 }
 
-/// A literal of one of the kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Lit {
     Int(i64),
@@ -65,14 +49,12 @@ pub(crate) enum Lit {
     None,
 }
 
-/// One case: the arguments, in the parameters' order, and the result.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Case {
     pub args: &'static [Lit],
     pub expects: Lit,
 }
 
-/// One challenge.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Challenge {
     pub name: &'static str,
@@ -94,7 +76,6 @@ macro_rules! case {
 use Kind::{Bool, Int, Ints, OptInt, Text, Texts};
 use Lit::{Int as I, Ints as IS, None as NONE, Text as T, Texts as TS};
 
-/// The catalogue, easiest first.
 pub(crate) const CHALLENGES: &[Challenge] = &[
     Challenge {
         name: "merge-sorted",
@@ -829,9 +810,6 @@ mod tests {
         )
     }
 
-    /// Every case of every challenge held by a reference solution in
-    /// Python, run in the container: a case nobody can pass grades every
-    /// model wrong. Needs podman.
     #[test]
     #[ignore = "needs podman and the pinned image; run with --ignored"]
     fn every_case_is_held_by_a_reference_solution() {
@@ -859,7 +837,6 @@ mod tests {
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
-    /// The reference solutions, one a function.
     const REFERENCES: &str = r#"
 def merge(a, b):
     i = j = 0; out = []

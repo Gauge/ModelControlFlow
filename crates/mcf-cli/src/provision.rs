@@ -1,20 +1,3 @@
-//! `mcf provision`: a component MCF installs, builds and pins itself, in an
-//! environment it controls (B-367, D39, DEC-052, F30).
-//!
-//! **The command, not the build.** What a build is — the container, the
-//! pinned image, the script, the record — lives in
-//! [`mcf_serve::provisioning`], because the daemon builds too, when a window
-//! holds a model that has no engine to run it; one builder, two callers
-//! (A22, B-072). What is here is what makes provisioning a *command*: naming
-//! a component, listing what can be built and what is, and removing one with
-//! a reason.
-//!
-//! **A component that is not named is the one this machine needs.** `mcf
-//! provision` with nothing after it builds what [`mcf_serve::engines::required`]
-//! says a model here would run on — the same answer the window acts on when
-//! a model is held with no engine, so the headless path can do what the window
-//! does (A22).
-
 use std::path::PathBuf;
 
 use std::io::{BufRead, BufReader, Write};
@@ -28,11 +11,6 @@ use mcf_serve::provisioning::{self, Outcome, is_complete, prefix_for, short};
 
 use crate::Response;
 
-/// Where a component lands when the operator does not say.
-///
-/// Under the data home, beside the models and the record — which on this
-/// machine the operator has already pointed at the large drive. `--into` names
-/// anywhere else.
 pub(crate) fn default_root() -> Option<PathBuf> {
     crate::models::default_root().map(|models| {
         models.parent().map_or_else(
@@ -42,16 +20,6 @@ pub(crate) fn default_root() -> Option<PathBuf> {
     })
 }
 
-/// What a daemon that is *already running* says it can reach.
-///
-/// **Asked, not started.** Listing what MCF can build is a question about the
-/// disk, and a question about the disk that started a daemon would be MCF
-/// doing work nobody asked for (§3.8). So this connects where something is
-/// already listening and gives up quietly everywhere else.
-///
-/// What it adds is the one thing the disk cannot answer: whether a prefix that
-/// exists is a build MCF can actually reach as an engine. A directory is not a
-/// binary, and treating the two as one is F31.
 fn reachable_engines() -> std::collections::BTreeMap<String, bool> {
     let mut found = std::collections::BTreeMap::new();
     let Some(socket) = crate::serve::socket_path() else {
@@ -91,7 +59,6 @@ fn reachable_engines() -> std::collections::BTreeMap<String, bool> {
     found
 }
 
-/// Lists what can be provisioned and what is.
 pub(crate) fn list(into: Option<&str>) -> Response {
     let root = match root_from(into) {
         Ok(root) => root,
@@ -125,8 +92,6 @@ pub(crate) fn list(into: Option<&str>) -> Response {
             component.image,
             component.image_digest,
         ));
-        // Only where a daemon is up to be asked: silence here is "nobody was
-        // asked", which is not the same as "it cannot be reached".
         if let Some(usable) = reachable.get(component.name) {
             lines.push(if *usable {
                 "    the daemon reaches this as an engine".to_owned()
@@ -141,7 +106,6 @@ pub(crate) fn list(into: Option<&str>) -> Response {
     }
 }
 
-/// The component to build: the one named, or the engine this machine needs.
 fn chosen_component(name: Option<&str>) -> Result<&'static Component, String> {
     let Some(name) = name else {
         let backend = mcf_serve::engines::backend_present();
@@ -167,37 +131,20 @@ fn chosen_component(name: Option<&str>) -> Result<&'static Component, String> {
         })
 }
 
-/// What a build came to, whichever side of the socket built it.
-///
-/// The daemon's final line and the library's [`Outcome`] say the same things;
-/// this is the one shape the command reports from, so the two paths cannot
-/// drift apart in what they show (B-072).
 enum Came {
-    /// The prefix was complete before anything ran.
-    Already { prefix: PathBuf },
-    /// A build ran to the end.
+    Already {
+        prefix: PathBuf,
+    },
     Built {
         prefix: PathBuf,
         log: PathBuf,
         toolchain: String,
         recorded: Result<PathBuf, String>,
-        /// Whether a daemon now reaches it as an engine — known only when a
-        /// daemon built it, since only a daemon holds engines.
         usable_engine: Option<bool>,
     },
-    /// The refusal, already worded for a person.
     Refused(String),
 }
 
-/// Provisions one component — or, unnamed, the one this machine needs.
-///
-/// **Through the daemon when one is up.** A daemon holds the engines it found
-/// at start and rediscovers them after a build *it* ran; a build the command
-/// ran beside it was a prefix on disk and no engine on the socket until the
-/// daemon restarted (F149). So where a daemon is listening and the build is
-/// bound for its own root, the command asks the daemon to build, and streams
-/// what it says. `--into` names a root the daemon does not look under, so
-/// that build stays local and says so.
 pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
     let component = match chosen_component(name) {
         Ok(component) => component,
@@ -217,8 +164,6 @@ pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
             };
         }
     };
-    // Unnamed, the choice is stated: a build the operator did not name is a
-    // choice MCF made, and §3.15 wants it visible.
     let chosen = if name.is_none() {
         format!(
             "{} is what a model on this machine would run on, so that is what is built\n",
@@ -243,12 +188,8 @@ pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
     report(component, &chosen, where_built, came)
 }
 
-/// Builds in this process, printing each of the build's lines as it comes.
 fn locally(component: &'static Component, root: &std::path::Path) -> Came {
     let prefix = prefix_for(component, root);
-    // Each line the build prints, as it prints it, on the error stream —
-    // which is where progress goes so that the outcome below stays the one
-    // thing on standard output. The prefix's log keeps every line.
     let mut progress = |line: &str| eprintln!("  {line}");
     match provisioning::provision(component, &prefix, &mut progress) {
         Ok(Outcome::Already { prefix }) => Came::Already { prefix },
@@ -266,10 +207,6 @@ fn locally(component: &'static Component, root: &std::path::Path) -> Came {
     }
 }
 
-/// Asks the daemon that answered to build, and follows the build line by line.
-///
-/// No read deadline: a build is as long as the compiler makes it, and a
-/// timeout here would report a working build as a dead daemon.
 fn through_daemon(mut connection: UnixStream, name: Option<&str>) -> Came {
     let request = Request::Provision {
         component: name.map(str::to_owned),
@@ -305,7 +242,6 @@ fn through_daemon(mut connection: UnixStream, name: Option<&str>) -> Came {
     )
 }
 
-/// The daemon's final line, read back into what the library would have said.
 fn came_from(body: &Value) -> Came {
     let path = |key: &str| body.get(key).and_then(Value::as_text).map(PathBuf::from);
     let Some(prefix) = path("prefix") else {
@@ -337,7 +273,6 @@ fn came_from(body: &Value) -> Came {
     }
 }
 
-/// One wording for both builders.
 fn report(component: &Component, chosen: &str, where_built: &str, came: Came) -> Response {
     match came {
         Came::Already { prefix } => Response {
@@ -397,7 +332,6 @@ fn report(component: &Component, chosen: &str, where_built: &str, came: Came) ->
     }
 }
 
-/// Removes a provisioned component, and says so in the record first.
 pub(crate) fn remove(name: &str, because: Option<&str>, into: Option<&str>) -> Response {
     let Some(component) = COMPONENTS.iter().find(|component| component.name == name) else {
         return Response {
@@ -428,9 +362,6 @@ pub(crate) fn remove(name: &str, because: Option<&str>, into: Option<&str>) -> R
         };
     }
 
-    // The record before the removal: if the removal half fails, a recorded
-    // intention beside a still-present prefix beats a removed prefix nobody
-    // wrote down (A1's ordering).
     let entry = Value::map([
         ("component", Value::text(component.name)),
         ("commit", Value::text(component.commit)),

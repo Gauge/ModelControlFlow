@@ -1,31 +1,5 @@
-//! SHA-256, written out.
-//!
-//! §3.6 makes a checksum part of an artifact's provenance and §7.49 makes it
-//! something to re-verify before a long run rather than only at acquisition
-//! (B-301). Something has to compute it.
-//!
-//! **Why this is written rather than depended on**, which is the same argument
-//! [`crate::measurement`]'s neighbours make about a serialization and which
-//! B15 requires be *stated*: SHA-256 is a fixed, published, three-hundred-line
-//! algorithm with official test vectors, so the correctness a dependency would
-//! buy is exactly the correctness a test can establish — and it is established
-//! below against the vectors in FIPS 180-4 and NIST's own examples, which is
-//! A19's *tested against an independently known value* in its strongest
-//! available form. What a dependency would add is a version to pin, a supply
-//! chain to trust and a build-time cost, for an algorithm that has not changed
-//! since 2001 and will not.
-//!
-//! **This is not a security boundary.** It answers *are these the same bytes*,
-//! which is §7.49's question about silent disk corruption and §III's about a
-//! transfer that arrived wrong. Where MCF eventually needs to resist a
-//! deliberate collision — verifying a signature, trusting a remote manifest —
-//! that is a different question and will want a reviewed implementation, and
-//! this comment is where that distinction is recorded rather than assumed.
-
 use core::fmt;
 
-/// The eight initial hash values: the fractional parts of the square roots of
-/// the first eight primes (FIPS 180-4 §5.3.3).
 const INITIAL: [u32; 8] = [
     0x6a09_e667,
     0xbb67_ae85,
@@ -37,8 +11,6 @@ const INITIAL: [u32; 8] = [
     0x5be0_cd19,
 ];
 
-/// The sixty-four round constants: the fractional parts of the cube roots of
-/// the first sixty-four primes (FIPS 180-4 §4.2.2).
 const ROUNDS: [u32; 64] = [
     0x428a_2f98,
     0x7137_4491,
@@ -106,19 +78,15 @@ const ROUNDS: [u32; 64] = [
     0xc671_78f2,
 ];
 
-/// A SHA-256 digest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Digest([u8; 32]);
 
 impl Digest {
-    /// The digest's bytes.
     #[must_use]
     pub const fn bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
-    /// The digest as lower-case hexadecimal, which is how it is written
-    /// everywhere else.
     #[must_use]
     pub fn hex(&self) -> String {
         const HEX: [char; 16] = [
@@ -140,11 +108,6 @@ impl fmt::Display for Digest {
     }
 }
 
-/// A SHA-256 computation in progress.
-///
-/// Incremental, because §7.49's subject is a model file: weights are measured
-/// in gigabytes and MCF is budgeted at twenty megabytes resident (D24), so the
-/// only shape available is one that reads a block at a time.
 #[derive(Debug, Clone)]
 pub struct Sha256 {
     state: [u32; 8],
@@ -160,7 +123,6 @@ impl Default for Sha256 {
 }
 
 impl Sha256 {
-    /// Begins a computation.
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -171,7 +133,6 @@ impl Sha256 {
         }
     }
 
-    /// Adds bytes.
     pub fn update(&mut self, mut bytes: &[u8]) {
         self.length_bits = self
             .length_bits
@@ -194,11 +155,8 @@ impl Sha256 {
         }
     }
 
-    /// Finishes, and yields the digest.
     #[must_use]
     pub fn finish(mut self) -> Digest {
-        // FIPS 180-4 §5.1.1: append a single 1 bit, then zeros, then the
-        // message length as a 64-bit big-endian integer.
         let length = self.length_bits;
         self.update_raw(&[0x80]);
         while self.buffered != 56 {
@@ -217,7 +175,6 @@ impl Sha256 {
         Digest(digest)
     }
 
-    /// Adds bytes without counting them, which the padding needs.
     fn update_raw(&mut self, bytes: &[u8]) {
         for byte in bytes {
             if let Some(slot) = self.buffer.get_mut(self.buffered) {
@@ -232,13 +189,6 @@ impl Sha256 {
         }
     }
 
-    /// One 64-byte block (FIPS 180-4 §6.2.2).
-    ///
-    /// The eight working variables are `a` through `h` because that is what
-    /// the specification calls them, and a reader checking this against
-    /// FIPS 180-4 needs the names to match. Renaming them to satisfy a style
-    /// lint would make the one thing that matters about this function — that it
-    /// is line-for-line the published algorithm — harder to verify.
     #[allow(clippy::many_single_char_names)]
     fn compress(&mut self, block: &[u8; 64]) {
         let mut schedule = [0_u32; 64];
@@ -296,7 +246,6 @@ impl Sha256 {
     }
 }
 
-/// The digest of a slice.
 #[must_use]
 pub fn sha256(bytes: &[u8]) -> Digest {
     let mut hasher = Sha256::new();

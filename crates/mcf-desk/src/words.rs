@@ -1,18 +1,3 @@
-//! Measurements, said in words somebody who has never heard of a token can use.
-//!
-//! **This is a presentation and never a record.** Every function here takes a
-//! measurement and returns a sentence; nothing returns a number that anything
-//! else computes with, and nothing MCF stores passes through this file. The
-//! record keeps milliseconds and tokens (A1), the window shows words a second,
-//! and the two do not have to agree about vocabulary because only one of them
-//! is evidence.
-//!
-//! **Every conversion here has a constant in it, and a constant is a
-//! condition** (A6). They are named below rather than buried in the
-//! arithmetic, and [`basis`] states them in a sentence that the interface can
-//! show — because a person who is told "twenty-five times faster than you can
-//! read" is owed the reading speed that was assumed.
-
 #![allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -25,18 +10,10 @@
               becomes an integer has already been checked finite and positive"
 )]
 
-/// Words per token, averaged over English prose.
-///
-/// Tokenisers differ and so do texts; this is the round number in the middle of
-/// the range the common vocabularies produce, and it is why every phrasing
-/// built on it says *about*.
 pub const WORDS_PER_TOKEN: f64 = 0.75;
 
-/// Words a minute, silent adult reading of ordinary prose.
 pub const READING_SPEED: f64 = 240.0;
 
-/// The sentence naming the two constants above, for the interface to show
-/// wherever it has used them.
 #[must_use]
 pub fn basis() -> String {
     format!(
@@ -45,7 +22,6 @@ pub fn basis() -> String {
     )
 }
 
-/// A whole number with its sign, its digits grouped in threes.
 #[must_use]
 pub fn grouped_signed(number: i64) -> String {
     let digits = grouped(number.unsigned_abs());
@@ -56,17 +32,11 @@ pub fn grouped_signed(number: i64) -> String {
     }
 }
 
-/// A count with its thousands separated — the console's (B-072).
 #[must_use]
 pub fn grouped(number: u64) -> String {
     mcf_tui::screens::grouped(number)
 }
 
-/// How quickly a model produces text, in words a second.
-///
-/// Returns `None` when there is no measurement, because there is no honest
-/// sentence to write in that case — the interface says *not measured yet* and
-/// offers the button that measures it (A7).
 #[must_use]
 pub fn speed_in_words(tokens_a_second: Option<f64>) -> Option<String> {
     let rate = tokens_a_second?;
@@ -74,8 +44,6 @@ pub fn speed_in_words(tokens_a_second: Option<f64>) -> Option<String> {
         return None;
     }
     let words = rate * WORDS_PER_TOKEN;
-    // A tenth of a word a second is meaningless above ten; below it, the
-    // difference between 3 and 3.4 is the difference between two experiences.
     Some(if words >= 10.0 {
         format!("{words:.0} words a second")
     } else {
@@ -83,7 +51,6 @@ pub fn speed_in_words(tokens_a_second: Option<f64>) -> Option<String> {
     })
 }
 
-/// The bare figure, for a screen that puts the unit somewhere else.
 #[must_use]
 pub fn speed_figure(tokens_a_second: Option<f64>) -> Option<String> {
     let rate = tokens_a_second?;
@@ -98,11 +65,6 @@ pub fn speed_figure(tokens_a_second: Option<f64>) -> Option<String> {
     })
 }
 
-/// How that speed compares with reading it.
-///
-/// The comparison people actually have a feel for. Below reading speed it says
-/// so plainly rather than reporting a fraction, because "0.4× as fast as you
-/// can read" is a number pretending to be an intuition.
 #[must_use]
 pub fn against_reading(tokens_a_second: Option<f64>) -> Option<String> {
     let rate = tokens_a_second?;
@@ -123,22 +85,17 @@ pub fn against_reading(tokens_a_second: Option<f64>) -> Option<String> {
     })
 }
 
-/// How much conversation a model can hold, in words.
 #[must_use]
 pub fn remembers(context_tokens: Option<u64>) -> Option<String> {
     let tokens = context_tokens?;
     if tokens == 0 {
         return None;
     }
-    // Rounded to two significant figures: the conversion is approximate and a
-    // figure like "24,576 words" claims a precision the constant cannot carry.
     let words = tokens as f64 * WORDS_PER_TOKEN;
     let rounded = round_to_two(words);
     Some(format!("about {} words", grouped(rounded)))
 }
 
-/// Rounds to two significant figures, which is all an approximate conversion
-/// has earned.
 fn round_to_two(value: f64) -> u64 {
     if !value.is_finite() || value <= 0.0 {
         return 0;
@@ -151,7 +108,6 @@ fn round_to_two(value: f64) -> u64 {
     ((value / step).round() * step).max(0.0) as u64
 }
 
-/// A size in bytes, as a person would say it.
 #[must_use]
 pub fn size_in_words(bytes: Option<u64>) -> Option<String> {
     let bytes = bytes?;
@@ -165,7 +121,6 @@ pub fn size_in_words(bytes: Option<u64>) -> Option<String> {
     })
 }
 
-/// How long a model takes to become ready.
 #[must_use]
 pub fn wakes_in(seconds: Option<f64>) -> Option<String> {
     let seconds = seconds?;
@@ -181,10 +136,6 @@ pub fn wakes_in(seconds: Option<f64>) -> Option<String> {
     })
 }
 
-/// Whether a model fits, and what that leaves.
-///
-/// Says the same thing whether it fits or not, so that a person reads one
-/// sentence in the same place either way rather than hunting for a warning.
 #[must_use]
 pub fn does_it_fit(needs: Option<u64>, free: Option<u64>, where_: &str) -> String {
     let (Some(needs), Some(free)) = (needs, free) else {
@@ -199,11 +150,6 @@ pub fn does_it_fit(needs: Option<u64>, free: Option<u64>, where_: &str) -> Strin
     }
 }
 
-/// How much the fall-off matters, said as whether it matters.
-///
-/// The measurement is a slope in milliseconds per token per token. Nobody
-/// wants that. What they want to know is whether a long conversation goes
-/// slow, and the honest answers to that are three.
 #[must_use]
 pub fn holds_up(fastest: Option<f64>, slowest: Option<f64>) -> Option<String> {
     let (fastest, slowest) = (fastest?, slowest?);
@@ -220,11 +166,6 @@ pub fn holds_up(fastest: Option<f64>, slowest: Option<f64>) -> Option<String> {
     })
 }
 
-/// What the interface says where it has no measurement.
-///
-/// One phrase, everywhere, and never a zero or a dash: a person reading "0"
-/// concludes something false, and a person reading "—" concludes nothing at
-/// all. This says which it is and implies the remedy (A7).
 pub const UNMEASURED: &str = "Not measured yet";
 
 #[cfg(test)]

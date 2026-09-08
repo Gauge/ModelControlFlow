@@ -1,12 +1,3 @@
-//! Retrieval past sixteen thousand: the single-fact retrieval at 32k, 64k
-//! and 128k where the window allows, and a depth past the window says so
-//! (B-558, D55, B-497, B-529).
-//!
-//! The retrieval measurement stops at sixteen thousand tokens because
-//! that is what most machines hold; a model that claims a long window is
-//! asked here whether it uses one. The planting and the question are the
-//! retrieval measurement's own, so the depths compare with it.
-
 use mcf_record::json::Value;
 
 use super::retrieval::{FILLER, planted};
@@ -14,22 +5,16 @@ use super::{Found, Reading, Site, as_integer, framed_ids, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "retrieval-deep";
 
-/// The depths tried, in tokens.
 pub const DEPTHS: [usize; 3] = [32_768, 65_536, 131_072];
 
-/// Where the fact is planted, in hundredths.
 const PLACEMENTS: [usize; 2] = [10, 90];
 
-/// The room kept for the template, the question and the answer.
 const ROOM: usize = 320;
 
-/// How many tokens the answer may take.
 const BUDGET: usize = 120;
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

@@ -1,52 +1,21 @@
-//! The vocabulary, counted from the header's own token list.
-//!
-//! A vocabulary decides what a model can say cheaply and what it must spell
-//! out: how many tokens it has, how many of them start a word, how long a run
-//! of digits it can write as one piece, which tokens are the model's own
-//! markers rather than text. Everything here is read from `tokenizer.ggml.*`
-//! and counted; nothing is tokenised, and nothing is said about the model's
-//! fluency in anything (§3.15, DEC-002).
-//!
-//! **The named tokens are looked up, not trusted.** A header names its
-//! end-of-text token by number, and the number is only meaningful if the list
-//! has that many entries. Where it does not, the row says so, because an
-//! engine that reads that number will index past the list (A2).
-//!
-//! **What is deliberately not counted.** A byte-level vocabulary stores its
-//! tokens in a printable alphabet where a byte above 127 is spelled as some
-//! other character, so "how many tokens are non-ASCII" cannot be read off the
-//! spellings without the alphabet, and a count that would be wrong for the
-//! commonest vocabulary kind is not offered for any (A7).
-
 use super::grouped;
 use crate::gguf::{Model, Value};
 
-/// The mark a byte-level vocabulary spells a leading space with.
 const BYTE_LEVEL_SPACE: char = '\u{120}';
-/// The mark `SentencePiece` spells a leading space with.
 const PIECE_SPACE: char = crate::tokenizer::SPACE;
 
-/// What the file marks a token as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
-    /// Ordinary text.
     Normal,
-    /// The stand-in for text nothing covers.
     Unknown,
-    /// A marker the model owns — a turn boundary, an end of text.
     Control,
-    /// Text the file wants matched literally before segmentation.
     UserDefined,
-    /// Reserved and unused.
     Unused,
-    /// One raw byte.
     Byte,
-    /// A number this reader does not know.
     Other(i64),
 }
 
 impl Kind {
-    /// GGUF's numbering.
     #[must_use]
     pub const fn of(number: i64) -> Self {
         match number {
@@ -60,7 +29,6 @@ impl Kind {
         }
     }
 
-    /// What to call it.
     #[must_use]
     pub fn as_str(self) -> String {
         match self {
@@ -75,36 +43,21 @@ impl Kind {
     }
 }
 
-/// A token the header names by number.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Named {
-    /// What the header calls it.
     pub what: &'static str,
-    /// The number the header gives.
     pub identifier: i64,
-    /// How the list spells that number, where the list reaches it.
     pub spelled: Option<String>,
 }
 
-/// The chat template the file carries, read for what it names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Template {
-    /// Its length.
     pub bytes: u64,
-    /// The control tokens whose spelling occurs in it — the markers a turn
-    /// is framed with. `None` where the file does not type its tokens.
     pub markers: Option<Vec<String>>,
-    /// The template's variables and tags this reader looks for, found.
     pub mentions: Vec<&'static str>,
 }
 
 impl Template {
-    /// Why no marker is shown, where none is — the file does not type its
-    /// tokens, or none of its control tokens is spelled in the template.
-    /// `None` where [`Self::markers`] has some to show.
-    ///
-    /// Here rather than on a surface so that the window and the command line
-    /// say it one way (B-072).
     #[must_use]
     pub fn no_markers(&self) -> Option<&'static str> {
         match &self.markers {
@@ -120,38 +73,24 @@ impl Template {
     }
 }
 
-/// What is said of a file that carries no chat template.
 pub const NO_TEMPLATE: &str = "none in the file — a chat turn has no framing the file states";
 
-/// The vocabulary, counted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Vocabulary {
-    /// How many tokens the list holds.
     pub tokens: u64,
-    /// `tokenizer.ggml.model`.
     pub model: Option<String>,
-    /// `tokenizer.ggml.pre`, the pre-tokenisation the file asks for.
     pub pre: Option<String>,
-    /// How many merges a byte-pair vocabulary lists.
     pub merges: Option<u64>,
-    /// Each kind's count, where the file types its tokens.
     pub kinds: Option<Vec<(Kind, u64)>>,
-    /// The tokens the header names by number.
     pub named: Vec<Named>,
-    /// Whether the file says a beginning token belongs in front.
     pub adds_beginning: Option<bool>,
-    /// The longest token, and its length in bytes.
     pub longest: Option<(String, u64)>,
-    /// How many tokens carry the word-start mark.
     pub word_starts: u64,
-    /// How many tokens are a run of digits, and the longest such run.
     pub digit_tokens: (u64, u64),
-    /// The chat template, where the file carries one.
     pub template: Option<Template>,
 }
 
 impl Vocabulary {
-    /// The segmentation the file names, in the words every surface uses.
     #[must_use]
     pub fn segmentation(&self) -> String {
         match (self.model.as_deref(), self.pre.as_deref()) {
@@ -161,7 +100,6 @@ impl Vocabulary {
         }
     }
 
-    /// How a number is written, read off the digit runs the list holds.
     #[must_use]
     pub fn digits_said(&self) -> String {
         match self.digit_tokens {
@@ -178,8 +116,6 @@ impl Vocabulary {
         }
     }
 
-    /// Whether a beginning token is put in front, as the file says or does
-    /// not.
     #[must_use]
     pub const fn beginning_said(&self) -> &'static str {
         match self.adds_beginning {
@@ -189,9 +125,6 @@ impl Vocabulary {
         }
     }
 
-    /// What is wrong where a named token is beyond the list: the header names
-    /// a number the list does not reach, and an engine reading it indexes
-    /// past the list (A2). `None` where the list spells it.
     #[must_use]
     pub fn beyond(&self, named: &Named) -> Option<String> {
         named.spelled.is_none().then(|| {
@@ -204,7 +137,6 @@ impl Vocabulary {
     }
 }
 
-/// The header's named tokens, and what to call them.
 const NAMED: [(&str, &str); 7] = [
     ("bos_token_id", "beginning of text"),
     ("eos_token_id", "end of text"),
@@ -215,11 +147,6 @@ const NAMED: [(&str, &str); 7] = [
     ("seperator_token_id", "separator"),
 ];
 
-/// Template variables and tags worth knowing a template uses.
-///
-/// `bos_token` and `eos_token` are there because a template that frames a
-/// turn with those variables rather than a spelled marker shows no control
-/// token in its text, and *none appear* would then be read as *none used*.
 const MENTIONS: [&str; 8] = [
     "tools",
     "system",
@@ -231,7 +158,6 @@ const MENTIONS: [&str; 8] = [
     "eos_token",
 ];
 
-/// Counts the vocabulary a file carries.
 #[must_use]
 pub fn of(model: &Model) -> Vocabulary {
     let tokens: Vec<&str> = model
@@ -294,7 +220,6 @@ pub fn of(model: &Model) -> Vocabulary {
     }
 }
 
-/// Each kind's count, in the order the kinds are numbered.
 fn kinds_of(types: &[Value]) -> Vec<(Kind, u64)> {
     let mut counted: Vec<(Kind, u64)> = Vec::new();
     for kind in types.iter().filter_map(Value::as_integer).map(Kind::of) {
@@ -307,7 +232,6 @@ fn kinds_of(types: &[Value]) -> Vec<(Kind, u64)> {
     counted
 }
 
-/// The tokens the header names by number, spelled from the list.
 fn named_of(model: &Model, tokens: &[&str]) -> Vec<Named> {
     NAMED
         .iter()
@@ -328,7 +252,6 @@ fn named_of(model: &Model, tokens: &[&str]) -> Vec<Named> {
         .collect()
 }
 
-/// What a template names, read from its text.
 fn template_of(template: &str, model: &Model, tokens: &[&str]) -> Template {
     let markers = model
         .get("tokenizer.ggml.token_type")

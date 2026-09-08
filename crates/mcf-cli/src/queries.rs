@@ -1,32 +1,17 @@
-//! SQL and regular expressions: queries run in the container against a
-//! fixed database and compared exactly; patterns run against match and
-//! no-match cases (B-551, D55, B-523, B-025).
-//!
-//! Two small languages a coding model is asked for daily, each checked
-//! by running what the model wrote. The database is built in the
-//! container from fixed rows; a query's result is compared with the
-//! reference row for row. A pattern is run by Python's own engine against
-//! texts that must match and texts that must not.
-
 use std::path::Path;
 
 use mcf_record::json::Value;
 use mcf_serve::examine::Reading;
 
-/// How many attempts each task.
 pub(crate) const ATTEMPTS: usize = 2;
 
-/// The token budget for one answer.
 const BUDGET: usize = 200;
 
-/// The database every query runs against, built fresh in the container.
 const SCHEMA: &str = "CREATE TABLE orders(id INTEGER, customer TEXT, city TEXT, amount INTEGER, placed TEXT);\n\
 INSERT INTO orders VALUES (1,'Ada','Leeds',120,'2024-01-05'),(2,'Ben','York',80,'2024-01-09'),\
 (3,'Ada','Leeds',45,'2024-02-02'),(4,'Cy','Hull',300,'2024-02-15'),(5,'Ben','York',60,'2024-03-01'),\
 (6,'Dee','Leeds',210,'2024-03-20'),(7,'Ada','Leeds',15,'2024-03-28');";
 
-/// One SQL task: name, what is asked, the reference query whose rows are
-/// the answer.
 pub(crate) const QUERIES: &[(&str, &str, &str)] = &[
     (
         "total-by-customer",
@@ -55,8 +40,6 @@ pub(crate) const QUERIES: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// One regex task: name, what the pattern must do, texts that must match
-/// whole, texts that must not.
 pub(crate) const PATTERNS: &[(&str, &str, &[&str], &[&str])] = &[
     (
         "uk-postcode-like",
@@ -84,7 +67,6 @@ pub(crate) const PATTERNS: &[(&str, &str, &[&str], &[&str])] = &[
     ),
 ];
 
-/// What is asked for a query.
 fn ask_query(wants: &str) -> String {
     format!(
         "An SQLite table is defined as:\n\n{SCHEMA}\n\nWrite one SQL query that returns {wants}. \
@@ -92,7 +74,6 @@ fn ask_query(wants: &str) -> String {
     )
 }
 
-/// What is asked for a pattern.
 fn ask_pattern(wants: &str) -> String {
     format!(
         "Write a Python regular expression that will {wants}. It will be used with re.fullmatch. \
@@ -100,8 +81,6 @@ fn ask_pattern(wants: &str) -> String {
     )
 }
 
-/// The program that runs a query beside the reference and prints `ok`
-/// or `no`, or `x` where the model's query would not run.
 fn query_checker(written: &str, reference: &str) -> String {
     format!(
         "import sqlite3\nc = sqlite3.connect(':memory:')\nc.executescript({schema})\n\
@@ -114,8 +93,6 @@ fn query_checker(written: &str, reference: &str) -> String {
     )
 }
 
-/// The program that runs a pattern against every case and prints one
-/// `ok` or `no` a case, or `x` where the pattern would not compile.
 fn pattern_checker(written: &str, yes: &[&str], no: &[&str]) -> String {
     use std::fmt::Write as _;
     let mut out = format!(
@@ -139,7 +116,6 @@ fn pattern_checker(written: &str, yes: &[&str], no: &[&str]) -> String {
     out
 }
 
-/// A Python string literal holding the text.
 fn python_string(text: &str) -> String {
     format!(
         "'''{}'''",
@@ -174,7 +150,6 @@ pub(crate) fn written_in(said: &str) -> String {
         .to_owned()
 }
 
-/// Runs every task: the lines said, the rows, and the engine that answered.
 #[allow(
     clippy::too_many_lines,
     reason = "one suite read straight through: each query and each pattern asked, run, a row set each"
@@ -346,9 +321,6 @@ mod tests {
         assert_eq!(written_in("r'^#[0-9a-fA-F]{6}$'"), "^#[0-9a-fA-F]{6}$");
     }
 
-    /// The reference queries and patterns hold in the container: every
-    /// reference query matches itself and every reference pattern holds
-    /// its cases. Needs podman.
     #[test]
     #[ignore = "needs podman and the pinned image; run with --ignored"]
     fn every_reference_holds_in_the_container() {

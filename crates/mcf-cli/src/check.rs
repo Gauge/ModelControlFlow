@@ -1,38 +1,3 @@
-//! `mcf check`: is what this machine holds still what the hub says it is?
-//! (B-331, D37, §7.38).
-//!
-//! **What it does, in two halves.** *The bytes here*: re-read the artifact and
-//! compare its digest with the one recorded when it arrived (B-301, §7.49) —
-//! which catches the silent disk corruption that would otherwise be discovered
-//! as a garbage measurement rather than as a bad file. *The upstream*: ask the
-//! repository it came from what it says now, and compare with what was written
-//! down at acquisition (B-331, D37). Neither fetches weights; the second
-//! fetches a listing and a model card, and `--here` does not touch the network
-//! at all.
-//!
-//! **Why the two belong in one command.** They are the same question — *is what
-//! I hold still what it should be* — asked of the two things that can change
-//! independently. Keeping them apart would mean an operator has to know which
-//! kind of rot they are looking for before they look.
-//!
-//! **When it runs: when somebody runs it.** D37 forbids the timer a watcher
-//! would need (B4, §3.13). MCF does not notice a decay overnight, and saying so
-//! is better than a background poll nobody asked for.
-//!
-//! **What a finding costs, which is nothing.** A decay is written down beside
-//! the provenance and into the record, and no measurement is withdrawn. The
-//! artifact is here, its digest still verifies, and a tool that retracted its
-//! own results because somebody else deleted something would be destroying
-//! evidence for a reason that is not scientific (D37). What is really lost is
-//! *somebody else's* ability to reproduce, and that belongs in a repro bundle
-//! as a stated condition (PR2).
-//!
-//! **The one thing MCF will not say** is which of three things a silent hub
-//! means. [findings.md](../../../doc/findings.md) F17 measured that a
-//! repository that is private, one that was withdrawn and one that never
-//! existed all answer the same way, so an unreachable repository is reported as
-//! *unreachable* and is not counted as a change (A7).
-
 use std::path::Path;
 
 use mcf_core::attested::Attested;
@@ -51,16 +16,12 @@ use crate::models;
 use crate::pull::{DEFAULT_HUB, Offered, credential};
 use mcf_hub::wire::for_url;
 
-/// How much of the question to ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Reach {
-    /// Both halves: the bytes here and the repository they came from.
     Everything,
-    /// The bytes on this disk, and no network at all.
     HereOnly,
 }
 
-/// Checks what this machine holds: the bytes, and where they came from.
 pub(crate) fn run(
     only: Option<&str>,
     reach: Reach,
@@ -125,9 +86,6 @@ pub(crate) fn run(
             continue;
         };
 
-        // The bytes first, because it is the half that needs no network and the
-        // half a bad answer would come from: a measurement taken against a
-        // corrupted file is worse than one not taken (§7.49, B-301).
         let (said, matched) = bytes_here(&held.path, provenance);
         lines.extend(said);
         if matched == Some(false) {
@@ -138,10 +96,6 @@ pub(crate) fn run(
             .as_ref()
             .and_then(|hub| upstream(hub, provenance, &held.path, at, &mut lines));
         if let Some(observed) = &observed {
-            // *Asked and answered* rather than *asked*: a hub that refused or
-            // could not be reached told MCF nothing about the artifact, and
-            // counting it among the checked would let a run of failures read as
-            // a clean bill of health (A7, F17).
             if matches!(observed.found, Decay::Unreachable { .. }) {
                 unanswered = unanswered.saturating_add(1);
             } else {
@@ -152,12 +106,6 @@ pub(crate) fn run(
             }
         }
 
-        // Written down whatever was found, including *nothing was wrong*: a
-        // check that left no account could not answer *when was this last known
-        // to be fine*, which is the question D37 exists for. An upstream
-        // finding is also appended beside the artifact, where a reader of the
-        // file finds it; the bytes half is an event rather than a property of
-        // the provenance, so it lives only in the record (D20).
         match record(&held.path, provenance, matched, observed.as_ref(), at) {
             Ok(()) => {}
             Err(failure) => lines.push(format!(
@@ -175,11 +123,6 @@ pub(crate) fn run(
     }
 }
 
-/// The two sentences a check ends with, which are about different things.
-///
-/// Kept apart deliberately: corruption is a fact about this disk and a decay is
-/// a fact about somebody else's server, and running them together would invite
-/// a reader to think one caused the other.
 fn verdict(
     corrupt: usize,
     asked_upstream: bool,
@@ -217,12 +160,6 @@ fn verdict(
     said
 }
 
-/// The two ways there is nothing to check before anything is read.
-///
-/// Kept apart from the check itself so that *nowhere to look* and *nothing
-/// there yet* stay two answers rather than one: the first is a machine that has
-/// not been told where models go, and the second is one that has and has not
-/// used it.
 fn nothing_to_check(stores: &[std::path::PathBuf]) -> Option<Response> {
     if stores.is_empty() {
         return Some(Response {
@@ -234,10 +171,6 @@ fn nothing_to_check(stores: &[std::path::PathBuf]) -> Option<Response> {
             served: false,
         });
     }
-    // A machine that has never acquired anything has no store, and that is not
-    // an unreadable one: `mcf list` has always said so and this said *the model
-    // store could not be read*, which is two answers to one situation (A6) and
-    // the wrong one of the two.
     if stores.iter().all(|root| !root.exists()) {
         return Some(Response {
             text: format!(
@@ -254,11 +187,6 @@ fn nothing_to_check(stores: &[std::path::PathBuf]) -> Option<Response> {
     None
 }
 
-/// Asks the repository an artifact came from what it says now.
-///
-/// `None` when there is no upstream to ask about, which is a state rather than
-/// a failure: an artifact converted on this machine has an origin and no
-/// repository (A7). Either way the reader is told which.
 fn upstream(
     hub: &Hub,
     provenance: &Provenance,
@@ -276,11 +204,6 @@ fn upstream(
     Some(observed)
 }
 
-/// Re-reads an artifact and compares it with the digest recorded for it.
-///
-/// The second half of the answer is `Some(false)` when the bytes have changed,
-/// `Some(true)` when they have not, and `None` when there is nothing to compare
-/// against — which is a third state rather than a pass (A7).
 fn bytes_here(path: &Path, provenance: &Provenance) -> (Vec<String>, Option<bool>) {
     match provenance.integrity() {
         Attested::Known(recorded) => match integrity::verify(path, recorded) {
@@ -310,11 +233,6 @@ fn bytes_here(path: &Path, provenance: &Provenance) -> (Vec<String>, Option<bool
     }
 }
 
-/// The hub to ask, with whatever credential the operator named.
-///
-/// The same construction `mcf pull` makes, for the same reasons: TLS is chosen
-/// from the URL rather than configured, and a credential comes from where the
-/// operator said and nowhere else (B-024, B-322).
 fn hub_for(from: Option<&str>, offered: Offered<'_>) -> std::result::Result<Hub, Response> {
     let refuse = |failure: &mcf_core::failure::Failure| Response {
         text: crate::say::refusal("nothing was checked", failure),
@@ -333,19 +251,10 @@ fn hub_for(from: Option<&str>, offered: Offered<'_>) -> std::result::Result<Hub,
     }
 }
 
-/// The artifact's own name in the repository it came from.
 fn file_of(path: &Path) -> Option<&str> {
     path.file_name().and_then(std::ffi::OsStr::to_str)
 }
 
-/// Writes what was found into the record, and an upstream finding beside the
-/// artifact as well.
-///
-/// `matched` is the bytes half: `Some(true)` when the artifact still matches
-/// the digest recorded for it, `Some(false)` when it does not, and `None` when
-/// nothing was recorded to compare against — three states rather than a pass
-/// and a fail (A7). `observed` is the upstream half, absent when nobody asked
-/// for it.
 fn record(
     path: &Path,
     provenance: &Provenance,

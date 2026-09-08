@@ -1,17 +1,3 @@
-//! `mcf offered` and `mcf acquire`: the two things the window's *Add a model*
-//! screen does, without the window.
-//!
-//! **Why these exist beside `mcf pull`.** `pull` does the same work in this
-//! process, and needs no daemon; these ask the daemon to do it. That is not
-//! two implementations — both end at `mcf_hub::acquisition::one` — but it is
-//! two *paths*, and the daemon's is the one the window drives. A22 forbids a
-//! capability reachable only through a client, and a path nothing headless
-//! exercises is a path the laboratory cannot test (B-072, A22).
-//!
-//! **They print what the daemon said.** No summarising, no rewording of a
-//! refusal: a second opinion about what happened is not something a client is
-//! for (A2).
-
 use crate::say::refused_because;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
@@ -21,7 +7,6 @@ use mcf_serve::control::{Answer, Request};
 
 use crate::Response;
 
-/// What a repository publishes, and which of it will run here.
 pub(crate) fn offered(reference: &str, from: Option<&str>, fresh: bool) -> Response {
     ask(
         &Request::Offered {
@@ -33,9 +18,6 @@ pub(crate) fn offered(reference: &str, from: Option<&str>, fresh: bool) -> Respo
     )
 }
 
-/// Fetches one published file into this machine's store.
-/// Which repositories the hub lists for a word, so that `mcf pull qwen`
-/// answers with names to pull rather than a refusal (A2).
 pub(crate) fn searched(query: &str, from: Option<&str>, fresh: bool) -> Response {
     ask(
         &Request::Search {
@@ -47,8 +29,6 @@ pub(crate) fn searched(query: &str, from: Option<&str>, fresh: bool) -> Response
     )
 }
 
-/// Where an answer came from: the hub just now, or what was kept of a read
-/// within the day, with when (B-488).
 fn read_from(body: &Value) -> Option<String> {
     let at = body
         .get("read_at")
@@ -106,7 +86,6 @@ pub(crate) fn acquire(reference: &str, file: &str, from: Option<&str>) -> Respon
     )
 }
 
-/// Sends one request and renders every line it answers with.
 fn ask(request: &Request, render: &dyn Fn(&Value) -> Vec<String>) -> Response {
     let Some(socket) = crate::serve::socket_path() else {
         return Response {
@@ -126,9 +105,6 @@ fn ask(request: &Request, render: &dyn Fn(&Value) -> Vec<String>) -> Response {
             served: false,
         };
     };
-    // No read deadline: a transfer is as long as the file and the network make
-    // it, and a timeout here would report a working download as a broken
-    // daemon.
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
         .is_err()
@@ -162,7 +138,6 @@ fn ask(request: &Request, render: &dyn Fn(&Value) -> Vec<String>) -> Response {
     }
 }
 
-/// A listing, one row a published file.
 fn published(body: &Value) -> Vec<String> {
     let mut lines = read_from(body).into_iter().collect::<Vec<String>>();
     lines.push(format!(
@@ -174,26 +149,14 @@ fn published(body: &Value) -> Vec<String> {
             .and_then(Value::as_text)
             .unwrap_or("an unstated revision")
     ));
-    // Before the files, because it is the thing a person may need to decide
-    // not to download at all (B-023).
     if let Some(terms) = body.get("terms").and_then(Value::as_text) {
         lines.push(format!("  {terms}"));
     }
-    // A7 and A19: where MCF could not judge whether these would run, it says
-    // so once rather than leaving every row silently unjudged.
     if let Some(why) = body.get("no_plan").and_then(Value::as_text) {
         lines.push(format!(
             "  MCF cannot say which of these would run here: {why}"
         ));
     }
-    // Where the shape came from is a condition of every verdict below it: a
-    // configuration can say which blocks are full-attention and a header
-    // cannot, so a hybrid model judged from a header has its cache overstated
-    // — which errs toward refusing something that would fit (A6, F16).
-    // A21: declared, verified, unknown. Every verdict below rests on a number
-    // the repository supplied — MCF has not fetched the weights, and saying
-    // *fits* about a claim without saying it is one would make a plan read as
-    // a finding.
     if let Some(from) = body.get("shape_from").and_then(Value::as_text) {
         lines.push(format!("  these rest on {from}"));
         lines
@@ -211,7 +174,6 @@ fn published(body: &Value) -> Vec<String> {
     lines
 }
 
-/// A transfer, one line each time it says how far it has got.
 fn arriving(body: &Value) -> Vec<String> {
     let file = body
         .get("acquiring")
@@ -222,8 +184,6 @@ fn arriving(body: &Value) -> Vec<String> {
         let mut lines = vec![format!("{file} is here: {path}")];
         match body.get("recorded").and_then(Value::as_text) {
             Some(where_) => lines.push(format!("  written down in {where_}")),
-            // A24: an acquisition MCF cannot account for is worse than one it
-            // did not make, so a record that would not write is said out loud.
             None => lines.push("  MCF could not write this acquisition to its record".to_owned()),
         }
         return lines;
@@ -237,8 +197,6 @@ fn arriving(body: &Value) -> Vec<String> {
             )]
         }
         (_, Some(arrived), Some(total)) => {
-            // A set's part says which it is and how the whole is going
-            // (B-590).
             let set = match (
                 body.get("part").and_then(Value::as_integer),
                 body.get("of").and_then(Value::as_integer),
@@ -261,12 +219,6 @@ mod tests {
     use super::published;
     use mcf_record::json::Value;
 
-    /// Terms are shown before the files, not after the download.
-    ///
-    /// **Downloading is a use.** B-023 asks that a licence be surfaced before
-    /// one, and a person who learns what a model's terms are once it is on
-    /// their disk has learned it too late to decide. The Add-a-model flow
-    /// showed a list of files and a button and no terms anywhere.
     #[test]
     fn the_terms_come_before_the_files() {
         let answered = Value::map([
@@ -295,10 +247,6 @@ mod tests {
         );
     }
 
-    /// A repository that declares nothing says so, and MCF does not fill it in.
-    ///
-    /// A7: the three states stay distinct and none of them is a default. A
-    /// plausible guess at a licence is the one answer worse than no answer.
     #[test]
     fn nothing_declared_is_said_and_never_guessed() {
         let answered = Value::map([
@@ -314,7 +262,6 @@ mod tests {
         let lines = published(&answered).join("\n");
         assert!(lines.contains("unknown"), "{lines}");
         assert!(lines.contains("has not guessed"), "{lines}");
-        // And no licence name is invented anywhere in it.
         for invented in ["apache", "mit", "gpl", "permissive"] {
             assert!(
                 !lines.to_lowercase().contains(invented),
@@ -323,10 +270,6 @@ mod tests {
         }
     }
 
-    /// A listing with no terms at all still lists its files.
-    ///
-    /// An older daemon answers without the field, and a client that refused to
-    /// render anything would turn a missing line into a missing screen.
     #[test]
     fn a_listing_without_terms_still_lists() {
         let answered = Value::map([

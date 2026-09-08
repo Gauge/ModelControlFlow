@@ -1,12 +1,3 @@
-//! Dates, ordering and counting: the weekday of a date, the days between
-//! two, ten numbers sorted, the letters in a word — each exact (B-545,
-//! D55, A19).
-//!
-//! Four small skills a person leans on without noticing, each with one
-//! right answer a parser can check: a weekday word, a day count, a
-//! sorted list compared item by item, a letter count. Fixed questions,
-//! greedy, every answer a row.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::{answer_in, numbers_in};
@@ -14,24 +5,17 @@ use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "reckoning";
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 200;
 
-/// What a question wants back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Wants {
-    /// A whole number.
     Number(i64),
-    /// A word, case aside.
     Word(&'static str),
-    /// These numbers in this order.
     Sorted(&'static [i64]),
 }
 
-/// The questions: kind, name, ask, answer.
 pub const QUESTIONS: &[(&str, &str, &str, Wants)] = &[
     (
         "weekday",
@@ -107,7 +91,6 @@ pub const QUESTIONS: &[(&str, &str, &str, Wants)] = &[
     ),
 ];
 
-/// Whether an answer is the one wanted.
 #[must_use]
 pub fn right(said: &str, wants: &Wants) -> bool {
     match wants {
@@ -120,15 +103,9 @@ pub fn right(said: &str, wants: &Wants) -> bool {
     }
 }
 
-/// Every whole number in a reply with its sign, in order: the reply
-/// split on commas and whitespace, each piece that is a signed integer
-/// kept. A sorted list is written that way; thousands separators are not
-/// expected in one.
 fn signed_numbers_in(said: &str) -> Vec<i64> {
     said.split(|c: char| c == ',' || c.is_whitespace())
         .filter_map(|piece| {
-            // The piece's leading signed digits: a marker the engine writes
-            // after the last number, `88<|im_end|>`, is not part of it.
             let end = piece
                 .char_indices()
                 .find(|(at, c)| !(c.is_ascii_digit() || (*at == 0 && *c == '-')))
@@ -138,7 +115,6 @@ fn signed_numbers_in(said: &str) -> Vec<i64> {
         .collect()
 }
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {

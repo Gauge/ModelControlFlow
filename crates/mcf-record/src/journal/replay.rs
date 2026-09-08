@@ -1,17 +1,3 @@
-//! Reading a journal back, and saying exactly what could not be read.
-//!
-//! B62: *where a replay cannot complete, MCF reports what was lost and how much
-//! rather than opening with a shorter history — the silent option A2 forbids,
-//! aimed at the record itself.* A journal that opens successfully with three
-//! months missing is the specific failure this module exists to make
-//! impossible.
-//!
-//! So a replay always returns two things: everything it could read, and — if it
-//! stopped early — a [`Loss`] naming the line, the byte offset, the number of
-//! bytes it did not read, and why. A4 keeps the first: entries before the
-//! damage are a real, usable history and are not discarded because the file
-//! ends badly.
-
 use std::io::{BufRead as _, BufReader, Read as _, Seek as _, SeekFrom};
 use std::path::Path;
 
@@ -25,16 +11,11 @@ use super::{Entry, EntryKind, FORMAT_VERSION};
 
 const WHERE: Subsystem = Subsystem::new("mcf-record::journal::replay");
 
-/// What a replay could not read, and how much of it there was.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loss {
-    /// The one-based line the replay stopped at.
     pub line: usize,
-    /// The byte offset that line starts at.
     pub byte_offset: usize,
-    /// How many bytes were not read.
     pub bytes_unread: usize,
-    /// The classified reason.
     pub failure: Failure,
 }
 
@@ -48,61 +29,33 @@ impl core::fmt::Display for Loss {
     }
 }
 
-/// One entry, and exactly where in the journal it was.
-///
-/// The offset and the length are what makes an index possible (B-300, D20): a
-/// derived index stores where each entry is and reads back only the bytes it
-/// needs, rather than paying for the whole history at every open.
 #[derive(Debug, Clone)]
 pub struct Placed {
-    /// The entry.
     pub entry: Entry,
-    /// Which line of the journal it is, one-based.
     pub line: usize,
-    /// Where its line begins.
     pub byte_offset: u64,
-    /// How long its line is, terminator included.
     pub byte_length: u32,
 }
 
-/// The result of reading part or all of a journal, with each entry placed.
 #[derive(Debug)]
 pub struct Placement {
-    /// Everything that could be read, in the order it was written.
     pub placed: Vec<Placed>,
-    /// What stopped the reading, if anything did.
     pub loss: Option<Loss>,
-    /// The byte the reading got to.
-    ///
-    /// Where a loss stopped it, this is where the loss begins: a caller that
-    /// indexes what came before knows exactly what it has covered.
     pub read_to: u64,
 }
 
-/// The result of reading a journal.
 #[derive(Debug)]
 pub struct Replay {
-    /// Everything that could be read, in the order it was written.
     pub entries: Vec<Entry>,
-    /// What stopped the replay, if anything did.
-    ///
-    /// `None` means the whole file was read. It does not mean the file is
-    /// undamaged in some larger sense — only that nothing in it was
-    /// unreadable, which is the claim this module is able to make.
     pub loss: Option<Loss>,
 }
 
 impl Replay {
-    /// Whether the whole journal was read.
     #[must_use]
     pub const fn is_complete(&self) -> bool {
         self.loss.is_none()
     }
 
-    /// A sentence stating what was recovered and what was not.
-    ///
-    /// Always says both. A rendering that mentioned the loss only when there
-    /// was one would train a reader to skim past the line that matters.
     #[must_use]
     pub fn statement(&self) -> String {
         match &self.loss {
@@ -112,17 +65,6 @@ impl Replay {
     }
 }
 
-/// Reads a journal back.
-///
-/// # Errors
-///
-/// `record.unwritable` when the file cannot be read at all, and
-/// `record.corrupt.journal` when its header is missing or names no format —
-/// those are failures of the *whole* file rather than a loss partway through
-/// it, and there is no partial history to return.
-///
-/// A damaged or truncated entry is **not** an error: it is a [`Loss`] on an
-/// otherwise successful replay, because the entries before it are real.
 pub fn replay(path: &Path) -> Result<Replay> {
     let read = replay_from(path, 0, 0)?;
     Ok(Replay {
@@ -131,25 +73,6 @@ pub fn replay(path: &Path) -> Result<Replay> {
     })
 }
 
-/// Reads a journal from a byte offset, keeping where each entry was.
-///
-/// `from` must be the start of a line — an index records the end of the last
-/// entry it covered, which is exactly that. `lines_before` is how many lines
-/// precede it, so that a [`Loss`] names the line as the whole file numbers it
-/// rather than as this reading numbers it: a report that said *line 3* about
-/// the four hundred thousandth line would be worse than no number at all.
-///
-/// Reading from an offset does **not** check the header, because the header is
-/// not there to read. A caller resuming into the middle of a file is asserting
-/// it already knows which file this is; [`crate::journal::index`] does that by
-/// fingerprint before it ever calls this.
-///
-/// # Errors
-///
-/// `record.unwritable` when the file cannot be opened or measured, and
-/// `record.corrupt.journal` / `record.schema.unknown` from the header when
-/// reading from the beginning. A damaged entry partway through is a [`Loss`]
-/// rather than an error, exactly as in [`replay`].
 #[allow(
     clippy::too_many_lines,
     reason = "one loop with one exit per way a line can be wrong; splitting it \
@@ -175,10 +98,6 @@ pub fn replay_from(path: &Path, from: u64, lines_before: usize) -> Result<Placem
 
     loop {
         raw.clear();
-        // Read as bytes rather than as text: a journal with a non-UTF-8 byte in
-        // it is damaged *at that line*, and reading the whole file as a string
-        // would turn one bad byte into a file nothing can read — which is the
-        // shorter-history failure B62 is about, in its most complete form.
         let read = reader
             .read_until(b'\n', &mut raw)
             .map_err(|error| unreadable_file(path, &error))?;
@@ -191,9 +110,6 @@ pub fn replay_from(path: &Path, from: u64, lines_before: usize) -> Result<Placem
         let complete = raw.last() == Some(&b'\n');
         let unread = || total.saturating_sub(start);
 
-        // A line with no terminator is a torn write: the process died between
-        // the write and the barrier, or the medium filled. It is the expected
-        // crash residue, and it is reported as such rather than as corruption.
         if !complete {
             return Ok(Placement {
                 placed,
@@ -275,12 +191,6 @@ pub fn replay_from(path: &Path, from: u64, lines_before: usize) -> Result<Placem
     })
 }
 
-/// Reads exactly one entry, from bytes an index says it occupies.
-///
-/// Bounded by the length it is given rather than by the end of the file: this
-/// is the read a query makes after the index has told it where to look, and a
-/// query that read to the end of a million-entry journal would be the cost the
-/// index exists to avoid.
 pub(super) fn read_entry_at(path: &Path, offset: u64, length: u32) -> Result<Entry> {
     let mut file = std::fs::File::open(path).map_err(|error| unreadable_file(path, &error))?;
     file.seek(SeekFrom::Start(offset))
@@ -345,22 +255,12 @@ fn check_header(path: &Path, header: &Value) -> Result<()> {
     }
 }
 
-/// Rebuilds an entry from a line, or `None` if the line is not one.
-///
-/// The envelope is what is required — identifier, kind, moment — and the body
-/// is carried through whatever it contains. A kind this version does not know
-/// makes the line unreadable *as an entry*, which is the honest answer under
-/// §7.30 rather than a half-understood record admitted into a history.
 fn read_entry(value: &Value) -> Option<Entry> {
     let kind = EntryKind::parse(value.get("kind")?.as_text()?)?;
     let nanos = value.get("recorded_at_utc_nanos")?.as_integer()?;
     let body = value.get("body")?.clone();
     let id = super::EntryId::as_written(value.get("id")?.as_text()?);
 
-    // The offset is not read back from the text rendering: D9 stores it
-    // alongside the moment, and a replay that inferred one from a formatted
-    // string would be inventing a condition (A7). Entries written by this
-    // version carry `unknown`, and that is what comes back.
     let recorded_at = Timestamp::from_utc_nanos(i128::from(nanos), read_offset(value));
     Some(Entry::recorded(id, kind, recorded_at, body))
 }

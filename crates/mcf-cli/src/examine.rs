@@ -1,9 +1,3 @@
-//! `mcf examine`: the measurements on one model, as the daemon carries them
-//! (D52). The command names the model and which to take, and prints each
-//! finding as it lands — the same stream the window's Performance, Fidelity
-//! and Behaviour cards read (A22). What the measurements are, and what each
-//! finds, is `mcf_serve::examine`.
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 
@@ -13,7 +7,6 @@ use mcf_serve::control::{Answer, Request};
 use crate::Response;
 use crate::run::{ambiguous, resolve};
 
-/// Runs the measurements and prints what each found as it lands.
 pub(crate) fn run(model: &str, engine: Option<&str>, only: Option<&str>) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
@@ -91,9 +84,6 @@ pub(crate) fn run(model: &str, engine: Option<&str>, only: Option<&str>) -> Resp
     }
     println!("examined {}", path.display());
     println!();
-    // **Printed as it comes.** A run is minutes, and the daemon says which
-    // measurement it is on before each and what it found after; the closing
-    // lines end the run.
     let Some(answer) = the_findings_as_they_come(&connection) else {
         return Response {
             text: "mcf: MCF did not answer".to_owned(),
@@ -115,8 +105,6 @@ pub(crate) fn run(model: &str, engine: Option<&str>, only: Option<&str>) -> Resp
     }
 }
 
-/// Reads the daemon's lines, printing each measurement's step as it is
-/// announced and its finding as it lands; returns the line that ends the run.
 fn the_findings_as_they_come(connection: &UnixStream) -> Option<Answer> {
     for read in BufReader::new(connection).lines() {
         let read = read.ok()?;
@@ -126,8 +114,6 @@ fn the_findings_as_they_come(connection: &UnixStream) -> Option<Answer> {
         if !answer.served || matches!(answer.body.get("done"), Some(Value::Bool(true))) {
             return Some(answer);
         }
-        // How far along the step is, on the error stream over one line, so
-        // that the report on the output stream stays whole (D56).
         if let Some(progress) = answer.body.get("progress") {
             let figure = |key: &str| progress.get(key).and_then(Value::as_integer).unwrap_or(0);
             let doing = progress.get("doing").and_then(Value::as_text).unwrap_or("");
@@ -157,7 +143,6 @@ fn the_findings_as_they_come(connection: &UnixStream) -> Option<Answer> {
     None
 }
 
-/// The lines an answer carries.
 fn lines_of(body: &Value) -> Vec<String> {
     body.get("lines")
         .and_then(Value::as_list)
@@ -168,7 +153,6 @@ fn lines_of(body: &Value) -> Vec<String> {
         .collect()
 }
 
-/// A step as one line: *measurement 3 of 14: prefix-reuse*.
 fn step_said(body: &Value) -> Option<String> {
     let step = body.get("step")?;
     let figure = |key: &str| step.get(key).and_then(Value::as_integer);

@@ -1,5 +1,3 @@
-//! The arithmetic and the readers, pinned against values a reader can
-//! check by hand; nothing here starts an engine.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use std::path::Path;
@@ -8,8 +6,6 @@ use mcf_record::json::Value;
 
 use super::{FAMILIES, MEASURES, as_ms, per_cent, per_second, planned, ppm};
 
-/// Every measurement is in exactly one family, and every family's
-/// measurements are ones the run makes.
 #[test]
 fn every_measurement_is_in_one_family() {
     let mut seen = std::collections::BTreeSet::new();
@@ -25,7 +21,6 @@ fn every_measurement_is_in_one_family() {
     assert_eq!(seen.len(), MEASURES.len(), "a measurement is in no family");
 }
 
-/// Naming some keeps the run's order and drops what is not named.
 #[test]
 fn a_plan_keeps_the_runs_order() {
     let asked = vec![
@@ -37,7 +32,6 @@ fn a_plan_keeps_the_runs_order() {
     assert_eq!(planned(&[]).len(), MEASURES.len());
 }
 
-/// The figures are whole numbers read the way a person would.
 #[test]
 fn the_figures_are_read_by_hand() {
     assert_eq!(as_ms(1_234_567), "1.2");
@@ -49,8 +43,6 @@ fn the_figures_are_read_by_hand() {
     assert_eq!(per_second(1, 0), 0);
 }
 
-/// Precision is read off a file's name, and the reference is the most
-/// precise sibling above the model's own.
 #[test]
 fn the_reference_is_the_most_precise_sibling() {
     use super::fidelity::{precision_of, reference_among};
@@ -76,8 +68,6 @@ fn the_reference_is_the_most_precise_sibling() {
     );
 }
 
-/// A divergence is the first position that differs, or the shorter
-/// length where one run is a prefix of the other.
 #[test]
 fn a_divergence_is_where_two_runs_part() {
     use super::determinism::{distinct_of, divergence_at};
@@ -88,7 +78,6 @@ fn a_divergence_is_where_two_runs_part() {
     assert_eq!(distinct_of(&[]), 0);
 }
 
-/// Repeats and loops are counted, not judged.
 #[test]
 fn repeats_and_loops_are_counted() {
     use super::degeneration::{loop_onset, repeated_by_hundred};
@@ -96,9 +85,6 @@ fn repeats_and_loops_are_counted() {
     assert_eq!(repeated_by_hundred(&fresh), vec![0, 0]);
     assert_eq!(loop_onset(&fresh), None);
     let looped: Vec<usize> = (0..40).chain(0..40).chain(0..40).collect();
-    // Every four-token run in the second hundred recurs from the first
-    // forty tokens on, since the hundred is the tail of one cycle and a
-    // whole one.
     let shares = repeated_by_hundred(&looped);
     assert_eq!(shares.len(), 2);
     assert!(shares[0] > 500_000, "{shares:?}");
@@ -109,7 +95,6 @@ fn repeats_and_loops_are_counted() {
     );
 }
 
-/// The fact is planted where it was asked for, and the question follows.
 #[test]
 fn the_fact_is_planted_where_asked() {
     use super::retrieval::planted;
@@ -122,7 +107,6 @@ fn the_fact_is_planted_where_asked() {
     assert!(planted(10, 0, "1").starts_with("The secret number is 1."));
 }
 
-/// Conformance is a parser's answer.
 #[test]
 fn conformance_is_read_by_a_parser() {
     use super::grammar::conforms;
@@ -137,7 +121,6 @@ fn conformance_is_read_by_a_parser() {
     assert!(!conforms("Ada is 36 and lives in London."));
 }
 
-/// What changed in a round trip is named.
 #[test]
 fn a_changed_round_trip_is_named() {
     use super::tokenizer::changed;
@@ -149,8 +132,6 @@ fn a_changed_round_trip_is_named() {
     assert_eq!(changed("naïve", "na?ve"), "came back as \"na?ve\"");
 }
 
-/// A recorded finding reads back as a sentence, and a measurement that
-/// could not tell says so.
 #[test]
 fn a_recorded_finding_reads_back() {
     let body = Value::map([
@@ -176,8 +157,6 @@ fn a_recorded_finding_reads_back() {
     assert_eq!(super::recorded_said(&not_ours), None);
 }
 
-/// A call is read in either form a template writes, its arguments with
-/// it, and judged against what the task expects by exact match (B-517).
 #[test]
 fn a_call_is_read_in_either_form_and_judged_exactly() {
     use super::tooluse::call_in;
@@ -214,8 +193,6 @@ fn a_call_is_read_in_either_form_and_judged_exactly() {
     assert_eq!(thought.name, "get_time");
 }
 
-/// The siblings of a model are the model files beside it: not a
-/// projector, and of a sharded file only its first part.
 #[test]
 fn siblings_are_the_model_files_beside_it() {
     let dir = std::env::temp_dir().join(format!("mcf-examine-siblings-{}", std::process::id()));
@@ -242,9 +219,6 @@ fn siblings_are_the_model_files_beside_it() {
     let _ = Path::new("/");
 }
 
-/// Every measurement's recorded finding reads back as a sentence, even
-/// from a record that kept no field but the method: a measurement with
-/// no arm would show nothing on the page after a run (D53).
 #[test]
 fn every_measurement_reads_back_as_a_sentence() {
     for name in MEASURES {

@@ -1,24 +1,3 @@
-//! A projection says what it was read between (B-385, §3.4, A6, A7, B34).
-//!
-//! **The defect this closes, found rather than predicted.** F74: an unrelated
-//! test suite held twenty-six cores of this machine while four comparisons
-//! were taken, and a generation that takes 400 ms on a quiet machine took
-//! eighteen seconds. Those entries are true and stay in the record (A1). But
-//! `project::band` read the history without reading the conditions the history
-//! was taken under, so every surface rendering a band — the expected duration,
-//! `mcf explain`, `mcf doctor`'s score — rested on them in silence. A number
-//! whose conditions do not travel with it is exactly what §3.4 and A6 exist to
-//! prevent, one layer below where MCF was enforcing them.
-//!
-//! **Carried, not filtered.** Filtering contended history needs a threshold,
-//! and what counts as too busy is DEC-007's open band. Saying what the band
-//! rested on needs no threshold at all.
-//!
-//! **And unknown is not quiet** (A7). Entries written before B-217 recorded
-//! nothing about the machine. That is `None`, it renders as *unknown*, and a
-//! zero would be a claim MCF cannot support.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use mcf_bench::project::{Point, band};
@@ -33,7 +12,6 @@ fn point(bytes: u64, competing: Option<u64>) -> Point {
     }
 }
 
-/// The band and its conditions cannot be separated by a caller.
 #[test]
 fn the_conditions_travel_with_the_band() {
     let held = band(&[point(100, Some(33_050)), point(200, Some(150))], 150, 128)
@@ -50,7 +28,6 @@ fn the_conditions_travel_with_the_band() {
     );
 }
 
-/// A history that recorded nothing about the machine says *unknown*.
 #[test]
 fn nothing_recorded_is_never_rendered_as_quiet() {
     let held = band(&[point(100, None), point(200, None)], 150, 128)
@@ -67,7 +44,6 @@ fn nothing_recorded_is_never_rendered_as_quiet() {
     }
 }
 
-/// One known and one unknown is neither of the two simple sentences.
 #[test]
 fn a_half_known_pair_says_which_half() {
     let held = band(&[point(100, Some(2_500)), point(200, None)], 150, 128)
@@ -80,7 +56,6 @@ fn a_half_known_pair_says_which_half() {
     );
 }
 
-/// No point is removed from the history for being contended.
 #[test]
 fn contended_history_is_carried_and_never_filtered() {
     let source = std::fs::read_to_string(
@@ -97,7 +72,6 @@ fn contended_history_is_carried_and_never_filtered() {
     }
 }
 
-/// Every surface that renders a band renders what it rested on.
 #[test]
 fn the_surfaces_render_it() {
     for (file, why) in [

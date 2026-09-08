@@ -1,32 +1,13 @@
-//! A moment on the calendar, in UTC, with the local offset alongside.
-//!
-//! D9: records are timestamped in UTC, stored with the local offset alongside
-//! rather than baked in, so a record is both comparable across machines and
-//! legible about where it was taken.
-//!
-//! **A timestamp has no subtraction.** That is B37's whole point: the wall
-//! clock steps, drifts and is adjusted underneath a running process, so
-//! `end - start` on two of these would report an NTP correction as latency.
-//! Intervals come from [`Instant`], which has no calendar meaning.
-//!
-//! [`Instant`]: super::Instant
-
 use core::fmt;
 
 use crate::attested::Attested;
 
-/// The local offset from UTC, in seconds east.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UtcOffset(i32);
 
 impl UtcOffset {
-    /// UTC itself.
     pub const UTC: Self = Self(0);
 
-    /// An offset, if it is one.
-    ///
-    /// Returns `None` beyond ±26 hours, which is wider than any real zone and
-    /// narrow enough to catch a value that is not an offset at all.
     #[must_use]
     pub const fn from_seconds_east(seconds: i32) -> Option<Self> {
         const LIMIT: i32 = 26 * 3600;
@@ -37,7 +18,6 @@ impl UtcOffset {
         }
     }
 
-    /// The offset in seconds east of UTC.
     #[must_use]
     pub const fn seconds_east(self) -> i32 {
         self.0
@@ -45,10 +25,6 @@ impl UtcOffset {
 }
 
 impl fmt::Display for UtcOffset {
-    /// `+00:00`, `-05:00`, as a record and a reader both expect.
-    // Integer division is the operation, not an accident of one: an offset is
-    // whole minutes by construction, and `from_seconds_east` has already bounded
-    // the magnitude below 26 hours.
     #[allow(clippy::integer_division)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let sign = if self.0 < 0 { '-' } else { '+' };
@@ -57,51 +33,27 @@ impl fmt::Display for UtcOffset {
     }
 }
 
-/// A moment, in UTC, with the local offset if MCF knows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timestamp {
-    /// Nanoseconds since 1970-01-01T00:00:00Z. Signed, so a machine whose
-    /// clock is set before the epoch produces a timestamp rather than a
-    /// wrapped one.
     utc_nanos: i128,
     offset: Attested<UtcOffset>,
 }
 
 impl Timestamp {
-    /// A moment, stated.
     #[must_use]
     pub const fn from_utc_nanos(utc_nanos: i128, offset: Attested<UtcOffset>) -> Self {
         Self { utc_nanos, offset }
     }
 
-    /// The moment the system clock reports now, with the local offset where
-    /// the platform publishes one.
-    ///
-    /// D9 wants the offset stored *alongside* the moment rather than folded
-    /// into it, and [`Timestamp`] has no arithmetic that could fold it. Where
-    /// the platform publishes no zone, or the moment lies beyond what the zone
-    /// file records, the offset is [`Attested::Unknown`] — never `+00:00`,
-    /// which is a real offset most machines do not have (A7, B-352).
     #[must_use]
     pub fn now() -> Self {
         let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
-        // `i128` holds nanoseconds for about 5.4 × 10^21 years, so the
-        // saturation below is unreachable on any clock a machine can hold. It
-        // is written rather than assumed because the alternative is a
-        // truncating cast, and a truncated timestamp is a confidently wrong
-        // date rather than a missing one (P1).
         let utc_nanos = match since_epoch {
             Ok(elapsed) => i128::try_from(elapsed.as_nanos()).unwrap_or(i128::MAX),
-            // The system clock is set before 1970. That is a real state of a
-            // real machine, and the honest answer is a negative timestamp
-            // rather than a clamp to the epoch.
             Err(before) => {
                 i128::try_from(before.duration().as_nanos()).map_or(i128::MIN, |nanos| -nanos)
             }
         };
-        // The moment first, then the offset in force *at* that moment — which
-        // is what makes an old record legible as the place it was taken rather
-        // than as wherever the machine is now.
         let moment = Self {
             utc_nanos,
             offset: Attested::Unknown,
@@ -112,19 +64,16 @@ impl Timestamp {
         }
     }
 
-    /// Nanoseconds since the Unix epoch, UTC.
     #[must_use]
     pub const fn utc_nanos(self) -> i128 {
         self.utc_nanos
     }
 
-    /// The local offset, if MCF read one.
     #[must_use]
     pub const fn offset(self) -> Attested<UtcOffset> {
         self.offset
     }
 
-    /// The same moment, with a local offset attached.
     #[must_use]
     pub const fn with_offset(self, offset: UtcOffset) -> Self {
         Self {
@@ -133,21 +82,6 @@ impl Timestamp {
         }
     }
 
-    /// The civil UTC date and time: year, month, day, hour, minute, second,
-    /// nanosecond.
-    ///
-    /// Computed here rather than by a dependency. B15 admits weight only
-    /// against a stated cost, and the cost of a date library is larger than
-    /// the twenty lines below — which are Howard Hinnant's `civil_from_days`,
-    /// exact for every representable day and tested against known dates (A19).
-    // The casts below are bounded by the two `rem_euclid` calls immediately
-    // above them and are proved rather than hoped: after the reductions,
-    // `seconds` is in `0..86_400`, so hour is in `0..24`, minute and second in
-    // `0..60`, and `nanosecond` is in `0..1_000_000_000`. Every one fits its
-    // target type with room to spare, and none can be negative. The divisions
-    // are the calendar arithmetic itself. `try_from` is unavailable here
-    // because this is a `const fn`, which it is so that a timestamp can be
-    // rendered without allocating in a failure path.
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -158,8 +92,6 @@ impl Timestamp {
         const NANOS_PER_SECOND: i128 = 1_000_000_000;
         const SECONDS_PER_DAY: i128 = 86_400;
 
-        // Floor division, so moments before the epoch land on the right day
-        // rather than one day late.
         let mut seconds = self.utc_nanos.div_euclid(NANOS_PER_SECOND);
         let nanosecond = self.utc_nanos.rem_euclid(NANOS_PER_SECOND);
         let days = seconds.div_euclid(SECONDS_PER_DAY);
@@ -178,35 +110,17 @@ impl Timestamp {
     }
 }
 
-/// A civil date and time, as a record renders it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Civil {
-    /// The proleptic Gregorian year.
     pub year: i64,
-    /// The month, 1 through 12.
     pub month: u8,
-    /// The day of the month, 1 through 31.
     pub day: u8,
-    /// The hour, 0 through 23.
     pub hour: u8,
-    /// The minute, 0 through 59.
     pub minute: u8,
-    /// The second, 0 through 59. MCF does not represent leap seconds; the
-    /// system clock does not hand them out.
     pub second: u8,
-    /// The nanosecond within the second.
     pub nanosecond: u32,
 }
 
-/// Howard Hinnant's `civil_from_days`, exact for the proleptic Gregorian
-/// calendar over the whole representable range.
-///
-/// Reproduced rather than depended on (B15), and checked against known dates
-/// in the tests (A19).
-// `mp` is in `0..12` and `day` in `1..=31` by the algorithm's own arithmetic,
-// so both fit `u8`. The year is bounded by the range of a nanosecond timestamp:
-// `i128::MAX` nanoseconds is about 5.4 × 10^18 years, which fits `i64`. The
-// divisions are the algorithm.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -228,9 +142,6 @@ const fn civil_from_days(days: i128) -> (i64, u8, u8) {
 }
 
 impl fmt::Display for Timestamp {
-    /// RFC 3339 in UTC, to nanosecond precision, with the local offset stated
-    /// separately — never folded into the moment, because folding it in is how
-    /// two machines' records stop being comparable (D9).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let civil = self.civil_utc();
         write!(

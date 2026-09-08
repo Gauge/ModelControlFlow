@@ -1,23 +1,3 @@
-//! Outcomes leave; tasks, outputs and retractions do not
-//! (B-171, B-203, B-251, B-310, B42, B54, B63, D21, §6.30, §3.19, §3.20).
-//!
-//! **Why the shape and not a filter.** A contribution that strips task content
-//! on the way out is one line away from not stripping it, and the line is in
-//! the export path where nobody looks twice. A contribution with nowhere to
-//! *put* task content cannot leak it however the export is written — so an
-//! audit finds no task content because there was never anywhere for it to be.
-//!
-//! The stakes are not only privacy: a benchmark task that travels ends up in
-//! somebody's training data, and a corpus that leaks its own tasks measures
-//! memorization from then on.
-//!
-//! **And no retraction, ever** (B-310, D21). Once something has left, it has
-//! left. An affordance suggesting otherwise would be the most consequential
-//! false promise MCF could make, because a person would rely on it. This file
-//! forbids the method by name so that adding one is a deliberate act against a
-//! test rather than a helpful-looking commit.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 fn source() -> String {
@@ -34,12 +14,8 @@ fn source() -> String {
     .join("\n")
 }
 
-/// There is nowhere in the format to put an artifact.
 #[test]
 fn no_field_can_hold_a_task_or_an_output() {
-    // Without the terms, which name every one of these in order to say they
-    // are absent — the third time in this repository a check has had to skip
-    // the sentence explaining why it passes (F81).
     let held = source();
     let held = held
         .split_once("pub const TERMS")
@@ -67,7 +43,6 @@ fn no_field_can_hold_a_task_or_an_output() {
     }
 }
 
-/// No code path offers a retraction.
 #[test]
 fn nothing_here_offers_to_unsend_anything() {
     let held = source();
@@ -92,7 +67,6 @@ fn nothing_here_offers_to_unsend_anything() {
     );
 }
 
-/// A custom workload is marked at production and refused at both routes.
 #[test]
 fn a_custom_workload_is_refused_by_construction() {
     let held = source();
@@ -109,7 +83,6 @@ fn a_custom_workload_is_refused_by_construction() {
     );
 }
 
-/// An absolute cannot exist without the conditions that make it readable.
 #[test]
 fn a_bare_number_cannot_be_constructed() {
     let held = source();
@@ -129,7 +102,6 @@ fn a_bare_number_cannot_be_constructed() {
     );
 }
 
-/// An imported figure cannot be rendered as MCF's own (B-166).
 #[test]
 fn an_import_arrives_as_a_claim() {
     let held = source();
@@ -157,7 +129,6 @@ fn an_import_arrives_as_a_claim() {
     );
 }
 
-/// Not fitting here is an outcome, not an error (B-172, A9, §6.3).
 #[test]
 fn a_configuration_that_will_not_run_is_a_complete_answer() {
     let held = source();
@@ -171,7 +142,6 @@ fn a_configuration_that_will_not_run_is_a_complete_answer() {
     );
 }
 
-/// The type prefers comparisons, and says why.
 #[test]
 fn a_comparison_needs_less_than_an_absolute() {
     let held = source();

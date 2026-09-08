@@ -1,38 +1,20 @@
-//! Paraphrase consistency: one question with an exact answer put six
-//! ways — how many of the answers agree, and how many are right
-//! (B-527, D55, A19).
-//!
-//! A model that answers a question one way and its paraphrase another
-//! is a model whose answers depend on wording, which a person choosing
-//! one wants to know before they wonder which wording they will use.
-//! Each question has a whole-number answer, so a parser reads the
-//! answer: the first whole number in the reply. Greedy throughout, so
-//! that what varies is the phrasing and nothing else.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, timed};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "paraphrase";
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 80;
 
-/// One question, its answer, and its phrasings.
 #[derive(Debug)]
 pub struct Question {
-    /// Its name.
     pub name: &'static str,
-    /// The answer, a whole number.
     pub answer: i64,
-    /// The same question, six ways.
     pub phrasings: [&'static str; 6],
 }
 
-/// The questions.
 pub const QUESTIONS: &[Question] = &[
     Question {
         name: "minutes-in-three-hours",
@@ -108,7 +90,6 @@ pub const QUESTIONS: &[Question] = &[
     },
 ];
 
-/// Every whole number in a reply, in order, thousands separators allowed.
 #[must_use]
 pub fn numbers_in(said: &str) -> Vec<i64> {
     let mut found = Vec::new();
@@ -126,11 +107,6 @@ pub fn numbers_in(said: &str) -> Vec<i64> {
     found
 }
 
-/// The number a reply gives as its answer: the only number where there
-/// is one; the number after the last `=` where the reply works it out;
-/// otherwise the last number in it. A reply told to answer with the
-/// number only and holding several has already said something else, and
-/// `numbers` counts them beside the reading.
 #[must_use]
 pub fn answer_in(said: &str) -> Option<i64> {
     let numbers = numbers_in(said);
@@ -145,7 +121,6 @@ pub fn answer_in(said: &str) -> Option<i64> {
     numbers.last().copied()
 }
 
-/// How many of the answers agree with the most common one.
 #[must_use]
 pub fn agreement(answers: &[Option<i64>]) -> usize {
     let mut counts: std::collections::BTreeMap<i64, usize> = std::collections::BTreeMap::new();
@@ -155,7 +130,6 @@ pub fn agreement(answers: &[Option<i64>]) -> usize {
     counts.values().copied().max().unwrap_or(0)
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

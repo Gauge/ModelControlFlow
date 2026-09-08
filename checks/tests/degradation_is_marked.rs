@@ -1,22 +1,5 @@
-//! A degraded value cannot become an undegraded one.
-//!
-//! A5's check is `compiler`: a degraded result is a distinct type that cannot
-//! be rendered or exported as an undegraded one (B-008). The compiler holds
-//! that as long as the type offers no way back — no `Deref`, no
-//! `From<Degraded<T>> for T`, no `unwrap`, and no rendering that omits the
-//! mark. This reads the module to check that it still offers none.
-//!
-//! A source check rather than a compile-fail harness, for the reason given in
-//! `measurement_has_one_way_in.rs`.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
-/// Nothing converts a marked value back into an unmarked one implicitly.
-///
-/// `Deref` is the dangerous one: it would make every method of the inner type
-/// reachable through the wrapper, including its `Display`, and the mark would
-/// then be one autoderef away from vanishing.
 #[test]
 fn nothing_converts_a_degraded_value_back() {
     let source = degradation_source();
@@ -37,10 +20,6 @@ fn nothing_converts_a_degraded_value_back() {
     }
 }
 
-/// Taking the value hands the mark back with it.
-///
-/// Asserted so that the check above cannot be satisfied by removing every way
-/// to reach the value, which would make the type useless rather than safe.
 #[test]
 fn the_only_way_out_returns_the_mark_as_well() {
     let source = degradation_source();
@@ -51,9 +30,6 @@ fn the_only_way_out_returns_the_mark_as_well() {
     );
 }
 
-/// Every combining operation returns a degraded value. If one returned a plain
-/// `T`, degradation would be recorded rather than contagious, and a CPU-derived
-/// input could produce an unmarked output.
 #[test]
 fn every_combinator_stays_degraded() {
     let source = degradation_source();
@@ -69,8 +45,6 @@ fn every_combinator_stays_degraded() {
     }
 }
 
-/// The mark appears in the rendering. A5's violation is a CPU-derived timing
-/// displayed beside accelerator-derived ones with no distinction.
 #[test]
 fn the_rendering_names_the_degradation() {
     let source = degradation_source();
@@ -84,11 +58,6 @@ fn the_rendering_names_the_degradation() {
     );
 }
 
-/// The module with its documentation removed.
-///
-/// The documentation *names* the forbidden constructs in order to say they are
-/// absent, so a check that grepped the whole file would fail on the sentence
-/// explaining why it passes.
 fn degradation_source() -> String {
     let path = mcf_checks::workspace::root().join("crates/mcf-core/src/degradation/mod.rs");
     let source = std::fs::read_to_string(&path)

@@ -1,15 +1,3 @@
-//! The companion site: it receives what people choose to publish, and shows it.
-//!
-//! **It is not MCF, and that is deliberate.** MCF cannot send: there is no
-//! destination in it, no address to configure, and a check that holds that
-//! absence against the tree. So a contribution arrives here because a person
-//! moved a file, which is the act MCF's own terms describe. Nothing here talks
-//! back to anybody's machine.
-//!
-//! **It is its own workspace** for the same reason. MCF refuses to listen on a
-//! network; this does nothing else. Whatever the site grows to need must never
-//! become a condition of a measurement somebody takes at home.
-
 mod archive;
 mod http;
 mod page;

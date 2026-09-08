@@ -1,5 +1,3 @@
-//! What it takes to remove an artifact, and what it takes to get one back.
-
 use std::path::{Path, PathBuf};
 
 use super::{
@@ -12,7 +10,6 @@ use mcf_core::provenance::{Licence, Origin, Provenance, Repository, Revision};
 use mcf_core::time::Timestamp;
 use mcf_record::journal::Journal;
 
-/// A directory of this test's own, removed when it is done.
 struct Scratch {
     path: PathBuf,
 }
@@ -33,8 +30,6 @@ impl Scratch {
         self.path.join(name)
     }
 
-    /// A file with something in it, and the something is the name so that a
-    /// misplaced file is legible when a test fails.
     fn holding(&self, name: &str, bytes: usize) -> PathBuf {
         let path = self.at(name);
         if let Some(parent) = path.parent() {
@@ -59,7 +54,6 @@ fn now() -> Timestamp {
     Timestamp::now()
 }
 
-/// The preview describes and does not act. Every byte is still where it was.
 #[test]
 fn a_preview_touches_nothing() {
     let scratch = Scratch::new("preview");
@@ -74,8 +68,6 @@ fn a_preview_touches_nothing() {
     assert!(described.contains("128 bytes"), "{described}");
 }
 
-/// A path that is not there is a thing to explain, not a row to drop: a plan
-/// that quietly shortened itself would be read as *this is everything*.
 #[test]
 fn a_plan_will_not_describe_what_is_not_there() {
     let scratch = Scratch::new("absent");
@@ -91,9 +83,6 @@ fn a_plan_will_not_describe_what_is_not_there() {
     );
 }
 
-/// A removal is authorized *for a reason*, because *the disk was full* and *I
-/// replaced it with a better quantization* are different decisions and a record
-/// with neither cannot tell them apart.
 #[test]
 fn an_authorization_without_a_reason_is_not_one() {
     let scratch = Scratch::new("reason");
@@ -105,9 +94,6 @@ fn an_authorization_without_a_reason_is_not_one() {
     Authorization::given(&plan, "replaced by the Q6 quantization").expect("a reason");
 }
 
-/// An authorization is for the removal somebody looked at. A file that changed
-/// under the preview is a different removal, and it is refused rather than
-/// performed on something nobody saw.
 #[test]
 fn an_authorization_does_not_carry_to_a_removal_nobody_previewed() {
     let scratch = Scratch::new("stale");
@@ -137,8 +123,6 @@ fn an_authorization_does_not_carry_to_a_removal_nobody_previewed() {
     assert!(model.exists(), "a refused removal removed something");
 }
 
-/// The ordinary path: the record is written, the artifact moves to the shelf,
-/// and nothing is deleted.
 #[test]
 fn a_removal_records_first_and_deletes_nothing() {
     let scratch = Scratch::new("removal");
@@ -173,8 +157,6 @@ fn a_removal_records_first_and_deletes_nothing() {
     assert!(written.contains("model.gguf"), "{written}");
 }
 
-/// The record is what outlives the artifact, so it says how big it was and
-/// where it went.
 #[test]
 fn the_record_says_what_left_and_on_whose_word() {
     let scratch = Scratch::new("record");
@@ -195,8 +177,6 @@ fn the_record_says_what_left_and_on_whose_word() {
     );
 }
 
-/// The shelf is the point: an operator who removed the wrong model gets it
-/// back.
 #[test]
 fn what_was_shelved_can_be_put_back() {
     let scratch = Scratch::new("restore");
@@ -221,8 +201,6 @@ fn what_was_shelved_can_be_put_back() {
     );
 }
 
-/// Deleting is a fourth act with an authorization of its own, and it is the
-/// only thing in MCF that destroys an artifact.
 #[test]
 fn purging_is_a_separate_decision() {
     let scratch = Scratch::new("purge");
@@ -240,8 +218,6 @@ fn purging_is_a_separate_decision() {
     assert!(!shelved.exists());
 }
 
-/// And a purge authorized for some other removal is not authorization for this
-/// one.
 #[test]
 fn a_purge_checks_which_removal_it_was_told_about() {
     let scratch = Scratch::new("purge-mismatch");
@@ -264,9 +240,6 @@ fn a_purge_checks_which_removal_it_was_told_about() {
     );
 }
 
-/// Two repositories both publishing `model.gguf` must not land on top of each
-/// other: a removal that destroyed the artifact it was preserving would be the
-/// worst possible way to fail.
 #[test]
 fn two_artifacts_of_the_same_name_do_not_collide_on_the_shelf() {
     let scratch = Scratch::new("collide");
@@ -294,10 +267,6 @@ fn two_artifacts_of_the_same_name_do_not_collide_on_the_shelf() {
     assert_eq!(removed.bytes, 30);
 }
 
-/// Reversibility is read from the machine rather than assumed. Where the shelf
-/// is on another filesystem a rename is not a rename, and the plan says so — so
-/// the assertion here is that MCF agrees with the kernel, whichever answer this
-/// machine gives.
 #[test]
 fn reversibility_is_what_the_filesystem_says_it_is() {
     use std::os::unix::fs::MetadataExt as _;
@@ -306,8 +275,6 @@ fn reversibility_is_what_the_filesystem_says_it_is() {
     let model = scratch.holding("model.gguf", 16);
     let elsewhere = Path::new("/dev/shm");
     if !elsewhere.exists() {
-        // Nothing to compare against on this machine; the same-filesystem case
-        // is asserted by `what_was_shelved_can_be_put_back`.
         return;
     }
     let shelf = elsewhere.join(format!("mcf-store-shelf-{}", std::process::id()));
@@ -330,8 +297,6 @@ fn reversibility_is_what_the_filesystem_says_it_is() {
     let _cleared = std::fs::remove_dir_all(&shelf);
 }
 
-/// An empty plan removes nothing and says so rather than reporting a
-/// reversibility it has no files to have.
 #[test]
 fn a_plan_with_nothing_in_it_is_not_reversible_or_otherwise() {
     let scratch = Scratch::new("empty");
@@ -341,7 +306,6 @@ fn a_plan_with_nothing_in_it_is_not_reversible_or_otherwise() {
     assert!(plan.doomed().is_empty());
 }
 
-/// An artifact's provenance lives beside it, and comes back the way it went.
 #[test]
 fn provenance_is_written_beside_the_artifact_and_read_from_there() {
     let scratch = Scratch::new("sidecar");
@@ -368,8 +332,6 @@ fn provenance_is_written_beside_the_artifact_and_read_from_there() {
     assert_eq!(provenance_of(&model).expect("it reads back"), provenance);
 }
 
-/// An artifact somebody dropped in by hand has no provenance, and that is a
-/// state to report rather than a defect to hide (A7).
 #[test]
 fn an_artifact_with_no_provenance_says_so() {
     let scratch = Scratch::new("no-sidecar");
@@ -387,8 +349,6 @@ fn an_artifact_with_no_provenance_says_so() {
     assert!(described.contains("origin unknown"), "{described}");
 }
 
-/// A provenance that is there and cannot be read is a third state, and an
-/// operator can act on it — unlike an artifact quietly listed as having none.
 #[test]
 fn a_provenance_that_cannot_be_read_is_not_the_same_as_none() {
     let scratch = Scratch::new("bad-sidecar");
@@ -411,7 +371,6 @@ fn a_provenance_that_cannot_be_read_is_not_the_same_as_none() {
     assert!(listed.describe().contains("unreadable"));
 }
 
-/// A listing names the artifacts and not MCF's own bookkeeping beside them.
 #[test]
 fn a_listing_does_not_list_the_sidecars() {
     let scratch = Scratch::new("listing");
@@ -434,9 +393,6 @@ fn a_listing_does_not_list_the_sidecars() {
     assert_eq!(holding.first().map(|held| held.bytes), Some(10));
 }
 
-/// Removing an artifact takes its provenance with it: a sidecar left behind
-/// records something that is no longer there, and an artifact shelved without
-/// one can no longer say where it came from (§3.6).
 #[test]
 fn a_removal_takes_the_provenance_with_the_artifact() {
     let scratch = Scratch::new("removal-sidecar");
@@ -478,17 +434,8 @@ fn a_removal_takes_the_provenance_with_the_artifact() {
     assert!(provenance_of(&model).is_ok());
 }
 
-/// The parts of a model are the model, not four models.
-///
-/// F: a multi-part GGUF was held as one entry per file. The store offered each
-/// part to be hosted, `mcf explain` could not size one, and the check that a
-/// header describes its file refused every first part — correctly, because that
-/// header describes the whole set and the part is one file of it. Eight of the
-/// sixteen files on the machine this was found on were parts of three models,
-/// and they were the three largest (B-422).
 #[test]
 fn the_parts_of_a_model_are_gathered_into_the_model() {
-    // The pattern the reference implementation itself looks for.
     assert_eq!(
         super::part_of_a_set(std::path::Path::new("/m/a-model-00001-of-00004.gguf")),
         Some(("a-model".to_owned(), 1))
@@ -498,7 +445,6 @@ fn the_parts_of_a_model_are_gathered_into_the_model() {
         Some(("a-model".to_owned(), 3))
     );
 
-    // A whole model is not a part, however it is named.
     assert_eq!(
         super::part_of_a_set(std::path::Path::new("/m/a-model.gguf")),
         None
@@ -507,12 +453,10 @@ fn the_parts_of_a_model_are_gathered_into_the_model() {
         super::part_of_a_set(std::path::Path::new("/m/a-model-Q4_K_M.gguf")),
         None
     );
-    // Numbering starts at one; a name saying otherwise is not this pattern.
     assert_eq!(
         super::part_of_a_set(std::path::Path::new("/m/a-model-00000-of-00004.gguf")),
         None
     );
-    // "of" that is not the separator, and letters where digits belong.
     assert_eq!(
         super::part_of_a_set(std::path::Path::new("/m/best-of-breed.gguf")),
         None
@@ -523,7 +467,6 @@ fn the_parts_of_a_model_are_gathered_into_the_model() {
     );
 }
 
-/// A set is one entry, carrying the whole set's length.
 #[test]
 fn a_set_is_one_entry_of_the_whole_length() {
     let part = |name: &str, bytes: u64| super::Held {
@@ -555,10 +498,6 @@ fn a_set_is_one_entry_of_the_whole_length() {
     assert_eq!(whole.parts, 1);
 }
 
-/// A set with no first part is not a model MCF can name.
-///
-/// Inventing one from the parts that did arrive would report an artifact
-/// nobody has (A7).
 #[test]
 fn a_set_missing_its_first_part_is_not_offered() {
     let gathered = super::gathered(vec![super::Held {
@@ -574,7 +513,6 @@ fn a_set_missing_its_first_part_is_not_offered() {
     );
 }
 
-/// A projector belongs to a model rather than being one.
 #[test]
 fn a_projector_is_a_companion_and_a_model_is_not() {
     assert!(super::is_a_companion(std::path::Path::new(
@@ -586,7 +524,6 @@ fn a_projector_is_a_companion_and_a_model_is_not() {
     assert!(!super::is_a_companion(std::path::Path::new(
         "/m/a-model-Q4_K_M.gguf"
     )));
-    // A model that merely mentions it is still a model.
     assert!(!super::is_a_companion(std::path::Path::new(
         "/m/a-model-with-mmproj-inside.gguf"
     )));

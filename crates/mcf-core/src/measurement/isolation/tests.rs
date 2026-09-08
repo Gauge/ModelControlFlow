@@ -1,13 +1,9 @@
-//! What isolation has to get right.
-
 use crate::attested::Attested;
 use crate::build_identity::BuildIdentity;
 use crate::measurement::{ConditionValue, Conditions, Floor};
 
 use super::{INSTRUMENT, Isolation};
 
-/// A floor in which every condition is known and set to the same value, so
-/// that a test changes exactly what it means to change.
 fn everything_known() -> Floor {
     Floor {
         hardware_state: known("this machine"),
@@ -34,8 +30,6 @@ fn conditions(floor: Floor) -> Conditions {
     Conditions::new(BuildIdentity::current(), floor)
 }
 
-/// One variable differing is the only shape in which a delta means what a
-/// reader will take it to mean.
 #[test]
 fn one_difference_is_isolated_and_named() {
     let one = conditions(everything_known());
@@ -52,8 +46,6 @@ fn one_difference_is_isolated_and_named() {
     assert!(!held.is_confounded());
 }
 
-/// **A8's violation.** Two conditions differing is not a delta, and the
-/// refusal names every one of them.
 #[test]
 fn two_differences_are_not_comparable() {
     let one = conditions(everything_known());
@@ -72,9 +64,6 @@ fn two_differences_are_not_comparable() {
     );
 }
 
-/// Two arms of one configuration are not a confound and are not an isolation:
-/// they measure the machine, which is the control a comparison runs against
-/// itself.
 #[test]
 fn no_difference_is_one_configuration_measured_twice() {
     let held = Isolation::between(
@@ -86,9 +75,6 @@ fn no_difference_is_one_configuration_measured_twice() {
     assert!(!held.is_confounded());
 }
 
-/// **A7 applied to a comparison.** Two unknowns are not a match — *they were
-/// probably the same* is a plausible value substituted for something MCF did
-/// not read.
 #[test]
 fn two_unknowns_are_not_a_match() {
     let mut floor = everything_known();
@@ -103,8 +89,6 @@ fn two_unknowns_are_not_a_match() {
     assert!(!held.isolates_a_variable());
 }
 
-/// A single difference beside an unread condition is *not* claimed as an
-/// isolation: MCF has not read enough to say the other conditions matched.
 #[test]
 fn one_difference_beside_an_unread_condition_is_undetermined() {
     let one = conditions(everything_known());
@@ -121,9 +105,6 @@ fn one_difference_beside_an_unread_condition_is_undetermined() {
     );
 }
 
-/// **Two known differences are a confound whatever else is unread.** A
-/// comparison that has lost its meaning does not recover it by MCF failing to
-/// read a twelfth condition.
 #[test]
 fn a_confound_is_not_softened_by_an_unread_condition() {
     let one = conditions(everything_known());
@@ -138,8 +119,6 @@ fn a_confound_is_not_softened_by_an_unread_condition() {
     );
 }
 
-/// A floor of nothing known is not a match with itself, which is what a
-/// comparison taken before the condition producers exist honestly is.
 #[test]
 fn nothing_known_is_undetermined_in_every_condition() {
     let held = Isolation::between(
@@ -157,8 +136,6 @@ fn nothing_known_is_undetermined_in_every_condition() {
     );
 }
 
-/// The instrument is a variable too: two arms measured by different builds of
-/// MCF differ in the thing doing the measuring (B64).
 #[test]
 fn the_instrument_counts_as_a_condition() {
     let mine = BuildIdentity::current();
@@ -178,9 +155,6 @@ fn the_instrument_counts_as_a_condition() {
     );
 }
 
-/// The list of conditions comes from the floor rather than from a copy of it,
-/// so a condition added to the floor is checked without anybody editing this
-/// module.
 #[test]
 fn every_condition_in_the_floor_can_be_the_isolated_one() {
     let base = everything_known();

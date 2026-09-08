@@ -1,10 +1,3 @@
-//! Tests for the orphan sweep.
-//!
-//! The parsing is tested on lines written here, so that the answer is known.
-//! The sweep itself is tested against a real process table: a stand-in
-//! server whose parent has gone, and one whose parent is this test, which is
-//! the distinction the whole module rests on.
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -58,7 +51,6 @@ fn what_a_server_said_on_its_command_line_is_read_back() {
 
 #[test]
 fn a_stat_line_is_read_from_after_the_command_whatever_the_command_holds() {
-    // A command with a space and a parenthesis in it, which is legal.
     let stat = "4242 (llama (b) x) S 1 4242 4242 0 -1 4194560 100 0 0 0 5 3 0 0 20 0 9 0 12 1 2";
     assert_eq!(state_in(stat), Some('S'));
     assert_eq!(parent_in(stat), Some(1));
@@ -96,18 +88,13 @@ fn only_a_server_under_this_homes_engines_is_ours() {
 
 #[test]
 fn this_process_has_a_parent_that_is_not_gone() {
-    // The test runner is alive, so a process it started is not an orphan.
     let parent = parent_of(std::process::id()).expect("this process is in the table");
     assert!(!parent_is_gone(parent) || parent <= 1);
     assert!(state_of(std::process::id()).is_some());
 }
 
-/// A stand-in server: `sh` with its name set to the fixture path, holding a
-/// sleeper it ends when told to. The script keeps `sh` from replacing itself
-/// with the sleeper, so the process keeps the name it was given.
 const STAND_IN: &str = "trap 'kill $! 2>/dev/null; exit 0' TERM; sleep 60 & wait $!";
 
-/// A home with one engine, whose server is the fixture path.
 fn a_home(name: &str) -> (PathBuf, PathBuf) {
     let home = std::env::temp_dir().join(format!("mcf-orphans-{}-{name}", std::process::id()));
     let engine = home
@@ -137,13 +124,6 @@ fn wait_for(what: impl Fn() -> bool, within: Duration) -> bool {
     true
 }
 
-/// The sweep stops the server whose daemon is gone, leaves the one whose
-/// parent is alive, and clears the socket named for a process that is not
-/// there.
-///
-/// Skipped where `bash` is absent: `exec -a` is what gives a process a name
-/// other than its executable's, and the suite runs on machines that have
-/// almost nothing (B19).
 #[test]
 fn a_server_whose_daemon_is_gone_is_stopped_and_one_whose_parent_lives_is_not() {
     let Ok(bash) = Command::new("bash").arg("-c").arg("exit 0").status() else {
@@ -155,10 +135,6 @@ fn a_server_whose_daemon_is_gone_is_stopped_and_one_whose_parent_lives_is_not() 
     let (home, server) = a_home("sweep");
     let runtime = home.join("run");
 
-    // One server started by a parent that then leaves: bash starts it in the
-    // background, prints its pid and exits, so the server is reparented.
-    // The stand-in script travels as an argument rather than inside the
-    // quoting, so that its own quotes are its own.
     let orphan_script =
         "( exec -a \"$0\" sh -c \"$2\" --model \"$1\" --port 4242 >/dev/null 2>&1 ) & echo $!";
     let started = Command::new("bash")
@@ -174,7 +150,6 @@ fn a_server_whose_daemon_is_gone_is_stopped_and_one_whose_parent_lives_is_not() 
         .parse()
         .expect("bash printed the orphan's pid");
 
-    // One server whose parent is this test, kept alive by the handle.
     let mut kept = {
         use std::os::unix::process::CommandExt as _;
         let mut command = Command::new("sh");
@@ -191,7 +166,6 @@ fn a_server_whose_daemon_is_gone_is_stopped_and_one_whose_parent_lives_is_not() 
         command.spawn().expect("the kept server starts")
     };
 
-    // A socket named for a process that is not there, and one for this one.
     let stale = runtime.join("llama-4000000000.sock");
     let own = runtime.join(format!("llama-{}.sock", std::process::id()));
     std::fs::write(&stale, b"").expect("the stale socket is written");

@@ -1,13 +1,3 @@
-//! Grammar cost: what constraining the answer to a shape does to the
-//! shape and the bill (B-504, D52, B-054).
-//!
-//! The structured probe asks whether a model produces JSON when asked
-//! for it. The served path can also *make* it: the engine takes a
-//! schema and samples nothing outside it. Here the same question is put
-//! both ways over the same seeds — the rate of valid JSON with the keys
-//! asked for, the tokens and the time — so that a person can read what
-//! the constraint buys and costs on this model.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, as_ms, framed_ids, timed, whole};
@@ -15,26 +5,19 @@ use crate::generation::{Draw, Truncation};
 use crate::served::{Extras, Prompt, Startup};
 use mcf_core::configuration::Thousandths;
 
-/// The measurement's name.
 pub const NAME: &str = "grammar-cost";
 
-/// How many trials each way.
 pub const TRIALS: usize = 5;
 
-/// The temperature, in thousandths: warm enough that the trials differ.
 const TEMPERATURE: u32 = 700;
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 120;
 
-/// What is asked.
 pub const ASK: &str = "Give an imaginary person's name, age and city as JSON with the keys name \
 (text), age (whole number) and city (text). Answer with the JSON only.";
 
-/// The keys the answer must carry.
 const KEYS: [&str; 3] = ["name", "age", "city"];
 
-/// The schema the constrained trials are held to.
 fn schema() -> Value {
     Value::map([
         ("type", Value::text("object")),
@@ -57,7 +40,6 @@ fn schema() -> Value {
     ])
 }
 
-/// What one way of asking came to.
 #[derive(Debug, Default)]
 struct Tally {
     valid: usize,
@@ -65,7 +47,6 @@ struct Tally {
     ns: u64,
 }
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {
@@ -152,7 +133,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     finding
 }
 
-/// A tally's tokens and time over the trials it was summed across.
 #[expect(
     clippy::integer_division,
     reason = "a total over the trials it was summed across"
@@ -162,7 +142,6 @@ fn per(tally: &Tally) -> (u64, u64) {
     (tally.tokens / trials, tally.ns / trials)
 }
 
-/// The two tallies as the finding.
 fn found(free: &Tally, constrained: &Tally) -> Found {
     let (free_tokens, free_ns) = per(free);
     let (held_tokens, held_ns) = per(constrained);
@@ -206,8 +185,6 @@ fn found(free: &Tally, constrained: &Tally) -> Found {
     }
 }
 
-/// Whether a text carries a JSON object with the keys asked for, the age
-/// a whole number — read by a parser, never for sense.
 pub(crate) fn conforms(text: &str) -> bool {
     let (Some(open), Some(close)) = (text.find('{'), text.rfind('}')) else {
         return false;

@@ -1,28 +1,15 @@
-//! Thread scaling: tokens a second on the processor at each thread count
-//! (B-556, D55, D11).
-//!
-//! A model run on the processor runs on however many threads the engine
-//! chooses, and whether more help is a property of the machine and the
-//! model together. The engine is started with no layers on the card at
-//! one, two, four, eight and all the threads the machine has, and
-//! generates the same tokens from the same prompt at each.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, per_second, timed};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "threads";
 
-/// How many tokens are produced at each thread count.
 const PRODUCE: usize = 64;
 
-/// What is generated from.
 const ASK: &str = "Describe a quiet street in the early morning, in plain prose.";
 
-/// The thread counts tried: powers of two up to the machine's, then all.
 #[must_use]
 pub fn counts() -> Vec<u32> {
     let all = std::thread::available_parallelism()
@@ -35,7 +22,6 @@ pub fn counts() -> Vec<u32> {
     out
 }
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let mut rows = Vec::new();
@@ -79,8 +65,6 @@ pub fn measure(site: &Site<'_>) -> Found {
         };
         let produced = u64::try_from(completed.predicted).unwrap_or(0);
         let rate = per_second(produced, ns);
-        // In thousandths as well: a count oversubscribed to a third of a
-        // token a second reads as nought in whole tokens.
         let milli = produced
             .saturating_mul(1_000_000_000_000)
             .checked_div(ns)

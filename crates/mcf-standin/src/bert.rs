@@ -1,28 +1,3 @@
-//! The bert family: a model that reads a whole text at once and answers with a
-//! vector (B-371, DEC-055, D38).
-//!
-//! **This is the other kind of model.** Everything in [`crate::llama`] produces
-//! a next token from the tokens so far: attention is causal, positions arrive
-//! one at a time, and a cache carries the past. Nothing here does any of that.
-//! A bert model reads every position of the text *at once*, each attending to
-//! all of them, and what comes out is not a distribution over next tokens — the
-//! model has no output head at all — but one vector per position, pooled into
-//! one vector for the text.
-//!
-//! **The structure, read from the reference** (`llama.cpp`'s `models/bert.cpp`,
-//! the same method F23 made standing policy): token embedding plus a learned
-//! *position* embedding plus a token-type row, layer-normalized — the classic
-//! kind with mean and bias, not RMS — then blocks of non-causal attention and
-//! an ungated `GELU` feed-forward, each half normalized *after* its residual
-//! (post-norm, where the llama line is pre-norm). Biases everywhere. Then mean
-//! pooling, because that is what this file declares (`bert.pooling_type`).
-//!
-//! **What is observable is read from the file; nothing here is a habit table.**
-//! Every difference from llama that matters — the biases, the second embedding,
-//! the pooling — is a tensor or a key the file carries. The one exception is
-//! the activation, which for this family is `GELU` by the reference's own
-//! hard-coding, and is stated here for the same reason.
-
 use std::collections::BTreeMap;
 
 use mcf_core::degradation::Degraded;
@@ -36,65 +11,34 @@ use crate::threads::Threads;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::bert");
 
-/// The families this module's structure is written for.
 pub const FAMILIES: &[&str] = &["bert"];
 
-/// What the file says the model is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shape {
-    /// How many transformer blocks.
     pub blocks: usize,
-    /// The width of the residual stream, and of the answer.
     pub embedding: usize,
-    /// How many attention heads.
     pub heads: usize,
-    /// The inner width of the feed-forward.
     pub feed_forward: usize,
-    /// The longest text the file claims, which is also the width of the
-    /// position embedding: position `n` has no row to read past it.
     pub context: usize,
-    /// How many tokens the vocabulary has.
     pub vocabulary: usize,
-    /// How many token types the type embedding carries.
     pub token_types: usize,
 }
 
-/// How one vector is made from many, as the file declares it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pooling {
-    /// The mean over every position.
     Mean,
-    /// The first position's vector alone — the `[CLS]` convention.
     First,
 }
 
-/// A model, loaded and ready to embed.
 #[derive(Debug)]
 pub struct Loaded {
-    /// What the file said it is.
     pub shape: Shape,
-    /// How the positions pool into one vector.
     pub pooling: Pooling,
-    /// The normalization epsilon the file states.
     epsilon: f32,
-    /// How many processors each product may divide its rows across.
-    ///
-    /// One at load, which is the definition; a caller asks for more with
-    /// [`Loaded::across`]. It changes what the work costs and not what it says
-    /// (B-366, [`crate::threads`]).
     threads: Threads,
     tensors: BTreeMap<String, Vec<f32>>,
 }
 
-/// Reads a bert-family model out of a parsed file.
-///
-/// # Errors
-///
-/// `artifact.format.unsupported` for another architecture;
-/// `artifact.provenance.incomplete` when the file does not state something the
-/// architecture needs — including a pooling type this module has no
-/// implementation of, because guessing how many vectors become one would be a
-/// hidden choice in the middle of every answer (§3.15).
 pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     let architecture = file.architecture().unwrap_or("unstated");
     if !FAMILIES.contains(&architecture) {
@@ -163,7 +107,6 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     })
 }
 
-/// Every tensor the shape implies, with how many numbers each must hold.
 fn manifest(shape: &Shape) -> Vec<(String, usize)> {
     let width = shape.embedding;
     let square = width.saturating_mul(width);
@@ -210,27 +153,13 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
     wanted
 }
 
-/// What an embedding run produced.
 #[derive(Debug, Clone)]
 pub struct Embedding {
-    /// The vector, one number per embedding width, at unit length.
     pub vector: Vec<f32>,
-    /// How many tokens the text became, brackets included.
     pub tokens: usize,
-    /// How the positions pooled.
     pub pooling: Pooling,
 }
 
-/// Embeds one text and marks the result.
-///
-/// The mark is the same one a generation carries and means the same thing: this
-/// came from MCF's own stand-in, answers a behaviour question, and can never
-/// report a speed (D31, B65).
-///
-/// # Errors
-///
-/// A token outside the vocabulary, a text longer than the position table, or a
-/// tensor the model names and does not have.
 pub fn embed(
     model: &Loaded,
     build: &str,
@@ -241,7 +170,6 @@ pub fn embed(
     Ok(run.mark(run.behaviour(embedding)))
 }
 
-/// The whole-sequence forward pass, and the pooling.
 fn forward(model: &Loaded, tokens: &[usize]) -> Result<Embedding> {
     let width = model.shape.embedding;
     if tokens.is_empty() {
@@ -258,9 +186,6 @@ fn forward(model: &Loaded, tokens: &[usize]) -> Result<Embedding> {
         ));
     }
 
-    // Token + position + type-zero, then the embedding normalization. The
-    // token-type row is "sentence A" for every position, which is what the
-    // reference hard-codes for a single text.
     let embeddings = model.tensor("token_embd.weight")?;
     let positions = model.tensor("position_embd.weight")?;
     let types = model.tensor("token_types.weight")?;
@@ -292,7 +217,6 @@ fn forward(model: &Loaded, tokens: &[usize]) -> Result<Embedding> {
         states = model.block(block, &states)?;
     }
 
-    // Pool, as declared.
     let mut pooled = vec![0.0_f32; width];
     match model.pooling {
         Pooling::Mean => {
@@ -313,10 +237,6 @@ fn forward(model: &Loaded, tokens: &[usize]) -> Result<Embedding> {
         }
     }
 
-    // Unit length, and stated everywhere the vector is shown: the trained
-    // pipelines these models ship in normalize, the reference tool normalizes
-    // by default, and two vectors compared by dot product only mean anything
-    // at the same length.
     let mut squares = 0.0_f32;
     for value in &pooled {
         squares = value.mul_add(*value, squares);
@@ -336,25 +256,17 @@ fn forward(model: &Loaded, tokens: &[usize]) -> Result<Embedding> {
 }
 
 impl Loaded {
-    /// The same model, dividing each product's rows across `threads` (B-366).
-    ///
-    /// As [`crate::llama::Loaded::across`], and for the same reason: the
-    /// partition decides who computes a row and never how, so the embedding is
-    /// the same bytes at any count.
     #[must_use]
     pub const fn across(mut self, threads: Threads) -> Self {
         self.threads = threads;
         self
     }
 
-    /// How many processors this model divides its work across, and whose number
-    /// that is.
     #[must_use]
     pub const fn threads(&self) -> Threads {
         self.threads
     }
 
-    /// One matrix-vector product, across whatever this model was given.
     fn product(&self, matrix: &[f32], vector: &[f32], rows: usize, columns: usize) -> Vec<f32> {
         ops::matmul_vec_across(matrix, vector, rows, columns, self.threads)
     }
@@ -366,8 +278,6 @@ impl Loaded {
             .ok_or_else(|| missing(name))
     }
 
-    /// One block: non-causal attention and an ungated feed-forward, each half
-    /// normalized after its residual.
     fn block(&self, block: usize, states: &[Vec<f32>]) -> Result<Vec<Vec<f32>>> {
         let width = self.shape.embedding;
         let head = width.checked_div(self.shape.heads).unwrap_or(1);
@@ -391,9 +301,6 @@ impl Loaded {
             values.push(biased(self.product(v_w, state, width, width), v_b));
         }
 
-        // Every position attends to every position: the attention is not
-        // causal, which is the single deepest difference from the llama line —
-        // the fifth word shapes the first word's vector.
         let o_w = self.tensor(&name("attn_output.weight"))?;
         let o_b = self.tensor(&name("attn_output.bias"))?;
         let attn_norm_w = self.tensor(&name("attn_output_norm.weight"))?;
@@ -439,8 +346,6 @@ impl Loaded {
             ));
         }
 
-        // The feed-forward: up, GELU, down — no gate — then the residual and
-        // the second normalization.
         let up_w = self.tensor(&name("ffn_up.weight"))?;
         let up_b = self.tensor(&name("ffn_up.bias"))?;
         let down_w = self.tensor(&name("ffn_down.weight"))?;
@@ -473,7 +378,6 @@ impl Loaded {
     }
 }
 
-/// A projection plus its bias.
 fn biased(mut projected: Vec<f32>, biases: &[f32]) -> Vec<f32> {
     for (slot, bias) in projected.iter_mut().zip(biases.iter()) {
         *slot += bias;
@@ -484,9 +388,6 @@ fn biased(mut projected: Vec<f32>, biases: &[f32]) -> Vec<f32> {
 #[cfg(test)]
 mod tests;
 
-/// The dot product of two unit-length embeddings, in millionths, so that
-/// a caller outside this crate compares them without a float of its own
-/// (B-552).
 #[must_use]
 pub fn similarity_millionths(left: &Embedding, right: &Embedding) -> i64 {
     let dot = crate::ops::dot(&left.vector, &right.vector);

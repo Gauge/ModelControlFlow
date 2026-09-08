@@ -1,21 +1,5 @@
-//! What a reader sees.
-//!
-//! **Every row in full.** MCF's own sharing surface prints the rows rather than
-//! a count of them, because a person deciding about something irreversible is
-//! entitled to read what it says. The same holds on the other side: somebody
-//! looking at what was published should see what was published, not the site's
-//! summary of it.
-//!
-//! **Nothing comes from anywhere.** No script, no stylesheet, no font: the page
-//! is what the server sent, so a reader's browser makes one request and MCF's
-//! archive has no third party in it.
-
 use crate::archive::Held;
 
-/// HTML-escapes text that came from somebody else.
-///
-/// Everything on these pages came from a file a stranger uploaded, so
-/// everything on these pages goes through here.
 fn safe(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for character in text.chars() {
@@ -74,7 +58,6 @@ fn shell(title: &str, body: &str) -> String {
     )
 }
 
-/// The list of everything held.
 #[must_use]
 pub fn index(held: &[Held]) -> String {
     let mut body = String::from(
@@ -112,7 +95,6 @@ pub fn index(held: &[Held]) -> String {
     shell("MCF contributions", &body)
 }
 
-/// One contribution, every row in full.
 #[must_use]
 pub fn one(held: &Held) -> String {
     let mut body = format!(
@@ -130,7 +112,6 @@ pub fn one(held: &Held) -> String {
     shell("A contribution", &body)
 }
 
-/// What a successful submission says.
 #[must_use]
 pub fn kept(digest: &str) -> String {
     shell(
@@ -144,7 +125,6 @@ pub fn kept(digest: &str) -> String {
     )
 }
 
-/// What a refusal says, in words rather than a code.
 #[must_use]
 pub fn refused(why: &str) -> String {
     shell(

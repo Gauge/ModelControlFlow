@@ -1,40 +1,13 @@
-//! Every deletion in MCF is one somebody declared.
-//!
-//! B-027's condition is that *no code path deletes an artifact without an
-//! explicit, recorded authorization*, and §3.11 gives the reason: an artifact
-//! is not a cache entry. It is what a measurement was made against, and
-//! re-acquiring it is not always possible — a pinned repository can be
-//! withdrawn, gated or relicensed between one week and the next (DEC-038). A
-//! tool that deletes to reclaim space has quietly decided that disk is worth
-//! more than evidence.
-//!
-//! The condition cannot be checked by looking for the *intent* to reclaim
-//! space, because nobody writes that. What can be checked is the act: every
-//! call that destroys a file in MCF's non-test code appears in the list below,
-//! with what it deletes and why that is not an artifact. Adding a deletion
-//! means adding a line here, which is the point — the line is where somebody
-//! has to write down what they are destroying.
-//!
-//! Only `mcf_hub::store::purge` deletes an artifact, and its signature will not
-//! let a caller reach it without an [`Authorization`], which cannot be
-//! constructed without a plan somebody previewed and a reason they stated.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use std::path::{Path, PathBuf};
 
-/// A file that destroys something, and what it destroys.
 struct Deletes {
     file: &'static str,
-    /// How many calls it makes, so that a fourth one added to a file that
-    /// already had three is still a line somebody has to change.
     calls: usize,
-    /// What is being destroyed, and why it is not an artifact.
     what: &'static str,
 }
 
-/// Every deletion in MCF's non-test code.
 const DECLARED: &[Deletes] = &[
     Deletes {
         file: "crates/mcf-cli/src/eval.rs",
@@ -152,10 +125,8 @@ const DECLARED: &[Deletes] = &[
     },
 ];
 
-/// What a call to destroy a file looks like.
 const DESTROYS: &[&str] = &["remove_file", "remove_dir_all", "remove_dir"];
 
-/// Nothing deletes anything except where it is written down.
 #[test]
 fn every_deletion_is_declared() {
     let root = mcf_checks::workspace::root();
@@ -183,8 +154,6 @@ fn every_deletion_is_declared() {
     }
 }
 
-/// And nothing is declared that has since stopped deleting — a stale line would
-/// be a budget somebody could spend later without saying so.
 #[test]
 fn nothing_is_declared_that_no_longer_deletes() {
     let root = mcf_checks::workspace::root();
@@ -210,13 +179,6 @@ fn nothing_is_declared_that_no_longer_deletes() {
     }
 }
 
-/// The one place that destroys an artifact will not do it without an
-/// authorization, and an authorization cannot be had without a plan and a
-/// reason.
-///
-/// The compiler holds this; what a source check adds is that the shape has not
-/// been loosened — a `purge` that took a path, or an `Authorization` with a
-/// public field, would satisfy every test above while removing the discipline.
 #[test]
 fn purging_requires_an_authorization_nobody_can_conjure() {
     let source = read(&mcf_checks::workspace::root().join("crates/mcf-hub/src/store.rs"));
@@ -242,8 +204,6 @@ fn read(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// Calls that destroy a file, in code that ships rather than in prose or in a
-/// test module.
 fn destroying_calls(source: &str) -> usize {
     code_only(&ships(source))
         .lines()
@@ -256,11 +216,6 @@ fn destroying_calls(source: &str) -> usize {
         .sum()
 }
 
-/// A file with its inline test module cut off.
-///
-/// A test that removes its own scratch directory is a test doing its job, and
-/// several modules keep theirs at the bottom of the same file. The claim here
-/// is about the code that ships.
 fn ships(source: &str) -> String {
     match source.find("#[cfg(test)]") {
         Some(at) => source.get(..at).unwrap_or(source).to_owned(),
@@ -268,9 +223,6 @@ fn ships(source: &str) -> String {
     }
 }
 
-/// A file with its documentation removed.
-///
-/// The prose names what it forbids in order to say it is absent.
 fn code_only(source: &str) -> String {
     source
         .lines()
@@ -279,10 +231,6 @@ fn code_only(source: &str) -> String {
         .join("\n")
 }
 
-/// Every `.rs` file under `crates/*/src` that is not itself a test.
-///
-/// Tests delete their own scratch directories constantly and that is what a
-/// test should do; the claim here is about the code that ships.
 fn non_test_sources(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     collect(&root.join("crates"), &mut found);

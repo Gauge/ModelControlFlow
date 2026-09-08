@@ -1,14 +1,3 @@
-//! Acquiring one published file, and writing down where it came from.
-//!
-//! **One path, two surfaces.** The command line fetches a model and so does
-//! the daemon, on behalf of the window. An acquisition that recorded its
-//! provenance differently depending on which asked for it would make the
-//! record a fact about the surface rather than about the model, which is the
-//! opposite of what a record is for (A24, B-072).
-//!
-//! **The rendering is not here.** What comes back is what happened; how a
-//! terminal prints it and how a window draws it are each their own.
-
 use std::path::{Path, PathBuf};
 
 use mcf_core::attested::Attested;
@@ -26,27 +15,14 @@ use crate::reference::Reference;
 use crate::source::{Entry, Listing, Source as _};
 use crate::store;
 
-/// What an acquisition left behind.
 #[derive(Debug)]
 pub struct Done {
-    /// The file, and how its arrival was established.
     pub acquired: Acquired,
-    /// Where the provenance was written beside it.
     pub sidecar: PathBuf,
-    /// What MCF knows about where it came from.
     pub provenance: Provenance,
-    /// Where the journal entry went, or why it could not be written.
     pub recorded: Result<PathBuf, Failure>,
 }
 
-/// Fetches one published file and writes down everything about it.
-///
-/// # Errors
-///
-/// What the transfer said, or what writing the provenance beside it said. A
-/// model MCF is holding and cannot account for is worse than one it does not
-/// hold, so a sidecar that will not write is a failure and not a warning
-/// (A24, §3.11).
 pub fn one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Result<Done, Failure> {
     let into = destination(root, &listing.reference, &entry.path);
     if let Some(parent) = into.parent() {
@@ -75,29 +51,16 @@ pub fn one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Result<D
     })
 }
 
-/// Where the bytes are while they are arriving, so that something watching can
-/// say how far along a transfer is without the transfer having to report it.
 #[must_use]
 pub fn arriving_at(root: &Path, listing: &Listing, entry: &Entry) -> PathBuf {
     crate::fetch::partial_path(&destination(root, &listing.reference, &entry.path))
 }
 
-/// Where an artifact lives: under the store, by the repository that published
-/// it, at the path the repository gave it.
-///
-/// The revision is not in the path. A pin belongs in the provenance beside the
-/// file, and a directory named for a commit would make the ordinary case — one
-/// model, acquired once — unreadable to a person looking for it.
 #[must_use]
 pub fn destination(root: &Path, reference: &Reference, path: &str) -> PathBuf {
     root.join(&reference.owner).join(&reference.name).join(path)
 }
 
-/// What MCF knows about where this came from.
-///
-/// Everything read, nothing assumed: the revision is what the hub said the
-/// listing was of, and where it said nothing the field stays unknown rather
-/// than becoming the branch that was asked for (A7, B-019).
 pub fn provenance_of(listing: &Listing, acquired: &Acquired, at: Timestamp) -> Provenance {
     let mut provenance = Provenance::acquired(
         Origin::hub(
@@ -118,11 +81,6 @@ pub fn provenance_of(listing: &Listing, acquired: &Acquired, at: Timestamp) -> P
         provenance = provenance.with_licence(licence);
     }
     if let Some(lineage) = &listing.lineage {
-        // §XII's hard case, written down: what these bytes were made from, what
-        // was done to them, and by whom — as far as the publisher said, and no
-        // further. The tool and the moment are the publisher's pipeline, which
-        // is not MCF's to interrogate, so they stay unknown rather than being
-        // filled with this machine's clock (A7, B-019).
         provenance = provenance
             .transformed(Transformation::new(
                 kind_of(lineage.relation.as_deref()),
@@ -141,21 +99,12 @@ pub fn provenance_of(listing: &Listing, acquired: &Acquired, at: Timestamp) -> P
             ))
             .derived_from(Provenance::known_of(Origin::hub(
                 Repository::new(lineage.base.clone()),
-                // Which revision of the upstream this was made from is a thing
-                // the publisher does not say, and MCF will not guess at: an
-                // unpinned base is exactly the break in the chain §XII is
-                // about.
                 None,
             )));
     }
     provenance
 }
 
-/// What the publisher's own word maps to.
-///
-/// `Other` keeps the word where MCF has no kind for it, which is A7's habit
-/// applied to somebody else's vocabulary: a relation filed under the nearest
-/// known kind would make the record say something nobody claimed.
 fn kind_of(relation: Option<&str>) -> TransformationKind {
     match relation {
         Some("quantized") => TransformationKind::Quantization,
@@ -166,12 +115,6 @@ fn kind_of(relation: Option<&str>) -> TransformationKind {
     }
 }
 
-/// Writes the acquisition to the journal.
-///
-/// Returns where it was written, or the failure. A failure here does not undo
-/// the acquisition — the model is on the disk and its provenance is beside it —
-/// so it is reported rather than propagated: A4's shape, and A2's requirement
-/// that it be said rather than swallowed.
 fn record(
     hub: &Hub,
     listing: &Listing,

@@ -1,19 +1,3 @@
-//! What a probe measured is kept, not printed and forgotten (B-386, A1, A2,
-//! B-055, D42).
-//!
-//! **A1's plainest case.** *A measurement nobody can find later is the same as
-//! one not taken.* `mcf probe` established the usable context of a model
-//! against its declared one (F42) and printed it; the terminal scrolled. Every
-//! surface wanting a measured figure rather than a declared one was blocked
-//! behind that, which is how B-382 found it.
-//!
-//! **Kept apart from the act it might lead to** (D42, D43). `ModelProbed` is
-//! an observation; `ModelConfigured` is somebody deciding to address a model
-//! differently. A probe that changes nothing still measured something (A9),
-//! and collapsing the two would make *MCF looked* and *MCF changed* the same
-//! entry.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use mcf_record::journal::EntryKind;
@@ -25,7 +9,6 @@ fn read(relative: &str) -> String {
     })
 }
 
-/// The kind exists, is named stably, and is distinct from the act.
 #[test]
 fn an_observation_is_not_the_act_it_might_lead_to() {
     assert_eq!(
@@ -47,19 +30,6 @@ fn an_observation_is_not_the_act_it_might_lead_to() {
     );
 }
 
-/// Every probe that renders an observation records it.
-///
-/// **This named one probe, and three were built after it** (F106). It read
-/// `fn context_lines(` by name and asked whether *that* function wrote to the
-/// record — so B-386's row said *a probe's outcome is written to the record*
-/// while the tool-calling probe printed its result and kept nothing, and a
-/// question answered yesterday could not be read back today. It is the shape
-/// F103 and F105 both have: a guard covers the place it was written for.
-///
-/// So it is bound to the shape instead. Any function in `probes/run.rs` that renders
-/// an `Outcome::Observed` is rendering a probe's result, and must record it —
-/// whichever way it came out (A9), which is checked by requiring the write to
-/// sit outside the branch that reports a divergence.
 #[test]
 fn every_probe_that_renders_an_observation_records_it() {
     let source = read("crates/mcf-serve/src/probes/run.rs");
@@ -78,12 +48,6 @@ fn every_probe_that_renders_an_observation_records_it() {
             silent.push(name.clone());
             continue;
         }
-        // **Recorded from the observation, before the verdict.** *Agrees* is
-        // as much a measurement as *diverges* (A9), and the way that goes
-        // wrong is a write that sits inside the branch which decides what the
-        // observation means — a record of MCF's interpretation rather than of
-        // what happened. So the write must come *before* any line that renders
-        // a verdict, which is a position rather than a promise.
         let wrote = body.find("record_probed");
         for verdict in ["DIVERGENCE", "VERIFIED"] {
             if let (Some(wrote), Some(said)) = (wrote, body.find(verdict)) {
@@ -102,19 +66,9 @@ fn every_probe_that_renders_an_observation_records_it() {
     );
 }
 
-/// Every probe MCF has is rendered by one of those functions.
-///
-/// The list of probes is read from where they are defined — a `Method` is what
-/// a probe is — so a new one cannot be added, run and printed without this
-/// check seeing it. A `Method` with no renderer is a probe nobody can run; a
-/// renderer with no `Method` is not a probe.
 #[test]
 fn every_probe_method_has_a_renderer() {
     let mut methods = Vec::new();
-    // Read from wherever a probe lives rather than from a list of three files.
-    // The list was three files, and the day two probes arrived in two new ones
-    // it was still three (B-057) — which is the shape F103, F105 and F106 each
-    // paid for: a guard covers the place it was written for.
     for file in probe_sources() {
         for line in read(&file).lines() {
             if let Some((held, _)) = line.split_once(": Method = Method {")
@@ -130,10 +84,6 @@ fn every_probe_method_has_a_renderer() {
          files: {methods:#?}"
     );
     let source = read("crates/mcf-serve/src/probes/run.rs");
-    // Renderers *of an observation*: a `*_lines` function that renders no
-    // `Outcome` is a section of the report rather than a probe's result, and
-    // counting it would demand a `Method` for the list of modalities MCF
-    // declines to probe — which is the opposite of a probe (B-057).
     let rendered = renderers(&source)
         .into_iter()
         .filter(|(_, body)| body.contains("Outcome::Observed"))
@@ -148,11 +98,6 @@ fn every_probe_method_has_a_renderer() {
     );
 }
 
-/// Every file a probe can be defined in.
-///
-/// The directory rather than a list: a probe in a file nobody added to a list
-/// is a probe this check does not see, and that is exactly how B-057's two new
-/// ones arrived.
 fn probe_sources() -> Vec<String> {
     let root = mcf_checks::workspace::root();
     let mut found = vec!["crates/mcf-serve/src/probes.rs".to_owned()];
@@ -172,11 +117,6 @@ fn probe_sources() -> Vec<String> {
     found
 }
 
-/// The functions in `probes/run.rs` that render a probe's result, by name and body.
-///
-/// Named `*_lines` by convention, which is the convention this check makes
-/// load-bearing: it is how a renderer is told from a helper, and a probe
-/// renderer that broke it would be a probe this check stopped watching.
 fn renderers(source: &str) -> Vec<(String, String)> {
     let mut found = Vec::new();
     let mut rest = source;
@@ -185,23 +125,16 @@ fn renderers(source: &str) -> Vec<(String, String)> {
         let name = before
             .rsplit_once("fn ")
             .map(|(_, held)| format!("{held}_lines"));
-        // To the end of the function, which is the first line that starts a
-        // new top-level item. A split that silently found nothing would make
-        // this check assert about the whole rest of the file.
         let body = after.split_once("\n}\n").map_or(after, |(held, _)| held);
         if let Some(name) = name
             && !name.contains(' ')
-            && !found.iter().any(|(held, _): &(String, String)| held == &name)
-            // A *call* to a renderer is not the renderer: the declaration is
-            // the one preceded by `fn `, and the body between it and the next
-            // top-level item.
+            && !found
+                .iter()
+                .any(|(held, _): &(String, String)| held == &name)
             && before.ends_with(&format!("fn {}", name.trim_end_matches("_lines")))
         {
             found.push((name, body.to_owned()));
         }
-        // Past this occurrence, or the next search finds it again and this
-        // loop never ends — which is how a check becomes a hang rather than a
-        // failure.
         let Some(next) = after.get("_lines(".len()..) else {
             break;
         };
@@ -210,7 +143,6 @@ fn renderers(source: &str) -> Vec<(String, String)> {
     found
 }
 
-/// A write that failed says so.
 #[test]
 fn a_measurement_that_could_not_be_kept_does_not_read_as_kept() {
     let source = read("crates/mcf-serve/src/probes/run.rs");
@@ -221,7 +153,6 @@ fn a_measurement_that_could_not_be_kept_does_not_read_as_kept() {
     );
 }
 
-/// The reader will not answer about a different file.
 #[test]
 fn a_context_measured_for_one_file_is_not_a_fact_about_another() {
     let source = read("crates/mcf-cli/src/history.rs");

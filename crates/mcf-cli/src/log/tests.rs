@@ -1,5 +1,3 @@
-//! What a log shows, and what it refuses to hide.
-
 use super::{SHOWN, counted, summarize};
 use mcf_core::time::Timestamp;
 use mcf_record::journal::{Entry, EntryKind};
@@ -13,7 +11,6 @@ fn an_entry(kind: EntryKind, body: Value) -> Entry {
     )
 }
 
-/// Every kind gets its own sentence, with the field a reader wants first.
 #[test]
 fn each_kind_says_the_interesting_thing_first() {
     let acquired = summarize(&an_entry(
@@ -61,8 +58,6 @@ fn each_kind_says_the_interesting_thing_first() {
     assert!(failed.contains("nothing answered"), "{failed}");
 }
 
-/// A stop with no reason says so rather than showing a blank: *no reason given*
-/// is a fact about the stop (A7).
 #[test]
 fn a_stop_with_no_reason_says_that() {
     let stopped = summarize(&an_entry(
@@ -73,8 +68,6 @@ fn a_stop_with_no_reason_says_that() {
     assert!(!stopped.contains("because: \n"), "{stopped}");
 }
 
-/// The count says what it counted, so a filtered log cannot be mistaken for the
-/// whole record.
 #[test]
 fn the_count_says_what_it_counted() {
     assert_eq!(counted(1, None), "1 entry");
@@ -82,17 +75,11 @@ fn the_count_says_what_it_counted() {
     assert!(counted(2, Some(EntryKind::Failure)).contains("failure"));
 }
 
-/// The default is a stated number rather than everything, because a command
-/// that printed a machine's whole life is one people pipe to `tail` — which is
-/// MCF choosing twenty with less said about it (§3.15).
 #[test]
 fn the_default_is_stated() {
     assert_eq!(SHOWN, 20);
 }
 
-/// **A9 in the window.** A comparison that found no difference reads as a
-/// result, and says so in as many words — a reader must not have to know that
-/// an absent number means *we looked and there was nothing there*.
 #[test]
 fn a_null_comparison_reads_as_a_result() {
     let said = summarize(&an_entry(
@@ -119,8 +106,6 @@ fn a_null_comparison_reads_as_a_result() {
     assert!(said.contains("37 paired trial(s)"), "{said}");
 }
 
-/// A comparison that was refused reads as an outcome and names what differed,
-/// with no number anywhere in the line (A8, A9).
 #[test]
 fn a_refused_comparison_reads_as_an_outcome() {
     let said = summarize(&an_entry(
@@ -155,8 +140,6 @@ fn a_refused_comparison_reads_as_an_outcome() {
     assert!(!said.contains("differ by"), "no delta escapes: {said}");
 }
 
-/// *Does not fit here* reads as a finding, with the count of each outcome
-/// (A9, §6.3).
 #[test]
 fn a_plan_reads_as_a_finding() {
     let variant = |outcome: &str| Value::map([("outcome", Value::text(outcome))]);
@@ -184,8 +167,6 @@ fn a_plan_reads_as_a_finding() {
     assert!(said.contains("2 do not"), "{said}");
 }
 
-/// Neither kind is a failure, which is the whole of A9: a reader filtering the
-/// log for failures must not find them, and one filtering for results must.
 #[test]
 fn neither_new_kind_is_a_failure() {
     for kind in [EntryKind::Comparison, EntryKind::FitmentPlanned] {
@@ -197,8 +178,6 @@ fn neither_new_kind_is_a_failure() {
     }
 }
 
-/// A prompt report's line carries the floor's spread where it was drawn at
-/// every position, and only there (B-434, A7).
 #[test]
 fn a_prompt_report_says_the_floor_and_its_spread_where_there_is_one() {
     let clause = |moved: i64| Value::map([("moved_parts_per_million", Value::Integer(moved))]);

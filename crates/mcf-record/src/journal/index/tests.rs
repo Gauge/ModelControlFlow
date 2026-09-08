@@ -1,12 +1,9 @@
-//! The index is derived: everything here checks that the journal wins.
-
 use std::io::Write as _;
 
 use mcf_core::time::Timestamp;
 
 use super::{Built, Index, default_path};
 
-/// Half a record: what a write torn in the middle leaves behind.
 const HALF_RECORD: usize = 16;
 use crate::journal::{Entry, EntryKind, Journal};
 use crate::json::Value;
@@ -62,7 +59,6 @@ impl Drop for Place {
     }
 }
 
-/// The first open builds it, and what it holds is what the journal holds.
 #[test]
 fn a_journal_with_no_index_gets_one() {
     let place = Place::new("fresh");
@@ -76,8 +72,6 @@ fn a_journal_with_no_index_gets_one() {
     assert!(index.index_file_exists());
 }
 
-/// The pointer resolves: what the index says is at an offset is the entry that
-/// was written there (D20 — the record is the journal).
 #[test]
 fn what_the_index_points_at_is_the_entry() {
     let place = Place::new("points");
@@ -94,8 +88,6 @@ fn what_the_index_points_at_is_the_entry() {
     }
 }
 
-/// A second open reads it as it stands, and a third after more entries extends
-/// it rather than reading the history again.
 #[test]
 fn an_index_is_extended_rather_than_rebuilt() {
     let place = Place::new("extend");
@@ -109,8 +101,6 @@ fn an_index_is_extended_rather_than_rebuilt() {
     assert_eq!(index.entries().len(), 5);
 }
 
-/// A torn final record — the crash residue an append leaves — costs the entries
-/// it covered and nothing else.
 #[test]
 fn a_torn_index_record_is_dropped_and_read_again() {
     let place = Place::new("torn");
@@ -137,10 +127,6 @@ fn a_torn_index_record_is_dropped_and_read_again() {
     assert_eq!(index.entries().len(), 5);
 }
 
-/// Every way an index file can be wrong ends in a rebuild that says why —
-/// never in a failure, because a derived file is one to discard (A4), and never
-/// in silence, because an open that quietly costs a full replay is a cost
-/// nobody can see (A2).
 #[test]
 fn a_useless_index_is_rebuilt_with_the_reason_said() {
     for (name, damage) in [
@@ -188,16 +174,12 @@ fn a_useless_index_is_rebuilt_with_the_reason_said() {
     }
 }
 
-/// A journal that shrank is a journal the index does not describe. Nothing the
-/// index remembers survives that, because the alternative is answering
-/// questions about bytes that are no longer there.
 #[test]
 fn an_index_ahead_of_its_journal_is_thrown_away() {
     let place = Place::new("ahead");
     place.write(6);
     place.open();
 
-    // The journal is replaced by a shorter one carrying the same header.
     let text = std::fs::read_to_string(place.journal()).expect("it reads");
     let mut lines: Vec<&str> = text.lines().collect();
     lines.truncate(3);
@@ -213,8 +195,6 @@ fn an_index_ahead_of_its_journal_is_thrown_away() {
     }
 }
 
-/// The index stops where the journal stops making sense, and says so — a
-/// history with a hole in it that queried cleanly is what B62 forbids.
 #[test]
 fn the_index_never_covers_past_a_loss() {
     let place = Place::new("loss");
@@ -234,13 +214,11 @@ fn the_index_never_covers_past_a_loss() {
     assert_eq!(loss.line, 6, "the header is line one");
     assert!(index.covers() < std::fs::metadata(place.journal()).expect("it stats").len());
 
-    // And it is reported again at the next open rather than being forgotten.
     let again = place.open();
     assert!(again.loss().is_some());
     assert_eq!(again.entries().len(), 4);
 }
 
-/// The two queries a surface actually asks.
 #[test]
 fn the_index_answers_the_questions_the_surfaces_ask() {
     let place = Place::new("queries");

@@ -1,5 +1,3 @@
-//! What a credential says about itself, and what it refuses to say.
-
 use std::path::{Path, PathBuf};
 
 use super::{Credential, Identity, KNOWN_VARIABLES, Origin, Secret, Sighting, sightings};
@@ -12,7 +10,6 @@ fn nothing_readable(_path: &Path) -> Option<String> {
     None
 }
 
-/// The token never appears in the one rendering everything reaches for.
 #[test]
 fn debug_shows_the_fingerprint_and_not_the_token() {
     let secret = Secret::new("hf_averyrealtokenindeed");
@@ -25,8 +22,6 @@ fn debug_shows_the_fingerprint_and_not_the_token() {
     assert!(rendered.contains("redacted"), "{rendered}");
 }
 
-/// A credential inside another structure is still redacted, which is the case
-/// that actually happens: nobody prints the secret, they print the struct.
 #[test]
 fn a_credential_inside_something_else_is_still_redacted() {
     let credential = Credential::new(Secret::new("hf_secret"), Origin::Supplied);
@@ -37,8 +32,6 @@ fn a_credential_inside_something_else_is_still_redacted() {
     assert!(described.contains("supplied directly"), "{described}");
 }
 
-/// The fingerprint answers *the same credential or a different one*, which is
-/// the question provenance has, and answers nothing else.
 #[test]
 fn the_fingerprint_tells_one_credential_from_another() {
     let one = Secret::new("hf_one");
@@ -54,20 +47,13 @@ fn the_fingerprint_tells_one_credential_from_another() {
     );
 }
 
-/// The one way to the bytes is the conspicuous one.
 #[test]
 fn the_token_is_reachable_only_by_asking_for_it() {
     assert_eq!(Secret::new("hf_token").reveal(), "hf_token");
 }
 
-/// MCF is told what exists and uses none of it: a sighting is a report, and the
-/// deciding is somebody else's.
 #[test]
 fn a_sighting_reports_what_is_there_without_using_it() {
-    // Named through the list rather than as a literal: which variables MCF
-    // knows about is asserted once, by
-    // `checks/tests/a_credential_is_never_picked_up.rs`, which is also the
-    // check that no other file may say them.
     let known = KNOWN_VARIABLES.first().expect("MCF knows of a variable");
     let look_up = |variable: &str| (variable == *known).then(|| "hf_environmental".to_owned());
     let seen = sightings(&look_up, None, &nothing_readable);
@@ -88,8 +74,6 @@ fn a_sighting_reports_what_is_there_without_using_it() {
     assert!(described.contains("has not used it"), "{described}");
 }
 
-/// Every variable MCF knows about is looked at, so an operator with the other
-/// one set is not told there is nothing there.
 #[test]
 fn every_known_variable_is_looked_at() {
     for variable in KNOWN_VARIABLES {
@@ -99,8 +83,6 @@ fn every_known_variable_is_looked_at() {
     }
 }
 
-/// A variable set to nothing is a variable somebody unset, and reporting it
-/// would send an operator looking for something that is not there.
 #[test]
 fn a_blank_credential_is_not_a_credential() {
     let blank = |_: &str| Some("   ".to_owned());
@@ -110,8 +92,6 @@ fn a_blank_credential_is_not_a_credential() {
     assert!(sightings(&nothing_set, Some(&path), &blank_file).is_empty());
 }
 
-/// A token file is a sighting like any other, and it names the file, because
-/// *which one* is the thing an operator needs in order to act.
 #[test]
 fn a_token_file_is_reported_by_name() {
     let path = PathBuf::from("/home/somebody/.cache/token");
@@ -126,15 +106,11 @@ fn a_token_file_is_reported_by_name() {
     );
 }
 
-/// Nothing anywhere is the ordinary answer and it is an empty list, not a
-/// failure.
 #[test]
 fn nothing_anywhere_is_an_answer() {
     assert!(sightings(&nothing_set, None, &nothing_readable).is_empty());
 }
 
-/// The three identities are distinct, and *offered* is the one that keeps a
-/// source from inventing an account it was never told.
 #[test]
 fn the_identities_say_different_things() {
     let anonymous = Identity::Anonymous.to_string();
@@ -154,7 +130,6 @@ fn the_identities_say_different_things() {
     assert_ne!(offered, confirmed);
 }
 
-/// Origins render as somewhere an operator can go and look.
 #[test]
 fn an_origin_names_a_place() {
     assert!(
@@ -173,7 +148,6 @@ fn an_origin_names_a_place() {
     );
 }
 
-/// A sighting is a report about a credential and never carries one.
 #[test]
 fn a_sighting_carries_no_token() {
     let sighting = Sighting {

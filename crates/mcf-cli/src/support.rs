@@ -1,33 +1,3 @@
-//! What to send when MCF cannot read your hardware (A7, A2, §3.20, D21, B-171).
-//!
-//! **Why this exists.** Every table of vendor driver names goes stale the week
-//! it is written — `thermal::kind_of` is one, `utilisation::accelerators` is
-//! another, and neither can be made complete by trying harder. The honest
-//! answer is not a longer list but a route: an operator whose machine MCF
-//! cannot read holds the one thing needed to fix it, which is the name of the
-//! driver, and there must be a way for that to reach somebody.
-//!
-//! **It is a file, not an upload.** Nothing here contacts anybody. MCF writes
-//! a report the operator can read in full, and they send it or do not. §3.20
-//! gates whatever *sends* a record, and the simplest way to satisfy a gate is
-//! to have no sending code at all.
-//!
-//! **What it contains, and what it cannot.** Driver names, kernel and
-//! architecture, sensor labels and readings, and the paths MCF looked in. It
-//! carries no prompt, no completion, no file content and no path from a
-//! model's directory — the same discipline as `mcf_core::contribution`, and
-//! for the same reason: a report that could carry user content is one that
-//! eventually does (B-171, A25).
-//!
-//! **It is offered where the gap is found**, not buried in a manual: a machine
-//! whose processor temperature cannot be read is told so by the command that
-//! needed it.
-
-/// Appends a line, discarding the `fmt::Error` that writing to a `String`
-/// cannot produce.
-///
-/// A `?` here would be an error path that cannot be taken, and a `let _` on a
-/// `#[must_use]` is the same thing wearing a lint suppression.
 fn line(into: &mut String, said: &str) {
     into.push_str(said);
     into.push('\n');
@@ -38,18 +8,13 @@ use mcf_core::hardware::{thermal, utilisation};
 
 use crate::Response;
 
-/// What MCF could not read here.
 pub(crate) struct Gaps {
-    /// Sensor chips this build does not recognise.
     pub(crate) chips: Vec<String>,
-    /// Whether no processor temperature was found at all.
     pub(crate) no_processor_temperature: bool,
-    /// Accelerator drivers whose occupancy MCF cannot read.
     pub(crate) accelerators: Vec<String>,
 }
 
 impl Gaps {
-    /// What this machine's readers could not account for.
     pub(crate) fn here() -> Self {
         let sensors = thermal::sensors();
         let cards = utilisation::accelerators();
@@ -60,15 +25,10 @@ impl Gaps {
         }
     }
 
-    /// Whether there is anything to report.
     pub(crate) fn any(&self) -> bool {
         self.no_processor_temperature || !self.chips.is_empty() || !self.accelerators.is_empty()
     }
 
-    /// One line for a surface that found a gap while doing something else.
-    ///
-    /// Deliberately short and deliberately actionable: a warning that does not
-    /// say what to do about it trains a reader to skip warnings.
     pub(crate) fn one_line(&self) -> Option<String> {
         if !self.any() {
             return None;
@@ -99,7 +59,6 @@ impl Gaps {
     }
 }
 
-/// Writes the report.
 pub(crate) fn run(into: Option<&str>) -> Response {
     let sensors = thermal::sensors();
     let cards = utilisation::accelerators();
@@ -204,8 +163,6 @@ pub(crate) fn run(into: Option<&str>) -> Response {
             ),
             served: true,
         },
-        // A2: a report that could not be written says so rather than reading
-        // as written.
         Err(why) => Response {
             text: format!("mcf: could not write {}: {why}", path.display()),
             served: false,

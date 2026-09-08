@@ -1,32 +1,17 @@
-//! Prefix reuse: what a conversation pays for its history every turn
-//! (B-494, D52).
-//!
-//! Every other request MCF makes turns the engine's prompt cache off, so
-//! that a trial measures nothing the previous trial left behind (§3.12).
-//! A chat is the opposite case: every turn shares its prefix with the
-//! last, and an engine that keeps what it read answers the next turn
-//! after reading only what is new. Three timings on one prompt say how
-//! much that is worth here.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, as_ms, filler, median, ppm, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Extras, Prompt};
 
-/// The measurement's name.
 pub const NAME: &str = "prefix-reuse";
 
-/// How deep the shared prefix is, in identifiers.
 const DEPTH: usize = 1024;
 
-/// How many identifiers the next turn adds.
 const TAIL: usize = 8;
 
-/// How many times each timing is taken.
 const REPEATS: usize = 3;
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&site.startup()) {
@@ -57,14 +42,11 @@ pub fn measure(site: &Site<'_>) -> Found {
         if site.asker_gone() {
             return Found::could_not_tell(crate::served::CLIENT_LEFT);
         }
-        // The cache off: the whole prompt read, and nothing kept.
         let (done, ns) = timed(|| ask(&longer, false));
         if let Err(failure) = done {
             return Found::could_not_tell(&said(failure));
         }
         off.push(ns);
-        // The prefix read and kept, then the longer prompt: what a next
-        // turn costs when its history is already in the cache.
         if let Err(failure) = ask(&prefix, true) {
             return Found::could_not_tell(&said(failure));
         }

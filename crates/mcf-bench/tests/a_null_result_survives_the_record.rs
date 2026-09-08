@@ -1,17 +1,3 @@
-//! A comparison that found nothing reaches the disk as a result, and comes
-//! back as one (A9, B-086, B-250, D16).
-//!
-//! A9: *"no measurable difference" and "does not fit here" are findings, not
-//! failures.* The failure mode is not that MCF prints the wrong word — it is
-//! that a null result is never written down, so that six weeks later nobody
-//! can tell whether two configurations were compared and found the same or
-//! were never compared at all. The two look identical in an empty register.
-//!
-//! This runs a comparison of two arms that genuinely do not differ, writes it,
-//! throws everything in memory away, replays the file, and asks what came out.
-//!
-//! B19 keeps it hermetic: a temporary directory, removed when the test ends.
-
 #![allow(clippy::panic, clippy::expect_used)]
 
 use std::path::PathBuf;
@@ -30,16 +16,6 @@ const AT: Timestamp = Timestamp::from_utc_nanos(1_756_058_651_442_000_000, Attes
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
 const SECOND: u64 = 1_000_000_000;
 
-/// What these comparisons were asked to do.
-///
-/// Stated rather than defaulted: §II asks that somebody else be able to repeat
-/// a measurement, and a `Method` a fixture left blank would be a fixture
-/// asserting that a blank one is enough (PR2, B30).
-/// What the machine was doing either side of these runs.
-///
-/// Stated rather than omitted: B-217 makes the machine's own movement a
-/// condition of a result, and a fixture that left it out would be a fixture
-/// asserting a run needs no such condition.
 fn watched() -> MachineHeld {
     MachineHeld {
         before: 4_000,
@@ -80,8 +56,6 @@ impl Drop for Scratch {
     }
 }
 
-/// An arm whose quantization is the one thing that differs, so the comparison
-/// is isolated and A8 has no reason to refuse it.
 fn under_test(name: &str, quantization: &str) -> UnderTest {
     let floor = Floor {
         hardware_state: Attested::Known(ConditionValue::text("this machine")),
@@ -104,7 +78,6 @@ fn under_test(name: &str, quantization: &str) -> UnderTest {
     )
 }
 
-/// Two arms that take the same time, compared honestly forty times.
 fn a_null_comparison() -> (Value, usize) {
     let named = Arm::new("q8_0");
     let mut running = Interleaving::<Monotonic>::new(
@@ -112,7 +85,6 @@ fn a_null_comparison() -> (Value, usize) {
         under_test("q2_k", "q2_k"),
         SessionId::new("2026-08-27T09-00-00Z"),
         21,
-        // A timing run (D19): the seed is held still and the length pinned.
         Discipline::Timing {
             seed: 0,
             tokens: 128,
@@ -120,17 +92,6 @@ fn a_null_comparison() -> (Value, usize) {
     );
     for round in 0..40_u64 {
         let _ran = running.round(|arm, _drew| {
-            // Two wobbles, and neither is a property of an arm. The first
-            // belongs to the *round* — both runs of a pair see it, which is
-            // what pairing is for. The second is a millisecond that lands on
-            // whichever arm the round says, so it is noise inside a pair
-            // rather than a difference between the arms.
-            //
-            // A first draft gave that millisecond to the left arm every round,
-            // and the sign test found it: forty pairs out of forty, a real
-            // difference of a tenth of a percent. The fixture was wrong and the
-            // instrument said so — which is the cost the sign test's own
-            // documentation states, arriving on the first use.
             let wobble = round.wrapping_rem(7).wrapping_mul(3_000_000);
             let slower = (*arm == named) == round.is_multiple_of(2);
             let own = if slower { 1_000_000 } else { 0 };
@@ -146,8 +107,6 @@ fn a_null_comparison() -> (Value, usize) {
     (body, held.pairs().len())
 }
 
-/// The whole of B-086's first half: a null result is written, survives the
-/// disk, and comes back naming itself as a result rather than as an absence.
 #[test]
 fn a_null_result_is_written_and_read_back_as_a_result() {
     let scratch = Scratch::new("same");
@@ -165,9 +124,6 @@ fn a_null_result_is_written_and_read_back_as_a_result() {
     assert!(replayed.is_complete(), "{}", replayed.statement());
     let entry = replayed.entries.first().expect("one entry");
 
-    // It is its own kind, and that kind is not `Failure`. A null result filed
-    // under failures is a null result nobody will find beside the positive
-    // ones.
     assert_eq!(entry.kind(), EntryKind::Comparison);
     assert_ne!(entry.kind(), EntryKind::Failure);
 
@@ -191,10 +147,6 @@ fn a_null_result_is_written_and_read_back_as_a_result() {
     );
 }
 
-/// D16 and B56 through the same file: the distribution is on the disk, so the
-/// verdict can be re-asked. The stopping condition's own rule has already
-/// changed twice (F55, F57), and a record holding only its answers would have
-/// been a record of two obsolete opinions.
 #[test]
 fn the_distribution_survives_so_the_verdict_can_be_re_asked() {
     let scratch = Scratch::new("pairs");
@@ -226,8 +178,6 @@ fn the_distribution_survives_so_the_verdict_can_be_re_asked() {
         );
     }
 
-    // And the conditions of both arms, so the isolation question can be asked
-    // again rather than trusted (A8).
     for side in ["left", "right"] {
         assert!(
             read.get(side)

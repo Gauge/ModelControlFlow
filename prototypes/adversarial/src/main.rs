@@ -1,21 +1,3 @@
-//! The §7.19 adversarial prototype (B-002).
-//!
-//! D4 chose Rust and then declined to assume it was right: *"§3.13 requires
-//! optimizing what is measured rather than what is imagined, so this decision
-//! is confirmed by a small adversarial prototype: probe an accelerator,
-//! supervise a child runtime deliberately made to die badly, record both under
-//! §3.1, and measure the result against §7.16. If that goes badly, this entry
-//! is amended rather than defended."*
-//!
-//! This is that prototype. It is not MCF: nothing here is on a path any user
-//! reaches, and every part of it is superseded by a real item — B-013 for the
-//! profiler, B-033 for supervision, B-011 for the budget suite. It exists to
-//! produce evidence for DEC-019, and for DEC-008 and DEC-004 alongside it.
-//!
-//! It prints a report and exits zero whatever it finds. A machine with no
-//! accelerator is a valid subject: the interesting question is whether MCF
-//! says so correctly, and B19 requires the answer be obtainable on a laptop.
-
 mod accelerator;
 mod footprint;
 mod nvml;
@@ -146,21 +128,11 @@ fn report_footprint() {
         Attested::Unknown => println!("    resident       unknown on this platform"),
     }
 
-    // The subject is `mcf`, not this prototype. D24's figure is *cold start to
-    // first command response*, and `mcf --version` is the shortest complete
-    // one MCF has. Measuring this binary instead would have measured this
-    // binary re-running the whole report — which is what the first draft did,
-    // and it did not terminate. Recorded because it is the kind of mistake a
-    // prototype exists to make before a suite makes it (B18).
     let subject = binary.with_file_name("mcf");
     match footprint::cold_start(&subject, &["--version"], 20, conditions) {
         Some(measurement) => {
             const BUDGET: Duration<Monotonic> = Duration::from_nanos(100_000_000);
             let spread = measurement.spread();
-            // Both statistics, because D24 does not say which one the cold-start
-            // budget is about — and on a machine that is not quiet they
-            // disagree by more than an order of magnitude. That disagreement is
-            // a finding about the budget, not a number to pick from.
             println!(
                 "    cold start     median {} over n={} — {}",
                 spread.median,

@@ -1,33 +1,3 @@
-//! Every control-plane operation has a command, and no capability is reachable
-//! only through a client (A22, B-072, §XI, §6.21).
-//!
-//! **A22 is absolute and its check named an item that did not exist.** *Every
-//! action is available with no display attached; the interface may not be the
-//! only way to do anything.* The rule notes that this is close to
-//! self-enforcing — a capability reachable only through an interface is one the
-//! laboratory cannot test, which A19 already forbids — but *close to* is not a
-//! check, and B-072 is the row that was open.
-//!
-//! **What is enumerable today.** MCF has one surface, the command line, and one
-//! wire protocol, the control plane. The direction that can go wrong right now
-//! is an operation on that wire with no command to reach it: a daemon that
-//! answers a question nobody at a terminal can ask. So every variant of
-//! `mcf_serve::control::Request` must be sent by `crates/mcf-cli`.
-//!
-//! **The direction that cannot go wrong yet, and will.** When §XI's window
-//! arrives it becomes a second client of the same wire, and A22's real target
-//! is an action *it* has that no command does. The enumeration this file builds
-//! is the half that can exist before the window does, and the reason to build
-//! it now is the same one that put the privileged helper and reference-model
-//! neutrality in M0: a special case is far cheaper to prevent than to find. The
-//! window's own actions join this check when there are any.
-//!
-//! **Not the other direction.** A command with no control operation is
-//! ordinary: most of MCF does its work in the calling process and never touches
-//! a daemon. A22 constrains what the *interface* may have, never what the
-//! headless path may.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used)]
 
 use std::path::PathBuf;
@@ -38,7 +8,6 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// Every `.rs` under a directory.
 fn sources(relative: &str) -> Vec<PathBuf> {
     let root = mcf_checks::workspace::root().join(relative);
     let mut found = Vec::new();
@@ -60,11 +29,6 @@ fn sources(relative: &str) -> Vec<PathBuf> {
     found
 }
 
-/// The operations the control plane answers, read from the protocol itself.
-///
-/// From the enum rather than from a list here: a list is a thing that goes
-/// stale the week it is written, and the operation this check would then miss
-/// is precisely the new one (F79, F110).
 fn operations() -> Vec<String> {
     let source = read("crates/mcf-serve/src/control.rs");
     let (_, after) = source
@@ -74,8 +38,6 @@ fn operations() -> Vec<String> {
     let mut found = Vec::new();
     for line in body.lines() {
         let trimmed = line.trim();
-        // A variant: `Status,` or `Generate {`. Not a field, which is
-        // lowercase, and not documentation.
         let Some(name) = trimmed
             .strip_suffix(',')
             .or_else(|| trimmed.strip_suffix(" {"))
@@ -92,7 +54,6 @@ fn operations() -> Vec<String> {
     found
 }
 
-/// Every control operation is sent by the headless surface.
 #[test]
 fn every_control_operation_has_a_command() {
     let operations = operations();
@@ -122,11 +83,6 @@ fn every_control_operation_has_a_command() {
     );
 }
 
-/// And the surface that sends them is the one a person types at.
-///
-/// The check above would pass if the only sender were a test or a probe's
-/// helper. What A22 wants is a *command*: something in the argument parser that
-/// a person reaches without writing Rust.
 #[test]
 fn the_operations_a_person_can_ask_for_are_commands() {
     let main = read("crates/mcf-cli/src/main.rs");
@@ -137,27 +93,17 @@ fn the_operations_a_person_can_ask_for_are_commands() {
              person can type (A22)"
         );
     }
-    // `Holding` is deliberately not its own command: it is the second half of
-    // one question a person has — *what is running here* — and `mcf status`
-    // asks both in one breath. What A22 requires is that it be reachable
-    // without a display, which it is.
     assert!(
         read("crates/mcf-cli/src/serve.rs").contains("Request::Holding"),
         "nothing headless asks the daemon what it is holding (A22, B-072)"
     );
 }
 
-/// A surface, and where it writes down what it can do.
 struct Surface {
-    /// The crate.
     krate: &'static str,
-    /// The file holding its action table and the line the table starts on.
-    /// `None` for the headless path, which IS the enumeration everything else
-    /// is checked against.
     table: Option<(&'static str, &'static str)>,
 }
 
-/// Every surface MCF has.
 const SURFACES: &[Surface] = &[
     Surface {
         krate: "mcf-cli",
@@ -179,7 +125,6 @@ const SURFACES: &[Surface] = &[
     },
 ];
 
-/// A crate is a surface if it reaches the control plane.
 fn surfaces_in_the_tree() -> Vec<String> {
     let crates = mcf_checks::workspace::root().join("crates");
     let mut found = Vec::new();
@@ -190,20 +135,9 @@ fn surfaces_in_the_tree() -> Vec<String> {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
-        // The control plane's own crate defines the requests rather than
-        // sending them.
         if name == "mcf-serve" {
             continue;
         }
-        // By what the crate DOES, not by how it spelled an import. Looking for
-        // the literal `control::Request` missed a surface that wrote
-        // `control::{Answer, Request}` — the same defect as the tripwire this
-        // replaced, one layer down.
-        //
-        // What ships, not what tests it: a crate's `tests/` may speak to a
-        // daemon to prove the daemon's behaviour (B-396 does), and a test
-        // that sends a request is a check of the control plane, not a way a
-        // person reaches it.
         let reaches = sources(&format!("crates/{name}/src"))
             .into_iter()
             .any(|path| {
@@ -221,17 +155,6 @@ fn surfaces_in_the_tree() -> Vec<String> {
     found
 }
 
-/// Every surface in the tree is declared above.
-///
-/// **This replaces a tripwire that did not fire, and the reason it did not is
-/// the finding.** The check used to assert that no crate existed under any of
-/// four names it guessed a window might arrive as — `mcf-window`, `mcf-web`,
-/// `mcf-ui`, `mcf-client`. A terminal application arrived as `mcf-tui` and the
-/// check passed, because a guard written against the names somebody imagined
-/// is a guard against those names and nothing else.
-///
-/// So a surface is now recognised by what it does: a crate that reaches the
-/// control plane is a client of it, whatever it is called.
 #[test]
 fn every_surface_in_the_tree_is_declared() {
     let found = surfaces_in_the_tree();
@@ -253,7 +176,6 @@ fn every_surface_in_the_tree_is_declared() {
     );
 }
 
-/// Every action every surface offers is reachable with no display attached.
 #[test]
 fn every_surface_action_has_a_command() {
     let operations = operations();
@@ -278,8 +200,6 @@ fn every_surface_action_has_a_command() {
                 continue;
             };
             let rest = rest.trim();
-            // `None` is an action that moves the cursor and asks MCF nothing,
-            // which cannot be a capability the command line lacks.
             if rest.starts_with("None") {
                 continue;
             }
@@ -321,7 +241,6 @@ fn every_surface_action_has_a_command() {
     }
 }
 
-/// Starting a surface is itself a command.
 #[test]
 fn every_surface_is_opened_by_a_command() {
     let cli = sources("crates/mcf-cli")

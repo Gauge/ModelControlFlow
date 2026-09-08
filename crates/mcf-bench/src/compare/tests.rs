@@ -1,10 +1,3 @@
-//! What the construction has to refuse, and what it has to find.
-//!
-//! The clock here is [`Simulated`], because these are questions about the
-//! *shape* of a comparison rather than about how long anything took, and A11
-//! keeps the two kinds of duration apart in the type system. A test that
-//! reached for the monotonic clock would be measuring the test machine.
-
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::measurement::{ConditionValue, Conditions, Floor, Isolation, PartsPerMillion};
@@ -20,12 +13,9 @@ use super::{
 use crate::enough::Verdict;
 use crate::warmth::{Reuse, Warmth};
 
-/// Five percent, as this module spells it.
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
-/// Twenty percent.
 const TWENTY: PartsPerMillion = PartsPerMillion(200_000);
 
-/// A second, and a second and a half, in nanoseconds.
 const SECOND: u64 = 1_000_000_000;
 const SLOWED: u64 = 1_500_000_000;
 
@@ -41,13 +31,6 @@ fn ns(nanos: u64) -> Duration<Simulated> {
     Duration::from_nanos(nanos)
 }
 
-/// A run of a stated length that found the model already loaded.
-///
-/// Every fixture here is a warm run, stated rather than defaulted: §6.13 makes
-/// what a trial reused a condition, and a test that let it be inferred would
-/// be testing the inference. The `Option` is the runner's shape and is always
-/// `Some` here — a run that did not happen is a separate fixture, because it
-/// is a separate thing (A4).
 #[expect(
     clippy::unnecessary_wraps,
     reason = "the runner's closure returns None for a run that did not happen, and this is the \
@@ -57,8 +40,6 @@ fn warm(nanos: u64) -> Option<(Duration<Simulated>, Warmth)> {
     Some((ns(nanos), Warmth::Warm))
 }
 
-/// A floor in which every condition is known, so that a test changes exactly
-/// what it means to change.
 fn everything_known() -> Floor {
     Floor {
         hardware_state: known("this machine"),
@@ -81,7 +62,6 @@ fn known(value: &str) -> Attested<ConditionValue> {
     Attested::Known(ConditionValue::text(value))
 }
 
-/// An arm as a configuration, optionally differing in one named condition.
 fn under_test(arm: &Arm, differing: &[(&str, &str)]) -> UnderTest {
     let mut floor = everything_known();
     for (question, value) in differing {
@@ -98,9 +78,6 @@ fn under_test(arm: &Arm, differing: &[(&str, &str)]) -> UnderTest {
     )
 }
 
-/// The two arms as configurations differing in exactly one condition, which is
-/// the only shape A8 admits a delta from. Most tests here are about the
-/// *pairing* rather than about isolation, so they take this and say no more.
 fn isolated(left: &Arm, right: &Arm) -> (UnderTest, UnderTest) {
     (
         under_test(left, &[]),
@@ -108,7 +85,6 @@ fn isolated(left: &Arm, right: &Arm) -> (UnderTest, UnderTest) {
     )
 }
 
-/// A comparison of two arms read back out of one session's trials, isolated.
 fn from_trials(
     trials: &Trials<Duration<Simulated>>,
     left: &Arm,
@@ -118,7 +94,6 @@ fn from_trials(
     Comparison::from_trials(trials, &one, &other)
 }
 
-/// A cross-session comparison of two arms, isolated.
 fn from_separate_sessions(
     left_trials: &Trials<Duration<Simulated>>,
     left: &Arm,
@@ -129,7 +104,6 @@ fn from_separate_sessions(
     Comparison::from_separate_sessions(left_trials, &one, right_trials, &other)
 }
 
-/// A runner over two isolated arms.
 fn interleaving(left: &Arm, right: &Arm, seed: u64) -> Interleaving<Simulated> {
     let (one, other) = isolated(left, right);
     Interleaving::new(
@@ -144,7 +118,6 @@ fn interleaving(left: &Arm, right: &Arm, seed: u64) -> Interleaving<Simulated> {
     )
 }
 
-/// Trials laid out in a stated order of arms, positions counting up from zero.
 fn laid_out(order: &[&Arm], values: &[u64], session: &SessionId) -> Trials<Duration<Simulated>> {
     Trials::from(order.iter().enumerate().map(|(at, arm)| {
         Trial::new(
@@ -152,15 +125,11 @@ fn laid_out(order: &[&Arm], values: &[u64], session: &SessionId) -> Trials<Durat
             (*arm).clone(),
             Position(u32::try_from(at).unwrap_or(0)),
             session.clone(),
-            // A timing run, which is what these are: the seed is held still and
-            // the length pinned (D19). Both runs of a pair draw the same thing,
-            // so this does not vary with the position.
             timing(),
         )
     }))
 }
 
-/// The timing discipline these tests take their trials under.
 fn timing() -> Draw {
     Draw::LengthPinned {
         seed: 0,
@@ -168,9 +137,6 @@ fn timing() -> Draw {
     }
 }
 
-/// **The finding B-250 exists for.** Six of A then six of B, recorded in one
-/// session, is refused by name — the positions say the arms did not alternate,
-/// so anything that drifted between the two blocks is inside the difference.
 #[test]
 fn block_then_subtract_is_refused_by_name() {
     let (left, right) = arms();
@@ -190,8 +156,6 @@ fn block_then_subtract_is_refused_by_name() {
     }
 }
 
-/// Interleaved trials in one session are a comparison, and the pairing comes
-/// back in interleaving order.
 #[test]
 fn interleaved_trials_are_a_comparison() {
     let (left, right) = arms();
@@ -228,8 +192,6 @@ fn interleaved_trials_are_a_comparison() {
     );
 }
 
-/// Order randomization within a pair does not stop the pairing being read back
-/// — *B, A, A, B* is two pairs, not a defect.
 #[test]
 fn a_randomized_order_within_pairs_still_pairs() {
     let (left, right) = arms();
@@ -262,9 +224,6 @@ fn a_randomized_order_within_pairs_still_pairs() {
     );
 }
 
-/// Arms of unequal length are refused rather than truncated: a caller who ran
-/// one arm more than the other has not run a paired trial, and evening it up
-/// quietly would produce the shape this module exists to refuse.
 #[test]
 fn unequal_arms_are_reported_not_truncated() {
     let (left, right) = arms();
@@ -276,7 +235,6 @@ fn unequal_arms_are_reported_not_truncated() {
     );
 }
 
-/// One pair decides nothing, so it is not a comparison.
 #[test]
 fn a_single_pair_is_not_a_comparison() {
     let (left, right) = arms();
@@ -287,8 +245,6 @@ fn a_single_pair_is_not_a_comparison() {
     );
 }
 
-/// Trials from two sessions in one set are not paired, and the refusal names
-/// the construction that does admit them.
 #[test]
 fn trials_from_two_sessions_are_not_paired() {
     let (left, right) = arms();
@@ -306,8 +262,6 @@ fn trials_from_two_sessions_are_not_paired() {
     ));
 }
 
-/// §3.27's *it may be all that exists*: two sessions can be put side by side,
-/// and the result says so and has no paired difference to report.
 #[test]
 fn a_cross_session_comparison_is_constructible_and_weaker() {
     let (left, right) = arms();
@@ -335,9 +289,6 @@ fn a_cross_session_comparison_is_constructible_and_weaker() {
     );
 }
 
-/// The weaker construction is refused where the stronger one is available:
-/// two arms from one session are paired, and choosing not to pair them would
-/// be discarding evidence.
 #[test]
 fn one_session_may_not_be_weakened_on_purpose() {
     let (left, right) = arms();
@@ -354,8 +305,6 @@ fn one_session_may_not_be_weakened_on_purpose() {
     );
 }
 
-/// The runner alternates the arms and randomizes which goes first, and the
-/// order it drew is legible afterwards.
 #[test]
 fn the_runner_interleaves_and_randomizes() {
     let (left, right) = arms();
@@ -388,9 +337,6 @@ fn the_runner_interleaves_and_randomizes() {
     }
 }
 
-/// The runner replays: the same seed draws the same order, because a
-/// comparison whose order came from the time of day is one more thing that
-/// differs between two sittings (§3.12).
 #[test]
 fn the_same_seed_draws_the_same_order() {
     let (left, right) = arms();
@@ -409,13 +355,9 @@ fn the_same_seed_draws_the_same_order() {
     assert_eq!(orders.first(), orders.last());
 }
 
-/// A real difference is found through the paired path, and the count it took
-/// is part of the answer.
 #[test]
 fn the_runner_finds_a_real_difference_and_says_what_it_cost() {
     let (left, right) = arms();
-    // A wobble that lands on both arms of a pair — which is what pairing is
-    // for — plus a true thirty-percent gap between the arms.
     let mut round = 0_u64;
     let mut running = interleaving(&left, &right, 3);
     let mut finding = running.finding(FIVE);
@@ -449,29 +391,9 @@ fn the_runner_finds_a_real_difference_and_says_what_it_cost() {
     assert!(finding.strength().is_paired());
 }
 
-/// **The experiment B-250 rests on.** One machine, forty-eight consecutive
-/// runs, something else starting halfway through. The two arms are identical
-/// — neither is faster at any moment — and the *same forty-eight timings* are
-/// arranged two ways.
-///
-/// Interleaved, the drift lands on both runs of every pair and the comparison
-/// reports the truth: no difference. Blocked, it reports a fifty-percent
-/// difference between two things that are the same, at one chance in a
-/// thousand of being noise. Only the arrangement differs, and it is the whole
-/// of the answer.
 #[test]
 fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     let (left, right) = arms();
-    // What a run at position `at` took. Three ingredients, and only the first
-    // is about the arms: the machine's level, which steps up halfway through;
-    // a wobble belonging to the *round* — the moment a pair shares — and a
-    // small per-run jitter that does not.
-    //
-    // The jitter's cycle is four long, so it contributes equally to the even
-    // and odd positions and cannot masquerade as a difference between the arms
-    // in the interleaved arrangement. A fixture whose noise is confounded with
-    // the thing under test measures the fixture, which the first draft of this
-    // test did.
     let took = |at: usize| {
         let level = if at < 24 { SECOND } else { SLOWED };
         let rounds: [i64; 5] = [0, 3, -3, 1, -2];
@@ -489,8 +411,6 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     };
     let machine: Vec<u64> = (0_usize..48).map(took).collect();
 
-    // Interleaved: the two runs of a pair are adjacent, so they see the same
-    // machine.
     let paired_order: Vec<&Arm> = (0..48)
         .map(|at| if at % 2 == 0 { &left } else { &right })
         .collect();
@@ -507,8 +427,6 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
         "the paired comparison reports no difference, which is the truth: {honest}"
     );
 
-    // Blocked: the same forty-eight timings, all of one arm and then all of
-    // the other.
     let (Some(blocked_left), Some(blocked_right)) = (machine.get(..24), machine.get(24..)) else {
         panic!("forty-eight timings split in half");
     };
@@ -523,9 +441,6 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     .expect("two sessions may be put side by side");
     let invented = assembled.finding(TWENTY);
     println!("  blocked:     {invented}");
-    // `Apart` rather than `Differ`: never paired, so the size is a point with
-    // no interval behind it (F92, B53). The invention is still visible, which
-    // is the whole demonstration.
     let Some(Verdict::Apart { by, by_chance, .. }) = invented.verdict() else {
         panic!("the blocked arrangement of the very same timings invents no difference: {invented}")
     };
@@ -539,9 +454,6 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     );
 }
 
-/// **A8's condition, and B-085's done-when.** A comparison in which two
-/// conditions differ has no delta to give: the verdict is `None` and the
-/// rendering says *these are not comparable* instead of a number.
 #[test]
 fn a_confounded_comparison_reports_no_delta() {
     let (left, right) = arms();
@@ -559,8 +471,6 @@ fn a_confounded_comparison_reports_no_delta() {
         .collect();
     let trials = laid_out(&order, &values, &session());
 
-    // Two variables moved: the quantization under test, and the machine's
-    // thermal state — which is A8's own example of the violation.
     let one = under_test(&left, &[]);
     let other = under_test(
         &right,
@@ -585,8 +495,6 @@ fn a_confounded_comparison_reports_no_delta() {
     );
 }
 
-/// A confound the operator declares is science (A8): the delta comes back,
-/// with the declaration and every variable that differed beside it.
 #[test]
 fn a_declared_confound_is_reported_with_its_declaration() {
     let (left, right) = arms();
@@ -631,8 +539,6 @@ fn a_declared_confound_is_reported_with_its_declaration() {
     }
 }
 
-/// An isolated comparison says which variable it was about, and the rendering
-/// does not repeat itself about it.
 #[test]
 fn an_isolated_comparison_names_its_variable() {
     let (left, right) = arms();
@@ -658,9 +564,6 @@ fn an_isolated_comparison_names_its_variable() {
     assert_eq!(finding.isolation().differing(), ["quantization"]);
 }
 
-/// **A7 applied here.** A comparison whose conditions MCF has not read is
-/// neither confounded nor isolated: the delta is reported, and so is the fact
-/// that nobody established what it is a delta *of*.
 #[test]
 fn unread_conditions_report_the_delta_and_the_doubt() {
     let (left, right) = arms();
@@ -701,9 +604,6 @@ fn unread_conditions_report_the_delta_and_the_doubt() {
     );
 }
 
-/// A behaviour comparison: trial *i* draws seed *i*, and both arms of a pair
-/// draw the same one so that what differs between them is the arm and not the
-/// trajectory (D19, §3.27).
 #[test]
 fn both_arms_of_a_pair_draw_the_same_seed() {
     let (left, right) = arms();
@@ -751,9 +651,6 @@ fn both_arms_of_a_pair_draw_the_same_seed() {
     assert_eq!(drawn.len(), 8, "eight pairs, eight distinct seeds (B61)");
 }
 
-/// **B61's violation, refused at the comparison.** A run that gave every trial
-/// the same seed is `n=1` wearing the costume of `n=8`, and the comparison
-/// will not read it back as a behaviour run.
 #[test]
 fn one_seed_repeated_is_not_a_behaviour_comparison() {
     let (left, right) = arms();
@@ -782,9 +679,6 @@ fn one_seed_repeated_is_not_a_behaviour_comparison() {
     );
 }
 
-/// **D19's refusal.** Two arms that drew from different sets are not
-/// comparable: a difference between them is a difference between the draws as
-/// much as between the arms.
 #[test]
 fn arms_from_different_seed_sets_are_refused() {
     let (left, right) = arms();
@@ -824,8 +718,6 @@ fn arms_from_different_seed_sets_are_refused() {
     );
 }
 
-/// A behaviour arm and a timing arm are two different experiments put side by
-/// side, and the refusal says so.
 #[test]
 fn a_behaviour_arm_and_a_timing_arm_are_not_a_comparison() {
     let (left, right) = arms();
@@ -856,8 +748,6 @@ fn a_behaviour_arm_and_a_timing_arm_are_not_a_comparison() {
     );
 }
 
-/// A declared set runs out, and the runner stops rather than repeating a
-/// trajectory (B61).
 #[test]
 fn a_run_stops_when_its_declared_set_runs_out() {
     let (left, right) = arms();
@@ -882,7 +772,6 @@ fn a_run_stops_when_its_declared_set_runs_out() {
     assert_eq!(running.comparison().pairs().len(), 3);
 }
 
-/// A timing comparison reads back as a timing one, with the length it pinned.
 #[test]
 fn a_timing_comparison_names_what_it_pinned() {
     let (left, right) = arms();
@@ -905,10 +794,6 @@ fn a_timing_comparison_names_what_it_pinned() {
     );
 }
 
-/// **B-081's condition.** A run whose trials were all warm records that, and a
-/// run that mixed warm and cold records *that* — in both arms' conditions, so
-/// a measurement taken warm is distinguishable in the record from one taken
-/// cold (§6.13).
 #[test]
 fn what_a_run_reused_becomes_a_condition_of_both_arms() {
     let (left, right) = arms();
@@ -931,8 +816,6 @@ fn what_a_run_reused_becomes_a_condition_of_both_arms() {
     }
 }
 
-/// A run that loaded the model for some trials and not others is **not one
-/// measurement**, and the condition says so rather than averaging over it.
 #[test]
 fn a_mixed_run_says_it_is_not_one_measurement() {
     let (left, right) = arms();
@@ -941,9 +824,6 @@ fn a_mixed_run_says_it_is_not_one_measurement() {
     for _ in 0..6 {
         let _ran = running.round(|_arm, _drew| {
             round = round.saturating_add(1);
-            // The engine finds the model resident for some trials and not for
-            // others, which is what alternating arms against a daemon that
-            // holds one model at a time actually does.
             let found = if round.is_multiple_of(3) {
                 Warmth::Cold
             } else {
@@ -967,10 +847,6 @@ fn a_mixed_run_says_it_is_not_one_measurement() {
     assert!(stated.contains("MIXED"), "{stated}");
     assert!(stated.contains("not one measurement"), "{stated}");
 
-    // **And it has no delta to give.** §6.13: a run whose trials were not
-    // alike has measured two things and would be reporting one, and part of
-    // any difference between the arms would be the difference between a trial
-    // that loaded the model and one that did not.
     let finding = held.finding(FIVE);
     assert_eq!(finding.withheld(), Some(Withheld::MixedReuse));
     assert!(finding.verdict().is_none(), "{finding}");
@@ -980,10 +856,6 @@ fn a_mixed_run_says_it_is_not_one_measurement() {
     );
 }
 
-/// A mixed run is **not declarable**. An operator can say *I know these two
-/// variables moved together*, and cannot say *I know some of my trials loaded
-/// the model* — the first is a statement about the question, the second about
-/// the instrument (§6.13, A8).
 #[test]
 fn a_mixed_run_cannot_be_declared_away() {
     let (left, right) = arms();
@@ -1012,7 +884,6 @@ fn a_mixed_run_cannot_be_declared_away() {
     assert!(finding.verdict().is_none());
 }
 
-/// And a uniform run gives its delta, whichever uniform state it was in.
 #[test]
 fn a_uniform_run_gives_its_delta() {
     let (left, right) = arms();
@@ -1036,10 +907,6 @@ fn a_uniform_run_gives_its_delta() {
     }
 }
 
-/// **And it has teeth.** A comparison whose arms differ in the thing under test
-/// *and* in what they reused is confounded, so A8 withholds the delta — which
-/// is §6.13's *anything that could change a result must be visible in that
-/// result's conditions*, enforced rather than printed.
 #[test]
 fn a_warm_arm_against_a_cold_one_is_confounded() {
     let (left, right) = arms();
@@ -1048,7 +915,6 @@ fn a_warm_arm_against_a_cold_one_is_confounded() {
         .collect();
     let trials = laid_out(&order, &[SECOND; 12], &session());
 
-    // Two arms differing in quantization, and in what each found loaded.
     let mut cold = everything_known();
     cold.reuse = known("cold: every trial loaded the model for itself");
     let mut hot = everything_known();
@@ -1076,9 +942,6 @@ fn a_warm_arm_against_a_cold_one_is_confounded() {
     );
 }
 
-/// A comparison read back out of the record cannot say what its trials
-/// reused — a `Trial` carries the value, not the engine's account of it — and
-/// says *unstated* rather than guessing (A7).
 #[test]
 fn a_comparison_rebuilt_from_trials_does_not_claim_to_know_what_it_reused() {
     let (left, right) = arms();
@@ -1095,9 +958,6 @@ fn a_comparison_rebuilt_from_trials_does_not_claim_to_know_what_it_reused() {
     );
 }
 
-/// **A4, which is absolute.** Nine of ten trials completing is nine data
-/// points: a run cut short keeps every pair it took, the verdict over them
-/// stands, and what was lost is said rather than thrown away with the evidence.
 #[test]
 fn a_run_cut_short_keeps_what_it_produced() {
     let (left, right) = arms();
@@ -1117,8 +977,6 @@ fn a_run_cut_short_keeps_what_it_produced() {
     assert_eq!(held.pairs().len(), 9, "nine pairs are nine pairs");
     assert_eq!(held.cut_short(), Some("the tenth trial's engine died"));
 
-    // And the verdict over them stands: each pair is two runs of two arms
-    // taken back to back, and an interruption afterwards does not reach back.
     let finding = held.finding(FIVE);
     assert!(
         matches!(finding.verdict(), Some(Verdict::Differ { after: 9, .. })),
@@ -1131,8 +989,6 @@ fn a_run_cut_short_keeps_what_it_produced() {
     );
 }
 
-/// A run that was **not** cut short says so by saying nothing — *it finished*
-/// and *it was interrupted and nobody recorded why* are different facts.
 #[test]
 fn a_run_that_finished_carries_no_reason() {
     let (left, right) = arms();
@@ -1145,9 +1001,6 @@ fn a_run_that_finished_carries_no_reason() {
     assert!(!format!("{}", held.finding(FIVE)).contains("CUT SHORT"));
 }
 
-/// **A run that did not happen is not a trial** (A4, A1). A failed request
-/// records no pair — a zero-duration stand-in would put a number nobody
-/// measured into the distribution, which is worse than losing the pair.
 #[test]
 fn a_run_that_did_not_happen_is_not_a_trial() {
     let (left, right) = arms();
@@ -1156,8 +1009,6 @@ fn a_run_that_did_not_happen_is_not_a_trial() {
     for _ in 0..10 {
         let ran = running.round(|_arm, _drew| {
             attempts = attempts.saturating_add(1);
-            // The eighth run does not happen, which is the middle of the
-            // fourth pair.
             (attempts != 8).then(|| (ns(SECOND), Warmth::Warm))
         });
         if !ran {
@@ -1184,9 +1035,6 @@ fn a_run_that_did_not_happen_is_not_a_trial() {
     }
 }
 
-/// And where the *first* run of a pair does not happen, the second is not
-/// attempted: a pair is two runs taken back to back, and one of them alone is
-/// not half a pair (§3.27).
 #[test]
 fn the_second_run_of_a_pair_is_not_attempted_without_the_first() {
     let (left, right) = arms();
@@ -1195,7 +1043,6 @@ fn the_second_run_of_a_pair_is_not_attempted_without_the_first() {
     for _ in 0..4 {
         let ran = running.round(|_arm, _drew| {
             attempts = attempts.saturating_add(1);
-            // The fifth run — the first of the third pair — does not happen.
             (attempts != 5).then(|| (ns(SECOND), Warmth::Warm))
         });
         if !ran {
@@ -1209,7 +1056,6 @@ fn the_second_run_of_a_pair_is_not_attempted_without_the_first() {
     );
 }
 
-/// What stops a real measurement travelling (B-217, F92, F95).
 mod fitness {
     use mcf_core::hardware::headroom::Headroom;
     use mcf_core::measurement::PartsPerMillion;
@@ -1218,7 +1064,6 @@ mod fitness {
     use super::super::{Comparison, NotFitToContribute};
     use super::{arms, from_trials, laid_out, session};
 
-    /// Twelve alternating trials, whose values the caller supplies.
     fn pairs_of(values: &[u64]) -> Comparison<mcf_core::time::Simulated> {
         let (left, right) = arms();
         let order: Vec<&Arm> = (0..values.len())
@@ -1232,7 +1077,6 @@ mod fitness {
         from_trials(&trials, &left, &right).expect("interleaved trials pair")
     }
 
-    /// A busy machine marks the result and does not suppress it.
     #[test]
     fn a_run_outside_the_band_is_marked_and_kept() {
         let held = pairs_of(&[100, 130, 100, 132, 100, 128, 100, 131, 100, 129, 100, 133])
@@ -1254,7 +1098,6 @@ mod fitness {
         );
     }
 
-    /// A quiet machine leaves nothing to mark.
     #[test]
     fn a_run_inside_the_band_is_fit() {
         let held = pairs_of(&[100, 130, 100, 132, 100, 128, 100, 131, 100, 129, 100, 133])
@@ -1270,7 +1113,6 @@ mod fitness {
         );
     }
 
-    /// A machine nobody read is not a machine that was free (A7).
     #[test]
     fn an_unread_machine_marks_nothing_and_claims_nothing() {
         let held = pairs_of(&[100, 130, 100, 132, 100, 128, 100, 131, 100, 129, 100, 133]);
@@ -1283,10 +1125,8 @@ mod fitness {
         );
     }
 
-    /// Every reason, not the first one found.
     #[test]
     fn a_run_that_fails_twice_says_both() {
-        // Ordered (the size straddles five percent) on a busy machine.
         let held = pairs_of(&[100, 101, 100, 140, 100, 103, 100, 160, 100, 102, 100, 150])
             .on_a_machine_with(Headroom {
                 competing: 27_000,
@@ -1304,19 +1144,6 @@ mod fitness {
     }
 }
 
-/// The order within a pair does not depend on how round the seed is.
-///
-/// F: the seed went into the xorshift as its state, and a xorshift started
-/// from a small word takes many rounds to mix. `--seed 41` drew right-first
-/// nine times running, so a six-pair comparison ran every pair in the same
-/// order — and interleaving, whose entire job is to cancel order effects,
-/// cancelled nothing. Whatever advantage there is in going first then sits
-/// inside the difference being reported.
-///
-/// What is checked is not that a run of one order never happens: six coins
-/// land the same way about three times in a hundred, and a generator forbidden
-/// from doing so would not be one. What is checked is that it happens about
-/// that often rather than for the particular small numbers a person types.
 #[test]
 fn the_order_within_a_pair_does_not_depend_on_how_round_the_seed_is() {
     let draws = |seed: u64, many: usize| -> Vec<bool> {
@@ -1342,7 +1169,6 @@ fn the_order_within_a_pair_does_not_depend_on_how_round_the_seed_is() {
         six.iter().all(|held| *held) || six.iter().all(|held| !*held)
     };
 
-    // The two seeds actually observed running every pair one way.
     for seed in [1_u64, 41] {
         assert!(
             !one_sided(seed),
@@ -1350,16 +1176,12 @@ fn the_order_within_a_pair_does_not_depend_on_how_round_the_seed_is() {
         );
     }
 
-    // And across the small numbers generally it is a coin, not a habit.
-    // Chance is about 3 in 100; the bound is loose enough not to be a flake
-    // and tight enough to catch a generator that has stopped mixing.
     let stuck = (0_u64..256).filter(|seed| one_sided(*seed)).count();
     assert!(
         stuck <= 26,
         "{stuck} of 256 seeds run six pairs in one order, which is not chance"
     );
 
-    // Over a longer run neither arm is systematically favoured.
     for seed in [1_u64, 41, 2026] {
         let lefts = draws(seed, 400).iter().filter(|held| **held).count();
         assert!(
@@ -1368,8 +1190,6 @@ fn the_order_within_a_pair_does_not_depend_on_how_round_the_seed_is() {
         );
     }
 
-    // Still a pure function of the seed, so a comparison replays (§3.12) —
-    // and two seeds are still two runs.
     assert_eq!(draws(41, 32), draws(41, 32));
     assert_ne!(draws(41, 32), draws(42, 32));
 }

@@ -1,27 +1,3 @@
-//! Engines that are processes: started, read, and classified when they die
-//! (B-032, B-033, D39, §3.1, §7.1).
-//!
-//! **The supervision contract, in one function.** [`supervise`] starts a
-//! command, hands every chunk of its output to the caller as it arrives, and
-//! turns how the process ended into a classified failure or a clean exit. The
-//! stages §3.1 names are the stages a process can die *in*, and each has its
-//! own category so that the record can tell them apart: it could not be
-//! started (`engine.spawn.not_found`, `engine.spawn.refused`), it died before
-//! saying anything (`engine.exit.immediate`), it died after some output
-//! (`engine.exit.midstream`), or the platform killed it
-//! (`engine.exit.signal`). None of them takes the daemon down: this function
-//! returns, and the account of what happened is what the caller writes down.
-//!
-//! **Nothing is retried** (PR9, B2). A retried generation is a different
-//! generation, and a record that showed one where two happened would be lying
-//! about time.
-//!
-//! **Which engine is the provisioned one is read from the disk, not chosen.**
-//! [`provisioned_llama`] looks for exactly one provisioned `llama.cpp` prefix
-//! under MCF's data home. Two is a question for the operator, not a preference
-//! MCF invents (§3.15); none means MCF's own engine is the engine, which is
-//! D39's fourth condition.
-
 use std::io::Read as _;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
@@ -31,43 +7,23 @@ use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 
 const WHERE: Subsystem = Subsystem::new("mcf-serve::adapters");
 
-/// How a supervised process ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ended {
-    /// Every byte the process wrote to its standard output.
     pub produced: usize,
-    /// Its standard error, bounded — the engine's own words about why.
     pub said: String,
-    /// The most memory it held resident, in bytes, where the kernel said —
-    /// sampled as its output arrived, so the mark is at least what it had
-    /// reached by its last word.
     pub peak_resident: Option<u64>,
 }
 
-/// The most memory a process has held resident, in bytes, from the kernel's
-/// own high-water mark (`VmHWM` in `/proc/<pid>/status`).
-///
-/// `None` where there is no such file — another kernel, or a process already
-/// gone — which is *not observed*, never zero (A7). Reading a process's own
-/// accounting is not sampling the hardware (B4): nothing here touches a
-/// counter that costs anything, and it is read only of a child MCF started.
 #[must_use]
 pub fn peak_resident_of(pid: u32) -> Option<u64> {
     status_bytes_of(pid, "VmHWM:")
 }
 
-/// The memory a process holds resident at this moment, in bytes (`VmRSS`
-/// in `/proc/<pid>/status`).
-///
-/// The moment's figure rather than the high-water mark: what a held server
-/// would give back if it were stopped is what it holds now, not the most it
-/// ever held. `None` where the kernel does not say (A7).
 #[must_use]
 pub fn resident_of(pid: u32) -> Option<u64> {
     status_bytes_of(pid, "VmRSS:")
 }
 
-/// One kibibyte field of `/proc/<pid>/status`, in bytes.
 fn status_bytes_of(pid: u32, key: &str) -> Option<u64> {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
     let line = status.lines().find(|line| line.starts_with(key))?;
@@ -81,15 +37,6 @@ fn status_bytes_of(pid: u32, key: &str) -> Option<u64> {
     kibibytes.checked_mul(1024)
 }
 
-/// Starts `command`, streams its standard output to `on_chunk` as it arrives,
-/// and classifies the exit.
-///
-/// # Errors
-///
-/// One of the `engine.*` categories above, each carrying the exit status or
-/// signal, how many bytes had been produced, and a bounded tail of standard
-/// error — because an engine that died said why on that stream, and A2 wants
-/// it written down rather than lost with the process.
 #[allow(
     clippy::too_many_lines,
     reason = "the supervision contract is one sequence — start, drain, wait, classify — and \
@@ -123,9 +70,6 @@ pub fn supervise(command: &mut Command, on_chunk: &mut dyn FnMut(&[u8])) -> Resu
             .with_context("os_error", error.to_string())
         })?;
 
-    // Standard error is drained on its own thread: an engine that fills its
-    // stderr pipe while this thread reads stdout would block, and a blocked
-    // engine looks like a hung one (B7).
     let stderr = child.stderr.take();
     let complaints = std::thread::spawn(move || {
         let mut said = String::new();
@@ -138,9 +82,6 @@ pub fn supervise(command: &mut Command, on_chunk: &mut dyn FnMut(&[u8])) -> Resu
     });
 
     let mut produced = 0_usize;
-    // The mark is read while the process is still there to be read: after
-    // `wait` its accounting is gone with it. Each chunk is a moment it is
-    // known to be alive, and the last chunk comes after the work.
     let mut peak_resident: Option<u64> = None;
     if let Some(mut stdout) = child.stdout.take() {
         let mut buffer = [0_u8; 4096];
@@ -214,36 +155,13 @@ pub fn supervise(command: &mut Command, on_chunk: &mut dyn FnMut(&[u8])) -> Resu
     )
 }
 
-/// The one provisioned `llama.cpp`, if there is exactly one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvisionedLlama {
-    /// The prefix it was built into.
     pub prefix: PathBuf,
-    /// The pinned commit, from its provenance.
     pub commit: String,
-    /// What the component is called, from its provenance.
-    ///
-    /// **Because the account used to spell it from a literal.** Every
-    /// generation recorded its engine as `provisioned llama.cpp @<commit>`
-    /// however it had been built, so a run on `llama.cpp-cuda` and a run on
-    /// `llama.cpp` wrote the same name — and the path beside it said
-    /// otherwise. Two engines with one recorded identity is a comparison that
-    /// reports no moved condition when one moved (A6, F45).
     pub component: String,
 }
 
-/// How long a window one request needs.
-///
-/// **Counted in bytes rather than tokens, deliberately.** Sizing this properly
-/// would mean tokenizing the prompt, which needs the vocabulary, which needs
-/// the model this command exists to hand to a subprocess. A token is several
-/// bytes, so counting bytes over-counts — the safe direction for a window, and
-/// still four orders of magnitude below the trained context that was being
-/// opened instead.
-///
-/// Doubled, because a prompt and its answer both sit in the window and neither
-/// is known exactly here; floored, because a window smaller than the smallest
-/// useful one buys nothing.
 fn window_for(prompt: &str, limit: usize) -> u64 {
     const SMALLEST: u64 = 4096;
     let prompt_bytes = u64::try_from(prompt.len()).unwrap_or(SMALLEST);
@@ -255,7 +173,6 @@ fn window_for(prompt: &str, limit: usize) -> u64 {
 }
 
 impl ProvisionedLlama {
-    /// The completion tool inside the prefix.
     #[must_use]
     pub fn completion(&self) -> PathBuf {
         self.prefix
@@ -264,9 +181,6 @@ impl ProvisionedLlama {
             .join("llama-completion")
     }
 
-    /// The command for one greedy generation, the same shape the oracle tier
-    /// uses — so what the daemon serves through this engine is what the
-    /// oracle compared.
     #[must_use]
     pub fn generate(
         &self,
@@ -278,9 +192,6 @@ impl ProvisionedLlama {
     ) -> Command {
         let mut command = Command::new(self.completion());
         if pinned {
-            // The length is the limit, not a ceiling on it (B-396). The
-            // tool honours this; what it does not do is count, so a caller
-            // that needs the count proven cannot have it from this path.
             command.arg("--ignore-eos");
         }
         command
@@ -290,15 +201,6 @@ impl ProvisionedLlama {
             .arg(prompt)
             .arg("-n")
             .arg(limit.to_string())
-            // **A window sized to this request, not to the model.** Nothing
-            // was passed here, and llama.cpp reads that as *the model's whole
-            // trained context*: 131,072 tokens on a 14.5 GB model held
-            // **81.3 GB resident** to generate a few hundred tokens, on every
-            // request, because the tool is started once per generation. It is
-            // F133's defect exactly — a hidden value that was not the stated
-            // condition — in the tool beside the server where it was fixed,
-            // and it went unseen because nothing measured what a request
-            // costs (F146).
             .arg("--ctx-size")
             .arg(window_for(prompt, limit).to_string())
             .arg("--temp")
@@ -309,10 +211,6 @@ impl ProvisionedLlama {
             })
             .arg("--seed")
             .arg(draw.seed.to_string())
-            // **Stated, so the engine fills nothing in** (B-440, F157): left
-            // unsaid, the tool reads the file's `general.sampling.*` and then
-            // its own house values, and a seeded draw runs under a cut nobody
-            // named.
             .arg("--top-k")
             .arg(draw.truncation.top_k_sent().to_string())
             .arg("--top-p")
@@ -324,26 +222,17 @@ impl ProvisionedLlama {
             .arg("0")
             .arg("-no-cnv")
             .arg("--no-display-prompt");
-        // Not `--log-disable`: in this build the completion itself travels
-        // through the same output the flag silences, and the first provisioned
-        // generation produced an empty answer with a clean exit (F36). What the
-        // tool logs goes to standard error, which is read separately.
         command
     }
 }
 
-/// What the data home holds by way of a provisioned `llama.cpp`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Found {
-    /// Exactly one, usable.
     One(ProvisionedLlama),
-    /// None: MCF's own engine is the engine.
     None,
-    /// More than one pin, which is the operator's choice to make.
     Several(Vec<PathBuf>),
 }
 
-/// Looks for provisioned `llama.cpp` prefixes under `<data>/mcf/provisioned`.
 #[must_use]
 pub fn provisioned_llama(mcf_home: &Path) -> Found {
     let root = mcf_home.join("provisioned");
@@ -360,11 +249,6 @@ pub fn provisioned_llama(mcf_home: &Path) -> Found {
         let Ok(value) = mcf_record::json::parse(text.trim()) else {
             continue;
         };
-        // **By shape, not by name.** This matched `component == "llama.cpp"`
-        // exactly, so `llama.cpp-cuda` was invisible to every generation and
-        // every measurement MCF took — the same defect as F129 and F130, in a
-        // copy that was fixed in `engines.rs` and not here. What makes a
-        // prefix an engine is that it holds one, which is checked below.
         let component = value
             .get("component")
             .and_then(mcf_record::json::Value::as_text)
@@ -400,14 +284,6 @@ pub fn provisioned_llama(mcf_home: &Path) -> Found {
     }
 }
 
-/// Exactly one provisioned engine, or the refusal that says why not.
-///
-/// Two pins is the operator's choice to make, and MCF says so rather than
-/// picking: which of two builds served an answer is a condition (§3.15).
-///
-/// # Errors
-///
-/// `config.conflict` naming every prefix found, when there is more than one.
 pub fn only_one(found: Found) -> Result<Option<ProvisionedLlama>, Failure> {
     match found {
         Found::One(llama) => Ok(Some(llama)),
@@ -436,7 +312,6 @@ pub fn only_one(found: Found) -> Result<Option<ProvisionedLlama>, Failure> {
 
 #[cfg(test)]
 mod command_tests {
-    // A test says what went wrong by failing.
     #![allow(clippy::panic, clippy::expect_used)]
 
     use std::path::{Path, PathBuf};
@@ -470,9 +345,6 @@ mod command_tests {
             .map(String::as_str)
     }
 
-    /// **The tool is told the cut, so it reads none from the file or from
-    /// itself** (B-440, F157): nought, one and nought where nothing is
-    /// declared, and the file's own numbers where it declares them.
     #[test]
     fn the_cut_is_on_the_command_line() {
         let off = arguments(Draw {

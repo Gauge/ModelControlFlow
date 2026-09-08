@@ -1,14 +1,3 @@
-//! Saying it is not there: questions whose answer is absent from a
-//! passage given — whether a figure is invented or the absence stated
-//! (B-549, D55, B-517).
-//!
-//! A model handed a passage and asked for something it does not say
-//! either says so or makes something up, and the second is the worse
-//! habit by far. Each passage carries some figures and not others; the
-//! present ones are asked for, as the control, and the absent ones with
-//! them. A reply to an absent question that holds a number invented one;
-//! one that says it is not stated, said so.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::{answer_in, numbers_in};
@@ -16,14 +5,10 @@ use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "absent";
 
-/// How many tokens a reply may take.
 const BUDGET: usize = 60;
 
-/// One passage: its name, its text, the questions it answers with their
-/// answers, and the questions it does not.
 pub type Passage = (
     &'static str,
     &'static str,
@@ -31,8 +16,6 @@ pub type Passage = (
     &'static [&'static str],
 );
 
-/// The passages, each with present questions (answer known) and absent
-/// ones (nothing in the text answers them).
 pub const PASSAGES: &[Passage] = &[
     (
         "ferry",
@@ -78,7 +61,6 @@ pub const PASSAGES: &[Passage] = &[
     ),
 ];
 
-/// The words a reply says the absence with, any one of them.
 const ABSENCE: [&str; 8] = [
     "not stated",
     "does not say",
@@ -90,7 +72,6 @@ const ABSENCE: [&str; 8] = [
     "cannot be determined",
 ];
 
-/// What is asked.
 #[must_use]
 pub fn ask_for(passage: &str, question: &str) -> String {
     format!(
@@ -99,8 +80,6 @@ pub fn ask_for(passage: &str, question: &str) -> String {
     )
 }
 
-/// How a reply to an absent question reads: invented a figure, stated the
-/// absence, or neither.
 #[must_use]
 pub fn read_absent(said: &str) -> (bool, bool) {
     let lowered = said.to_lowercase();
@@ -109,7 +88,6 @@ pub fn read_absent(said: &str) -> (bool, bool) {
     (invented, stated)
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

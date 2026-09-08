@@ -1,14 +1,3 @@
-//! Schema variety under a grammar: nested objects, arrays, enums and
-//! optional fields, each asked for free and under the engine's schema
-//! constraint, each answer read by a parser for validity and for the
-//! shape (B-539, D55, B-504).
-//!
-//! The grammar-cost measurement holds one flat schema. Real schemas
-//! nest, list, choose among a few words and leave fields out; whether
-//! a model produces those shapes on its own, and what the constraint
-//! costs in tokens and time on each, are rows a person picks a model
-//! for structured output by.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, timed};
@@ -16,33 +5,22 @@ use crate::generation::{Draw, Truncation};
 use crate::served::{Extras, Prompt, Startup};
 use mcf_core::configuration::Thousandths;
 
-/// The measurement's name.
 pub const NAME: &str = "schemas";
 
-/// How many trials a schema each way.
 pub const TRIALS: usize = 3;
 
-/// The temperature, in thousandths.
 const TEMPERATURE: u32 = 700;
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 200;
 
-/// One schema: its name, what is asked, the schema itself, and a check
-/// of the shape beyond validity.
 #[derive(Debug)]
 pub struct Shape {
-    /// Its name.
     pub name: &'static str,
-    /// What is asked.
     pub asks: &'static str,
-    /// The schema, built when asked for.
     pub schema: fn() -> Value,
-    /// Whether a parsed value has the shape.
     pub conforms: fn(&Value) -> bool,
 }
 
-/// The shapes.
 pub const SHAPES: &[Shape] = &[
     Shape {
         name: "nested",
@@ -200,19 +178,16 @@ pub const SHAPES: &[Shape] = &[
     },
 ];
 
-/// A list of texts as a JSON value.
 fn texts(words: &[&str]) -> Value {
     Value::List(words.iter().map(|word| Value::text(*word)).collect())
 }
 
-/// The JSON object in an answer, if any.
 fn object_in(said: &str) -> Option<Value> {
     let (open, close) = (said.find('{')?, said.rfind('}')?);
     let held = mcf_record::json::parse(said.get(open..=close)?).ok()?;
     matches!(held, Value::Map(_)).then_some(held)
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

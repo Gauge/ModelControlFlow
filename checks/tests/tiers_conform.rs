@@ -1,28 +1,8 @@
-//! The tiers MCF declares are the tiers it runs (B-191, B38).
-//!
-//! A tier that exists and is not run reports the same green as one that runs,
-//! which is A2's silent failure aimed at the suite. So the register in
-//! `mcf_checks::tiers` is compared against the three places a tier is real: the
-//! script that runs it, the files that hold it, and the document that describes
-//! it to a reader.
-//!
-//! Both directions, as with the crate split: a tier missing from
-//! `scripts/ci.sh` is coverage nobody gets, and a flag in `scripts/ci.sh` that
-//! no tier declares is a command whose absence from the register means the
-//! register can no longer be read as the suite.
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::expect_used, clippy::panic)]
 
 use mcf_checks::tiers::{Cadence, TIERS, ci_script};
 use mcf_checks::workspace::root;
 
-/// The ten disciplines D10 names, in D10's order.
-///
-/// Written out rather than derived, because this is the claim: the suite has a
-/// tier for each of them. A tier deleted from the register fails here rather
-/// than quietly reducing what "the suite passed" means.
 const D10_DISCIPLINES: [&str; 10] = [
     "unit",
     "property",
@@ -49,7 +29,6 @@ fn build_document() -> String {
     std::fs::read_to_string(root().join("doc").join("build.md")).expect("doc/build.md is readable")
 }
 
-/// Every discipline D10 names has a tier, and the register has no others.
 #[test]
 fn the_register_is_exactly_the_disciplines_d10_names() {
     let mut declared: Vec<&str> = TIERS.iter().map(|tier| tier.id).collect();
@@ -59,11 +38,6 @@ fn the_register_is_exactly_the_disciplines_d10_names() {
     assert_eq!(declared, expected);
 }
 
-/// Every tier's command is in the one script that gates a change.
-///
-/// The command is compared verbatim. A tier whose declared command has drifted
-/// from what the script actually runs is a register that describes a suite
-/// nobody has.
 #[test]
 fn every_tier_is_run_by_the_script() {
     let script = ci_source();
@@ -77,8 +51,6 @@ fn every_tier_is_run_by_the_script() {
     }
 }
 
-/// Every scheduled tier's flag is one the script accepts, and appears in its
-/// usage. A flag the script rejects is a tier that cannot be run at all.
 #[test]
 fn every_scheduled_flag_is_accepted_and_documented() {
     let script = ci_source();
@@ -98,11 +70,6 @@ fn every_scheduled_flag_is_accepted_and_documented() {
     }
 }
 
-/// A scheduled tier that did not run says so.
-///
-/// B38: an unstated staleness is A2's silent failure aimed at the suite. Until
-/// B-185 gives every tier an age, the honest half is that an invocation reports
-/// which tiers it did not run.
 #[test]
 fn every_scheduled_tier_is_reported_when_it_does_not_run() {
     let script = ci_source();
@@ -121,7 +88,6 @@ fn every_scheduled_tier_is_reported_when_it_does_not_run() {
     }
 }
 
-/// Every file a tier says it lives in is in the tree.
 #[test]
 fn every_tier_is_where_it_says_it_is() {
     for tier in TIERS {
@@ -137,12 +103,6 @@ fn every_tier_is_where_it_says_it_is() {
     }
 }
 
-/// A gating tier does not ignore its own tests.
-///
-/// This is the failure mode the register exists to catch: `#[ignore]` is how a
-/// scheduled tier is kept out of the gate, and one applied to a gating tier
-/// would leave the suite reporting green having run nothing. The check is
-/// textual because that is what the harness reads too.
 #[test]
 fn no_gating_tier_ignores_its_tests() {
     for tier in TIERS.iter().filter(|tier| tier.gates()) {
@@ -161,10 +121,6 @@ fn no_gating_tier_ignores_its_tests() {
     }
 }
 
-/// A scheduled tier does ignore its tests, or it would run in the gate.
-///
-/// The two halves are the same claim from opposite sides, and the pair is what
-/// makes the cadence in the register real rather than descriptive.
 #[test]
 fn every_scheduled_rust_tier_keeps_itself_out_of_the_gate() {
     for tier in TIERS.iter().filter(|tier| !tier.gates()) {
@@ -186,13 +142,6 @@ fn every_scheduled_rust_tier_keeps_itself_out_of_the_gate() {
     }
 }
 
-/// The document a reader reaches for describes the tiers the register holds.
-///
-/// `doc/build.md` §9 is a rendering of this register, in the same way §2's
-/// table is a rendering of the crate split. Both directions: a tier missing
-/// from the document is coverage nobody knows about, and a tier in the document
-/// that does not exist is a claim of coverage MCF does not have — which is
-/// worse.
 #[test]
 fn the_build_document_describes_exactly_these_tiers() {
     let document = build_document();
@@ -209,7 +158,6 @@ fn the_build_document_describes_exactly_these_tiers() {
     }
 }
 
-/// The document names every flag, so a reader can run any tier from it.
 #[test]
 fn the_build_document_names_every_flag() {
     let document = build_document();
@@ -224,13 +172,6 @@ fn the_build_document_names_every_flag() {
     }
 }
 
-/// Every scheduled tier is stamped when it passes, or it has no age.
-///
-/// B38 asks for an age with every result set and B-185 makes a stale one refuse
-/// a release. Both rest on the stamp being written: a tier that runs and does
-/// not stamp reads for ever as *never run*, which is a false negative — the
-/// safe direction, but a mechanism whose false alarms are routine is a
-/// mechanism people learn to pass with a flag.
 #[test]
 fn every_scheduled_tier_is_stamped_when_it_passes() {
     let script = ci_source();
@@ -246,12 +187,6 @@ fn every_scheduled_tier_is_stamped_when_it_passes() {
     }
 }
 
-/// The age check knows exactly the scheduled tiers the register declares.
-///
-/// Both directions. A tier in the register and not in the script has no age and
-/// cannot make a release stale; a tier in the script and not in the register is
-/// an age for something that does not exist, which would refuse releases for a
-/// tier nobody can run.
 #[test]
 fn the_age_check_knows_exactly_the_scheduled_tiers() {
     let script = ages_script();
@@ -273,10 +208,6 @@ fn the_age_check_knows_exactly_the_scheduled_tiers() {
     assert_eq!(listed, scheduled);
 }
 
-/// Each scheduled tier's flag is the one the age check tells a reader to run.
-///
-/// A refusal that names the wrong flag is worse than one that names none: it
-/// sends somebody to run a tier that will not clear the refusal.
 #[test]
 fn the_age_check_names_the_flag_that_clears_each_refusal() {
     let script = ages_script();

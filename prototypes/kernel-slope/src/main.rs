@@ -1,49 +1,3 @@
-//! How much of an inference kernel's speed is reachable from where MCF stands
-//! (§7.4, DEC-004).
-//!
-//! §7.4 asks whether MCF performs inference or delegates it, and states the
-//! likely answer: *MCF's performance mandate applies to MCF's own overhead, not
-//! to the inference kernels — MCF cannot be faster at matrix multiplication
-//! than the projects that specialize in it.* It then refuses to settle the
-//! question on that reading alone, because it decides the project's
-//! architecture.
-//!
-//! This is the measurement that turns the reading into evidence. It multiplies
-//! one matrix by another — the operation an inference engine spends nearly all
-//! of its time in — four ways, each of them something MCF could actually write
-//! and maintain:
-//!
-//! 1. **Naive.** The definition, in the obvious loop order. What a stand-in
-//!    engine written to be read looks like (D31).
-//! 2. **Reordered.** The same arithmetic with the loops in the order that walks
-//!    memory forwards. A one-line change with no new machinery.
-//! 3. **Blocked.** Tiled so that a block of each operand stays in cache, with
-//!    the innermost accumulation held in registers. This is about as far as
-//!    careful, portable, safe Rust goes.
-//! 4. **Blocked and threaded.** The same, across the machine's cores, using the
-//!    standard library alone.
-//!
-//! What is *not* here is the rest of the distance: hand-written SIMD
-//! microkernels per instruction set, operand packing, prefetch scheduling, and
-//! the accelerator path. None of that is reachable without per-architecture
-//! `unsafe` intrinsics — the workspace denies `unsafe_code` for the reason
-//! §3.16 gives — and all of it is a treadmill that moves with every new
-//! processor and every new accelerator.
-//!
-//! **And the other end of the slope is measured too, where the machine has
-//! one.** If this machine has a tuned BLAS on it — `numpy` links `OpenBLAS`, and
-//! that is on most developer machines — the prototype runs the *same* multiply
-//! through it, single-threaded, and reports the ratio. That is the number §7.4
-//! actually turns on: not whether MCF's kernel is slow, but how far from a
-//! specialist's it is, measured here rather than assumed.
-//!
-//! **What the numbers are for.** They bound the slope: how much the first steps
-//! buy, and therefore how much of the remaining distance MCF would be signing
-//! up to maintain in order to be *competitive* rather than merely correct. They
-//! are not a benchmark of anything and are not published as one: A11 and A18
-//! both apply, and `doc/findings.md` states the standing that prototype numbers
-//! have.
-
 use std::time::Instant;
 
 use mcf_core::attested::Attested;
@@ -52,22 +6,10 @@ use mcf_core::hardware::{Attributability, Machine, Watch, storage_of};
 use mcf_core::measurement::{ConditionValue, Conditions, Floor, Measurement};
 use mcf_core::time::{Duration, Monotonic};
 
-/// The square size of the operands.
-///
-/// 512 is a transformer's shape rather than a benchmark's: a 4096-wide model's
-/// attention projection is a 4096×4096 by 4096×N multiply, and 512 is the same
-/// arithmetic small enough to run every variant many times, including the naive
-/// one, in a few seconds.
 const N: usize = 512;
 
-/// How many times each variant runs. Two is the floor a measurement can be
-/// built from (§3.4); five gives a spread worth reading without making the
-/// naive variant take a minute.
 const TRIALS: usize = 5;
 
-/// The block size for the tiled variant. 64 floats is 256 bytes a row, so a
-/// 64×64 tile of each operand is 16 KiB apiece — comfortably inside a 32 KiB L1
-/// on the processors this is likely to run on, with room for the accumulator.
 const BLOCK: usize = 64;
 
 fn main() -> std::process::ExitCode {
@@ -86,9 +28,6 @@ fn main() -> std::process::ExitCode {
     let left = fill(0x51A7_1234_5678_9ABC);
     let right = fill(0x1234_5678_9ABC_DEF0);
 
-    // A first product, to compare every variant against: an implementation that
-    // is fast and wrong is not a data point, and the only way to know is to
-    // check the arithmetic against the definition (A19).
     let reference = naive(&left, &right);
 
     let mut results: Vec<(&str, Measurement<Duration<Monotonic>>)> = Vec::new();
@@ -112,13 +51,6 @@ fn main() -> std::process::ExitCode {
     std::process::ExitCode::SUCCESS
 }
 
-/// The same multiply through a specialist's kernel, if this machine has one.
-///
-/// Single-threaded on purpose: the variants above that use one thread are what
-/// it is being compared with, and a comparison in which two things differ is
-/// not one (A8). What it prints is a measurement taken here, not a figure from
-/// a specification — and where there is no such kernel installed it says so
-/// rather than substituting one (A7).
 fn reference_kernel() {
     let program = format!(
         "import numpy, time\n\
@@ -165,7 +97,6 @@ fn reference_kernel() {
     println!("\x20 That is the distance §7.4 is about, and it is measured rather than assumed.");
 }
 
-/// Runs one kernel, checks it computes the same thing, and measures it.
 fn measure(
     name: &str,
     kernel: fn(&[f32], &[f32]) -> Vec<f32>,
@@ -193,7 +124,6 @@ fn measure(
     Measurement::from_samples(samples, conditions(machine, &attributability))
 }
 
-/// The conditions every figure here is taken under (A6).
 fn conditions(machine: &Machine, attributability: &Attributability) -> Conditions {
     let binary = std::env::current_exe().ok();
     Conditions::new(
@@ -219,7 +149,6 @@ fn conditions(machine: &Machine, attributability: &Attributability) -> Condition
     )
 }
 
-/// Prints the readings and the ratios between them.
 fn report(results: &[(&str, Measurement<Duration<Monotonic>>)]) {
     println!("\n{N}×{N} single-precision matrix multiply, {TRIALS} trials each\n");
     let Some((_, slowest)) = results.first() else {
@@ -247,7 +176,6 @@ fn report(results: &[(&str, Measurement<Duration<Monotonic>>)]) {
     );
 }
 
-/// A ratio in tenths, computed without floating point.
 fn ratio(baseline: u64, other: u64) -> u64 {
     baseline
         .saturating_mul(10)
@@ -255,8 +183,6 @@ fn ratio(baseline: u64, other: u64) -> u64 {
         .unwrap_or(0)
 }
 
-/// Deterministic operands: the same numbers every run, so two runs of this
-/// prototype are comparable (§3.12).
 fn fill(seed: u64) -> Vec<f32> {
     let mut state = seed;
     (0..N * N)
@@ -264,25 +190,12 @@ fn fill(seed: u64) -> Vec<f32> {
             state = state
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1);
-            // A small range around zero, so that sums stay well inside f32's
-            // exact range and every variant's arithmetic agrees exactly
-            // whatever order it accumulates in.
-            // Small dyadic fractions in [-1, 1): the value is a whole number
-            // of 256ths, so it is exact in single precision and so is every
-            // partial sum below — which is what lets the variants be compared
-            // bit for bit rather than within a tolerance.
             let bits = i32::try_from((state >> 40) & 0x1FF).unwrap_or(0);
             f32::from(i16::try_from(bits - 256).unwrap_or(0)) / 256.0
         })
         .collect()
 }
 
-/// Whether two products are the same to the last bit.
-///
-/// Exact equality, and it is achievable here on purpose: the operands are
-/// small dyadic fractions, so every partial sum is exact in single precision
-/// and reordering the accumulation cannot change the answer. A tolerance would
-/// have hidden a kernel that was fast because it was wrong.
 fn agrees(product: &[f32], reference: &[f32]) -> bool {
     product.len() == reference.len()
         && product
@@ -291,8 +204,6 @@ fn agrees(product: &[f32], reference: &[f32]) -> bool {
             .all(|(one, other)| one.to_bits() == other.to_bits())
 }
 
-/// The definition: for each output element, the dot product of a row and a
-/// column.
 fn naive(left: &[f32], right: &[f32]) -> Vec<f32> {
     let mut out = vec![0.0_f32; N * N];
     for row in 0..N {
@@ -307,8 +218,6 @@ fn naive(left: &[f32], right: &[f32]) -> Vec<f32> {
     out
 }
 
-/// The same arithmetic with the loops reordered so that both operands and the
-/// output are walked forwards.
 fn reordered(left: &[f32], right: &[f32]) -> Vec<f32> {
     let mut out = vec![0.0_f32; N * N];
     for row in 0..N {
@@ -326,15 +235,12 @@ fn reordered(left: &[f32], right: &[f32]) -> Vec<f32> {
     out
 }
 
-/// Tiled, so that the working set of each innermost pass stays in cache.
 fn blocked(left: &[f32], right: &[f32]) -> Vec<f32> {
     let mut out = vec![0.0_f32; N * N];
     block_range(&mut out, left, right, 0, N);
     out
 }
 
-/// The blocked kernel over a range of output rows, so the threaded variant can
-/// hand each worker a stripe of the output and share nothing.
 fn block_range(out: &mut [f32], left: &[f32], right: &[f32], from: usize, to: usize) {
     let mut row_block = from;
     while row_block < to {
@@ -365,8 +271,6 @@ fn block_range(out: &mut [f32], left: &[f32], right: &[f32], from: usize, to: us
     }
 }
 
-/// The blocked kernel across the machine's cores, with the standard library's
-/// threads and nothing else.
 fn threaded(left: &[f32], right: &[f32]) -> Vec<f32> {
     let workers = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
     let stripe = N.div_ceil(workers);

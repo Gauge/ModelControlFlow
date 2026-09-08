@@ -1,30 +1,12 @@
-//! Bits per byte: the log-likelihood the model gives a fixed text, per
-//! byte so that vocabularies compare (B-499, D52).
-//!
-//! **Per byte, and the reading says why.** A token is whatever a
-//! vocabulary makes of the text, so bits a token compare two files of one
-//! model and nothing else; bytes are the text's own, and two models read
-//! the same bytes. The text is MCF's, bundled, so that every reading is
-//! of the same question — and it is plain prose and a little code, so
-//! that no model is measured on a text it is likely to have seen whole.
-//!
-//! **Bounded, not lost.** The engine ranks so many candidates at each
-//! position; a token past them is counted at the last one listed, which
-//! makes the figure a floor by that much, and the reading says how many
-//! positions were bounded.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, whole};
 use crate::served::Startup;
 
-/// The measurement's name.
 pub const NAME: &str = "bits-per-byte";
 
-/// How many ranked candidates are asked for at each position.
 pub const RANKED: usize = 128;
 
-/// The text every reading is of.
 pub const TEXT: &str = "The lighthouse stood at the end of a long spit of shingle, and the keeper \
 walked out to it each evening with a lamp in one hand and a tin of tea in the other. The wind \
 came off the water in gusts that flattened the grass and then let it rise again, as though the \
@@ -34,7 +16,6 @@ stair wound upward past the store rooms, the oil, the log book with its columns 
 at the top the great lens turned on its bath of mercury with a sound like a held breath.\n\n\
 fn steps_between(from: u32, to: u32) -> u32 {\n    if to > from { to - from } else { from - to }\n}\n";
 
-/// Millibits over a count, to the nearest millibit.
 #[expect(
     clippy::integer_division,
     reason = "millibits over a count; the remainder is under a millibit"
@@ -43,7 +24,6 @@ pub(crate) fn per(millibits: i64, count: usize) -> i64 {
     millibits / i64::try_from(count).unwrap_or(1).max(1)
 }
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {

@@ -1,35 +1,20 @@
-//! Degeneration: where a long generation begins to repeat itself
-//! (B-498, D52).
-//!
-//! A model that falls into a loop at two thousand tokens wastes every
-//! budget past that, and the loop is countable: the share of four-token
-//! runs in each hundred tokens that already occurred in that hundred,
-//! and the first position at which a block of thirty-two tokens is an
-//! exact repeat of an earlier block. Nothing here reads the story.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "degeneration";
 
-/// How many tokens the generation may run to.
 pub const PRODUCE: usize = 1024;
 
-/// What is asked: something open enough to run long.
 pub const ASK: &str = "Write a long story about a lighthouse keeper who finds a message in a \
 bottle. Keep going for as long as you can.";
 
-/// The run that counts as a repeat when it recurs.
 const RUN: usize = 4;
 
-/// The block that counts as a loop when it recurs exactly.
 const BLOCK: usize = 32;
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {
@@ -117,8 +102,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// In each hundred tokens, the share of `RUN`-token runs that already
-/// occurred earlier in that hundred, in parts per million.
 pub(crate) fn repeated_by_hundred(words: &[usize]) -> Vec<i64> {
     words
         .chunks(100)
@@ -134,8 +117,6 @@ pub(crate) fn repeated_by_hundred(words: &[usize]) -> Vec<i64> {
         .collect()
 }
 
-/// The first position at which the `BLOCK` tokens ending there are an
-/// exact repeat of an earlier block.
 pub(crate) fn loop_onset(words: &[usize]) -> Option<usize> {
     let mut seen: std::collections::BTreeSet<&[usize]> = std::collections::BTreeSet::new();
     words

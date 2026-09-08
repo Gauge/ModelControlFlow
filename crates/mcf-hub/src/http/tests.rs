@@ -1,10 +1,3 @@
-//! What a source can say, and what MCF does about it.
-//!
-//! The responses here are the ones the real hub sent on 2026-08-25
-//! ([findings.md](../../../../doc/findings.md) F9), and the ones it did not:
-//! every case that would be a defect is written out, because a client is judged
-//! by what it refuses.
-
 use super::{
     HEADER_CEILING, Next, REDIRECT_CEILING, Request, Response, Url, next, redirect, user_agent,
 };
@@ -18,7 +11,6 @@ fn response(text: &str) -> Response {
     Response::read(text.as_bytes()).expect("a response").0
 }
 
-/// The shapes a URL arrives in.
 #[test]
 fn a_url_is_read_or_refused_by_name() {
     let plain = url("https://huggingface.co/api/models/owner/model");
@@ -32,7 +24,6 @@ fn a_url_is_read_or_refused_by_name() {
     assert_eq!(with_port.target(), "/x?y=1");
     assert_eq!(with_port.authority(), "localhost:8080");
 
-    // A host and nothing else is the root.
     assert_eq!(url("https://huggingface.co").target(), "/");
 
     for refused in [
@@ -51,24 +42,18 @@ fn a_url_is_read_or_refused_by_name() {
     }
 }
 
-/// A credential written into a URL is refused: it would end up in a log, a
-/// record and a shell history, and B-024 keeps credentials in one place.
 #[test]
 fn a_url_carrying_a_credential_is_refused() {
     let failure = Url::parse("https://user:token@huggingface.co/x").expect_err("refused");
     assert_eq!(failure.category(), Category::HubMetadataMalformed);
 }
 
-/// Case in a host is not a difference. Two spellings of one host that compared
-/// unequal would drop a credential MCF should carry.
 #[test]
 fn a_host_is_the_same_host_however_it_is_spelled() {
     assert!(url("https://HuggingFace.CO/x").same_origin(&url("https://huggingface.co/y")));
     assert_eq!(url("https://HuggingFace.CO/x").host(), "huggingface.co");
 }
 
-/// And a host that merely *ends with* another is a different host. This is the
-/// check that a `ends_with` would have got wrong.
 #[test]
 fn a_lookalike_host_is_a_different_origin() {
     let hub = url("https://huggingface.co/x");
@@ -85,7 +70,6 @@ fn a_lookalike_host_is_a_different_origin() {
     }
 }
 
-/// The two shapes of location the hub actually sends (F9 §9.1).
 #[test]
 fn a_location_resolves_relative_or_absolute() {
     let from = url("https://huggingface.co/owner/model/resolve/main/model.gguf");
@@ -99,7 +83,6 @@ fn a_location_resolves_relative_or_absolute() {
             .expect("absolute"),
         url("https://us.aws.cdn.hf.co/xet-bridge-us/abc?Expires=1")
     );
-    // Scheme-relative, which a CDN sometimes sends.
     assert_eq!(
         from.resolve("//cdn.example/x").expect("scheme-relative"),
         url("https://cdn.example/x")
@@ -107,7 +90,6 @@ fn a_location_resolves_relative_or_absolute() {
     from.resolve("nonsense").expect_err("not a location");
 }
 
-/// A request is the smallest correct thing, and it says what MCF is.
 #[test]
 fn a_request_is_what_goes_on_the_wire() {
     let request = Request::get(url("https://huggingface.co/api/models/owner/model"));
@@ -128,8 +110,6 @@ fn a_request_is_what_goes_on_the_wire() {
     assert!(!request.is_authenticated());
 }
 
-/// What MCF calls itself names MCF and nothing about this computer: a user
-/// agent leaves the machine, and §XIV's habit starts there.
 #[test]
 fn the_user_agent_names_mcf_and_not_the_machine() {
     let agent = user_agent();
@@ -139,7 +119,6 @@ fn the_user_agent_names_mcf_and_not_the_machine() {
     }
 }
 
-/// Resumption asks for the rest, from where the partial file ended.
 #[test]
 fn a_resumed_request_asks_for_the_rest() {
     let text = String::from_utf8(
@@ -151,7 +130,6 @@ fn a_resumed_request_asks_for_the_rest() {
     assert!(text.contains("Range: bytes=1048576-\r\n"), "{text}");
 }
 
-/// A credential is offered as a bearer token and nowhere else.
 #[test]
 fn a_credential_is_offered_in_one_header() {
     let request = Request::get(url("https://huggingface.co/x")).offering("hf_token");
@@ -168,7 +146,6 @@ fn a_credential_is_offered_in_one_header() {
     );
 }
 
-/// The response the hub sends for a listing.
 #[test]
 fn a_response_is_read_into_its_parts() {
     let (answer, consumed) = Response::read(
@@ -181,16 +158,12 @@ fn a_response_is_read_into_its_parts() {
     assert_eq!(consumed, 73, "the body begins after the blank line");
 }
 
-/// Header names are compared without case, because a source chooses its own
-/// spelling and the hub uses both.
 #[test]
 fn a_header_is_found_however_it_was_capitalized() {
     let answer = response("HTTP/1.1 200 OK\r\nX-Repo-Commit: 50968a44\r\n\r\n");
     assert_eq!(answer.header("x-repo-commit"), Some("50968a44"));
 }
 
-/// The headers that make acquisition possible, from the answer the hub actually
-/// gave (F9 §9.1): the size, the digest, and the revision to pin.
 #[test]
 fn the_hubs_own_answer_carries_what_acquisition_needs() {
     let answer = response(
@@ -215,8 +188,6 @@ fn the_hubs_own_answer_carries_what_acquisition_needs() {
     );
 }
 
-/// A redirect to another host does not carry the credential. This is the whole
-/// reason MCF writes its own client.
 #[test]
 fn a_redirect_to_another_host_leaves_the_credential_behind() {
     let from = url("https://huggingface.co/owner/model/resolve/main/model.gguf");
@@ -238,8 +209,6 @@ fn a_redirect_to_another_host_leaves_the_credential_behind() {
     }
 }
 
-/// A redirect within the hub does carry it, because that is the same place and
-/// dropping it would turn a private repository into a 401 nobody can explain.
 #[test]
 fn a_redirect_within_the_hub_keeps_the_credential() {
     let from = url("https://huggingface.co/owner/model/resolve/main/model.gguf");
@@ -251,8 +220,6 @@ fn a_redirect_within_the_hub_keeps_the_credential() {
     );
 }
 
-/// Every redirect status the hub might use is a redirect, and an ordinary
-/// answer is not.
 #[test]
 fn the_redirect_statuses_are_the_ones_that_redirect() {
     let from = url("https://huggingface.co/x");
@@ -275,8 +242,6 @@ fn the_redirect_statuses_are_the_ones_that_redirect() {
     }
 }
 
-/// A redirect with nowhere to go is a source MCF cannot follow, said rather
-/// than guessed at.
 #[test]
 fn a_redirect_with_no_location_is_refused() {
     let failure = next(
@@ -287,9 +252,6 @@ fn a_redirect_with_no_location_is_refused() {
     assert_eq!(failure.category(), Category::HubMetadataMalformed);
 }
 
-/// A status MCF has no answer for is not this module's business: it says *the
-/// body is the answer* and the caller with the reference and the credential
-/// classifies it (B-024).
 #[test]
 fn an_unauthorized_answer_is_left_for_the_caller_to_classify() {
     let answer = response("HTTP/1.1 401 Unauthorized\r\n\r\n");
@@ -300,8 +262,6 @@ fn an_unauthorized_answer_is_left_for_the_caller_to_classify() {
     );
 }
 
-/// The range the hub returns for a resumed transfer, and the one that would
-/// quietly corrupt a file.
 #[test]
 fn a_content_range_says_where_the_bytes_go() {
     let answer =
@@ -327,8 +287,6 @@ fn a_content_range_says_where_the_bytes_go() {
     );
 }
 
-/// A total nobody will state is unknown rather than an error: the source has
-/// still said where this piece goes (A7).
 #[test]
 fn a_range_with_no_total_is_still_a_range() {
     let range = response("HTTP/1.1 206 Partial\r\nContent-Range: bytes 4-9/*\r\n\r\n")
@@ -339,7 +297,6 @@ fn a_range_with_no_total_is_still_a_range() {
     assert!(range.continues_from(4));
 }
 
-/// Everything a source could say that is not a range.
 #[test]
 fn a_range_mcf_cannot_read_is_refused() {
     for value in [
@@ -348,9 +305,6 @@ fn a_range_mcf_cannot_read_is_refused() {
         "bytes 015/100",
         "bytes a-b/100",
         "bytes 20-10/100",
-        // The fuzz tier's find: a span that ends past the file it names, which
-        // is a source contradicting itself in the two numbers a fetcher acts on
-        // (B-191).
         "bytes 0-15/2",
         "bytes 0-15/many",
     ] {
@@ -366,8 +320,6 @@ fn a_range_mcf_cannot_read_is_refused() {
     }
 }
 
-/// A length that is not a number is refused rather than treated as zero: a zero
-/// would make an empty file look like a complete one.
 #[test]
 fn a_length_that_is_not_a_number_is_refused() {
     let answer = response("HTTP/1.1 200 OK\r\nContent-Length: lots\r\n\r\n");
@@ -386,17 +338,12 @@ fn a_length_that_is_not_a_number_is_refused() {
     );
 }
 
-/// Bytes that stop mid-header are an interruption rather than a defect: the
-/// caller can read more and try again, and telling it the source was malformed
-/// would send it to the wrong conclusion.
 #[test]
 fn a_response_that_has_not_finished_arriving_says_so() {
     let failure = Response::read(b"HTTP/1.1 200 OK\r\nContent-Len").expect_err("incomplete");
     assert_eq!(failure.category(), Category::TransferInterrupted);
 }
 
-/// A source that never ends its headers is stopped at a stated ceiling rather
-/// than allowed to exhaust this machine (§3.7, B7).
 #[test]
 fn headers_without_end_are_stopped_at_the_ceiling() {
     let mut bytes = b"HTTP/1.1 200 OK\r\n".to_vec();
@@ -407,7 +354,6 @@ fn headers_without_end_are_stopped_at_the_ceiling() {
     assert_eq!(failure.category(), Category::HubMetadataMalformed);
 }
 
-/// Everything else a source could put where a response goes.
 #[test]
 fn what_is_not_a_response_is_refused_by_name() {
     for rubbish in [
@@ -426,9 +372,6 @@ fn what_is_not_a_response_is_refused_by_name() {
     }
 }
 
-/// A source's own words are kept in the refusal and bounded, because §3.7 says
-/// it can send a megabyte where a word belongs and A1 still wants what was
-/// seen.
 #[test]
 fn what_a_source_said_is_kept_but_bounded() {
     let enormous = format!("HTTP/1.1 200 OK\r\n{}\r\n\r\n", "x".repeat(4096));
@@ -447,14 +390,12 @@ fn what_a_source_said_is_kept_but_bounded() {
     );
 }
 
-/// The ceilings are stated numbers rather than whatever arrives.
 #[test]
 fn the_ceilings_are_stated() {
     assert_eq!(HEADER_CEILING, 65_536);
     assert_eq!(REDIRECT_CEILING, 5);
 }
 
-/// A URL renders as itself, so a record and a message name the same place.
 #[test]
 fn a_url_renders_as_what_it_is() {
     for text in [

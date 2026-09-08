@@ -1,14 +1,3 @@
-//! Tests for provenance.
-//!
-//! The chain modelled here is §XII's: a GGUF requantization published by one
-//! account, of weights published by another. It is used because §XII calls it
-//! the hard provenance case rather than the easy one — and because a type that
-//! only handles the easy case would pass a test built from the easy case.
-//!
-//! B28 keeps the reference model a fixture and never a case in the code, so
-//! the names below are illustrative: substituting different ones must change
-//! nothing about how any of this behaves.
-
 use super::{
     Artifact, ArtifactName, Checksum, DigestAlgorithm, Licence, Origin, Provenance, Repository,
     Revision, ToolIdentity, Transformation, TransformationKind,
@@ -49,9 +38,6 @@ fn derivative() -> Provenance {
     .derived_from(upstream())
 }
 
-/// B-006: an artifact handle cannot exist without provenance. The compiler
-/// enforces it; this records that the provenance an artifact was built with is
-/// the provenance it reports.
 #[test]
 fn an_artifact_carries_the_provenance_it_was_built_with() {
     let artifact = Artifact::new(ArtifactName::new("example.gguf"), derivative());
@@ -59,8 +45,6 @@ fn an_artifact_carries_the_provenance_it_was_built_with() {
     assert_eq!(artifact.name().as_str(), "example.gguf");
 }
 
-/// A1: an amendment adds to what is known and cannot discard what was known,
-/// because it is written as a function of the existing provenance.
 #[test]
 fn an_amendment_adds_and_does_not_replace() {
     let artifact = Artifact::new(
@@ -80,8 +64,6 @@ fn an_amendment_adds_and_does_not_replace() {
     );
 }
 
-/// §XII's case: the derivative traces to its source weights through the
-/// publisher's pipeline, and the chain is two artifacts deep.
 #[test]
 fn the_requantization_chain_traverses_to_its_source() {
     let provenance = derivative();
@@ -104,8 +86,6 @@ fn the_requantization_chain_traverses_to_its_source() {
     );
 }
 
-/// A1: the upstream provenance is kept whole rather than summarized. The
-/// source's licence and revision are still readable from the derivative.
 #[test]
 fn the_upstream_provenance_is_kept_whole() {
     let provenance = derivative();
@@ -121,8 +101,6 @@ fn the_upstream_provenance_is_kept_whole() {
     }
 }
 
-/// A9: a chain that stops is a result, not a failure. It says so, and every
-/// field is either recorded or unknown (B-019's condition).
 #[test]
 fn a_chain_that_stops_says_so() {
     let orphan = Provenance::acquired(Origin::Unattributed, ACQUIRED);
@@ -133,9 +111,6 @@ fn a_chain_that_stops_says_so() {
     assert_eq!(orphan.origin().to_string(), "unattributed");
 }
 
-/// A7: a hub reference with no revision is a hub origin whose revision is
-/// unknown — not a hub origin with an invented revision, and not an
-/// unattributed one.
 #[test]
 fn an_unpinned_hub_reference_is_known_but_unpinned() {
     let unpinned = Provenance::acquired(
@@ -146,8 +121,6 @@ fn an_unpinned_hub_reference_is_known_but_unpinned() {
     assert_eq!(unpinned.origin().to_string(), "example-org/example@unknown");
 }
 
-/// A7 again, on the licence: nothing read is unknown, and it renders as
-/// `unknown` rather than as a permissive default.
 #[test]
 fn an_unread_licence_is_unknown_and_not_permissive() {
     let provenance = Provenance::acquired(Origin::Unattributed, ACQUIRED);
@@ -155,8 +128,6 @@ fn an_unread_licence_is_unknown_and_not_permissive() {
     assert_eq!(provenance.licence().to_string(), "unknown");
 }
 
-/// Terms that are present and unmatched are a different answer from no terms
-/// at all. Collapsing the two would let MCF proceed past terms nobody read.
 #[test]
 fn unmatched_terms_are_not_the_same_as_no_terms() {
     let unmatched =
@@ -167,9 +138,6 @@ fn unmatched_terms_are_not_the_same_as_no_terms() {
     assert_eq!(unmatched.licence().to_string(), "stated, unmatched");
 }
 
-/// A19: the digest is validated against independently known properties — a
-/// SHA-256 digest is exactly 64 hexadecimal characters — rather than kept as
-/// whatever text arrived.
 #[test]
 fn a_malformed_digest_is_not_a_checksum() {
     assert!(Checksum::sha256(SHA).is_some());
@@ -181,8 +149,6 @@ fn a_malformed_digest_is_not_a_checksum() {
     assert_eq!(DigestAlgorithm::Sha256.hex_length(), 64);
 }
 
-/// Case is a spelling, not a difference: two records of one digest compare
-/// equal whichever way the hub wrote it.
 #[test]
 fn digest_case_is_normalized_but_the_digest_is_not_changed() {
     let lower = Checksum::sha256(SHA).expect("a 64-character hex digest");
@@ -192,8 +158,6 @@ fn digest_case_is_normalized_but_the_digest_is_not_changed() {
     assert_eq!(lower.to_string(), format!("sha256:{SHA}"));
 }
 
-/// A transformation whose tool version nobody published is recorded as
-/// unknown, which is a reproducibility gap stated rather than hidden (P3).
 #[test]
 fn a_transformation_with_an_unknown_tool_version_says_so() {
     let provenance = derivative();
@@ -219,8 +183,6 @@ fn a_transformation_with_an_unknown_tool_version_says_so() {
     );
 }
 
-/// Transformations read forwards: oldest first, so the vector is the history
-/// in the order it happened.
 #[test]
 fn transformations_are_kept_oldest_first() {
     let provenance = Provenance::acquired(Origin::Unattributed, ACQUIRED)
@@ -244,8 +206,6 @@ fn transformations_are_kept_oldest_first() {
     assert_eq!(kinds, ["format conversion", "quantization"]);
 }
 
-/// A transformation MCF has no name for is recorded as what it was called,
-/// never filed under the nearest known kind.
 #[test]
 fn an_unnamed_transformation_keeps_the_words_it_arrived_with() {
     let kind = TransformationKind::Other("pruned by a script nobody kept".to_owned());

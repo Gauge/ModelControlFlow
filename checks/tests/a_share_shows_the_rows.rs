@@ -1,16 +1,3 @@
-//! A share shows the rows that leave, not a description of them (B-160, A24,
-//! §3.20, D21).
-//!
-//! **A24's middle clause is the one that gets lost.** *Nothing leaves this
-//! machine except by an explicit act, taken per share, that shows the user
-//! **the rows that leave** rather than a description of them, and that states
-//! plainly that the act cannot be undone.* A count of rows is a description,
-//! and it is what a surface reaches for when the rows are long — which they
-//! are, because a contributable row carries its full condition set.
-//!
-//! `Contribution` rendered a count and nothing else until this was written.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used)]
 
 fn read(relative: &str) -> String {
@@ -19,7 +6,6 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// A contribution has no rendering that omits its rows.
 #[test]
 fn the_only_rendering_of_a_contribution_carries_every_row() {
     let source = read("crates/mcf-core/src/contribution.rs");
@@ -37,7 +23,6 @@ fn the_only_rendering_of_a_contribution_carries_every_row() {
         1,
         "a second rendering is a rendering that can drop the rows"
     );
-    // And a row can render itself, or the loop above has nothing to write.
     for held in [
         "impl fmt::Display for Row",
         "impl fmt::Display for Comparison",
@@ -47,7 +32,6 @@ fn the_only_rendering_of_a_contribution_carries_every_row() {
     }
 }
 
-/// The surface states the terms and that nothing has left.
 #[test]
 fn the_surface_states_the_terms_and_that_nothing_left() {
     let source = read("crates/mcf-cli/src/share.rs");
@@ -64,8 +48,6 @@ fn the_surface_states_the_terms_and_that_nothing_left() {
             || read("crates/mcf-core/src/contribution.rs").contains("cannot be undone"),
         "and that publication cannot be undone (D21, B63)"
     );
-    // No retraction, here or anywhere: an affordance suggesting one would be
-    // the most consequential false promise MCF could make (B-310).
     for suggesting in ["fn retract", "fn unsend", "fn recall", "--undo"] {
         assert!(
             !source.contains(suggesting),
@@ -74,7 +56,6 @@ fn the_surface_states_the_terms_and_that_nothing_left() {
     }
 }
 
-/// What cannot travel is said, with its reason, rather than dropped.
 #[test]
 fn what_cannot_travel_is_named_rather_than_omitted() {
     let source = read("crates/mcf-cli/src/share.rs");
@@ -89,7 +70,6 @@ fn what_cannot_travel_is_named_rather_than_omitted() {
     );
 }
 
-/// The file holds the same text the operator was shown.
 #[test]
 fn the_file_is_what_was_confirmed() {
     let source = read("crates/mcf-cli/src/share.rs");

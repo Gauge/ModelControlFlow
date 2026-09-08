@@ -1,14 +1,3 @@
-//! Thinking against accuracy: on a model whose template takes the
-//! thinking switch, the same exact questions with thinking on and off —
-//! right or not, and the tokens spent before the answer (B-554, D55,
-//! B-441).
-//!
-//! Thinking costs tokens and time; whether it buys right answers on this
-//! model is the figure. The questions are the arithmetic and reckoning
-//! measurements' kind, each with one whole-number answer. Where the
-//! template renders the same text with the switch on and off, the model
-//! has no switch, and this says so.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::answer_in;
@@ -17,13 +6,10 @@ use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 use crate::turn::{Turn, frame};
 
-/// The measurement's name.
 pub const NAME: &str = "thinking-cost";
 
-/// How many tokens a reply may take with thinking on.
 const BUDGET: usize = 1200;
 
-/// The questions and their answers.
 pub const QUESTIONS: &[(&str, &str, i64)] = &[
     (
         "product",
@@ -57,8 +43,6 @@ pub const QUESTIONS: &[(&str, &str, i64)] = &[
     ),
 ];
 
-/// The tokens a reply spent inside its thinking markers, and the text
-/// after them.
 #[must_use]
 pub fn thought_and_answer(said: &str) -> (Option<&str>, &str) {
     if let Some((thought, answer)) = said.split_once("</think>") {
@@ -68,7 +52,6 @@ pub fn thought_and_answer(said: &str) -> (Option<&str>, &str) {
     }
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

@@ -1,7 +1,5 @@
 use super::*;
 
-/// Everything on these pages came from a stranger's file, so everything on
-/// these pages is escaped.
 #[test]
 fn what_a_stranger_wrote_cannot_become_markup() {
     let nasty = "<script>alert('x')</script> & \"quotes\"";
@@ -12,7 +10,6 @@ fn what_a_stranger_wrote_cannot_become_markup() {
     assert!(escaped.contains("&amp;"), "{escaped}");
 }
 
-/// A row carrying markup is shown as text, not run as markup.
 #[test]
 fn a_row_with_markup_in_it_is_shown_as_text() {
     let held = Held {
@@ -25,16 +22,12 @@ fn a_row_with_markup_in_it_is_shown_as_text() {
     assert!(page.contains("&lt;img"), "it was not shown either");
 }
 
-/// The digest goes into a URL, and a digest is what addresses a submission —
-/// so it is escaped like everything else rather than trusted for being ours.
 #[test]
 fn even_a_name_is_escaped() {
     let page = kept("\"><script>x</script>");
     assert!(!page.contains("<script>x"), "{page}");
 }
 
-/// The page asks for nothing from anywhere: one request, and no third party in
-/// somebody's reading of an archive.
 #[test]
 fn the_page_loads_nothing_from_anywhere() {
     let held = Held {
@@ -49,7 +42,6 @@ fn the_page_loads_nothing_from_anywhere() {
     }
 }
 
-/// An empty archive says so rather than showing an empty page.
 #[test]
 fn an_empty_archive_says_so() {
     let page = index(&[]);
@@ -57,8 +49,6 @@ fn an_empty_archive_says_so() {
     assert!(page.contains("mcf share"), "it does not say how to publish");
 }
 
-/// The terms travel with the page: a reader is told what is here and what
-/// cannot be undone.
 #[test]
 fn every_page_carries_the_terms() {
     let held = Held {

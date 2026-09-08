@@ -1,58 +1,17 @@
-//! Choosing the next token from the logits.
-//!
-//! **Sampling is identity, not a knob** (D18). Two runs that sampled
-//! differently are two configurations rather than two readings of one, so
-//! everything here is explicit: the settings are a value a caller states, the
-//! seed is a value a caller states, and nothing reads a clock or a global.
-//!
-//! **The seed is a condition** (D19). A generator seeded the same way produces
-//! the same tokens, on any machine and in any order, which is what makes a
-//! disagreement between this and a vendored engine attributable to the engines
-//! rather than to chance (§3.12, A19).
-//!
-//! **The generator is written out.** `splitmix64`: three lines of arithmetic
-//! with a stated algorithm, so that "the same seed" means the same thing
-//! forever rather than the same thing until a dependency changes its mind.
-
 use crate::ops;
 
-/// How the next token is chosen.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Settings {
-    /// The largest logit, always. Deterministic without a seed.
     Greedy,
-    /// The distribution, softened by a temperature and narrowed three ways:
-    /// to the `top_k` likeliest tokens, to those at least `min_p` of the
-    /// likeliest's probability, and to the smallest set whose mass reaches
-    /// `top_p` — in that order, each on what the one before left.
-    ///
-    /// A temperature of zero is greedy — the limit rather than a special case.
-    /// `top_k` of nought, `min_p` of nought and `top_p` of one each leave the
-    /// distribution whole, which is how *off* is stated (B-440).
-    ///
-    /// **Where this differs from the provisioned engine**: that engine
-    /// truncates the raw distribution and applies the temperature after; this
-    /// applies the temperature first. `top_k` is unaffected, and `top_p` and
-    /// `min_p` select the same set only at a temperature of one.
     Nucleus {
-        /// How much the distribution is flattened. Above one is flatter, below
-        /// one is sharper.
         temperature: f32,
-        /// How many of the likeliest tokens are kept; nought keeps every one.
         top_k: usize,
-        /// The probability mass the candidate set must reach.
         top_p: f32,
-        /// The least probability kept, as a fraction of the likeliest token's.
         min_p: f32,
     },
 }
 
 impl Settings {
-    /// The distribution at a temperature stated in thousandths, cut by a
-    /// `top_k` count and `top_p` and `min_p` stated in thousandths, so a
-    /// caller that keeps its numbers exact never holds a float; nought
-    /// temperature is greedy, and the cut is then moot. `top_k` nought,
-    /// `top_p` 1000 and `min_p` nought are each *off*.
     #[must_use]
     #[allow(
         clippy::cast_precision_loss,
@@ -72,18 +31,12 @@ impl Settings {
     }
 }
 
-/// A deterministic generator, from a stated seed.
-///
-/// `splitmix64`, the same algorithm the suite's property tier uses, for the
-/// same reason: a stated algorithm means a seed identifies a sequence rather
-/// than identifying whatever the platform's generator does this year.
 #[derive(Debug, Clone)]
 pub struct Rng {
     state: u64,
 }
 
 impl Rng {
-    /// A generator at a stated seed.
     #[must_use]
     pub const fn seeded(seed: u64) -> Self {
         Self { state: seed }
@@ -97,21 +50,12 @@ impl Rng {
         z ^ (z >> 31)
     }
 
-    /// A value in `[0, 1)`.
-    ///
-    /// The top 24 bits, which is exactly the precision an `f32` has: taking
-    /// more would be arithmetic that looks more careful and rounds to the same
-    /// numbers.
     fn unit(&mut self) -> f32 {
         let bits = self.next_u64() >> 40;
         f32::from(u16::try_from(bits >> 8).unwrap_or(0)) / 65_536.0
     }
 }
 
-/// Chooses the next token.
-///
-/// Returns `None` only when there are no logits at all, which is a model with
-/// an empty vocabulary and not a case a caller has to handle twice.
 #[must_use]
 pub fn next(logits: &[f32], settings: Settings, rng: &mut Rng) -> Option<usize> {
     match settings {
@@ -123,9 +67,6 @@ pub fn next(logits: &[f32], settings: Settings, rng: &mut Rng) -> Option<usize> 
             min_p,
         } => {
             if temperature <= 0.0 {
-                // The limit of the distribution as the temperature falls, and
-                // stated as such rather than refused: a caller sweeping a
-                // temperature down to zero should get greedy, not an error.
                 return ops::argmax(logits);
             }
             nucleus(logits, temperature, (top_k, top_p, min_p), rng)
@@ -133,9 +74,6 @@ pub fn next(logits: &[f32], settings: Settings, rng: &mut Rng) -> Option<usize> 
     }
 }
 
-/// The nucleus itself: soften, sort, cut to the `top_k` likeliest, drop what
-/// is under `min_p` of the likeliest, take the smallest set that reaches the
-/// mass, and draw from it.
 fn nucleus(
     logits: &[f32],
     temperature: f32,
@@ -148,8 +86,6 @@ fn nucleus(
     let mut probabilities: Vec<f32> = logits.iter().map(|logit| logit / temperature).collect();
     ops::softmax(&mut probabilities);
 
-    // Sorted by probability, descending, with ties broken toward the lower
-    // token so the candidate set is a function of the distribution alone.
     let mut order: Vec<usize> = (0..probabilities.len()).collect();
     order.sort_by(|left, right| {
         let left_probability = probabilities.get(*left).copied().unwrap_or(0.0);
@@ -160,10 +96,6 @@ fn nucleus(
             .then(left.cmp(right))
     });
 
-    // The `top_k` likeliest, then those within `min_p` of the likeliest, then
-    // the smallest prefix whose mass reaches `top_p`. At least one token
-    // always, because a threshold below the largest probability would otherwise
-    // select nothing and there is always a next token to choose.
     let likeliest = order
         .first()
         .and_then(|index| probabilities.get(*index))
@@ -186,8 +118,6 @@ fn nucleus(
         }
     }
 
-    // Draw within the kept mass, so that narrowing the set does not change the
-    // relative odds of what remains.
     let draw = rng.unit() * mass;
     let mut running = 0.0_f32;
     for (index, probability) in &kept {

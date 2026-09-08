@@ -1,25 +1,8 @@
-//! What conformance is, checked against answers written by hand.
-//!
-//! **The reader is the whole probe, so it is tested where it decides.** Every
-//! case below is one answer a model might really produce and the verdict it
-//! must get. The cases that must *not* conform are the point: a reader that
-//! called everything conforming would report that every model produces
-//! structured output, which is the claim B-054 exists to stop being made on a
-//! metadata field or a hunch.
-//!
-//! The other half is the one F101 paid for — a probe that folds two facts into
-//! one and keeps the wrong one. *No object at all*, *an object of the wrong
-//! shape*, and *an object with something extra* are three different things a
-//! model does, and each is asserted separately here.
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
 
 use super::{Attempt, Kind, SHAPE, framings, read};
 use crate::probes::Trial;
 
-/// A turn that ended at the model's own stop token.
 fn finished() -> Trial {
     Trial::Stopped {
         after: 24,
@@ -27,7 +10,6 @@ fn finished() -> Trial {
     }
 }
 
-/// The answer a model that works produces, bare and wrapped in prose.
 #[test]
 fn an_object_with_every_field_of_its_kind_conforms() {
     let object = r#"{"sentence": "The cat sat on the mat.", "words": 6, "is_question": false}"#;
@@ -43,12 +25,6 @@ fn an_object_with_every_field_of_its_kind_conforms() {
     );
 }
 
-/// The values are not read for sense, and this is where that is asserted.
-///
-/// Six is the right number of words and four is not, and both conform: whether
-/// a model can count is a capability a laboratory grades against a task, and a
-/// probe that failed the second would be reporting *cannot produce JSON* about
-/// a model that produced JSON (D42, §XIII).
 #[test]
 fn a_wrong_answer_of_the_right_shape_still_conforms() {
     let wrong = r#"{"sentence": "something else entirely", "words": 4, "is_question": true}"#;
@@ -58,7 +34,6 @@ fn a_wrong_answer_of_the_right_shape_still_conforms() {
     );
 }
 
-/// Prose is not an object, and is not a departure either.
 #[test]
 fn an_answer_with_no_object_in_it_is_no_object() {
     assert_eq!(
@@ -71,7 +46,6 @@ fn an_answer_with_no_object_in_it_is_no_object() {
     assert_eq!(read("", &finished()), Attempt::NoObject);
 }
 
-/// A missing field is a departure, and the reader says which field.
 #[test]
 fn a_missing_field_departs_and_is_named() {
     let short = r#"{"sentence": "The cat sat on the mat.", "words": 6}"#;
@@ -81,10 +55,6 @@ fn a_missing_field_departs_and_is_named() {
     assert!(because.contains("is_question"), "{because}");
 }
 
-/// A field of the wrong kind is a departure, and the reader says both kinds.
-///
-/// This is the half-conformance a single-kind shape could not observe: every
-/// key present, every value a string.
 #[test]
 fn a_field_of_the_wrong_kind_departs() {
     let stringly = r#"{"sentence": "The cat sat on the mat.", "words": "6", "is_question": "no"}"#;
@@ -95,8 +65,6 @@ fn a_field_of_the_wrong_kind_departs() {
     assert!(because.contains("number"), "{because}");
 }
 
-/// Something object-shaped that will not parse is a departure, with what came
-/// out quoted — never *no object*, because the model tried (A1).
 #[test]
 fn an_object_that_will_not_parse_departs_with_what_came_out() {
     let broken = r#"{"sentence": "The cat sat on the mat.", words: 6}"#;
@@ -107,7 +75,6 @@ fn an_object_that_will_not_parse_departs_with_what_came_out() {
     assert!(because.contains("words"), "{because}");
 }
 
-/// A key nobody asked for is recorded and does not fail the trial.
 #[test]
 fn a_field_it_added_is_recorded_and_still_conforms() {
     let extra = r#"{"sentence": "The cat sat on the mat.", "words": 6, "is_question": false,
@@ -120,7 +87,6 @@ fn a_field_it_added_is_recorded_and_still_conforms() {
     );
 }
 
-/// A trial nobody could read is the third state and carries its reason.
 #[test]
 fn a_trial_that_could_not_be_told_is_not_a_negative() {
     let undecidable = Trial::CouldNotTell("the daemon did not answer".to_owned());
@@ -132,10 +98,6 @@ fn a_trial_that_could_not_be_told_is_not_a_negative() {
     );
 }
 
-/// Every framing names the sentence and asks for every field.
-///
-/// A framing that forgot one would make the probe report a departure that MCF
-/// caused — the measurement-error §X is about, pointed at the probe itself.
 #[test]
 fn every_framing_asks_for_the_whole_shape() {
     let framings = framings();
@@ -157,8 +119,6 @@ fn every_framing_asks_for_the_whole_shape() {
     }
 }
 
-/// The kinds are what they say they are, checked against the record's own
-/// parser rather than against an opinion (A19).
 #[test]
 fn a_kind_matches_only_its_own_values() {
     let text = mcf_record::json::parse(r#""a""#).expect("a string parses");
@@ -173,12 +133,6 @@ fn a_kind_matches_only_its_own_values() {
     assert!(!Kind::Boolean.matches(&text));
 }
 
-/// A turn the budget cut short is not a model that declined.
-///
-/// The distinction the first real model made necessary (F106): two of three
-/// framings produced nothing object-shaped, and whether that is *this model
-/// does not do shapes* or *MCF stopped it mid-sentence* is the difference
-/// between an observation about the model and one about the budget (A7, A1).
 #[test]
 fn a_turn_the_budget_cut_short_is_not_no_object() {
     assert_eq!(
@@ -195,8 +149,6 @@ fn a_turn_the_budget_cut_short_is_not_no_object() {
         ),
         Attempt::NoObject
     );
-    // And an object that arrived counts however the turn ended: the shape is
-    // there, and the budget running out afterwards changes nothing about it.
     let object = r#"{"sentence": "The cat sat on the mat.", "words": 6, "is_question": false}"#;
     assert_eq!(
         read(object, &Trial::RanOut),

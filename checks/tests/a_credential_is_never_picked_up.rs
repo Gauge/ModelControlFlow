@@ -1,34 +1,9 @@
-//! No code path takes a credential MCF was not given.
-//!
-//! B-024: *credentials are the user's, held deliberately, never a silent
-//! prerequisite.* The failure it names is not a bug anybody writes on purpose —
-//! it is a convenience. Somebody adds `std::env::var("HF_TOKEN").ok()` to a
-//! client because the tests were annoying, and from then on MCF acquires
-//! artifacts under a condition nobody recorded: §3.4 makes the conditions part
-//! of the measurement, and an artifact fetched with a token that happened to be
-//! in the environment was fetched under different conditions from one fetched
-//! without it.
-//!
-//! A comment cannot hold that line and a review will not, because the change
-//! that breaks it is one line long and looks helpful. So it is structural: the
-//! names of the credential variables appear in exactly one file, and that file
-//! reads no environment at all — it is *handed* a way to look
-//! (`mcf_hub::credentials::sightings`), which puts the deciding at the call
-//! site where an operator's instruction can reach it.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use std::path::{Path, PathBuf};
 
-/// The one file allowed to name the variables, relative to the workspace root.
 const THE_ONE_PLACE: &str = "crates/mcf-hub/src/credentials.rs";
 
-/// What a token variable is called, wherever anybody would reach for one.
-///
-/// Written in pieces so this file does not itself contain the strings it
-/// forbids — a check that tripped over its own source would have to be
-/// exempted, and an exemption is how this kind of check dies.
 fn forbidden_names() -> Vec<String> {
     ["HF", "HUGGING_FACE_HUB", "HUGGINGFACE"]
         .iter()
@@ -36,7 +11,6 @@ fn forbidden_names() -> Vec<String> {
         .collect()
 }
 
-/// The credential variables are named in one file and nowhere else.
 #[test]
 fn nothing_but_the_credential_module_names_a_token_variable() {
     let root = mcf_checks::workspace::root();
@@ -70,12 +44,6 @@ fn nothing_but_the_credential_module_names_a_token_variable() {
     );
 }
 
-/// And it names all of them, which is the claim nothing else is allowed to
-/// make.
-///
-/// Without this the exclusivity above would be satisfied by a workspace that
-/// had forgotten a variable entirely — every file passing because no file knows
-/// the name an operator's token is actually under.
 #[test]
 fn the_credential_module_names_every_variable_an_operator_might_use() {
     let path = mcf_checks::workspace::root().join(THE_ONE_PLACE);
@@ -89,11 +57,6 @@ fn the_credential_module_names_every_variable_an_operator_might_use() {
     }
 }
 
-/// And that file reads no environment itself.
-///
-/// This is the half that makes the first half mean something: a module that
-/// held the names *and* read the environment would satisfy an exclusivity check
-/// while doing exactly what B-024 forbids.
 #[test]
 fn the_credential_module_reads_no_environment() {
     let path = mcf_checks::workspace::root().join(THE_ONE_PLACE);
@@ -115,11 +78,6 @@ fn the_credential_module_reads_no_environment() {
     );
 }
 
-/// A file with its documentation removed.
-///
-/// The prose names what it forbids in order to say it is absent, and a check
-/// that grepped the whole file would fail on the paragraph explaining why it
-/// passes.
 fn code_only(source: &str) -> String {
     source
         .lines()
@@ -128,11 +86,6 @@ fn code_only(source: &str) -> String {
         .join("\n")
 }
 
-/// Every `.rs` file under the workspace's own crates, checks included.
-///
-/// Deliberately not the whole root: `target/` holds vendored build output that
-/// is nobody's decision here, and walking it would make this check slow enough
-/// that somebody moves it out of the gate.
 fn rust_sources(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     for tree in ["crates", "checks", "prototypes"] {

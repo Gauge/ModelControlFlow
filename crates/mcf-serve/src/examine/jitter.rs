@@ -1,31 +1,16 @@
-//! Streaming jitter: every gap between one piece of a long generation
-//! arriving and the next, the longest stall, and where the gaps fall
-//! (B-532, D55, D16).
-//!
-//! Tokens a second is a mean, and a mean hides a stall. A reader
-//! watching text arrive feels the longest gap, not the average one.
-//! This streams one long generation from the hosted server and notes
-//! the moment each piece arrives; every gap is a row, and the record
-//! keeps the longest, the shortest and how many gaps ran past two,
-//! five and ten times the shortest.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, median};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "jitter";
 
-/// How many tokens the generation produces, at most.
 const PRODUCE: usize = 512;
 
-/// What is generated from.
 const ASK: &str = "Tell, in plain prose and at length, the story of a lighthouse keeper's year, \
 season by season, with no headings and no lists.";
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

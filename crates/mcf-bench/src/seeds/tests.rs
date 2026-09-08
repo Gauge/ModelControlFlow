@@ -1,13 +1,9 @@
-//! What seed-set validation has to get right.
-
 use mcf_core::measurement::PartsPerMillion;
 
 use super::{Representative, representative};
 
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
 
-/// Outcomes around a centre, with a repeatable wobble and no randomness — so a
-/// test asserts on arithmetic rather than on a seed.
 fn around(centre: u64, spread_ppm: u64, count: usize) -> Vec<u64> {
     let steps: [i64; 10] = [0, 10, -10, 5, -5, 7, -7, 2, -2, 9];
     (0..count)
@@ -22,9 +18,6 @@ fn around(centre: u64, spread_ppm: u64, count: usize) -> Vec<u64> {
         .collect()
 }
 
-/// A prefix that behaves like the stream clears the set, and says to what
-/// resolution — because *no difference* without one is *we did not look hard
-/// enough* (A9).
 #[test]
 fn a_prefix_that_matches_the_stream_clears_the_set() {
     let held = representative(
@@ -53,8 +46,6 @@ fn a_prefix_that_matches_the_stream_clears_the_set() {
     );
 }
 
-/// **D19's finding.** A prefix that behaves differently from the stream is
-/// unrepresentative, and the answer says what to do about it.
 #[test]
 fn a_prefix_that_differs_is_unrepresentative() {
     let held = representative(
@@ -74,9 +65,6 @@ fn a_prefix_that_differs_is_unrepresentative() {
     );
 }
 
-/// **Not decided is not clearance.** A validation that could not separate the
-/// two has not cleared the set, and saying it had is the instrument grading
-/// itself (§6.16).
 #[test]
 fn not_decided_does_not_clear_the_set() {
     let held = representative(
@@ -91,9 +79,6 @@ fn not_decided_does_not_clear_the_set() {
     assert!(!held.clears_the_set());
 }
 
-/// The larger draw has to be larger. A set the same size could differ from the
-/// standard one by luck as easily as the standard one differs from the stream,
-/// so comparing like with like answers a different question.
 #[test]
 fn a_draw_no_larger_than_the_set_is_not_the_comparison_d19_asks_for() {
     let held = representative(&around(1_000, 20_000, 32), &around(2_000, 20_000, 32), FIVE);
@@ -104,8 +89,6 @@ fn a_draw_no_larger_than_the_set_is_not_the_comparison_d19_asks_for() {
     assert!(!held.clears_the_set());
 }
 
-/// The polarity is the point: a clearance and a finding are different types of
-/// answer, and neither renders as the other.
 #[test]
 fn a_clearance_never_reads_as_a_discovery() {
     let cleared = representative(

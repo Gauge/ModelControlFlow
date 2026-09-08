@@ -1,8 +1,3 @@
-//! Tests for MCF's self-measurement.
-//!
-//! B19 keeps these hermetic: no network, no accelerator, no model. The one
-//! subprocess measured is a program the test names itself.
-
 use super::{
     Budget, COLD_START, CORE_BINARY, EVENT_TRIALS, Kind, RECORD_WRITE, RESIDENT_IDLE, Verdict,
     artifact_bytes, cold_start, resident_bytes,
@@ -16,9 +11,6 @@ fn conditions() -> Conditions {
     Conditions::new(BuildIdentity::current(), Floor::nothing_known())
 }
 
-/// The reading is of this process, and a process that is running occupies
-/// memory. A19: checked against something independently true rather than
-/// against itself.
 #[test]
 fn the_resident_reading_is_of_a_running_process() {
     if let Attested::Known(rss) = resident_bytes() {
@@ -30,16 +22,6 @@ fn the_resident_reading_is_of_a_running_process() {
     }
 }
 
-/// The reading is in *bytes*, and the conversion is checked against something
-/// that is independently true rather than against itself (A19).
-///
-/// The kernel reports `VmRSS` in kibibytes, so the value MCF publishes is a
-/// whole number of pages — and a wrong multiplier does not divide by the page
-/// size. This exists because the mutation tier found that nothing checked it:
-/// a mutant that multiplied by 1000 instead of 1024 survived the whole suite,
-/// which meant a figure `mcf doctor` prints and B-011 asserts against D24's
-/// ceiling rested on nobody having looked (B-186's point about what a floor is
-/// for).
 #[test]
 fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
     let Attested::Known(rss) = resident_bytes() else {
@@ -57,20 +39,6 @@ fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
         "{rss} is not a whole number of {page}-byte pages, so the reading is not in bytes"
     );
 
-    // The second route to the same quantity: `statm` counts resident pages
-    // where `status` reports kibibytes. Two files, one counter — and two reads,
-    // which is the difficulty: the suite runs on several threads and the
-    // process's resident set moves between them.
-    //
-    // So the reading is *bracketed* rather than tolerated, which is D30's
-    // shape applied to memory instead of to a timing: read `statm`, read
-    // `status`, read `statm` again, and compare only when the two `statm`
-    // readings agree — the set did not move across the middle read, so the two
-    // routes are describing the same instant. A few attempts, and where the
-    // process never holds still the check says so rather than inventing a
-    // tolerance that would let a wrong multiplier through (F4.3's lesson,
-    // learned by this test failing once in a parallel run — and again, which
-    // is why the multiplier is now checked separately from the instant).
     for attempt in 0..8 {
         let (Some(before), Attested::Known(bytes), Some(after)) =
             (resident_pages(), resident_bytes(), resident_pages())
@@ -78,11 +46,6 @@ fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
             println!("  the second route is not readable here, so it is not compared");
             return;
         };
-        // **A unit error is caught whether or not the set held still.** The
-        // bug this test exists for is `status`'s kibibytes read as bytes,
-        // which is a factor of 1024 — so the routes are required to agree to
-        // within a factor of two on every attempt, and that check does not
-        // depend on catching the process at rest.
         let (smaller, larger) = (
             before.saturating_mul(page).min(bytes.0),
             before.saturating_mul(page).max(bytes.0),
@@ -94,14 +57,6 @@ fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
              size is a wrong multiplier rather than a moving resident set",
             before.saturating_mul(page)
         );
-        // **And exact agreement is required before they are compared as one
-        // instant.** The bracket alone is not enough: a resident set can grow
-        // and shrink back between two `statm` reads that agree, which is
-        // exactly what happened here — 8057 pages either side of a `status`
-        // read that saw one page more. Reading `status` allocates, so the
-        // middle read can move the very thing it is measuring. A disagreement
-        // is therefore evidence the set moved, not evidence of a defect, and
-        // the attempt is spent rather than failed.
         if before != after || before.saturating_mul(page) != bytes.0 {
             continue;
         }
@@ -112,7 +67,6 @@ fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
     );
 }
 
-/// The page size, from the system rather than assumed.
 fn page_size() -> Option<u64> {
     let output = std::process::Command::new("getconf")
         .arg("PAGESIZE")
@@ -124,14 +78,11 @@ fn page_size() -> Option<u64> {
     String::from_utf8(output.stdout).ok()?.trim().parse().ok()
 }
 
-/// Resident pages, by the other file that counts them.
 fn resident_pages() -> Option<u64> {
     let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
     statm.split_whitespace().nth(1)?.parse().ok()
 }
 
-/// A7: an artifact that is not there is unknown, not zero. Zero would read as a
-/// binary of no size and pass every budget.
 #[test]
 fn an_absent_artifact_is_unknown_and_not_zero() {
     let absent = artifact_bytes(std::path::Path::new("/nonexistent/mcf-not-here"));
@@ -139,8 +90,6 @@ fn an_absent_artifact_is_unknown_and_not_zero() {
     assert_eq!(CORE_BINARY.read(absent), Verdict::NotMeasured);
 }
 
-/// Not measured is not passing. A budget with no reading has no verdict, and
-/// saying so is the difference between a report and a reassurance.
 #[test]
 fn not_measured_is_not_within() {
     assert_eq!(RESIDENT_IDLE.read(Attested::Unknown), Verdict::NotMeasured);
@@ -148,9 +97,6 @@ fn not_measured_is_not_within() {
     assert_eq!(Verdict::NotMeasured.to_string(), "not measured");
 }
 
-/// The ceiling is inclusive, and one byte past it is over. Stated because
-/// which side of a boundary a reading falls on is the whole content of a
-/// verdict.
 #[test]
 fn the_ceiling_is_inclusive_and_one_past_it_is_over() {
     let budget = Budget {
@@ -163,8 +109,6 @@ fn the_ceiling_is_inclusive_and_one_past_it_is_over() {
     assert_eq!(budget.read(Attested::Known(Bytes(101))), Verdict::Over);
 }
 
-/// D24's figures, checked against what D24 says. A19: the document is the
-/// independently known value.
 #[test]
 fn the_budgets_are_the_figures_d24_states() {
     assert_eq!(RESIDENT_IDLE.ceiling, Bytes(20 * 1024 * 1024));
@@ -179,8 +123,6 @@ fn the_budgets_are_the_figures_d24_states() {
     }
 }
 
-/// §3.4: a single trial is an anecdote, and there is no way to hold one as a
-/// measurement — including here, where the program did not run at all.
 #[test]
 fn a_command_that_cannot_run_yields_no_measurement() {
     let nothing = cold_start(
@@ -192,7 +134,6 @@ fn a_command_that_cannot_run_yields_no_measurement() {
     assert!(nothing.is_none());
 }
 
-/// A command that does run yields a measurement with its trials kept.
 #[test]
 fn a_command_that_runs_yields_a_measurement_with_its_trials() {
     let program = std::path::Path::new("/bin/true");
@@ -204,10 +145,6 @@ fn a_command_that_runs_yields_a_measurement_with_its_trials() {
     assert!(measured.spread().minimum <= measured.spread().median);
     assert!(!measured.spread().median.is_simulated());
 }
-
-// ---------------------------------------------------------------------------
-// D27 — which reading a budget is about, and when it may be asserted at all.
-// ---------------------------------------------------------------------------
 
 fn quiet() -> Attributability {
     Attributability::Attributable { delay_ppm: 189 }
@@ -225,9 +162,6 @@ fn samples(values: impl IntoIterator<Item = u64>) -> Measurement<Bytes> {
         .expect("at least two samples")
 }
 
-/// B35: a timing taken under contention measures the contention, so
-/// attributability is asked first. A reading from a busy machine is not a
-/// reading of MCF, and asking whether it passed is asking the wrong question.
 #[test]
 fn a_busy_machine_makes_a_run_neither_a_pass_nor_a_failure() {
     let over = samples([1_000, 999_999_999]);
@@ -245,9 +179,6 @@ fn a_busy_machine_makes_a_run_neither_a_pass_nor_a_failure() {
     );
 }
 
-/// A7: an unreadable load is not permission. Unknown attributability blocks an
-/// assertion exactly as a busy machine does, because reading an absent value as
-/// a favourable one is the substitution A7 forbids.
 #[test]
 fn unknown_attributability_is_not_permission() {
     let within = samples([1_000, 2_000]);
@@ -259,9 +190,6 @@ fn unknown_attributability_is_not_permission() {
     assert!(quiet().permits_assertion());
 }
 
-/// D27: an event-class figure needs a hundred trials, because a p99 of twenty
-/// is the maximum wearing a percentile's name. Too few is *not asserted*, which
-/// is a third thing from passing and from failing.
 #[test]
 fn an_event_class_figure_refuses_too_few_trials() {
     let twenty = Measurement::from_samples(
@@ -278,12 +206,8 @@ fn an_event_class_figure_refuses_too_few_trials() {
     );
 }
 
-/// A state-class figure is read at the maximum: memory that exceeded the
-/// ceiling once exceeded it, and a percentile would be a way of not noticing.
 #[test]
 fn a_state_class_figure_is_read_at_the_maximum() {
-    // Ninety-nine readings under the ceiling and one far over it. A p99 would
-    // pass this; a maximum does not, and the maximum is the right question.
     let mut values: Vec<u64> = (0..99).map(|_| 1_000).collect();
     values.push(999_999_999);
     let measured = samples(values);
@@ -297,9 +221,6 @@ fn a_state_class_figure_is_read_at_the_maximum() {
     );
 }
 
-/// An event-class figure is read at the 99th percentile: one outlier in a
-/// hundred is the tail a user occasionally feels, and the ceiling is about
-/// that rather than about the worst thing that ever happened.
 #[test]
 fn an_event_class_figure_is_read_at_the_ninety_ninth_percentile() {
     use crate::time::Duration;
@@ -317,9 +238,6 @@ fn an_event_class_figure_is_read_at_the_ninety_ninth_percentile() {
     );
 }
 
-/// A prohibition is read at the maximum and only zero passes. Rendering it as a
-/// budget that happens to be zero invites an argument about the margin, and
-/// there is no margin.
 #[test]
 fn a_prohibition_admits_no_margin() {
     use crate::measurement::Count;
@@ -337,8 +255,6 @@ fn a_prohibition_admits_no_margin() {
     assert_eq!(prohibition.read_measurement(&one, &quiet()), Verdict::Over);
 }
 
-/// Every verdict says what it is, and none of them reads as a pass by
-/// accident.
 #[test]
 fn every_verdict_renders_distinctly() {
     let rendered = [

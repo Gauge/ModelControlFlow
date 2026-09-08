@@ -1,16 +1,3 @@
-//! Stop latency: the time from a stop being raised to the engine being
-//! idle again, at several depths of context in flight (B-536, D55,
-//! B-459).
-//!
-//! A request the daemon abandons is closed at the engine, and the
-//! engine takes the closed connection as a cancellation. How long it
-//! takes to notice — from the stop to the moment it can answer again —
-//! is a cost a person pressing Stop feels, and it may grow with the
-//! context the engine was working through. A generation is started
-//! under a stop flag, the flag is raised after a moment, and two clocks
-//! run: to the request coming back closed, and to a one-token probe
-//! answered afterwards, less what that probe takes on an idle engine.
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mcf_record::json::Value;
@@ -20,22 +7,16 @@ use super::{Found, Reading, Site, as_integer, framed_ids, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup, Waiting};
 
-/// The measurement's name.
 pub const NAME: &str = "stop-latency";
 
-/// The depths of prompt in flight, in tokens.
 const DEPTHS: [usize; 3] = [512, 4096, 16384];
 
-/// How long the generation runs before the stop is raised, in ms.
 const RUN_MS: u64 = 1500;
 
-/// How many tokens the generation would produce, were it not stopped.
 const PRODUCE: usize = 2048;
 
-/// The room kept for the template and the ask.
 const ROOM: usize = 200;
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -62,8 +43,6 @@ pub fn measure(site: &Site<'_>) -> Found {
         Ok(ids) => ids,
         Err(why) => return Found::could_not_tell(&why),
     };
-    // What the probe takes on an idle engine, so that the idle clock can
-    // be read net of it.
     let probe = |waiting: Waiting<'_>| {
         engine.complete(
             Prompt::Identifiers(&probe_ids),

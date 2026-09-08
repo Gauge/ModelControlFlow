@@ -1,34 +1,9 @@
-//! The five gated categories are where they say they are (B-039, A16, §6.14,
-//! §3.20).
-//!
-//! **It was four until F115.** §6.14 names four acts and A16 absorbs §3.20 as
-//! well, which makes five — and A16's own check says *the five categories are
-//! enumerable in code*. Four were. The missing one is publication, the only one
-//! of the five that cannot be undone, which is why A24 exists as its own rule
-//! and why nothing noticing for months is worth writing down.
-//!
-//! §6.14 draws the line at category rather than frequency: untrusted execution,
-//! large irrecoverable resource use, network exposure and destruction are asked
-//! about **every time**, and everything else flows.
-//! `mcf_core::authorization` enumerates them and says, for each, where MCF asks
-//! — or that no path exists to ask about. This reads that enumeration and
-//! checks it against the tree.
-//!
-//! **Why the *absences* need checking most.** Three of the five are claimed as
-//! *no path exists*: MCF runs nothing it acquires, and listens on no network.
-//! Those are the strongest statements in the file and the easiest to falsify by
-//! accident — a `TcpListener` added for a convenience, a subprocess spawned for
-//! a diagnostic. A gate nobody built is fine while the capability is absent and
-//! a hole the moment it is not, so what this asserts is the absence itself.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use std::path::{Path, PathBuf};
 
 use mcf_core::authorization::{Asking, GATED, Gated};
 
-/// Every gate is either a command that exists or an absence that holds.
 #[test]
 fn every_gate_is_where_it_says_it_is() {
     for gate in GATED {
@@ -43,16 +18,11 @@ fn every_gate_is_where_it_says_it_is() {
                 );
             }
             Asking::NoPathExists { .. } => {}
-            // `Asking` is non-exhaustive: a shape added later is a way of
-            // asking this check has not been taught, and saying so is better
-            // than passing over it.
             other => panic!("{gate} is asked in a way this check does not know: {other:?}"),
         }
     }
 }
 
-/// Destruction: `mcf rm` will not destroy anything without a stated reason, and
-/// nothing is deleted at all without `--purge`.
 #[test]
 fn destruction_needs_a_reason_and_a_second_word_to_delete() {
     let Asking::ByCommand { and, .. } = Gated::Destruction.asking() else {
@@ -79,8 +49,6 @@ fn destruction_needs_a_reason_and_a_second_word_to_delete() {
     );
 }
 
-/// Large irrecoverable use: `mcf pull` acquires what was named and nothing
-/// else. A repository asked for without a file is answered, not fetched.
 #[test]
 fn a_large_download_happens_only_when_it_is_named() {
     let Asking::ByCommand { and, .. } = Gated::LargeIrrecoverableUse.asking() else {
@@ -99,23 +67,8 @@ fn a_large_download_happens_only_when_it_is_named() {
     );
 }
 
-/// Network exposure: nothing in the shipped tree listens where another machine
-/// could reach it.
-///
-/// The claim `mcf_core::authorization` makes is that exposure is not something
-/// a mistake can do because it is not something MCF can do. A listener is the
-/// act, so this finds every one and holds it to one of two shapes: a Unix
-/// socket, which has no address another machine can name, or a loopback port
-/// bound by the laboratory to talk to itself — declared below, with what it is
-/// for.
-///
-/// Anything else is MCF having learned to be reachable, which is a capability
-/// §6.12 gates and B-036 would have to build the gate for.
 #[test]
 fn nothing_listens_where_another_machine_could_reach_it() {
-    // Network exposure is gated by the hold's own switch and the key it
-    // requires (§6.12, B-577): what may bind an address other machines can
-    // reach is declared below, and only that.
     let Asking::ByCommand { command, and } = Gated::NetworkExposure.asking() else {
         panic!(
             "network exposure is claimed absent while a hold can be opened to the network \
@@ -140,11 +93,6 @@ fn nothing_listens_where_another_machine_could_reach_it() {
         ),
     ];
 
-    // The laboratory listens on the loopback address to drive MCF's own client
-    // against something that answers (B-028, D26). It is in the shipped binary
-    // because A22 and B19 put the laboratory in the product, and it is declared
-    // here for the same reason every deletion is: so that a second listener
-    // cannot appear without somebody writing down what it is for.
     let declared: &[(&str, &str)] = &[
         (
             "crates/mcf-lab/src/serving.rs",
@@ -177,14 +125,9 @@ fn nothing_listens_where_another_machine_could_reach_it() {
             if !trimmed.contains("bind(") {
                 continue;
             }
-            // A Unix socket has no address another machine can name.
             if trimmed.contains("UnixListener") {
                 continue;
             }
-            // The address, literally or by the one constant that names it.
-            // The constant is admitted only after reading what it is: a
-            // constant called `LOOPBACK` that held `0.0.0.0` would put every
-            // model on every interface and read as though it did not.
             let by_name = trimmed.contains("LOOPBACK") && loopback_is_loopback(&root);
             let loopback = trimmed.contains("127.0.0.1") || trimmed.contains("[::1]") || by_name;
             let allowed = declared.iter().any(|(file, _)| *file == relative);
@@ -203,8 +146,6 @@ fn nothing_listens_where_another_machine_could_reach_it() {
          B-039): {reachable:#?}"
     );
 
-    // And nothing declared has stopped listening, which would leave a licence
-    // to listen that nobody is using.
     for (file, what) in declared {
         let source = code_only(&ships(&read(&root.join(file))));
         assert!(
@@ -214,8 +155,6 @@ fn nothing_listens_where_another_machine_could_reach_it() {
     }
 }
 
-/// Untrusted execution: the absence is asserted next door, and this checks that
-/// the two files still agree about which absence it is.
 #[test]
 fn untrusted_execution_is_the_absence_the_other_check_holds() {
     let Asking::NoPathExists { why } = Gated::UntrustedExecution.asking() else {
@@ -238,7 +177,6 @@ fn read(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// A file with its inline test module cut off.
 fn ships(source: &str) -> String {
     match source.find("#[cfg(test)]") {
         Some(at) => source.get(..at).unwrap_or(source).to_owned(),
@@ -246,8 +184,6 @@ fn ships(source: &str) -> String {
     }
 }
 
-/// A file with its documentation removed: the prose names what it forbids in
-/// order to say it is absent.
 fn code_only(source: &str) -> String {
     source
         .lines()
@@ -284,8 +220,6 @@ fn collect(directory: &Path, into: &mut Vec<PathBuf>) {
     }
 }
 
-/// Where shipped code opens an outbound connection, and why it is not
-/// publication.
 const DECLARED: &[(&str, &str)] = &[
     (
         "crates/mcf-hub/src/wire.rs",
@@ -317,11 +251,6 @@ const DECLARED: &[(&str, &str)] = &[
     ),
 ];
 
-/// Whether `mcf_serve::hosting::LOOPBACK` is in fact the loopback address.
-///
-/// The check above admits a bind written against that constant rather than
-/// against the literal, so what the constant *is* has to be read rather than
-/// taken from its name. A name is not evidence (A21).
 fn loopback_is_loopback(root: &std::path::Path) -> bool {
     let source = read(&root.join("crates/mcf-serve/src/hosting.rs"));
     source
@@ -330,21 +259,6 @@ fn loopback_is_loopback(root: &std::path::Path) -> bool {
         .any(|line| line.contains("\"127.0.0.1\""))
 }
 
-/// Nothing sends anything anywhere, which is why publication has no gate yet.
-///
-/// **The strongest statement available and the weakest position.** A gate is a
-/// question MCF asks before an act; an absence is MCF being unable to perform
-/// it at all. Publication is an absence today — and unlike the other two
-/// absences, this one is about the act A24 calls irreversible, so the day it
-/// stops being true is the day a gate is owed rather than unnecessary.
-///
-/// **What this looks for.** Every place shipped code could put bytes on a wire
-/// to somewhere it was not asked to. MCF makes exactly one kind of outbound
-/// connection — to a hub, when `mcf pull` is typed, which is the acquisition
-/// A16 gates as a large irrecoverable use — and every one of those sites is
-/// declared here. A second one appears in this list or the check fails, which
-/// is the same discipline `nothing_deletes_an_artifact.rs` applies to
-/// destruction.
 #[test]
 fn nothing_sends_anything_anywhere() {
     let Asking::NoPathExists { why } = Gated::Publication.asking() else {
@@ -369,12 +283,6 @@ fn nothing_sends_anything_anywhere() {
         }
         for line in code_only(&ships(&read(&file))).lines() {
             let trimmed = line.trim();
-            // Opening a connection to somewhere else, in any of the shapes
-            // this workspace could write one.
-            // Shapes that *open* a connection. A type name in a `use` line is
-            // not one: the first version of this check matched
-            // `http::Request` and reported the laboratory's own hub scenario,
-            // which imports the type and connects to nothing.
             for shape in ["TcpStream::connect", "reqwest::", "ureq::", "UdpSocket::"] {
                 if trimmed.contains(shape) {
                     sending.push(format!("{relative}: {trimmed}"));

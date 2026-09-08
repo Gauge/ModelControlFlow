@@ -1,5 +1,3 @@
-//! Work is counted, and a duration is only ever derived from it.
-
 use mcf_core::measurement::{Basis, Estimate};
 use mcf_core::time::{Duration, Monotonic};
 
@@ -38,8 +36,6 @@ fn a_band_widens_with_the_count() {
 
 #[test]
 fn the_basis_survives_the_derivation() {
-    // An estimate derived from local history is still from local history, and
-    // a reader who is told otherwise cannot tell how much to believe it.
     let work = Work {
         trials: 1,
         arms: 1,
@@ -60,8 +56,6 @@ fn no_work_is_no_time() {
 
 #[test]
 fn an_absurd_count_saturates_rather_than_wrapping() {
-    // A wrapped multiplication would report a century of work as a
-    // microsecond, which is the one wrong answer that reads as reassuring.
     let work = Work {
         trials: usize::MAX,
         arms: 2,
@@ -83,13 +77,11 @@ fn the_declaration_reads_in_countable_units() {
     assert!(shown.contains("200 paired trial(s)"), "{shown}");
     assert!(shown.contains("400 generation(s)"), "{shown}");
     assert!(shown.contains("51200 token(s) in all"), "{shown}");
-    // B-224: never in minutes.
     for unit in ["minute", "second", "hour", "ms"] {
         assert!(!shown.contains(unit), "{unit} in {shown}");
     }
 }
 
-/// A budget names what it excludes, or refuses.
 mod budgets {
     use super::each;
     use crate::planned::{Proposal, Work};
@@ -111,8 +103,6 @@ mod budgets {
 
     #[test]
     fn six_of_twenty_arrives_with_the_fourteen() {
-        // §3.1's acceptance, arithmetically: 2000ns a trial at the slow edge,
-        // 12_000ns of budget, so six trials fit.
         let held = Proposal::within(
             ceiling(),
             &each(500, 1_000),
@@ -158,14 +148,11 @@ mod budgets {
 
     #[test]
     fn planning_is_against_the_slow_edge() {
-        // Fast edge 1ns, slow edge 1000ns, budget 12_000ns. Against the fast
-        // edge six thousand trials would "fit"; against the slow one, six.
         let held = Proposal::within(ceiling(), &each(1, 1_000), Duration::from_nanos(12_000), 2);
         assert_eq!(held.running().map(|work| work.trials), Some(6));
     }
 }
 
-/// A behaviour lab counts tokens; a run needs a calibration to exist at all.
 mod bounds {
     use crate::planned::{Bound, NotPlannable, Planned, Work};
     use mcf_core::configuration::{Calibrated, Sampling};
@@ -214,8 +201,6 @@ mod bounds {
 
     #[test]
     fn a_timing_run_may_watch_the_clock() {
-        // §3.8: a timing lab's whole subject is elapsed time, and a run that
-        // will not finish is a measurement about this machine.
         let held = Planned::new(
             work(),
             Bound::Elapsed(Duration::from_nanos(1)),

@@ -1,73 +1,26 @@
-//! Setting up a measurement: two buttons with what they cost, and the options.
-//!
-//! **The window implies the ladder.** Choosing a context window means every
-//! power of two up to it is sampled — there is no useful run that measures
-//! 8 192 and skips 2 048, because the shallow points are what the deep one is
-//! read against. So the depths are stated under the window rather than offered
-//! as a second set of choices somebody could contradict the first with.
-//!
-//! **The estimate is a range**, because MCF's own estimate has been measured
-//! against what runs actually take and lands between 0.58× and 1.42× of it. A
-//! single number would be a promise it cannot keep.
-//!
-//! **Four of the rows are one run.** The ladder that measures generation
-//! speed against depth is two timed generations a rung, and the time to a
-//! first token, the cost of a token of prompt and the memory a token of window
-//! costs are all read off those same generations (`mcf_serve::ladder`). There
-//! is no run that answers one of the four and not the others, so they are
-//! chosen together, and the estimate is the run's — on the row that names the
-//! run, and on no other, because an estimate for a test that is never run on
-//! its own is a figure for nothing (A7, A20). The fifth row is its own run —
-//! the cross-check of MCF's engine against the provisioned one — chosen and
-//! unchosen alone, and costed on its own row (B-424).
-
 use mcf_record::json::Value;
 
 use crate::job::Job;
 use crate::screen::{Ink, Screen};
 use crate::screens::{columns, grouped};
 
-/// What runs a test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Run {
-    /// One climb of the depth ladder, which answers every row marked with it
-    /// at once.
     Ladder,
-    /// One cross-check: MCF's own engine reading what the provisioned one
-    /// produced (`mcf cross-check`).
     CrossCheck,
-    /// The probes, as one run the daemon carries (`mcf probe`, B-478).
     Probes,
 }
 
-/// One measurement that can be asked for.
 #[derive(Debug, Clone)]
 pub struct Test {
-    /// What it measures, in words.
     pub name: &'static str,
-    /// Which devices it needs.
     pub devices: &'static str,
-    /// Roughly how long the run takes, in seconds, at this machine's speed —
-    /// on the row that names the run. `None` on a row another row's run
-    /// answers, which has no time of its own and is not given one (A7).
     pub seconds: Option<u64>,
-    /// What runs it.
     pub run: Run,
-    /// How long the last run of this test actually took, in seconds.
-    ///
-    /// **`None` until it has run, and `None` is not zero** (A7). A test that
-    /// has never run has no run time, and the screen draws a dash rather than
-    /// a figure somebody could read as *instant*.
     pub ran: Option<u64>,
-    /// What the last run found, in the words the daemon used.
-    ///
-    /// **Absent until there is a result to show.** Nothing here is written by
-    /// the surface: every line comes from the answer MCF sent.
     pub result: Option<Vec<String>>,
 }
 
-/// The tests MCF knows how to run, in the order the window and the console
-/// both list them.
 #[must_use]
 pub fn tests() -> Vec<Test> {
     let ladder = |name: &'static str, seconds: Option<u64>| Test {
@@ -92,9 +45,6 @@ pub fn tests() -> Vec<Test> {
             result: None,
         },
         ladder("Prompt reading speed", None),
-        // The probes: minutes of short trials, most of them the chat
-        // template's; the figure is what a full run took on this machine
-        // through a provisioned engine (F185).
         Test {
             name: "Capabilities — the probes",
             devices: "an engine",
@@ -106,8 +56,6 @@ pub fn tests() -> Vec<Test> {
     ]
 }
 
-/// Writes a finished probe run onto its row: every line the daemon wrote
-/// for each probe, in order, or the refusal (B-478).
 pub fn keep_the_probes(tests: &mut [Test], job: &Job) {
     let mut lines: Vec<String> = Vec::new();
     if let Some(why) = &job.refused {
@@ -131,7 +79,6 @@ pub fn keep_the_probes(tests: &mut [Test], job: &Job) {
     }
 }
 
-/// The console's estimate for one run, on the row that names it.
 #[must_use]
 pub fn seconds_of(tests: &[Test], run: Run) -> u64 {
     tests
@@ -141,14 +88,6 @@ pub fn seconds_of(tests: &[Test], run: Run) -> u64 {
         .unwrap_or(30)
 }
 
-/// Writes a finished ladder onto every row it answers.
-///
-/// **The figures are the daemon's** (B-072): each rung as it came, and the
-/// three rows the same run measured — a prompt's cost, the time to a first
-/// token, the memory a token of window costs — from the sentences the last
-/// line carries, never worked out here. A run that was refused before it
-/// climbed anything leaves those as they were, because it measured none of
-/// them; the row that names the run carries the refusal (A2).
 pub fn keep_the_ladder(tests: &mut [Test], job: &Job) {
     let ran = job.ran();
     let mut lines: Vec<String> = Vec::new();
@@ -179,9 +118,6 @@ pub fn keep_the_ladder(tests: &mut [Test], job: &Job) {
             ));
         }
         if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
-            // B65 and D31: which engine ran is a condition of every figure
-            // above it, so it travels with them rather than being read off a
-            // screen that has moved on.
             let engine = conditions
                 .get("engine_ran")
                 .and_then(Value::as_text)
@@ -223,13 +159,6 @@ pub fn keep_the_ladder(tests: &mut [Test], job: &Job) {
     }
 }
 
-/// Writes a finished cross-check onto the row that asked for it.
-///
-/// **The sentences are the daemon's** (B-072): the same ones `mcf
-/// cross-check` prints, read off the last line rather than composed from its
-/// figures here, so the window and the console cannot say one comparison two
-/// ways. A refusal is the row's result too — the check ran and could not
-/// compare, which is a thing to show, not a blank (A2).
 pub fn keep_the_cross_check(tests: &mut [Test], job: &Job) {
     let ran = job.ran();
     let lines: Vec<String> = if let Some(why) = &job.refused {
@@ -264,14 +193,8 @@ pub fn keep_the_cross_check(tests: &mut [Test], job: &Job) {
     }
 }
 
-/// The deepest rung a Quick Run climbs to: the shallowest and one above it,
-/// so that it is a fall-off rather than a single number, and quick. One
-/// depth for the window and the console (B-072) — the console once sent
-/// half the model's context under a button whose estimate assumed this.
 pub const QUICK_DEPTH: u64 = 1024;
 
-/// The estimate for a Quick Run, in seconds: a sixth of the ladder's, since
-/// it climbs two rungs of a ladder whose top rungs are most of its time.
 #[must_use]
 pub fn quick_seconds(tests: &[Test]) -> u64 {
     #[expect(
@@ -286,7 +209,6 @@ pub fn quick_seconds(tests: &[Test]) -> u64 {
     sixth
 }
 
-/// The measured spread of MCF's own estimate against what runs take.
 const SLOWEST: u64 = 142;
 const QUICKEST: u64 = 58;
 
@@ -309,8 +231,6 @@ fn plain(seconds: u64) -> String {
     }
 }
 
-/// The buttons, in the order the cursor visits them: one a run the daemon
-/// carries, and Back (D50, B-482).
 pub const BUTTONS: [&str; 5] = [
     " Quick run ",
     " Run ",
@@ -319,21 +239,13 @@ pub const BUTTONS: [&str; 5] = [
     " Back ",
 ];
 
-/// Where the cursor is on this screen.
 #[derive(Debug, Clone, Copy)]
 pub struct Cursor {
-    /// The highlighted row of the table.
     pub row: usize,
-    /// The highlighted button.
     pub button: usize,
-    /// Whether the cursor is in the buttons rather than the table.
     pub on_buttons: bool,
 }
 
-/// Draws the screen: the runs as buttons with their cost under each, the
-/// setup every run shares, one line a run saying what it answers, and
-/// under them the run going or what the last one found. No row stands for
-/// a thing a run does not separately do (D50).
 pub fn draw(
     into: &mut Screen,
     from: usize,
@@ -388,9 +300,6 @@ pub fn draw(
     );
     field(into, row, "context window", &window_text);
     row += 1;
-    // Where the model lands, in the console's own words for the same two
-    // facts on the host screen. Not a picker: MCF resolved these, and a
-    // person who wants them otherwise changes them where they are set.
     let unresolved = || "not resolved".to_owned();
     into.put(3, row, "engine", Ink::Quiet);
     into.put(
@@ -444,10 +353,6 @@ pub fn draw(
     under_the_table(into, after, tests, running);
 }
 
-/// How many pairs a rung was read off, where fewer than all of them
-/// separated, and what became of the rest — so a figure from one pair does
-/// not wear the look of one from three (A7, F174). Empty where every pair
-/// separated, or the reading predates the count.
 #[must_use]
 pub fn pairs_note(reading: &Value) -> String {
     let Some(pairs) = reading.get("pairs") else {
@@ -476,9 +381,6 @@ pub fn pairs_note(reading: &Value) -> String {
     )
 }
 
-/// Which device the run was pointed at, as its conditions say, for the line
-/// that names the engine: a figure that does not say whether it is the
-/// card's or the processor's is a figure a reader cannot place (§3.4).
 #[must_use]
 pub fn on_device(conditions: &Value) -> String {
     let Some(device) = conditions.get("device").and_then(Value::as_text) else {
@@ -490,29 +392,16 @@ pub fn on_device(conditions: &Value) -> String {
     }
 }
 
-/// What the run is set up to use: the model, the window, and where the model
-/// lands — engine and device — as the daemon resolved them. The device is
-/// the line the screen had nothing of: a run whose page does not say whether
-/// it is timing a card or a processor is timing something the reader has to
-/// guess at (A7).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Setup<'a> {
-    /// The model's name.
     pub model: &'a str,
-    /// The window a run would use.
     pub window: Option<u64>,
-    /// The engine the model resolves to.
     pub engine: Option<&'a str>,
-    /// The device it lands on.
     pub device: Option<&'a str>,
-    /// Where the person put it instead, if they did.
     pub on: Option<mcf_serve::control::On>,
-    /// A card here that no engine drives, and the component that would.
     pub card_unused: Option<&'a str>,
 }
 
-/// The device line: where the model lands, and — where the person chose —
-/// where the next run puts it instead.
 #[must_use]
 pub fn runs_on(setup: &Setup<'_>) -> String {
     let resolved = setup.device.unwrap_or("not resolved");
@@ -527,13 +416,6 @@ pub fn runs_on(setup: &Setup<'_>) -> String {
     }
 }
 
-/// What goes under the table: a run's progress while it goes, and what the
-/// last runs found once they have — every row with a result, in order.
-///
-/// **Every line is the daemon's** — a rung as it came, the estimate it gave,
-/// the sentences it composed — and a refusal is drawn as one (A2). The rows
-/// the terminal has left bound it; a result longer than that says how much
-/// more there is rather than stopping as if that were all (A7).
 fn under_the_table(into: &mut Screen, from: usize, tests: &[Test], running: Option<&Job>) {
     let last = into.height().saturating_sub(2);
     let mut row = from;
@@ -581,15 +463,6 @@ fn under_the_table(into: &mut Screen, from: usize, tests: &[Test], running: Opti
     }
 }
 
-/// What a run has said so far: the estimate, every reading, the step it is
-/// on now, in that order.
-///
-/// **The step it is on now, not every step it has been on.** A rung is six
-/// generations and a ladder is several rungs; the daemon announces each as
-/// it starts, and a screen that listed every announcement would push the
-/// readings off the bottom of a terminal with the history of how it got
-/// them. The readings are what has been found and the latest step is where
-/// the run is; both are drawn, and the steps between are not.
 pub fn progress_of(job: &Job) -> Vec<(String, Ink)> {
     let mut lines = Vec::new();
     if let Some(why) = &job.refused {
@@ -633,8 +506,6 @@ pub fn progress_of(job: &Job) -> Vec<(String, Ink)> {
     lines
 }
 
-/// The daemon's estimate for the run, where it gave one, in the console's
-/// words.
 #[must_use]
 pub fn estimated_seconds(job: &Job) -> Option<String> {
     job.answers.iter().find_map(|answer| {
@@ -650,21 +521,11 @@ pub fn estimated_seconds(job: &Job) -> Option<String> {
     })
 }
 
-/// Where the run is right now, as the daemon last announced it.
-///
-/// A rung is announced as it starts and each generation inside it as it
-/// starts; the latest of those is the step under way. Each generation loads
-/// the model, which is the long silence an operator on a processor waits
-/// through, and the line says so rather than leaving the wait unexplained
-/// (A7). `None` where the daemon has announced nothing yet.
 #[must_use]
 pub fn step_of(job: &Job) -> Option<String> {
     job.answers.iter().rev().find_map(step_line)
 }
 
-/// One announcement from the daemon as a line, where the answer is one: a
-/// rung starting, or a generation inside it starting. The same words on the
-/// console, in the window and at the command line (B-072, A22).
 #[must_use]
 pub fn step_line(answer: &Value) -> Option<String> {
     let figure = |held: &Value, key: &str| {
@@ -673,9 +534,6 @@ pub fn step_line(answer: &Value) -> Option<String> {
             .and_then(|found| u64::try_from(found).ok())
     };
     if let Some(running) = answer.get("running") {
-        // Every generation loads: a rung is timed per request so that the
-        // load cancels between its two runs, and a line that said only the
-        // first one loaded would be wrong about the other five.
         return Some(format!(
             "at {} tokens, repeat {} of {}: loading the model and asking for {} token(s)",
             grouped(figure(running, "depth")?),
@@ -693,9 +551,6 @@ pub fn step_line(answer: &Value) -> Option<String> {
     ))
 }
 
-/// The runs, one line each: what it answers, what it costs, and when it
-/// last ran — the window's cards, as a terminal lists them (D50, B-482).
-/// Returns the first free row beneath.
 fn runs_table(into: &mut Screen, from: usize, tests: &[Test]) -> usize {
     let mut row = from;
     columns(

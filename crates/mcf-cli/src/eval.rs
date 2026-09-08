@@ -1,25 +1,3 @@
-//! `mcf eval`: asking a model to do the work, and checking what it did
-//! (B-110, §IX, B40, B-025, §6.4).
-//!
-//! **This is the command that runs code a model wrote.** Everywhere else MCF
-//! runs only what it built itself from a pinned commit; here it runs something
-//! a model produced seconds ago, which is a different act and gets a different
-//! boundary. Every answer is executed inside a container with no network, no
-//! mount of anything but its own scratch directory, a memory ceiling and a
-//! deadline — and the container is thrown away afterwards. What escapes it is
-//! one line of output, read as text.
-//!
-//! **The laboratory does not run anything.** [`mcf_bench::eval`] produces the
-//! source and the cases and grades what came back; this module is the only
-//! place that starts a process, which is what keeps B-025's declaration
-//! honest.
-//!
-//! **What a result may claim.** That this function, against these cases, on
-//! this machine, held or did not. Not that a model is good at programming —
-//! that is a judgement about a population of tasks nobody here has sampled,
-//! and the four outcomes of [`mcf_core::graded::Graded`] exist so that *not
-//! measured* can never become a low mark (B40, B41).
-
 use std::path::{Path, PathBuf};
 
 use mcf_bench::eval::{Ran, Task};
@@ -30,39 +8,19 @@ use crate::Response;
 
 const WHERE: Subsystem = Subsystem::new("mcf-cli::eval");
 
-/// How long one answer may run before it is stopped.
-///
-/// Generous for a function of a few lines, and finite: a model can write a
-/// loop that does not end, and a laboratory that waited for one would hang
-/// rather than record it.
 const SECONDS: &str = "20";
 
-/// How much memory one answer may have.
 const MEMORY: &str = "512m";
 
-/// The image the checker runs in, pinned by digest.
-///
-/// The tag is for a reader; the digest is what runs. The same discipline the
-/// provisioned components hold to, for the same reason: an image that drifted
-/// would make two runs of one task two different conditions (§3.4).
 pub(crate) const IMAGE: &str = "docker.io/library/python";
-/// `python:3.12-slim`, read from the registry rather than written from memory.
 pub(crate) const IMAGE_DIGEST: &str =
     "sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217";
 
-/// The code a model wrote, taken out of what it said.
-///
-/// **A model answers in prose with code in it.** A fenced block is the usual
-/// shape and is preferred where there is one; otherwise what is returned is
-/// the whole answer, and the checker decides whether it is a program. Nothing
-/// here tries to repair the code: a laboratory that fixed an answer would be
-/// measuring the repair (A19).
 #[must_use]
 pub(crate) fn code_in(said: &str) -> String {
     let Some((_, after)) = said.split_once("```") else {
         return said.trim().to_owned();
     };
-    // The word after the fence is the language, where the model wrote one.
     let body = after.split_once('\n').map_or(after, |(_, rest)| rest);
     body.split_once("```")
         .map_or(body, |(inside, _)| inside)
@@ -70,17 +28,11 @@ pub(crate) fn code_in(said: &str) -> String {
         .to_owned()
 }
 
-/// The program the container runs: the model's function, then the cases.
-///
-/// Each case is printed as `ok` or `no` on its own line, and nothing else
-/// reaches the reader — so what escapes the container is a fixed alphabet
-/// however the model's code behaves.
 fn checker(task: &Task, written: &str) -> String {
     let mut out = String::from(written);
     out.push_str("\n\nimport sys\n");
     for case in task.cases {
         use std::fmt::Write as _;
-        // The expected text as a Python literal, quoted by repr of a str.
         let _wrote = writeln!(
             out,
             "try:\n    print('ok' if repr({}) == {} else 'no')\nexcept Exception:\n    \
@@ -92,13 +44,11 @@ fn checker(task: &Task, written: &str) -> String {
     out
 }
 
-/// A Rust string as a Python string literal.
 fn python_string(held: &str) -> String {
     let escaped = held.replace('\\', "\\\\").replace('\'', "\\'");
     format!("'{escaped}'")
 }
 
-/// Runs one written answer in a container and counts what held.
 pub(crate) fn run_in_container(podman: &Path, scratch: &Path, task: &Task, written: &str) -> Ran {
     if written.trim().is_empty() {
         return Ran::Refused {
@@ -121,8 +71,6 @@ pub(crate) fn run_in_container(podman: &Path, scratch: &Path, task: &Task, writt
         .filter(|line| matches!(*line, "ok" | "no"))
         .collect();
     if held.len() != task.cases.len() {
-        // The program did not reach every case: it failed to parse, raised
-        // before the checks, or was stopped. That is not a wrong answer.
         return Ran::Refused {
             because: format!(
                 "the answer did not run to the end of the cases ({} of {} reported)",
@@ -138,10 +86,6 @@ pub(crate) fn run_in_container(podman: &Path, scratch: &Path, task: &Task, writt
     }
 }
 
-/// Runs one Python program in the container and returns what it printed:
-/// no network, no capabilities, a read-only root, a memory ceiling, a
-/// process limit and a deadline, over the scratch directory mounted
-/// read-only. What a model wrote is not what MCF built (B-025).
 pub(crate) fn run_python(podman: &Path, scratch: &Path, program: &str) -> Result<String, String> {
     if let Err(error) = std::fs::write(scratch.join("answer.py"), program) {
         return Err(format!("the answer could not be written down: {error}"));
@@ -151,9 +95,6 @@ pub(crate) fn run_python(podman: &Path, scratch: &Path, program: &str) -> Result
         .env_remove("XDG_DATA_HOME")
         .arg("run")
         .arg("--rm")
-        // Nothing this program does may reach anything: no network, no
-        // capabilities, a read-only root, its own scratch and nothing else.
-        // What a model wrote is not what MCF built (B-025).
         .arg("--network=none")
         .arg("--cap-drop=ALL")
         .arg("--security-opt=no-new-privileges")
@@ -172,7 +113,6 @@ pub(crate) fn run_python(podman: &Path, scratch: &Path, program: &str) -> Result
     Ok(String::from_utf8_lossy(&spoke.stdout).into_owned())
 }
 
-/// Where podman is, or the refusal that says why there is none.
 fn which_podman() -> Result<PathBuf, Failure> {
     for candidate in ["/usr/bin/podman", "/usr/local/bin/podman"] {
         let path = PathBuf::from(candidate);
@@ -193,18 +133,8 @@ fn which_podman() -> Result<PathBuf, Failure> {
     ))
 }
 
-/// Says how far a suite is, on the output stream at once, in the one
-/// shape every suite uses — `progress: done/of what` — so that the
-/// window's bar and a person at a terminal see the work as it goes and
-/// not only the report at the end (D56).
-/// Whether the word `stop` has arrived on the input: a surface asking the
-/// run to finish the unit in hand, record it, and end (B-571).
 static STOP_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Listens on the input for the word `stop`, on a thread of its own, so
-/// that a run can be asked to stop between attempts rather than killed
-/// between rows. An input that is closed, or a terminal, ends the thread
-/// at once or never says it; either is fine.
 pub(crate) fn listen_for_stop() {
     let _listener = std::thread::spawn(|| {
         use std::io::BufRead as _;
@@ -219,16 +149,11 @@ pub(crate) fn listen_for_stop() {
     });
 }
 
-/// Whether the run has been asked to stop.
 #[must_use]
 pub(crate) fn stop_asked() -> bool {
     STOP_ASKED.load(std::sync::atomic::Ordering::SeqCst)
 }
 
-/// One result of a suite, said on the output stream the moment it is
-/// known: `result: <line>`, the same words the report would have used, so
-/// that a window reading the stream can show the results as they come
-/// (B-569).
 pub(crate) fn result(line: &str) {
     use std::io::Write as _;
     println!("result: {line}");
@@ -241,29 +166,18 @@ pub(crate) fn progress(done: usize, of: usize, what: &str) {
     let _flushed = std::io::stdout().flush();
 }
 
-/// The suites `mcf eval` runs, by the name `--only` takes.
 pub(crate) const SUITES: [&str; 4] = ["challenges", "editing", "tests", "queries"];
 
-/// What `mcf eval` was asked: one suite or all, and the catalogue's
-/// retries, languages and tier where the person set them (D56).
 #[derive(Debug, Default)]
 pub(crate) struct Asked<'a> {
-    /// One suite to run rather than all of them.
     pub only: Option<&'a str>,
-    /// How many attempts a challenge gets in a language.
     pub retries: Option<usize>,
-    /// The languages the catalogue runs in, separated by commas.
     pub languages: Option<&'a str>,
-    /// One tier of the catalogue.
     pub tier: Option<&'a str>,
-    /// The window every challenge ask is made in, where the person set it.
     pub window: Option<u64>,
-    /// Whether to go on from the newest run of the same conditions that
-    /// did not finish, skipping what it already has (B-571).
     pub resume: bool,
 }
 
-/// Evaluates one model against every task, or one suite's.
 #[allow(
     clippy::too_many_lines,
     reason = "the laboratory's one drive: the container found, each task asked and run, every attempt a row, the report said"
@@ -325,11 +239,6 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
         };
     }
 
-    // **How the model is being addressed is a condition of every reading
-    // below.** A model sent raw text completes the prompt instead of answering
-    // it — which produces prose where a task asked for a function, and a
-    // laboratory that did not say so would report *this model cannot write
-    // code* about a model nobody addressed properly (§3.8, §3.4, B40).
     let addressed = crate::models::default_root()
         .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
         .map(|home| mcf_serve::configured::read_derived(&home, Path::new(named)))
@@ -349,11 +258,7 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
         },
         String::new(),
     ];
-    // The engine the daemon ran the asks on, as the first account named
-    // it: the rows' conditions say what answered, not only that the
-    // daemon did (B-542).
     let mut engine_ran: Option<String> = None;
-    // The edit tasks after the writing ones, in the same container (B-522).
     let (edit_lines, edit_rows, edit_engine) = if wants("editing") {
         crate::edits::run(&socket, named, &podman, &scratch)
     } else {
@@ -387,8 +292,6 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
             &edit_rows,
         )
     });
-    // Tests written for a stated function, run against a correct and
-    // broken implementations (B-524).
     let (test_lines, test_rows, test_engine) = if wants("tests") {
         crate::testing::run(&socket, named, &podman, &scratch)
     } else {
@@ -397,7 +300,6 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     if engine_ran.is_none() {
         engine_ran = test_engine;
     }
-    // SQL and patterns, run in the same container (B-551).
     let (query_lines, query_rows, query_engine) = if wants("queries") {
         crate::queries::run(&socket, named, &podman, &scratch)
     } else {
@@ -406,22 +308,11 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
     if engine_ran.is_none() {
         engine_ran = query_engine;
     }
-    // The catalogue: every challenge in every language named, with its
-    // retries, the rows under their own method (B-563, D56).
-    // One tier's run is its own method — `challenges-easy` — so that each
-    // tier has its own rows and its own last-run time; a run of every tier
-    // stays under `challenges` (B-569).
     let challenges_method = plan.tier.map_or_else(
         || "challenges".to_owned(),
         |tier| format!("challenges-{}", tier.name()),
     );
-    // The catalogue's rows land as they are taken: the run is opened with
-    // its conditions before the first ask, each pair's rows are recorded
-    // the moment they are known, and the run is closed with how it ended
-    // — so a run stopped, or killed, keeps every row it earned (B-570).
     listen_for_stop();
-    // Resumed: the newest run under this method with these conditions that
-    // did not finish is continued, its pairs skipped (B-571).
     let resumed = if asked.resume && wants("challenges") {
         match crate::challenges::resumable(named, &challenges_method, &plan) {
             Ok(Some(found)) => Some(found),
@@ -462,8 +353,6 @@ pub(crate) fn eval(named: &str, asked: &Asked<'_>) -> Response {
         .transpose();
     let mut challenges_stopped: Option<String> = None;
     let (challenge_lines, _challenge_rows, challenge_engine) = if wants("challenges") {
-        // Said before the run, on the output stream where the progress
-        // goes, so that a person watching knows what it runs under (B-564).
         let under = plan.said(Path::new(named));
         for line in &under {
             println!("{line}");

@@ -1,15 +1,6 @@
-//! What `pull` says, and what it refuses to do.
-//!
-//! The acquisition path itself is exercised against a real server in
-//! `mcf_hub::client`'s tests and end to end in `tests/whole_system.rs`; what is
-//! here is the surface's own decisions — what it offers when nobody has chosen,
-//! and what it will not attempt.
-
 use mcf_hub::reference;
 use mcf_hub::source::{Entry, Listing};
 
-/// A listing with no plan behind it, and the reason MCF gives when there is
-/// none: an offer still has to say why it is not planning (A2).
 fn no_plan() -> std::result::Result<super::Plan, String> {
     Err("this repository publishes no configuration, and a plan needs one".to_owned())
 }
@@ -34,9 +25,6 @@ fn a_listing() -> Listing {
     }
 }
 
-/// Nobody's quantization is chosen for them: what a repository publishes is put
-/// in front of the operator with the sizes, which is the question they were
-/// actually asking (§3.13, A7).
 #[test]
 fn without_a_file_it_offers_the_choice_and_acquires_nothing() {
     let offered = offer(&a_listing(), &no_plan());
@@ -47,8 +35,6 @@ fn without_a_file_it_offers_the_choice_and_acquires_nothing() {
     assert!(offered.contains("mcf pull owner/model:<file>"), "{offered}");
 }
 
-/// A file the hub declares no digest for is named as such, because an artifact
-/// nobody can check is a condition of every measurement taken on it (A21).
 #[test]
 fn a_file_with_no_declared_digest_is_pointed_out() {
     let offered = offer(&a_listing(), &no_plan());
@@ -64,8 +50,6 @@ fn a_file_with_no_declared_digest_is_pointed_out() {
     assert!(!declared.contains("no digest"), "{declared}");
 }
 
-/// The terms are in front of the operator before they choose, which is what
-/// §III asks and B-023 built.
 #[test]
 fn the_terms_are_offered_with_the_files() {
     let offered = offer(&a_listing(), &no_plan());
@@ -77,7 +61,6 @@ fn the_terms_are_offered_with_the_files() {
     );
 }
 
-/// A string that is not a reference is refused by name rather than attempted.
 #[test]
 fn a_reference_that_is_not_one_is_refused() {
     let response = run(
@@ -95,10 +78,6 @@ fn a_reference_that_is_not_one_is_refused() {
     );
 }
 
-/// The default hub is the real one and MCF reaches it over TLS; a plain socket
-/// is what an `http` mirror gets. Chosen from the URL rather than configured,
-/// because a wire that cannot keep a secret must not be handed one (B-024,
-/// B-322).
 #[test]
 fn the_wire_is_chosen_by_the_scheme() {
     assert!(DEFAULT_HUB.starts_with("https://"), "{DEFAULT_HUB}");
@@ -117,7 +96,6 @@ fn the_wire_is_chosen_by_the_scheme() {
     );
 }
 
-/// And a hub that is not a URL is refused before anything is opened.
 #[test]
 fn a_hub_that_is_not_a_url_is_refused() {
     let response = run(
@@ -131,8 +109,6 @@ fn a_hub_that_is_not_a_url_is_refused() {
     assert!(response.text.contains("not a hub"), "{}", response.text);
 }
 
-/// A plan is offered at a stated context, because *this fits* means nothing
-/// without the length it fits at (A6, §3.4).
 #[test]
 fn a_plan_is_offered_at_a_stated_context() {
     let plan = mcf_hub::offer::Plan {
@@ -154,9 +130,6 @@ fn a_plan_is_offered_at_a_stated_context() {
     assert!(offered.contains("fits: needs"), "{offered}");
 }
 
-/// And where no plan can be made, the surface says so rather than showing an
-/// empty one — a missing plan and a plan that found nothing are different
-/// answers (A7).
 #[test]
 fn no_plan_is_said_rather_than_shown_empty() {
     let offered = offer(&a_listing(), &no_plan());
@@ -167,15 +140,10 @@ fn no_plan_is_said_rather_than_shown_empty() {
     assert!(offered.contains("configuration"), "{offered}");
 }
 
-/// Nothing is ever read from the environment unless a test says what is there:
-/// these look through a lookup of their own, which is the same discipline the
-/// surface itself keeps.
 fn nothing_set(_variable: &str) -> Option<String> {
     None
 }
 
-/// Nothing offered is nothing held: the ordinary case, and the one B-024 makes
-/// the default.
 #[test]
 fn nothing_offered_is_nothing_held() {
     assert_eq!(
@@ -184,8 +152,6 @@ fn nothing_offered_is_nothing_held() {
     );
 }
 
-/// A credential read from a file the operator named carries where it came
-/// from, and never the token itself into a message (§3.4, B-024).
 #[test]
 fn a_credential_from_a_named_file_carries_its_origin() {
     let path = std::env::temp_dir().join(format!("mcf-pull-token-{}", std::process::id()));
@@ -208,9 +174,6 @@ fn a_credential_from_a_named_file_carries_its_origin() {
     let _cleared = std::fs::remove_file(&path);
 }
 
-/// A file that is not there is said rather than treated as no credential: an
-/// operator who names one means it, and silently proceeding anonymously would
-/// produce a refusal they cannot explain.
 #[test]
 fn a_credential_file_that_is_not_there_is_reported() {
     let missing =
@@ -218,7 +181,6 @@ fn a_credential_file_that_is_not_there_is_reported() {
     assert!(missing.contains("could not be read"), "{missing}");
 }
 
-/// An empty one is not a credential.
 #[test]
 fn an_empty_credential_is_refused_before_it_is_offered() {
     let path = std::env::temp_dir().join(format!("mcf-pull-blank-{}", std::process::id()));
@@ -232,8 +194,6 @@ fn an_empty_credential_is_refused_before_it_is_offered() {
     let _cleared = std::fs::remove_file(&path);
 }
 
-/// A variable MCF was told to read is read, and one it was not told about is
-/// not looked at — which is the whole of B-024 at this surface.
 #[test]
 fn an_environment_variable_is_read_only_when_it_is_named() {
     let named = "A_VARIABLE_THE_OPERATOR_NAMED";

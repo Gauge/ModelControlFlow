@@ -1,24 +1,3 @@
-//! A hosted model listens where this machine can reach it and nowhere else
-//! (B-036, §6.12, §3.10, A16).
-//!
-//! **The claim this holds used to be simpler.** B-036 said MCF was local *by
-//! construction rather than by configuration*: there was no bind address, no
-//! port and no flag, so exposure was not something a mistake could do because
-//! it was not something MCF could do. B-416 gave it a port — hosting a model
-//! is being reachable, and there is no way to be reachable without listening.
-//!
-//! So the claim narrowed rather than went away, and this is the narrower one:
-//! **the port is the operator's and the address is not MCF's to offer.** A
-//! person can move a hosted model to another port; nobody can move it to
-//! another interface, because there is no setting for one and the constant it
-//! binds is the loopback address.
-//!
-//! Three things are checked, and each is one way the claim could stop being
-//! true: that the constant is what it says it is, that nothing in the settings
-//! can carry a different one, and that the control plane itself is still a
-//! Unix socket with no address at all.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use std::path::Path;
@@ -30,10 +9,6 @@ fn read(relative: &str) -> String {
     })
 }
 
-/// The address a hosted model binds is the loopback address.
-///
-/// A name is not evidence (A21): what the constant *is* decides this, not what
-/// it is called.
 #[test]
 fn the_address_is_the_loopback_address() {
     let source = read("crates/mcf-serve/src/hosting.rs");
@@ -54,12 +29,6 @@ fn the_address_is_the_loopback_address() {
     );
 }
 
-/// Nothing in the hosting settings can carry an address.
-///
-/// **This is the whole of *by construction*.** A port is a number somebody may
-/// choose and an interface is not, so there is no field for one — and a field
-/// that appeared would make exposure something a mistake could do, which is
-/// what §6.12 forbids.
 #[test]
 fn no_setting_carries_an_address() {
     let source = read("crates/mcf-serve/src/hosting.rs");
@@ -71,7 +40,6 @@ fn no_setting_carries_an_address() {
     let mut carrying = Vec::new();
     for line in body.lines() {
         let trimmed = line.trim();
-        // A field, not documentation: `name: Type,`.
         if trimmed.starts_with("//") || !trimmed.contains(':') {
             continue;
         }
@@ -93,11 +61,6 @@ fn no_setting_carries_an_address() {
     );
 }
 
-/// The control plane is still a socket with no address at all.
-///
-/// The port belongs to a *hosted model*. MCF's own control plane never grew
-/// one, and a person reaching MCF from another machine is still not something
-/// MCF can do.
 #[test]
 fn the_control_plane_has_no_port() {
     let source = read("crates/mcf-serve/src/daemon.rs");
@@ -122,11 +85,6 @@ fn the_control_plane_has_no_port() {
     );
 }
 
-/// Hosting a model is written down, and letting it go is too.
-///
-/// §6.12 asks that exposure be an explicit act. An act nobody wrote down is
-/// indistinguishable from a side effect, and after a stop the entry is the
-/// only thing that says anything was ever listening (A26).
 #[test]
 fn hosting_and_letting_go_are_both_recorded() {
     let source = read("crates/mcf-serve/src/daemon.rs");
@@ -141,8 +99,6 @@ fn hosting_and_letting_go_are_both_recorded() {
             }
         );
     }
-    // And the key is never in it. A record is something MCF publishes, and a
-    // secret in a published record is one nobody meant to publish (A25).
     let hosting = read("crates/mcf-serve/src/hosting.rs");
     let (_, written) = hosting
         .split_once("pub fn to_value")
@@ -160,7 +116,6 @@ fn hosting_and_letting_go_are_both_recorded() {
     );
 }
 
-/// The workspace root is where this check thinks it is.
 #[test]
 fn the_files_this_watches_are_there() {
     for named in [

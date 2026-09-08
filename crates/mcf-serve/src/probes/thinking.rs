@@ -1,31 +1,3 @@
-//! How much of a turn happens before the answer does (B-421, D42, §X, A21, F106).
-//!
-//! **The question is not whether the model reasons.** *Reasoning* is a
-//! judgement about what came out, and grading it needs a rater — which is why
-//! reasoning modes was declined as a modality and why the entry said the
-//! observable half deserved a row of its own.
-//!
-//! **What is observable is where the tokens went.** Several families open a
-//! marker of their own, say a great deal inside it, close it, and only then
-//! answer. Whether that is *thinking* is not MCF's to say. That the turn spent
-//! a hundred and eighty tokens before its first word of answer is a fact, it is
-//! countable, and it decides what budget a question needs.
-//!
-//! **Why it earns a place under D42's test.** A wrong answer here corrupts a
-//! measurement directly, and did: F106 read ten trials as *produced no object*
-//! when every one of them was still going when the budget ran out — MCF
-//! interrupting the model rather than the model declining. A default budget of
-//! thirty-two tokens put to a model that spends a hundred inside a marker
-//! measures the budget, and every figure taken through it is about MCF's
-//! impatience rather than the model.
-//!
-//! **The markers come from the model's own file** (A21, F79). MCF keeps no
-//! table of which family uses which spelling — one would be out of date the
-//! week it was written. A marker is a candidate here when the model's own
-//! vocabulary holds it as a real token *and* holds its closing form, which is
-//! a property of the file rather than a name MCF recognises. Which of them the
-//! model actually uses, the model says by using it.
-
 use std::path::Path;
 
 use mcf_core::probe::{Method, Outcome, Probed};
@@ -34,20 +6,9 @@ use mcf_standin::tokenizer::{Piece, Tokens};
 
 use super::Trial;
 
-/// The question every trial asks.
-///
-/// Something with a short answer and a reason to work before giving it, so a
-/// model that thinks before answering has cause to. Arithmetic rather than
-/// world knowledge, so the answer does not depend on what the model was
-/// trained on (§X).
 pub const QUESTION: &str = "A shelf holds 3 boxes. Each box holds 7 items. \
                             How many items are on the shelf?";
 
-/// The closing form of a marker, where it has one.
-///
-/// `<think>` closes as `</think>` and `[THINK]` as `[/THINK]`: the slash goes
-/// after the bracket. Anything else is not a pair, and a marker with no closing
-/// form is not one a turn can be *inside*.
 #[must_use]
 pub fn closing_form(marker: &str) -> Option<String> {
     let mut characters = marker.chars();
@@ -67,11 +28,6 @@ pub fn closing_form(marker: &str) -> Option<String> {
     Some(format!("{opener}/{inner}{closer}"))
 }
 
-/// Whether a token is spelled the way every byte-fallback token is spelled.
-///
-/// `<0xNN>`, which is a byte and not a marker. The tokenizer has the same
-/// judgement for the same reason; it is repeated here rather than shared
-/// because what counts as a marker is this probe's question.
 fn spelled_as_a_byte(token: &str) -> bool {
     token.len() == 6
         && token.starts_with("<0x")
@@ -81,18 +37,6 @@ fn spelled_as_a_byte(token: &str) -> bool {
             .is_some_and(|hex| hex.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
-/// Every marker this file holds that MCF could not pair.
-///
-/// **Said rather than passed over.** Some families delimit a region without a
-/// closing form of the shape this probe knows — a channel marker opened by
-/// `<|channel|>` and ended by a different token entirely, rather than by
-/// `</|channel|>`. A turn inside one of those is a turn this probe does not
-/// measure, and a report that mentioned only what it *could* pair would let a
-/// reader conclude the model spends nothing before its answer when MCF simply
-/// did not look (A7).
-///
-/// Counted rather than interpreted: which of them delimits thinking is a fact
-/// about a family, and a table of families is the thing F79 refuses to keep.
 #[must_use]
 pub fn unpairable(file: &gguf::Model, tokens: &Tokens) -> Vec<String> {
     candidates(file, tokens)
@@ -101,8 +45,6 @@ pub fn unpairable(file: &gguf::Model, tokens: &Tokens) -> Vec<String> {
         .collect()
 }
 
-/// Every marker-shaped token this file holds, from its template and its
-/// vocabulary.
 fn candidates(file: &gguf::Model, tokens: &Tokens) -> Vec<String> {
     let template = file
         .get("tokenizer.chat_template")
@@ -115,27 +57,16 @@ fn candidates(file: &gguf::Model, tokens: &Tokens) -> Vec<String> {
     for identifier in 0..tokens.len() {
         if let Some(token) = tokens.token(identifier)
             && (token.starts_with('<') || token.starts_with('['))
-            // A byte-fallback token is spelled like a marker and is not one:
-            // `<0x41>` is how a vocabulary writes the letter A when it can
-            // spell nothing else. Counting all 256 of them as markers a turn
-            // could be inside made the count meaningless — which is worse than
-            // no count, because it reads as a finding.
             && !spelled_as_a_byte(token)
             && !seen.iter().any(|held| held == token)
         {
             seen.push(token.to_owned());
         }
     }
-    // A closing form is not an opener: counting `</think>` as a marker a turn
-    // could be inside would double every family that has one.
     seen.retain(|marker| closing_form(marker).is_some());
     seen
 }
 
-/// Every marker this file holds as a real token and can close.
-///
-/// Read from the vocabulary rather than from a list: a spelling that is not a
-/// token is text, and text cannot open anything (D46, F26).
 #[must_use]
 pub fn pairs(file: &gguf::Model, tokens: &Tokens) -> Vec<(String, String)> {
     let mut found: Vec<(String, String)> = Vec::new();
@@ -150,33 +81,13 @@ pub fn pairs(file: &gguf::Model, tokens: &Tokens) -> Vec<(String, String)> {
     found
 }
 
-/// The addressing the thinking probe asks under, and whether the turn
-/// itself opens the marker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Under {
-    /// What the turn is wrapped in.
     pub addressing: super::Addressing,
-    /// The opener the turn ends with, where it ends with one: the model then
-    /// begins inside the marker and only the closing is its own to write.
     pub opened_by_turn: Option<String>,
-    /// Whether this differs from the addressing on file.
     pub changed: bool,
 }
 
-/// The addressing to ask under, from the one on file.
-///
-/// **A turn that closes the thinking itself cannot be watched opening it.**
-/// GLM's template writes `<|assistant|>` and then `<think>` when thinking is
-/// on and `</think>` when it is off, and the chat-template probe can choose
-/// the closed form (F171). Asked under that, *no turn opened a marker* is a
-/// fact about a turn whose marker was closed for it. And asked under
-/// `<|assistant|>` alone — a form the template never writes — the model
-/// thinks *unmarked*, two hundred tokens of working with no opener and no
-/// closer, which the probe would count as an answer. So an addressing that
-/// ends in the closing half of a pair is asked with the opening half in its
-/// place, which is the same template's other form, and the turn is what
-/// opened it. An addressing that already ends in an opener is asked as it
-/// is, and one that ends in neither is asked as it is.
 #[must_use]
 pub fn under(addressing: &super::Addressing, pairs: &[(String, String)]) -> Under {
     let last = match addressing.pieces_after.last() {
@@ -218,45 +129,20 @@ pub fn under(addressing: &super::Addressing, pairs: &[(String, String)]) -> Unde
     }
 }
 
-/// What the thinking probe observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spends {
-    /// Every pair the file holds, whether the model used it or not.
     pub available: Vec<String>,
-    /// Markers the file holds that MCF could not pair, and therefore could not
-    /// measure the inside of. Named so that *nothing was found* is told apart
-    /// from *nothing was looked for* (A7).
     pub unpairable: Vec<String>,
-    /// The pair the model actually opened, where it opened one.
     pub used: Option<String>,
-    /// How many trials opened it.
     pub opened: usize,
-    /// How many of those also closed it — a turn still inside its marker when
-    /// the budget ran out is the shape F106 caught, and is counted apart.
     pub closed: usize,
-    /// How many trials there were.
     pub trials: usize,
-    /// The longest run of tokens spent inside the marker, across the trials
-    /// that closed it.
-    ///
-    /// The longest rather than the mean: a budget has to cover the worst turn
-    /// seen, and an average budget is one that truncates half the turns (A4).
     pub longest_inside: usize,
-    /// The longest whole turn that ended at the model's own stop token, in
-    /// tokens as the engine counted them — thought and answer together. It
-    /// is what a budget has to cover on a question that asks for a reason,
-    /// where the stop-conditions probe measures turns on questions that ask
-    /// for a name (F172); nought where no turn ended.
     pub longest_turn: usize,
-    /// How much of that longest turn was spent before its answer, where the
-    /// engine's account said the marker closed.
     pub before_in_longest: Option<usize>,
-    /// The budget each trial was given, which is what any of this is relative
-    /// to.
     pub budget: usize,
 }
 
-/// The method.
 pub const THINKING: Method = Method {
     name: "thinking",
     asks: "one question with a short answer and a reason to work before giving it, and counts \
@@ -267,15 +153,6 @@ pub const THINKING: Method = Method {
               task makes",
 };
 
-/// Why a file with no pair to measure is inconclusive, said with how many
-/// markers it holds that could not be paired.
-///
-/// **It says how many it could not pair.** Withholding that here was the
-/// defect this whole `unpairable` list exists to prevent, kept in the one
-/// place it matters most: a file whose markers are all unpairable reads as a
-/// file with no markers, and a reader concludes the model spends nothing
-/// before its answer when MCF simply could not look. A channel-format family
-/// lands exactly here (A7).
 fn nothing_to_be_inside(could_not_pair: &[String]) -> String {
     if could_not_pair.is_empty() {
         "this file holds no marker of any kind that a turn could be inside. A turn here \
@@ -293,12 +170,6 @@ fn nothing_to_be_inside(could_not_pair: &[String]) -> String {
     }
 }
 
-/// Runs the thinking probe.
-///
-/// # Errors
-///
-/// Never: a probe that cannot decide reports `Inconclusive` with its reason
-/// (D42's third state).
 #[must_use]
 pub fn thinking(
     model: &Path,
@@ -355,10 +226,6 @@ pub fn thinking(
         } else {
             spent = spent.saturating_add(budget);
         }
-        // The first pair this turn opened, if any. Whichever the model used is
-        // the one this file's turns are inside; MCF does not pick for it. A
-        // turn that ended with an opener put the model inside it, and then
-        // the whole of what came back until the closer is the inside.
         let by_turn = available
             .iter()
             .find(|(marker, _)| opened_by_turn == Some(marker.as_str()));
@@ -382,14 +249,9 @@ pub fn thinking(
             rest
         };
         let Some((inside, _)) = after_open.split_once(closing.as_str()) else {
-            // Opened and never closed: the turn was still inside its marker
-            // when the budget ran out, which is exactly F106's shape and is a
-            // fact about the budget rather than about the model.
             continue;
         };
         closed = closed.saturating_add(1);
-        // Words rather than identifiers: what came back is text, and a token
-        // count MCF invented would be a figure nobody measured (A7).
         longest_inside = longest_inside.max(inside.split_whitespace().count());
     }
 

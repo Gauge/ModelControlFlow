@@ -1,42 +1,20 @@
-//! Edit tasks: a whole file given, one change asked, hidden cases run on
-//! the result, and the parts not asked about compared byte for byte
-//! (B-522, D55).
-//!
-//! Writing a function from nothing is one skill; changing a file without
-//! disturbing the rest of it is the one an editor is used for. Each task
-//! is a small Python file of three or four functions and a change to one
-//! of them, or one to add. The model is asked for the whole file back.
-//! The cases cover the changed function and the untouched ones; and every
-//! untouched function's source is looked for in the answer as it was
-//! given, byte for byte. Two counts then stand beside each other: what
-//! held, and what was changed that nobody asked to change.
-
 use std::path::Path;
 
 use mcf_bench::eval::{Case, Ran, Task};
 use mcf_record::json::Value;
 use mcf_serve::examine::Reading;
 
-/// How many times each edit is asked for.
 pub(crate) const ATTEMPTS: usize = 2;
 
-/// The token budget for a whole file back.
 const BUDGET: usize = 700;
 
-/// One edit task: the file as given, the change asked, and the checks.
 pub(crate) struct Edit {
-    /// The file, whole, as the model is given it.
     pub file: &'static str,
-    /// The change asked, in words.
     pub asks: &'static str,
-    /// The name of the function the change is to, or to add; every other
-    /// function must come back as it was.
     pub changes: &'static str,
-    /// The cases on the result, which the checker runs.
     pub task: Task,
 }
 
-/// The edit tasks.
 pub(crate) const EDITS: &[Edit] = &[
     Edit {
         file: "def total(items):\n    return sum(price for _, price in items)\n\n\ndef cheapest(items):\n    return min(items, key=lambda item: item[1])[0]\n\n\ndef restock(items, threshold):\n    return [name for name, price in items if price < threshold]\n",
@@ -204,7 +182,6 @@ pub(crate) const EDITS: &[Edit] = &[
     },
 ];
 
-/// What the model is asked: the file, the change, and the whole file back.
 #[must_use]
 pub(crate) fn prompt_for(edit: &Edit) -> String {
     format!(
@@ -214,9 +191,6 @@ pub(crate) fn prompt_for(edit: &Edit) -> String {
     )
 }
 
-/// The file's top-level functions as `(name, source)`, each block running
-/// from its `def` to the next top-level `def` or the end, trailing blank
-/// lines dropped.
 #[must_use]
 pub(crate) fn functions_of(file: &str) -> Vec<(&str, &str)> {
     let starts: Vec<usize> = file
@@ -242,9 +216,6 @@ pub(crate) fn functions_of(file: &str) -> Vec<(&str, &str)> {
         .collect()
 }
 
-/// How the untouched functions came back: how many there were, how many
-/// are in the answer byte for byte, their bytes, and the bytes of those
-/// that are not.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Outside {
     pub untouched: usize,
@@ -253,7 +224,6 @@ pub(crate) struct Outside {
     pub changed_bytes: usize,
 }
 
-/// Compares the parts nobody asked about with the answer.
 #[must_use]
 pub(crate) fn outside(edit: &Edit, answer: &str) -> Outside {
     let mut held = Outside {
@@ -277,7 +247,6 @@ pub(crate) fn outside(edit: &Edit, answer: &str) -> Outside {
     held
 }
 
-/// One attempt's rows: the cases, the outside, the size and the asking.
 #[must_use]
 pub(crate) fn rows_of(
     edit: &Edit,
@@ -356,8 +325,6 @@ pub(crate) fn rows_of(
     rows
 }
 
-/// Runs every edit against the model through the daemon, each answer in
-/// the container, and returns the lines said and the rows to record.
 pub(crate) fn run(
     socket: &Path,
     named: &str,

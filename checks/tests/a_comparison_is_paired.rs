@@ -1,35 +1,5 @@
-//! A comparison can only be built out of paired trials (B53, B-250).
-//!
-//! B53's check is `compiler`: *a comparison result can only be constructed
-//! from paired trials carrying a common session id*. The compiler does hold
-//! that — `mcf_bench::compare::Comparison` has three constructors, one of
-//! which runs the arms alternately itself, one of which verifies the
-//! interleaving from the record's positions, and one of which is §3.27's
-//! explicitly weaker cross-session assembly and cannot produce a paired
-//! difference at all. There is no function anywhere that takes two sequences
-//! of timings and calls them a comparison.
-//!
-//! *Staying* that way is the part the compiler cannot check about itself. A
-//! fourth constructor taking two slices, a `Default`, a `From<(Vec, Vec)>`, or
-//! a re-export of the statistics module's internals would each reopen the hole
-//! quietly, and no existing test would notice. This is what notices.
-//!
-//! A source check rather than a compile-fail harness, for the reason given in
-//! `measurement_has_one_way_in.rs`: a compile-fail harness is a third-party
-//! dependency, and B15 admits weight only against a stated cost.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
-/// The statistics that decide a comparison are not reachable from outside the
-/// crate.
-///
-/// This is the whole of *block-then-subtract does not compile*. The two nulls
-/// take bare numbers — one takes two slices of nanoseconds — and a caller who
-/// could reach them could hand over thirty timings of A and thirty of B with
-/// nothing to say they were ever interleaved. They are `pub(super)`, so the
-/// only way to a verdict is through a `Comparison`, and the only ways to a
-/// `Comparison` are the three that establish or disclaim the pairing.
 #[test]
 fn the_statistics_are_not_reachable_without_a_comparison() {
     let source = code_only(&bench_source("enough.rs"));
@@ -52,29 +22,12 @@ fn the_statistics_are_not_reachable_without_a_comparison() {
     );
 }
 
-/// Every constructor of a `Comparison` either establishes the pairing or says
-/// it has none.
-///
-/// The list is read from the source rather than declared here, so a
-/// constructor added tomorrow fails this test rather than slipping past a list
-/// nobody updated.
 #[test]
 fn every_constructor_establishes_or_disclaims_the_pairing() {
-    /// What each way in is allowed to be, and why it is a pairing.
-    const ADMITTED: [&str; 3] = [
-        // Runs the arms alternately itself, drawing the order per pair.
-        "Interleaving",
-        // Verifies the interleaving from the record's positions.
-        "from_trials",
-        // §3.27's *it may be all that exists*: no pairing, and it says so.
-        "from_separate_sessions",
-    ];
+    const ADMITTED: [&str; 3] = ["Interleaving", "from_trials", "from_separate_sessions"];
 
     let source = code_only(&bench_source("compare.rs"));
     let mut found = Vec::new();
-    // Only the two types that can yield a comparison are read: `Side::other`
-    // and the rest return `Self` too, and a check that could not tell them
-    // apart would be a check about the word `Self`.
     let mut inside = false;
     let mut lines = source.lines().peekable();
     while let Some(line) = lines.next() {
@@ -96,17 +49,7 @@ fn every_constructor_establishes_or_disclaims_the_pairing() {
                 None => break,
             }
         }
-        // **Joined lines leave a space after the paren.** A signature long
-        // enough for `rustfmt` to break becomes `fn taking( mut self, …`, and
-        // matching `(mut self` then misses a method that plainly takes it —
-        // which is F81's shape a third time: a check that is really about
-        // where a formatter broke a line rather than about the code. Collapse
-        // it, so the check is about the signature.
         let signature = signature.replace("( ", "(");
-        // A constructor makes a comparison out of trials; a method that takes
-        // `self` transforms one that already exists and cannot be a way in.
-        // `Interleaving::finish` and `Comparison::declaring` are the two, and
-        // neither can conjure a pairing that was not already established.
         let takes_self = signature.contains("(self")
             || signature.contains("(&self")
             || signature.contains("(mut self")
@@ -126,8 +69,6 @@ fn every_constructor_establishes_or_disclaims_the_pairing() {
     for constructor in &found {
         assert!(
             ADMITTED.iter().any(|name| constructor.contains(name))
-                // `Interleaving::new` and `Interleaving::finish` are the
-                // alternating constructor, which is admitted above by name.
                 || constructor.contains("fn new("),
             "a way to build a comparison that neither establishes nor disclaims the pairing: \
              {constructor} (B53, B-250)"
@@ -135,11 +76,6 @@ fn every_constructor_establishes_or_disclaims_the_pairing() {
     }
 }
 
-/// Nothing manufactures a comparison out of a trait implementation.
-///
-/// Each of these would be a way to obtain one from something that is not a set
-/// of paired trials — which is exactly the shape B-250 exists to make
-/// impossible.
 #[test]
 fn no_trait_implementation_manufactures_a_comparison() {
     let source = code_only(&bench_source("compare.rs"));
@@ -156,13 +92,6 @@ fn no_trait_implementation_manufactures_a_comparison() {
     }
 }
 
-/// A cross-session comparison is constructible, and cannot report a paired
-/// difference.
-///
-/// The second half of B-250's done-when. The weakness is in the type — the
-/// paired-difference accessor returns an `Option` and the assembled
-/// construction answers `None` — rather than in a label a caller may forget to
-/// print, and the label exists as well.
 #[test]
 fn a_cross_session_comparison_is_weaker_in_the_type() {
     let source = code_only(&bench_source("compare.rs"));
@@ -180,12 +109,6 @@ fn a_cross_session_comparison_is_weaker_in_the_type() {
     );
 }
 
-/// The interleaving is verified against the record's positions, not assumed.
-///
-/// B53's violation is *thirty runs of A, then thirty of B, subtracted*, and a
-/// comparison read back out of the record is where that would arrive
-/// undetected. The refusal is named, so this checks the name is still there
-/// and still reached.
 #[test]
 fn blocked_trials_are_refused_by_name() {
     let source = code_only(&bench_source("compare.rs"));
@@ -199,7 +122,6 @@ fn blocked_trials_are_refused_by_name() {
     );
 }
 
-/// The source of one of `mcf-bench`'s modules.
 fn bench_source(file: &str) -> String {
     let path = mcf_checks::workspace::root()
         .join("crates/mcf-bench/src")
@@ -209,8 +131,6 @@ fn bench_source(file: &str) -> String {
     })
 }
 
-/// The source with its documentation comments removed, so that a sentence
-/// quoting a forbidden shape is not read as the shape itself.
 fn code_only(source: &str) -> String {
     source
         .lines()

@@ -1,15 +1,3 @@
-//! A null result reaches the record as a result (A9, B-086).
-//!
-//! **The clock here is [`Monotonic`], and it has to be.** B-082 bounds the
-//! encoder by `Measurable`, which the laboratory's clock does not implement, so
-//! `record::comparison` of a simulated comparison does not compile. The
-//! durations below are stated rather than read — `Duration::from_nanos` is how
-//! a test states a known interval — and that is the documented seam: the type
-//! stops a *simulated* timing being written, and a test that fabricates a
-//! monotonic one is fabricating it on purpose and in one place.
-//!
-//! [`Monotonic`]: mcf_core::time::Monotonic
-
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::measurement::{ConditionValue, Conditions, Floor, PartsPerMillion};
@@ -23,16 +11,6 @@ use crate::warmth::Warmth;
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
 const SECOND: u64 = 1_000_000_000;
 
-/// What these comparisons were asked to do.
-///
-/// Stated rather than defaulted: §II asks that somebody else be able to repeat
-/// a measurement, and a `Method` a fixture left blank would be a fixture
-/// asserting that a blank one is enough (PR2, B30).
-/// What the machine was doing either side of these runs.
-///
-/// Stated rather than omitted: B-217 makes the machine's own movement a
-/// condition of a result, and a fixture that left it out would be a fixture
-/// asserting a run needs no such condition.
 fn watched() -> MachineHeld {
     MachineHeld {
         before: 4_000,
@@ -90,9 +68,6 @@ fn under_test(name: &str, differing: &[(&str, &str)]) -> UnderTest {
     )
 }
 
-/// The partiality reaches the record, so a reader six weeks later can tell a
-/// short run that was interrupted from a short run that decided quickly
-/// (A4, B-087, B-086).
 #[test]
 fn an_interruption_reaches_the_record() {
     let mut running = Interleaving::<Monotonic>::new(
@@ -125,8 +100,6 @@ fn an_interruption_reaches_the_record() {
     );
 }
 
-/// A run that finished writes `null` there, which is *it finished* rather than
-/// an interruption nobody recorded.
 #[test]
 fn a_finished_run_records_no_interruption() {
     let held = run(
@@ -142,8 +115,6 @@ fn a_finished_run_records_no_interruption() {
     );
 }
 
-/// Runs `rounds` pairs where the left arm takes `left_ns` and the right
-/// `right_ns`.
 fn run(
     left: UnderTest,
     right: UnderTest,
@@ -166,9 +137,6 @@ fn run(
         let _ran = running.round(|arm, _drew| {
             Some((
                 Duration::from_nanos(if *arm == named { left_ns } else { right_ns }),
-                // Stated rather than defaulted: §6.13 makes what a trial reused
-                // a condition, and a fixture that let it be inferred would be
-                // testing the inference.
                 Warmth::Warm,
             ))
         });
@@ -188,9 +156,6 @@ fn text(body: &Value, path: &[&str]) -> String {
         .to_owned()
 }
 
-/// **A9's condition.** A comparison that found no difference is written as an
-/// outcome named `same`, carrying the resolution it would have seen — not as a
-/// failure, and not as an absence.
 #[test]
 fn a_null_result_is_written_as_a_result() {
     let held = run(
@@ -212,8 +177,6 @@ fn a_null_result_is_written_as_a_result() {
     assert_eq!(text(&body, &["isolation", "kind"]), "isolated");
 }
 
-/// The paired differences are written out, because a comparison whose
-/// distribution was thrown away is a question nobody can re-ask (B56, D16).
 #[test]
 fn the_distribution_is_written_and_not_only_the_verdict() {
     let held = run(
@@ -246,8 +209,6 @@ fn the_distribution_is_written_and_not_only_the_verdict() {
     }
 }
 
-/// A confounded comparison is written as the outcome it is, with no delta and
-/// with every variable that differed (A8, A9).
 #[test]
 fn a_refused_comparison_is_written_as_an_outcome() {
     let held = run(
@@ -276,7 +237,6 @@ fn a_refused_comparison_is_written_as_an_outcome() {
     assert_eq!(differ.len(), 2);
 }
 
-/// A declared confound travels with the reason it was declared (A8).
 #[test]
 fn a_declared_confound_is_written_with_its_reason() {
     let held = run(
@@ -298,8 +258,6 @@ fn a_declared_confound_is_written_with_its_reason() {
     );
 }
 
-/// The conditions of both arms are written, so that a later reader can ask the
-/// isolation question again rather than trusting this run's answer to it.
 #[test]
 fn both_arms_conditions_are_written() {
     let held = run(

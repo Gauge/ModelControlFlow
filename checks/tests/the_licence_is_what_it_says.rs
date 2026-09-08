@@ -1,19 +1,5 @@
-//! MCF ships the licence it declares.
-//!
-//! D28: GPL-3.0-only. B-330's condition is that *the licence is stated in the
-//! artifact and surfaced to a redistributor*, and the failure mode is
-//! mundane — a `LICENSE` that drifts from the manifest, or a manifest that
-//! declares terms the repository does not contain. Either leaves a
-//! redistributor with an obligation nobody can read.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used)]
 
-/// The repository contains the licence, verbatim.
-///
-/// Checked by its own words rather than by a digest: a digest would fail on a
-/// trailing newline and say nothing about *which* licence is there, and the
-/// question is which one.
 #[test]
 fn the_licence_text_is_the_gpl_version_three() {
     let text = licence();
@@ -37,7 +23,6 @@ fn the_licence_text_is_the_gpl_version_three() {
     );
 }
 
-/// The manifest declares what the repository contains.
 #[test]
 fn the_manifest_declares_the_licence_the_repository_holds() {
     let manifest =
@@ -49,13 +34,6 @@ fn the_manifest_declares_the_licence_the_repository_holds() {
     );
 }
 
-/// No vendored component ships without a recorded compatibility finding.
-///
-/// D28 makes every vendored component's terms MCF's problem: one that is not
-/// GPL-3.0-compatible is one MCF cannot ship whatever its merits, and D23's
-/// third tier is where it goes. There is nothing vendored yet, so this check
-/// has nothing to find — and it says so rather than passing silently, because a
-/// check that would pass an empty world is a check that stops being read.
 #[test]
 fn every_vendored_component_has_a_compatibility_finding() {
     let root = mcf_checks::workspace::root();
@@ -87,13 +65,6 @@ fn licence() -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// The artifact states the licence, and the list it states matches the register.
-///
-/// B-330's second half: *the licence is stated in the artifact and surfaced to a
-/// redistributor*. A redistributor has a binary, not a repository, so the
-/// question is what `mcf licence` says — and what it says about vendored
-/// components has to be what `doc/vendored.md` records, or a component's terms
-/// reach the person with the obligation in only one of the two places.
 #[test]
 fn the_artifact_states_the_licence_and_agrees_with_the_register() {
     let source = std::fs::read_to_string(
@@ -111,13 +82,6 @@ fn the_artifact_states_the_licence_and_agrees_with_the_register() {
          conveyed on its own carries no copy (GPL-3.0 §4)"
     );
 
-    // The two lists, compared name by name and revision by revision. It used
-    // to be enough to check that both were empty or both were not, which was
-    // written when both were empty; fourteen components later, *agreeing about
-    // whether anything is vendored* is not the property B-330 wants. A
-    // redistributor's obligations are what `mcf licence` prints, and the
-    // compatibility finding for each is in the register — if the two lists
-    // differ, one of them is about a binary nobody is shipping.
     let register = std::fs::read_to_string(mcf_checks::workspace::root().join("doc/vendored.md"))
         .expect("doc/vendored.md is readable");
 
@@ -135,7 +99,6 @@ fn the_artifact_states_the_licence_and_agrees_with_the_register() {
     );
 }
 
-/// Every `name-revision` the artifact says it ships.
 fn compiled_in(source: &str) -> Vec<String> {
     let mut found = Vec::new();
     let (_, table) = source
@@ -158,11 +121,6 @@ fn compiled_in(source: &str) -> Vec<String> {
     found
 }
 
-/// Every `name-revision` the register says is compiled in.
-///
-/// The first table only: the register's second one is the crates Cargo requires
-/// to be present and nothing compiles (F9.4), which a redistributor does not
-/// convey and `mcf licence` therefore does not print.
 fn admitted(register: &str) -> Vec<String> {
     let (_, rest) = register
         .split_once("**What is compiled into the artifact.**")
@@ -180,7 +138,6 @@ fn admitted(register: &str) -> Vec<String> {
     found
 }
 
-/// The value of a `field: "value",` line, if this is one.
 fn field<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     line.strip_prefix(name)?
         .trim()

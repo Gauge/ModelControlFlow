@@ -1,27 +1,3 @@
-//! `mcf pull`: a model enters this machine, with its provenance (B-029, §III).
-//!
-//! **What it does, in order.** Read the reference. Ask the hub what the
-//! repository publishes and at which revision. If no file was named, say what
-//! is there and stop — choosing a quantization for somebody is choosing what
-//! they will measure, and §3.13 refuses generality nobody asked for as firmly
-//! as A7 refuses a plausible default. If one was named, acquire it: bytes
-//! accumulate under a `.partial` name, the digest the hub declared is checked
-//! against the bytes that arrived, and the artifact's own name is given only to
-//! something verified (B-021).
-//!
-//! **Then two records, which are not the same record.** The provenance goes in
-//! a sidecar beside the artifact, because that is what travels with the file
-//! (§3.6); the acquisition goes in the journal, because that is what happened on
-//! this machine (A1). An artifact somebody later moves by hand keeps the first
-//! and cannot alter the second.
-//!
-//! **What it will not do yet.** Reach an `https` hub. MCF has no TLS stack —
-//! [findings.md](../../../doc/findings.md) F9 measured what admitting one costs
-//! and B-322 is where it happens — so a request for one is refused in as many
-//! words rather than attempted and failed obscurely. `--from` points at an
-//! `http` mirror, which is what the laboratory uses and what an operator on a
-//! closed network has.
-
 use std::path::{Path, PathBuf};
 
 use mcf_core::failure::Failure;
@@ -42,26 +18,15 @@ use mcf_record::json::Value;
 use crate::Response;
 use crate::models;
 
-/// Where MCF looks for models when nobody says otherwise.
 pub(crate) const DEFAULT_HUB: &str = "https://huggingface.co/";
 
-/// Where a credential came from, as the operator said.
-///
-/// There is no fourth option and no default. B-024's whole claim is that MCF
-/// never picks one up on its own: an operator either hands one over or names
-/// exactly where MCF may read it from, and either way what happened is in the
-/// provenance of the acquisition (§3.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Offered<'a> {
-    /// None, which is how most of the hub is read.
     Nothing,
-    /// This file holds one.
     File(&'a str),
-    /// This environment variable holds one, and the operator said so.
     Variable(&'a str),
 }
 
-/// Acquires a model, or says what would be acquired.
 pub(crate) fn run(
     asked_for: &str,
     from: Option<&str>,
@@ -71,8 +36,6 @@ pub(crate) fn run(
 ) -> Response {
     let reference = match reference::parse(asked_for) {
         Ok(reference) => reference,
-        // A word rather than a reference searches the hub for the names it
-        // has, so that `mcf pull qwen` answers with something to pull (A2).
         Err(_) if !asked_for.contains(['/', ':', '@', ' ']) && !asked_for.trim().is_empty() => {
             return crate::acquire::searched(asked_for, from, fresh);
         }
@@ -82,11 +45,6 @@ pub(crate) fn run(
         Ok(base) => base,
         Err(failure) => return refused("that is not a hub MCF can reach", &failure),
     };
-    // Where it goes: what the operator named for this acquisition, or the first
-    // store MCF knows about. A named store is not required to be one MCF
-    // already knows — naming a path *is* choosing one, and refusing an
-    // unfamiliar one would make the operator edit a variable to say something
-    // they just said (§3.15).
     let root = match into {
         Some(named) => {
             let named = std::path::Path::new(named);
@@ -144,14 +102,7 @@ pub(crate) fn run(
     };
 
     let Some(wanted) = reference.file.clone() else {
-        // The plan is what an operator is really asking for when they name a
-        // repository and no file: not *what is published* but *which of these
-        // will run here* (PR3, B-213).
         let planned = free_memory().and_then(|free| plan_for(&hub, &listing, free));
-        // And it is kept, whichever way it came out. A9 makes *does not fit
-        // here* a finding rather than a refusal, and a finding printed once and
-        // not written down cannot answer *what has this machine already been
-        // told it cannot run* (B-086).
         if let Ok(plan) = &planned {
             record_plan(&listing, plan, mcf_core::time::Timestamp::now());
         }
@@ -177,12 +128,6 @@ pub(crate) fn run(
     acquire_set(&hub, &listing, &wanted, entry, &root)
 }
 
-/// Fetches the file asked for — and where it is one part of a model
-/// published in several, every part, one after another (B-590): asking for
-/// any part is asking for the model, as the daemon does for the window.
-/// Each part is said as it lands, and the sentences at the end are about the
-/// first, which is the file an engine is pointed at and the name the store
-/// lists the model by.
 fn acquire_set(hub: &Hub, listing: &Listing, wanted: &str, entry: Entry, root: &Path) -> Response {
     let parts: Vec<Entry> = match listing.parts_of(wanted) {
         Some(set) if !set.is_whole() => {
@@ -240,13 +185,6 @@ fn acquire_set(hub: &Hub, listing: &Listing, wanted: &str, entry: Entry, root: &
     }
 }
 
-/// How much memory this machine has free, read because somebody ran a command.
-///
-/// B4 keeps hardware sampling out of anything that runs unasked, which is why
-/// `mcf_hub::offer::plan_for` takes the figure rather than going for it: the
-/// same plan is made by the daemon, and a daemon that read thermal and memory
-/// counters to answer a question would be one of the competitors it reports
-/// (§3.8). Here it is a command line, and a command line is somebody asking.
 fn free_memory() -> Result<mcf_core::measurement::Bytes, String> {
     match mcf_core::hardware::Machine::read().memory.available {
         mcf_core::attested::Attested::Known(available) => Ok(available),
@@ -256,22 +194,11 @@ fn free_memory() -> Result<mcf_core::measurement::Bytes, String> {
     }
 }
 
-/// Fetches one file and says what happened.
-///
-/// The fetching, the provenance and the journal entry are `mcf_hub`'s, so that
-/// the daemon does the same thing when the window asks. What is this surface's
-/// is the last paragraph: PR3's re-reading of the plan *after* the file is
-/// here, and the sentences.
 fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Response {
     let done = match mcf_hub::acquisition::one(hub, listing, entry, root) {
         Ok(done) => done,
         Err(failure) => return refused("nothing was acquired", &failure),
     };
-    // The plan is made from what a hub declares, before anything is fetched.
-    // What is true *now* is a different question, and PR3 asks it explicitly:
-    // the machine may have less memory than it had, and the file that arrived
-    // may not be the size the listing promised. Both are re-read here rather
-    // than assumed to have held.
     let again = match free_memory().and_then(|free| plan_for(hub, listing, free)) {
         Ok(plan) => plan_lines(&plan)
             .into_iter()
@@ -297,22 +224,10 @@ fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Resp
     }
 }
 
-/// The one place in this surface that reads the environment.
-///
-/// A function rather than a call at each site, so that everything below is
-/// *handed* a way to look and the reading happens where a reader can see it —
-/// the same discipline `mcf_hub::credentials` keeps, for the same reason
-/// (B-024).
 fn environment(variable: &str) -> Option<String> {
     std::env::var(variable).ok()
 }
 
-/// The credential the operator named, read from where they said it was.
-///
-/// Reading a file or an environment variable *because somebody named it* is not
-/// the silent pickup B-024 forbids: what makes it deliberate is that the name
-/// came from the command line, and what makes it accountable is that the origin
-/// travels with the credential into the record (§3.4).
 pub(crate) fn credential(
     offered: Offered<'_>,
     look_up: &dyn Fn(&str) -> Option<String>,
@@ -354,12 +269,6 @@ pub(crate) fn credential(
     Ok(Some(Credential::new(Secret::new(token), origin)))
 }
 
-/// What credentials are sitting on this machine, unused.
-///
-/// Shown only when the hub has just said it needs one. MCF has looked and used
-/// nothing: the whole point of B-024 is that finding a token is not permission
-/// to spend it, and the operator is told the name to pass rather than having
-/// the decision made for them.
 fn what_is_lying_around(look_up: &dyn Fn(&str) -> Option<String>) -> String {
     let seen = credentials::sightings(look_up, None, &|_| None);
     if seen.is_empty() {
@@ -377,11 +286,6 @@ fn what_is_lying_around(look_up: &dyn Fn(&str) -> Option<String>) -> String {
     lines.join("\n")
 }
 
-/// The plan as an operator reads it.
-///
-/// A free function rather than a method: the judgement is `mcf_hub`'s, and how
-/// a terminal renders it is this surface's. The window renders the same
-/// verdicts differently, which is the point of keeping them apart.
 fn plan_lines(plan: &Plan) -> Vec<String> {
     {
         let available = plan.available;
@@ -409,13 +313,6 @@ fn plan_lines(plan: &Plan) -> Vec<String> {
     }
 }
 
-/// Writes a plan to the record, and says nothing if it cannot.
-///
-/// A plan is information about a repository and a machine, not a change to
-/// either, so a record that could not be opened must not stop MCF answering
-/// the question it was asked (A4). The failure is not swallowed either: it is
-/// what `mcf log` will be missing, and the acquisition path already reports an
-/// unwritable record loudly where it matters.
 fn record_plan(listing: &Listing, plan: &Plan, at: Timestamp) {
     let Some(path) = mcf_record::journal::default_path() else {
         return;
@@ -440,11 +337,6 @@ fn record_plan(listing: &Listing, plan: &Plan, at: Timestamp) {
     let _written = journal.append(&Record::new(EntryKind::FitmentPlanned, at, body));
 }
 
-/// What a repository publishes, when nobody has said which file they want.
-///
-/// Choosing for an operator would be choosing what they measure. What MCF can
-/// do is put the choice in front of them with the sizes, which is the question
-/// they are actually asking.
 fn offer(listing: &Listing, planned: &std::result::Result<Plan, String>) -> String {
     let mut lines = vec![format!(
         "{} publishes {} file(s) at {}",
@@ -462,9 +354,6 @@ fn offer(listing: &Listing, planned: &std::result::Result<Plan, String>) -> Stri
             .and_then(mcf_hub::licence::recognize)
             .as_ref(),
     ));
-    // One line a variant, not one a file: a quantization published in
-    // parts is one thing to take, and taking it takes all of them (B-597,
-    // B-590).
     for variant in listing.variants() {
         let parts = match variant.parts {
             0 | 1 => String::new(),
@@ -493,9 +382,6 @@ fn offer(listing: &Listing, planned: &std::result::Result<Plan, String>) -> Stri
             ));
             lines.extend(plan_lines(plan));
         }
-        // The reason, not just the absence: a repository that publishes no
-        // configuration and one whose configuration MCF could not read are
-        // different facts, and only the second is MCF's fault (A2, A7).
         Err(why) => lines.push(format!(
             "\nMCF cannot say which of these would run here: {why}"
         )),
@@ -507,7 +393,6 @@ fn offer(listing: &Listing, planned: &std::result::Result<Plan, String>) -> Stri
     lines.join("\n")
 }
 
-/// What an operator is told when a model has arrived.
 fn render(
     acquired: &Acquired,
     listing: &Listing,
@@ -568,9 +453,6 @@ fn render(
             ));
             lines.push(format!("  {}", verdict.trim_start()));
         }
-        // The reason, the same as the offer gives before anything is fetched: a
-        // repository that publishes no configuration and one whose
-        // configuration MCF could not read are different facts (A2, F16).
         Err(why) => lines.push(format!(
             "  whether it will run here is a question MCF cannot answer: {why}"
         )),
@@ -585,7 +467,6 @@ fn render(
     lines.join("\n")
 }
 
-/// A refusal, said the way every other command says one (`crate::say`).
 fn refused(what: &str, failure: &Failure) -> Response {
     Response {
         text: crate::say::refusal(what, failure),
@@ -593,7 +474,6 @@ fn refused(what: &str, failure: &Failure) -> Response {
     }
 }
 
-/// Reads the licence a listing declares, for a surface that has one.
 #[cfg(test)]
 pub(crate) fn licence_of(listing: &Listing) -> Option<mcf_core::provenance::Licence> {
     listing

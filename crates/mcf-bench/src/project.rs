@@ -1,121 +1,22 @@
-//! What this machine would probably do, from what it has already done
-//! (B-214, PR3, A20, B34, B46).
-//!
-//! **PR3's question, before a byte is fetched:** *how fast would this be here?*
-//! MCF cannot measure a model it does not have, and refusing to say anything
-//! makes choosing between twenty published quantizations cost tens of gigabytes
-//! a guess. A20 admits the middle answer and then draws the line absolutely:
-//! *an estimate can never be mistaken for a measurement, never be promoted into
-//! one, and never be compared with one. It can only be replaced by one.* That
-//! wall is [`Estimate`]'s and is a compiler check; what this module owes is the
-//! other three conditions.
-//!
-//! **Band-shaped** (B46). A duration predicted from a rate is a range, and
-//! rendering it as one number is *the smallest possible version of a confident
-//! wrong number*. The band here is not invented: it is the slowest and fastest
-//! trials actually seen at the bracketing sizes, carried through the same
-//! interpolation.
-//!
-//! **From local history only** (B34). The corpus advises and never decides,
-//! and there is no corpus yet; every point here is a comparison this machine
-//! took and wrote down.
-//!
-//! **Absent where there is no history** — and, more strictly than the register
-//! asks, absent where there is no history *around* the thing being projected.
-//! Interpolating between two measured sizes is reading between points MCF has;
-//! projecting past the largest or below the smallest is extrapolation, and a
-//! straight line beyond the data is exactly the confident wrong number B46
-//! names. F67 measured the relationship this rests on — latency monotone in
-//! file size, because every trial loads the model — and F67 also measured where
-//! it stops being straight: a line through the extremes predicted the largest
-//! point eleven percent low.
-//!
-//! **What it is projecting.** Not throughput in the abstract: *the duration of
-//! one request of a stated token budget, on this machine, through whatever
-//! engine the history was taken through.* A projection for a budget this
-//! machine has no history at is absent, because two requests of different
-//! lengths are two different things and averaging over them would be inventing
-//! a rate nobody measured.
-//!
-//! [`Estimate`]: mcf_core::measurement::Estimate
-//!
-//! **Cross-check owed (B-390):** `score` grades the projection by leaving
-//! each point out and projecting it from the others (F68), which is the
-//! instrument checking itself. An independent source would be a second
-//! interpolation, or a measurement of the thing projected.
-
 use mcf_core::measurement::{Basis, Estimate, PartsPerMillion};
 use mcf_core::time::{Duration, Monotonic};
 
-/// How busy the machine was while a point was measured.
-///
-/// Thousandths of a processor, the larger of the readings taken either side of
-/// the run — the larger because a band planned from history should inherit the
-/// worse of the two conditions rather than the flattering one.
-///
-/// `None` where the entry recorded nothing about the machine, which is not
-/// *zero* and must never render as it: A7 keeps unknown unknown, and the
-/// entries written before `B-217` existed are exactly that case.
 pub type Competing = Option<u64>;
 
-/// One thing this machine has measured.
-///
-/// The bounds are the fastest and slowest trials of that arm, not a summary of
-/// them: B56 keeps the trials and derives nothing that discards them, and a
-/// band built from a mean would be a band around a number MCF does not compute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point {
-    /// How large the model file is.
     pub bytes: u64,
-    /// How many tokens the request was pinned to.
     pub tokens: u32,
-    /// The fastest trial of that arm.
     pub fastest: u64,
-    /// The slowest.
     pub slowest: u64,
-    /// What else the machine was doing while it was measured (B-385, §3.4).
-    ///
-    /// **Why a point carries this.** F74: an unrelated test suite held
-    /// twenty-six cores of this machine, and a generation that takes 400 ms
-    /// quiet took eighteen seconds. Those measurements are true and stay in
-    /// the record (A1), and a band read between them is not wrong — but a band
-    /// that does not say what it rested on has dropped the conditions, which
-    /// is what §3.4 and A6 exist to prevent.
-    ///
-    /// Carried rather than filtered: filtering needs a threshold, and the
-    /// threshold is DEC-007's to set.
     pub competing: Competing,
 }
 
-/// Why there is no projection.
-///
-/// Each is a state to report rather than a number to invent (A7). *MCF has
-/// never measured anything like this here* is a useful answer; a band with
-/// nothing under it is not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoBand {
-    /// Nothing has been measured at this token budget.
-    NoHistoryAtThatBudget {
-        /// The budget asked about.
-        tokens: u32,
-        /// The budgets this machine does have history at, sorted.
-        instead: Vec<u32>,
-    },
-    /// There is history, and it is all on one side of the thing asked about.
-    ///
-    /// Projecting past it is extrapolation, and a straight line beyond the data
-    /// is the confident wrong number B46 names.
-    OutsideWhatWasMeasured {
-        /// The smallest file measured at this budget.
-        smallest: u64,
-        /// The largest.
-        largest: u64,
-    },
-    /// Fewer than two points, which cannot bracket anything.
-    TooLittleHistory {
-        /// How many points there are at this budget.
-        points: usize,
-    },
+    NoHistoryAtThatBudget { tokens: u32, instead: Vec<u32> },
+    OutsideWhatWasMeasured { smallest: u64, largest: u64 },
+    TooLittleHistory { points: usize },
 }
 
 impl core::fmt::Display for NoBand {
@@ -155,11 +56,6 @@ impl core::fmt::Display for NoBand {
     }
 }
 
-/// A band, and the conditions of the two measurements it was read between.
-///
-/// The two travel together because separating them is the defect B-385 names:
-/// a caller holding only the band has no way to say what it rested on, and
-/// every surface that renders it drops the conditions silently.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Projection {
     band: Estimate<Duration<Monotonic>>,
@@ -167,29 +63,23 @@ pub struct Projection {
 }
 
 impl Projection {
-    /// The band.
     #[must_use]
     pub const fn band(&self) -> &Estimate<Duration<Monotonic>> {
         &self.band
     }
 
-    /// What it was read between.
     #[must_use]
     pub const fn rested_on(&self) -> &Rested {
         &self.rested_on
     }
 }
 
-/// The conditions of the two measurements a band was read between (B-385).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rested {
-    /// How busy the machine was for each of the two, in thousandths of a
-    /// processor, in size order.
     pub competing: [Competing; 2],
 }
 
 impl Rested {
-    /// The busier of the two, where either is known.
     #[must_use]
     pub fn busiest(&self) -> Competing {
         self.competing.iter().copied().flatten().max()
@@ -226,11 +116,6 @@ impl core::fmt::Display for Rested {
     }
 }
 
-/// What a request of `tokens` on a file of `bytes` would probably take here.
-///
-/// # Errors
-///
-/// Every reason there is no band, by name.
 pub fn band(history: &[Point], bytes: u64, tokens: u32) -> Result<Projection, NoBand> {
     let mut at_budget: Vec<&Point> = history
         .iter()
@@ -259,8 +144,6 @@ pub fn band(history: &[Point], bytes: u64, tokens: u32) -> Result<Projection, No
         });
     }
 
-    // The two measured points this file sits between. Reading between points
-    // MCF has, rather than past them.
     let mut below = **smallest;
     let mut above = **largest;
     for point in &at_budget {
@@ -291,50 +174,20 @@ pub fn band(history: &[Point], bytes: u64, tokens: u32) -> Result<Projection, No
                 above.slowest,
                 bytes,
             )),
-            // B34: the corpus advises and never decides, and there is no
-            // corpus. Every point behind this is a comparison this machine
-            // took.
             Basis::LocalHistory,
         ),
     })
 }
 
-/// How well the projection has done against what it was later measured to be
-/// (B-215, §6.16, §3.4).
-///
-/// **§6.16 turned on the projection.** *The instrument does not get to grade
-/// itself*, and a projection that nobody scores is a claim MCF makes for ever
-/// without ever finding out whether it was any good.
-///
-/// **Scored by leaving each point out.** For every measurement in the history,
-/// the band that *would have been* projected for it from the others is
-/// computed and compared with what it actually was. That needs no stored
-/// predictions and no new record: it is recomputed from the history each time
-/// it is asked, so it tracks as the history grows — which is what B-215 means
-/// by *over time*. A stored score would be a score about a record that has
-/// since changed.
-///
-/// **The points at the ends are not scored**, and that is not a gap: with them
-/// left out there is nothing to read between, so there is no projection to
-/// score. Counting them as misses would be scoring the refusal to extrapolate,
-/// which is the thing the model gets right.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scored {
-    /// How many points the band would have contained.
     pub inside: usize,
-    /// How many it would have missed.
     pub outside: usize,
-    /// How many could not be scored, having nothing to be read between.
     pub unscorable: usize,
-    /// The worst miss, in parts per million against the nearer edge of the
-    /// band it missed.
     pub worst: PartsPerMillion,
 }
 
 impl Default for Scored {
-    /// Nothing scored yet — not *scored and perfect*, which is what a zero
-    /// worst-miss with a zero count would read as. `scored()` is what tells
-    /// them apart, and `Display` checks it first.
     fn default() -> Self {
         Self {
             inside: 0,
@@ -346,7 +199,6 @@ impl Default for Scored {
 }
 
 impl Scored {
-    /// How many points were scored at all.
     #[must_use]
     pub const fn scored(&self) -> usize {
         self.inside.saturating_add(self.outside)
@@ -383,7 +235,6 @@ impl core::fmt::Display for Scored {
     }
 }
 
-/// Scores the projection against every measurement this machine has.
 #[must_use]
 pub fn score(history: &[Point]) -> Scored {
     let mut held = Scored::default();
@@ -398,9 +249,6 @@ pub fn score(history: &[Point]) -> Scored {
             Err(_) => held.unscorable = held.unscorable.saturating_add(1),
             Ok(projection) => {
                 let said = projection.band();
-                // The measured value is the point itself, and *inside* means
-                // the bands overlap: a point whose own fastest-to-slowest range
-                // meets the projected one was not missed.
                 let (low, high) = (said.low().as_nanos(), said.high().as_nanos());
                 if point.slowest >= low && point.fastest <= high {
                     held.inside = held.inside.saturating_add(1);
@@ -426,12 +274,6 @@ pub fn score(history: &[Point]) -> Scored {
     held
 }
 
-/// The value at `at`, read between two measured points.
-///
-/// Integer arithmetic in `u128`, because this crate holds no floating-point
-/// number and an interpolation is not a reason to introduce one (A6). Where the
-/// two points share a size there is nothing to read between and the nearer
-/// value is the answer.
 fn between(x0: u64, y0: u64, x1: u64, y1: u64, at: u64) -> u64 {
     if x1 <= x0 {
         return y0;

@@ -1,54 +1,13 @@
-//! The four acts MCF asks about every time (B-039, §6.14).
-//!
-//! **The line is category, not frequency.** §6.14 resolves the tension between
-//! §VI's ease and §3.7's caution in one sentence: MCF picks defaults freely for
-//! everything reversible and benign — quantization, context length, runtime,
-//! placement — and asks, *every time and however much friction it adds*, before
-//! it executes untrusted code, consumes large irrecoverable resources, exposes
-//! itself to a network, or destroys an artifact.
-//!
-//! A gate that softened with repetition would be the thing the rule is written
-//! against: the second deletion is not safer than the first, and a tool that
-//! stopped asking has decided on the operator's behalf that they meant it.
-//!
-//! **What this module is.** The four, enumerable, each saying where MCF asks —
-//! or that no path exists to ask about yet, which is the honest state of two of
-//! them. `checks/tests/the_four_gates.rs` reads this and checks the claims
-//! against the tree, so a gate cannot quietly stop existing and a *no path
-//! exists* cannot quietly become one.
-//!
-//! **It is not a permission system.** There are no roles, no policies and no
-//! configuration: §VII resists an identity model MCF has no use for, and
-//! §3.13 refuses generality nobody asked for. What is here is a list, and the
-//! list is checkable.
-
-/// An act MCF asks about every time.
-///
-/// `#[non_exhaustive]` because adding one is a decision about what MCF gates,
-/// which §6.14 states and this enumerates — never a convenience.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Gated {
-    /// Running code that came from somewhere else (§6.4).
     UntrustedExecution,
-    /// Spending something that cannot be got back: bandwidth on a metered
-    /// link, hours of a download, room on a disk.
     LargeIrrecoverableUse,
-    /// Making MCF reachable from another machine (§6.12).
     NetworkExposure,
-    /// Destroying an artifact that is here (§3.11).
     Destruction,
-    /// Publishing anything off this machine (§3.20, A24).
-    ///
-    /// **The fifth, and it was missing** (F115). §6.14 names four and A16
-    /// absorbs §3.20 as well, which makes five — and A16's own check says *the
-    /// five categories are enumerable in code*. Four were. The one that was not
-    /// is the only one of the five that cannot be undone, which is the reason
-    /// A24 exists as a separate rule.
     Publication,
 }
 
-/// All five, in the order A16 names them.
 pub const GATED: [Gated; 5] = [
     Gated::UntrustedExecution,
     Gated::LargeIrrecoverableUse,
@@ -57,38 +16,19 @@ pub const GATED: [Gated; 5] = [
     Gated::Publication,
 ];
 
-/// How MCF asks about one of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Asking {
-    /// The act is a command somebody types, and the command is the asking.
-    ///
-    /// This is what §6.14 means by *asked every time* on a headless surface:
-    /// there is no dialogue to raise, and a command that names what it will do
-    /// is a better record of consent than a prompt anybody would click through
-    /// (A22, §VI).
     ByCommand {
-        /// What is typed.
         command: &'static str,
-        /// What makes it an authorization rather than a request: the thing
-        /// that must be said before MCF will act.
         and: &'static str,
     },
-    /// MCF cannot do this at all, so there is nothing to gate yet.
-    ///
-    /// A stronger statement than a gate, and a weaker position: it holds only
-    /// while the capability is absent, and the check that reads this is what
-    /// notices when it stops being true.
     NoPathExists {
-        /// Why there is none.
         why: &'static str,
     },
 }
 
 impl Gated {
-    /// What the act is called, in a record and in a message.
-    ///
-    /// Stable for life (C5): once written it travels.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -100,7 +40,6 @@ impl Gated {
         }
     }
 
-    /// The clause that gates it.
     #[must_use]
     pub const fn clause(self) -> &'static str {
         match self {
@@ -112,13 +51,6 @@ impl Gated {
         }
     }
 
-    /// Where MCF asks, today.
-    ///
-    /// Two of the four have no path to gate: MCF runs nothing it acquires and
-    /// listens on no network. Saying so here rather than leaving the gate
-    /// unbuilt is what lets a check hold the *absence* — B-025 and B-036 are
-    /// where each becomes a gate, and this entry is what has to change when
-    /// they do.
     #[must_use]
     pub const fn asking(self) -> Asking {
         match self {
@@ -133,11 +65,6 @@ impl Gated {
                       what it publishes, the sizes, and which variants would run here — and \
                       nothing is acquired (B-029, B-213)",
             },
-            // The control plane stays a Unix socket with no bind address and
-            // no port: what can be exposed is a hosted model's own API, and
-            // only by the hold's switch, which is the asking, with a key the
-            // daemon refuses to go without; letting the hold go revokes it
-            // (§6.12, B-577).
             Self::NetworkExposure => Asking::ByCommand {
                 command: "mcf host",
                 and: "`--open on` is said with it and an API key is set, since a hold reachable \
@@ -150,12 +77,6 @@ impl Gated {
                 and: "a reason is stated and the plan it authorizes is the one that was \
                       previewed. Nothing is deleted at all without --purge (B-027)",
             },
-            // The strongest statement available, and the weakest position: it
-            // holds only while MCF has nowhere to send anything. `mcf share`
-            // *produces* a contribution and shows every row that would leave —
-            // producing is not sending (A24), and there is no destination in
-            // this build, no address to configure and no code that opens one.
-            // The check that reads this is what notices the day that changes.
             Self::Publication => Asking::NoPathExists {
                 why: "MCF sends nothing anywhere: there is no destination, no address to \
                       configure and no path that opens one. `mcf share` writes a file and \

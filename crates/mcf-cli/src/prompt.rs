@@ -1,15 +1,3 @@
-//! `mcf prompt`: what a prompt does to a model (§3.8, A19, A7).
-//!
-//! **A client of the control plane, like every other surface** (A22). The
-//! measuring is the daemon's — one generation per sentence and one per seed —
-//! and what is here is the asking and the reading. A window or a console
-//! showing the same thing asks the same request and renders the same answer.
-//!
-//! **`--json` because a report is something a program acts on.** A person
-//! reads which of their sentences reached the answer; an editor or an agent
-//! wants the same thing as data, and printing it twice in two shapes is how
-//! the two drift apart.
-
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 
@@ -18,38 +6,19 @@ use mcf_serve::control::{Answer, Request};
 
 use crate::Response;
 
-/// The seed every report is taken under unless the caller says otherwise.
-///
-/// Stated rather than drawn: a report is a comparison of answers, and a seed
-/// that moved between two runs of it would make them incomparable (D19).
 const SEED: u64 = 41;
 
-/// What the command line asked to have taken apart, before the file is read.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Asked<'a> {
-    /// The document, given inline.
     pub prompt: Option<&'a str>,
-    /// The document, in a file; `-` is the standard input.
     pub file: Option<&'a str>,
-    /// What to take it apart into, where the caller said.
     pub by: Option<mcf_serve::prompt::Unit>,
-    /// The most parts to remove, where the caller said.
     pub most: Option<usize>,
-    /// The temperature to draw the settledness seeds at, where the caller
-    /// stated one (B-431).
     pub temperature: Option<mcf_core::configuration::Thousandths>,
-    /// The further readings asked for (B-434, B-435).
     pub extras: mcf_serve::prompt::Extras,
-    /// How the turn is framed, where the person asked for a system turn or
-    /// one of the template's switches: a persona is read under the frame it
-    /// will be used in (B-455).
     pub turn: mcf_serve::turn::Turn,
 }
 
-/// The document, from wherever the caller put it.
-///
-/// A file that cannot be read is said with its path and the reason, not
-/// analysed as empty (A2).
 fn document(asked: &Asked<'_>) -> Result<String, String> {
     match (asked.prompt, asked.file) {
         (Some(text), _) => Ok(text.to_owned()),
@@ -67,7 +36,6 @@ fn document(asked: &Asked<'_>) -> Result<String, String> {
     }
 }
 
-/// Asks the daemon what this prompt does.
 pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response {
     let prompt = match document(asked) {
         Ok(text) if !text.trim().is_empty() => text,
@@ -102,8 +70,6 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
             served: false,
         };
     };
-    // No deadline: a report is many generations, and a timeout here would
-    // report a working run as a broken daemon.
     let request = Request::PromptReport {
         model: named.to_owned(),
         prompt,
@@ -123,10 +89,6 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
             served: false,
         };
     }
-    // **Printed as it comes.** A report is many generations, and the daemon
-    // says which it is on before each; a terminal that showed nothing until
-    // the report showed a run that looked stopped (B-479, A7). The report
-    // is the line that says it is done.
     let Some(answer) = the_report_as_it_comes(&connection) else {
         return Response {
             text: "mcf: MCF did not answer".to_owned(),
@@ -154,9 +116,6 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
     }
 }
 
-/// Reads the daemon's lines, printing each step as it is announced, and
-/// returns the line that ends the run: the report, or the refusal. `None`
-/// where the connection ended with neither.
 fn the_report_as_it_comes(connection: &UnixStream) -> Option<Answer> {
     for read in BufReader::new(connection).lines() {
         let read = read.ok()?;
@@ -174,17 +133,12 @@ fn the_report_as_it_comes(connection: &UnixStream) -> Option<Answer> {
     None
 }
 
-/// What the document was taken apart into, as the report calls one part.
 fn unit_of(body: &Value) -> &str {
     body.get("unit")
         .and_then(Value::as_text)
         .unwrap_or("sentence")
 }
 
-/// How many tenths of the answer moved, for the bar.
-///
-/// The truncation is the point: a bar has ten cells and a part-cell is not one
-/// of them.
 #[allow(
     clippy::integer_division,
     reason = "a bar has ten cells; a fraction of a cell is not drawn"
@@ -193,7 +147,6 @@ const fn tenths_of_the_answer(parts_per_million: i64) -> i64 {
     parts_per_million / 100_000
 }
 
-/// Parts per million as whole and tenth of a per cent.
 #[allow(
     clippy::integer_division,
     reason = "a tenth of a per cent is the resolution shown; the rest is not"
@@ -202,18 +155,11 @@ const fn as_percent(parts_per_million: i64) -> (i64, i64) {
     (parts_per_million / 10_000, (parts_per_million / 1_000) % 10)
 }
 
-/// A share of an answer, written out.
-///
-/// Integer arithmetic, because the workspace ships no floating point: a NaN
-/// that reaches a record is a figure nobody can compare, and `as_percent`
-/// above has split parts per million into whole and tenth for the same reason
-/// since this file was written.
 pub(crate) fn percent(parts_per_million: i64) -> String {
     let (whole, tenth) = as_percent(parts_per_million);
     format!("{whole}.{tenth}%")
 }
 
-/// A difference of two shares, with its sign: `+2.0`, `-1.3`, `0.0`.
 fn signed_percent(difference: i64) -> String {
     let (whole, tenth) = as_percent(difference.abs());
     match difference.signum() {
@@ -223,8 +169,6 @@ fn signed_percent(difference: i64) -> String {
     }
 }
 
-/// Ten cells of ten per cent, so the eye finds the parts that moved the
-/// answer without reading a column of numbers.
 fn bar(parts_per_million: i64) -> String {
     let filled = usize::try_from(tenths_of_the_answer(parts_per_million))
         .unwrap_or(0)
@@ -232,8 +176,6 @@ fn bar(parts_per_million: i64) -> String {
     "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled))
 }
 
-/// A column of a table: what heads it, and whether its cells sit against
-/// the right edge, as figures do, or the left, as text does.
 struct Column {
     head: String,
     right: bool,
@@ -253,9 +195,6 @@ fn text(head: &str) -> Column {
     }
 }
 
-/// Rows under their heads, each column as wide as its widest cell and the
-/// last one unpadded. A row with fewer cells than columns is drawn as far
-/// as it goes; one starting with `→` is a line under the row before it.
 fn table(columns: &[Column], rows: &[Vec<String>]) -> Vec<String> {
     let widths: Vec<usize> = columns
         .iter()
@@ -304,8 +243,6 @@ fn laid_out(row: &[String], columns: &[Column], widths: &[usize]) -> String {
     line.trim_end().to_owned()
 }
 
-/// A section's head: a label, and the conditions its figures were read
-/// under, `·`-separated (§3.4).
 fn head(label: &str, conditions: &[String]) -> String {
     if conditions.is_empty() {
         label.to_owned()
@@ -314,17 +251,14 @@ fn head(label: &str, conditions: &[String]) -> String {
     }
 }
 
-/// Where the answer's first token ranked, as the window's cell (B-072).
 fn rank_cell(held: Option<&Value>, depth: i64) -> String {
     mcf_desk::held_mark(held, depth)
 }
 
-/// How much of the answer's opening stayed, as the window's cell (B-072).
 fn open_cell(held: Option<&Value>) -> String {
     mcf_desk::open_mark(held)
 }
 
-/// The first line of an answer, cut to a width the column holds.
 fn first_line_of(said: &str) -> String {
     let line = said.trim().lines().next().unwrap_or_default();
     let mut shown: String = line.chars().take(72).collect();
@@ -334,7 +268,6 @@ fn first_line_of(said: &str) -> String {
     format!("{shown:?}")
 }
 
-/// A part's text, cut to a width the column holds.
 fn cut(said: &str, width: usize) -> String {
     let line = said.trim().lines().next().unwrap_or_default();
     let mut shown: String = line.chars().take(width).collect();
@@ -344,7 +277,6 @@ fn cut(said: &str, width: usize) -> String {
     shown
 }
 
-/// A row under a table's row: what the model wrote, where it was carried.
 fn answer_row(read: &Value, key: &str) -> Option<Vec<String>> {
     read.get(key)
         .and_then(Value::as_text)
@@ -372,12 +304,6 @@ fn part_text(body: &Value, at: usize) -> String {
         .unwrap_or_default()
 }
 
-/// What to call the model at the top of the report.
-///
-/// The file's own name where a path was given: a report headed with an
-/// absolute path spends its first line on a directory the reader typed, and
-/// what identifies the model to them is the last part of it. Anything that is
-/// not a path is shown as they wrote it.
 fn header_name(named: &str) -> &str {
     named
         .rsplit(['/', '\\'])
@@ -405,12 +331,9 @@ fn conditions(body: &Value) -> Vec<String> {
         rows.push(("addressed", addressed.to_owned()));
     }
     // What was asked of the model's own template, where anything was: every
-    // figure below is of the prompt inside that turn (B-455, §3.4).
     if let Some(asked) = text("asked_as") {
         rows.push(("asked", asked.to_owned()));
     }
-    // **Who read the prompt** (B-441): the engine that answered it, named,
-    // or why there is no count at all (A7).
     let read_by = text("read_by").unwrap_or("not recorded");
     let tokens = integer(body, "prompt_tokens");
     if tokens > 0 {
@@ -434,8 +357,6 @@ fn conditions(body: &Value) -> Vec<String> {
     rows.push(("generations", what_the_generations_were(body)));
     rows.push(("floor", the_floor(body, unit)));
     let floor = integer(body, "floor_parts_per_million");
-    // **Where the floor swamps the column, that is the finding** (§3.15,
-    // A7, F147): said before the rows, in a line of its own.
     rows.push((
         "separable",
         if floor < 500_000 {
@@ -463,8 +384,6 @@ fn conditions(body: &Value) -> Vec<String> {
         .collect()
 }
 
-/// What the generations were spent on — each thing that cost some, and
-/// only the things this run asked for (A19, §3.4).
 fn what_the_generations_were(body: &Value) -> String {
     let list = |key: &str| body.get(key).and_then(Value::as_list).map(<[Value]>::len);
     let mut spent = vec![
@@ -485,8 +404,6 @@ fn what_the_generations_were(body: &Value) -> String {
     if let Some(swaps) = list("swaps") {
         spent.push(format!("swaps {swaps}"));
     }
-    // The forms rendered, not the forms: one the prompt is already in
-    // cost nothing (B-444).
     if let Some(forms) = body.get("forms").and_then(Value::as_list) {
         spent.push(format!(
             "forms {}",
@@ -505,8 +422,6 @@ fn what_the_generations_were(body: &Value) -> String {
     spent.join(" · ")
 }
 
-/// The floor's line: the figure, and how it was drawn — one draw before the
-/// last part, or at every position with its spread (B-434, §3.4).
 fn the_floor(body: &Value, unit: &str) -> String {
     let floor = percent(integer(body, "floor_parts_per_million"));
     let depth = integer(body, "forced_depth");
@@ -516,8 +431,6 @@ fn the_floor(body: &Value, unit: &str) -> String {
             rank_cell(Some(held), depth),
             open_cell(Some(held))
         ),
-        // Not taken, and why: a dash alone sent a reader to look for an
-        // engine that was running the whole time (A2, F160).
         _ => format!(
             " · control in: not taken · {}",
             body.get("held_refused")
@@ -550,8 +463,6 @@ fn the_floor(body: &Value, unit: &str) -> String {
     }
 }
 
-/// The parts removed in turn (§3.8, B-429): a row a part, the control's
-/// row under them, and the parts at or under the floor named.
 fn removed(body: &Value) -> Vec<String> {
     let unit = unit_of(body);
     let depth = integer(body, "forced_depth");
@@ -573,9 +484,6 @@ fn removed(body: &Value) -> Vec<String> {
         return lines;
     }
     let by_part = body.get("expected_by_part");
-    // The thought's cost is a column only where there was a thought: a
-    // column of dashes for every model that does not think would be a
-    // column about MCF (B-455, §3.15).
     let thinking = clauses
         .iter()
         .any(|clause| thought_of(clause, "thought").is_some());
@@ -644,19 +552,14 @@ fn removed(body: &Value) -> Vec<String> {
     lines
 }
 
-/// What the model spent thinking without this part, in tokens; a dash
-/// where nothing was counted (A7).
 fn thought_cell(clause: &Value) -> String {
     thought_cell_of(thought_of(clause, "thought"))
 }
 
-/// The same, from a figure already read.
 fn thought_cell_of(thought: Option<i64>) -> String {
     thought.map_or_else(|| "—".to_owned(), |thought| thought.to_string())
 }
 
-/// A part's share of the rank reading, `first choice/pieces`; a dash
-/// where the reading was not taken or the part fell past it (A7).
 fn own_cell(by_part: Option<&Value>, at: usize) -> String {
     by_part
         .and_then(|grouped| grouped.get("parts"))
@@ -674,8 +577,6 @@ fn own_cell(by_part: Option<&Value>, at: usize) -> String {
         )
 }
 
-/// Which parts sit at or under the floor — and, where every one did and the
-/// floor was nought, that the prompt did not steer this model (A7).
 fn under_the_floor(body: &Value, floor: i64) -> Vec<String> {
     let clauses = clauses_of(body);
     let quiet: Vec<String> = clauses
@@ -685,8 +586,6 @@ fn under_the_floor(body: &Value, floor: i64) -> Vec<String> {
         .map(|(at, _)| format!("#{}", at.saturating_add(1)))
         .collect();
     let mut lines = Vec::new();
-    // **Every removal giving the same answer is a finding, and it reads
-    // like a broken tool** (A7).
     if floor == 0 && quiet.len() == clauses.len() {
         lines.push(
             "  same answer  every removal and the control · the prompt did not steer this model"
@@ -704,8 +603,6 @@ fn under_the_floor(body: &Value, floor: i64) -> Vec<String> {
     lines
 }
 
-/// The floor at every position, where it was drawn (B-434): a row a
-/// position, and how many parts sit under the widest of them.
 fn floors(body: &Value, unit: &str) -> Vec<String> {
     let Some(floors) = body.get("floors").and_then(Value::as_list) else {
         return Vec::new();
@@ -759,8 +656,6 @@ fn floors(body: &Value, unit: &str) -> Vec<String> {
     lines
 }
 
-/// Each part asked as the whole prompt in turn (B-435), read against the
-/// control alone; not asked is said with the flag and its cost.
 fn alone(body: &Value) -> Vec<String> {
     let unit = unit_of(body);
     let depth = integer(body, "forced_depth");
@@ -826,8 +721,6 @@ fn alone(body: &Value) -> Vec<String> {
     lines
 }
 
-/// The prompt grown from the front (B-436): a row a prefix, and the first
-/// within the floor of the answer as written.
 fn prefixes(body: &Value) -> Vec<String> {
     let unit = unit_of(body);
     let depth = integer(body, "forced_depth");
@@ -883,8 +776,6 @@ fn prefixes(body: &Value) -> Vec<String> {
     lines
 }
 
-/// Neighbouring parts swapped (B-437): a row a pair, and how many of them
-/// moved the answer past the floor — the pairs whose order the model reads.
 fn swaps(body: &Value) -> Vec<String> {
     let unit = unit_of(body);
     let depth = integer(body, "forced_depth");
@@ -937,11 +828,6 @@ fn swaps(body: &Value) -> Vec<String> {
     lines
 }
 
-/// The same parts in each form (B-444): a row a form read, how far its
-/// answer sat from the answer as written, and how many forms moved it
-/// past the floor — the forms this model reads as forms. A form not
-/// rendered is a line under the table saying why, never a row at nought
-/// (A7).
 fn forms(body: &Value) -> Vec<String> {
     let depth = integer(body, "forced_depth");
     let floor = integer(body, "floor_parts_per_million");
@@ -1011,7 +897,6 @@ fn forms(body: &Value) -> Vec<String> {
     lines
 }
 
-/// The form a served row names.
 fn form_name(formed: &Value) -> String {
     formed
         .get("form")
@@ -1020,9 +905,6 @@ fn form_name(formed: &Value) -> String {
         .to_owned()
 }
 
-/// A reading that was not asked for, said as not asked with the flag that
-/// asks it and what it would cost (A7). The forms' cost is a ceiling, and
-/// says so: a form the prompt is already in is not asked (B-444).
 fn not_asked(extra: mcf_serve::prompt::Extra, body: &Value) -> Vec<String> {
     let removed = clauses_of(body).len();
     let parts =
@@ -1045,9 +927,6 @@ fn not_asked(extra: mcf_serve::prompt::Extra, body: &Value) -> Vec<String> {
     ]
 }
 
-/// The readings not asked for, each with its flag and its cost, on one
-/// table rather than four empty sections (§3.15, B-443). Nothing where
-/// every one was asked.
 fn more(body: &Value) -> Vec<String> {
     let mut rows = Vec::new();
     if body.get("alone").and_then(Value::as_list).is_none() {
@@ -1081,8 +960,6 @@ fn more(body: &Value) -> Vec<String> {
     lines
 }
 
-/// Whether several seeds gave several answers, under the temperature it
-/// was asked at — or not asked, which is never *settled* (A7, B-431, B60).
 fn seeds(body: &Value) -> Vec<String> {
     let Some(settled) = body
         .get("settled")
@@ -1119,9 +996,6 @@ fn seeds(body: &Value) -> Vec<String> {
     ]
 }
 
-/// How each seeded draw was cut before it was taken, and whose cut it was
-/// (B-440): `top_k 20 · top_p 0.950 · min_p off · declared by the file`. A
-/// report from before the cut was stated says so rather than *off* (A7).
 fn cut_line(settled: &Value) -> String {
     let named = |key: &str| settled.get(key).and_then(Value::as_text);
     match (
@@ -1137,11 +1011,6 @@ fn cut_line(settled: &Value) -> String {
     }
 }
 
-/// How the model received each word (B-443): where its first piece ranked
-/// in the model's own choice, how many of its pieces the model would have
-/// written itself, and the part it begins in. Least expected first, a
-/// word the model would have written whole left off the table; past the
-/// depth read is a bound, not an absence (A7). Not taken is said with why.
 fn expected(body: &Value) -> Vec<String> {
     let Some(by_word) = body
         .get("expected_by_word")
@@ -1164,16 +1033,10 @@ fn expected(body: &Value) -> Vec<String> {
     let (mut whole, mut own, mut pieces, mut past, mut unread, mut no_context) =
         (0_i64, 0_i64, 0_i64, 0_i64, 0_i64, 0_i64);
     for word in words {
-        // **A word no piece fell in was not read, and is not a first
-        // choice.** Nought of nought counted as every piece the model's own,
-        // and a report whose placement had failed on every piece said
-        // *first choice 11/11 words · 0/0 pieces* (A7, F160).
         if integer(word, "pieces") == 0 {
             unread = unread.saturating_add(1);
             continue;
         }
-        // **A word nothing preceded was not ranked, and is not a first
-        // choice either.** Only its read pieces are counted (F160).
         let read = integer(word, "pieces").saturating_sub(integer(word, "unread"));
         if read == 0 {
             no_context = no_context.saturating_add(1);
@@ -1181,7 +1044,6 @@ fn expected(body: &Value) -> Vec<String> {
         }
         pieces = pieces.saturating_add(read);
         own = own.saturating_add(integer(word, "first_choice"));
-        // Outside the list asked for: a bound, not an absence (A7).
         let rank = word
             .get("rank")
             .and_then(Value::as_integer)
@@ -1203,7 +1065,6 @@ fn expected(body: &Value) -> Vec<String> {
         "own = pieces it would have written".to_owned(),
         format!("# = {}", unit_of(body)),
     ];
-    // Under what addressing (§3.4, B-429).
     if let Some(under) = body.get("ranked_under").and_then(Value::as_text) {
         conditions.push(format!("read under {under}"));
     }
@@ -1251,11 +1112,8 @@ fn expected(body: &Value) -> Vec<String> {
     lines
 }
 
-/// How many words the table shows before it says how many more there are.
 const MOST_WORDS: usize = 20;
 
-/// One word's row: its first piece's rank, its pieces the model would have
-/// written itself over its pieces, the part it begins in, and the word.
 fn word_row(rank: i64, word: &Value, depth: i64) -> Vec<String> {
     vec![
         if rank == i64::MAX {
@@ -1280,9 +1138,6 @@ fn word_row(rank: i64, word: &Value, depth: i64) -> Vec<String> {
     ]
 }
 
-/// The part the model least expected, by its share of first-choice pieces
-/// (B-433). Ties name nobody, and one part is nobody's least (A19). Shares
-/// are compared crosswise, so no division is done.
 fn least_expected(body: &Value) -> Vec<String> {
     let Some(parts) = body
         .get("expected_by_part")
@@ -1328,7 +1183,6 @@ fn least_expected(body: &Value) -> Vec<String> {
     lines
 }
 
-/// The answer to the prompt as written, under the cap it was drawn to.
 fn answer(body: &Value) -> Vec<String> {
     let baseline = body
         .get("baseline")
@@ -1340,16 +1194,11 @@ fn answer(body: &Value) -> Vec<String> {
         conditions.push(format!("cap {limit} tokens"));
     }
     conditions.extend(mcf_desk::answer_marks(body));
-    // What the model spent before this answer began, where the turn gave it
-    // a marker to think inside: a persona that costs three hundred tokens of
-    // thinking costs them on every turn it is used (B-455, B-451).
     if let Some(thought) = thought_of(body, "baseline_thought") {
         conditions.push(format!("{} before it", count_of(thought, "token")));
     }
     let mut lines = vec![head("ANSWER", &conditions)];
     let written: Vec<&str> = baseline.lines().collect();
-    // An empty answer is a figure, not a blank (A7, F160): Devstral, bare,
-    // ended a build instruction at one token that printed as nothing.
     if baseline.trim().is_empty() {
         lines.push(format!("  {}", mcf_desk::NOTHING_WRITTEN));
     }
@@ -1369,15 +1218,10 @@ fn answer(body: &Value) -> Vec<String> {
     lines
 }
 
-/// What was spent thinking, where it was counted at all: null is *not
-/// counted*, which is not nought (A7).
 fn thought_of(held: &Value, key: &str) -> Option<i64> {
     held.get(key).and_then(Value::as_integer)
 }
 
-/// A count and the thing counted, in English.
-///
-/// `1 sentence`, `2 sentences`. Every one of these read `1 sentence(s)`.
 fn count_of(how_many: i64, noun: &str) -> String {
     if how_many == 1 {
         format!("1 {noun}")
@@ -1386,9 +1230,6 @@ fn count_of(how_many: i64, noun: &str) -> String {
     }
 }
 
-/// The report: the conditions, then a table a reading, then the answer.
-/// Figures and short labels; a not-asked reading is a line that says so
-/// and names the flag (A7, §3.4, §3.15).
 fn rendered(body: &Value, named: &str) -> Vec<String> {
     let mut lines = vec![format!("PROMPT · {}", header_name(named)), String::new()];
     lines.extend(conditions(body));
@@ -1408,7 +1249,6 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    // A test says what went wrong by failing.
     #![allow(clippy::panic, clippy::expect_used)]
 
     use super::*;
@@ -1450,9 +1290,6 @@ mod tests {
         .expect("a well-formed report")
     }
 
-    /// Three sentences at a hundred per cent tie on the bar; what the answer
-    /// became and where its first token went are the columns that order
-    /// them (B-429).
     #[test]
     fn a_tied_column_is_ordered_by_the_answer_and_the_forced_rank() {
         let text = removed(&body()).join("\n");
@@ -1485,7 +1322,6 @@ mod tests {
         assert!(text.contains("at/under floor  1 · #3"), "{text}");
     }
 
-    /// A reading nobody took is a dash and a reason, not a rank (A7).
     #[test]
     fn an_untaken_forced_reading_is_said_rather_than_ranked() {
         let mut held = body();
@@ -1513,10 +1349,6 @@ mod tests {
         assert_eq!(open_cell(None), "—");
     }
 
-    /// The addressing the ranks were read under is on the page (§3.4), and
-    /// the words come least expected first — past the depth read before
-    /// any rank, a word the model would have written whole not at all
-    /// (B-443, A7).
     #[test]
     fn the_words_come_least_expected_first_under_what_they_were_read_under() {
         let text = expected(&body()).join("\n");
@@ -1554,8 +1386,6 @@ mod tests {
         assert!(!text.contains("more ·"), "{text}");
     }
 
-    /// A reading nobody took is said with why, not drawn empty (A7); a
-    /// long prompt's table stops and says how many words it left off.
     #[test]
     fn an_untaken_word_reading_says_why_and_a_long_one_says_how_many_more() {
         let mut none = body();
@@ -1595,8 +1425,6 @@ mod tests {
         let text = expected(&long).join("\n");
         assert!(text.contains("  5 more · --json"), "{text}");
         assert!(text.contains("first choice  0/25 words"), "{text}");
-        // A word no piece fell in is not a first choice, and is counted as
-        // what it is (A7).
         let mut unread = body();
         if let Value::Map(fields) = &mut unread {
             let words: Vec<Value> = (0..3)
@@ -1626,8 +1454,6 @@ mod tests {
         assert!(text.contains("in no piece  3 words"), "{text}");
         assert!(text.contains("in no word  12 pieces"), "{text}");
         assert!(!text.contains("past depth"), "{text}");
-        // A word nothing preceded was not ranked: it is counted apart, and
-        // a word partly so is scored on the pieces that were read (F160).
         let mut first = body();
         if let Value::Map(fields) = &mut first {
             let word = |text: &str, pieces, first_choice, unread| {
@@ -1661,9 +1487,6 @@ mod tests {
         assert!(!text.contains("in no piece"), "{text}");
     }
 
-    /// The rank reading grouped by part names the part the model least
-    /// expected under the impact table, with each part's share on its row,
-    /// and counts the pieces that fell in no part (B-433, A7).
     #[test]
     fn the_report_names_the_part_the_model_least_expected() {
         let text = removed(&body()).join("\n");
@@ -1679,9 +1502,6 @@ mod tests {
         assert!(text.contains("2/2    —  You are careful."), "{text}");
     }
 
-    /// The floor at every position is a spread on the floor's line and a
-    /// table of draws with the parts under its widest; a report that drew
-    /// it once says so and names the flag (B-434, §3.4).
     #[test]
     fn the_floor_is_a_spread_when_it_was_drawn_everywhere_and_one_draw_when_not() {
         let text = rendered(&body(), "m").join("\n");
@@ -1754,9 +1574,6 @@ mod tests {
         assert!(!text.contains("--floors"), "{text}");
     }
 
-    /// The unit, who decided it, and how the prompt reached the model are
-    /// the conditions of the run, and they are on the page; the cap is said
-    /// with the flag that raises it (§3.4, §3.15, B-430).
     #[test]
     fn the_report_says_what_it_took_apart_and_how_it_was_addressed() {
         let text = rendered(&body(), "m").join("\n");
@@ -1788,7 +1605,6 @@ mod tests {
         );
     }
 
-    /// A floor past a half is said as the finding, before the rows (§3.15).
     #[test]
     fn a_floor_past_a_half_says_the_run_did_not_separate_the_parts() {
         let text = rendered(&body(), "m").join("\n");
@@ -1807,8 +1623,6 @@ mod tests {
         );
     }
 
-    /// The report says where it survives the terminal, and says plainly
-    /// when it does not (A1, A2, B-432).
     #[test]
     fn the_report_says_where_it_was_recorded_or_that_it_was_not() {
         let text = rendered(&body(), "m").join("\n");
@@ -1824,8 +1638,6 @@ mod tests {
         assert!(text.contains("record       NOT RECORDED"), "{text}");
     }
 
-    /// Settledness is said under the temperature it was asked at, and where
-    /// none was stated it is said as not asked — never as settled (A7, B-431).
     #[test]
     fn settledness_is_said_under_its_temperature_or_as_not_asked() {
         let text = rendered(&body(), "m").join("\n");
@@ -1864,7 +1676,6 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("control 1 · seeds 3"), "{text}");
-        // A report from before the cut was stated does not say *off* (A7).
         if let Value::Map(fields) = &mut warm
             && let Some(Value::Map(settled)) = fields.get_mut("settled")
         {
@@ -1874,9 +1685,6 @@ mod tests {
         assert!(text.contains("· cut not recorded"), "{text}");
     }
 
-    /// Each part alone is a table read against the control alone, with the
-    /// answer each drew; where it was not asked the report says so with the
-    /// flag and the cost, never a figure (A7, B-435).
     #[test]
     fn each_part_alone_is_said_against_the_control_alone_or_as_not_asked() {
         let text = rendered(&body(), "m").join("\n");
@@ -1930,9 +1738,6 @@ mod tests {
         assert!(text.contains("as far as control or further  2"), "{text}");
     }
 
-    /// The prompt grown from the front is a row a prefix with the first
-    /// that came within the floor; where it was not asked the report says
-    /// so with the flag and the cost (A7, B-436).
     #[test]
     fn the_prompt_grown_from_the_front_says_where_the_answer_arrived_or_that_it_was_not_asked() {
         let text = rendered(&body(), "m").join("\n");
@@ -1980,9 +1785,6 @@ mod tests {
         );
     }
 
-    /// Neighbours swapped is a row a pair with how many moved the answer
-    /// past the floor; where it was not asked the report says so with the
-    /// flag and the cost (A7, B-437).
     #[test]
     fn neighbours_swapped_says_how_many_pairs_the_order_carries_or_that_it_was_not_asked() {
         let text = rendered(&body(), "m").join("\n");
@@ -2018,10 +1820,6 @@ mod tests {
         );
     }
 
-    /// The forms are a row a form read, with how many moved the answer
-    /// past the floor; a form not rendered is a line saying why; where
-    /// the forms were not asked the report says so with the flag and a
-    /// cost that is a ceiling (A7, B-444).
     #[test]
     fn the_forms_say_which_dress_the_model_reads_or_that_they_were_not_asked() {
         let text = rendered(&body(), "m").join("\n");
@@ -2077,8 +1875,6 @@ mod tests {
         );
     }
 
-    /// A table pads every column to its widest cell, figures against the
-    /// right edge and text against the left, and never pads the last.
     #[test]
     fn a_table_lines_its_columns_up() {
         let lines = table(
@@ -2103,8 +1899,6 @@ mod tests {
         assert_eq!(signed_percent(0), "0.0");
     }
 
-    /// A document in a file that is not there is said with the path, not
-    /// analysed as empty (A2).
     #[test]
     fn a_missing_file_is_said_with_its_path() {
         let asked = Asked {
@@ -2123,10 +1917,6 @@ mod tests {
         assert_eq!(document(&inline).as_deref(), Ok("A. B."));
     }
 
-    /// Devstral, bare, ended a build instruction at one token that
-    /// printed as nothing, and the page showed a heading over a blank
-    /// (F160). The answer's length and what ended it are on the heading,
-    /// and an empty answer is said to be one.
     #[test]
     fn an_empty_answer_is_said_with_its_length_and_what_ended_it() {
         let mut body = self::body();

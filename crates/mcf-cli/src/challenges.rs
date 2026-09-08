@@ -1,15 +1,3 @@
-//! The coding catalogue run: every challenge in every language MCF has an
-//! image for, each attempt a row with its time and its tokens, a failed
-//! attempt handed back with what did not hold up to the retries the
-//! person set, and the rows saying at which attempt a challenge was
-//! solved and how many corrections it took (B-563, D56).
-//!
-//! A challenge states what a function must do and gives its cases in a
-//! form no language owns; each language renders the signature, the calls
-//! and the expected results in its own literals, and a harness prints
-//! `ok` or `no <what came back>` a case. What leaves the container is
-//! that alphabet and nothing else (B-025).
-
 use std::path::Path;
 
 use mcf_record::json::Value;
@@ -18,27 +6,15 @@ use mcf_serve::examine::Reading;
 use crate::catalogue::{Challenge, Kind, Lit, Tier};
 use crate::languages::Language;
 
-/// How many attempts a challenge gets in a language unless the person
-/// says otherwise: the first, and up to nine corrections.
 pub(crate) const RETRIES_DEFAULT: usize = 10;
 
-/// How many tokens one answer may take: room for a hard one.
 const BUDGET: usize = 1400;
 
-/// The smallest window `--window` takes: the daemon's own floor, which
-/// holds an answer and its correction.
 const SMALLEST_WINDOW: u64 = 4096;
 
-/// How many of the compiler's lines — or the program's own, where it did
-/// not run to the end — are handed back, and how wide each may be: enough
-/// to name the error and the line, bounded so that a wall of complaint is
-/// not the next prompt (B-565, B-566).
 const COMPILER_LINES: usize = 12;
 const COMPILER_WIDTH: usize = 200;
 
-/// The first lines of the container's error stream, bounded: the
-/// compiler's where it did not compile, the program's — a traceback, a
-/// panic, a thrown error — where it did not run to the end.
 #[must_use]
 pub(crate) fn compiler_said(heard: &str) -> String {
     heard
@@ -50,21 +26,14 @@ pub(crate) fn compiler_said(heard: &str) -> String {
         .join("\n")
 }
 
-/// The languages the catalogue runs in, by the name `--languages` takes.
 pub(crate) const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 
-/// The Go image, pinned; the catalogue is the first to ask for it.
 pub(crate) const GO: Language = Language {
     name: "go",
     image: "docker.io/library/golang",
-    // `golang:1-alpine`, read from the registry rather than written from memory.
     digest: "sha256:f86f1a6701e3dcc445fec097a42f78b758f15950ccf032c2d3e54e2754d32fdb",
     file: "answer.go",
     memory: "1g",
-    // The toolchain builds the standard library afresh in an image with no
-    // cache, and does it with as many processes as it has cores; held to
-    // one package at a time it fits the same process limit every other
-    // language runs under (B-025).
     command: &[
         "timeout",
         "120",
@@ -77,8 +46,6 @@ pub(crate) const GO: Language = Language {
     present: &["go", "version"],
 };
 
-/// Python as a language of the catalogue: the same pinned image the
-/// Python suites run in, run the same way as the others.
 pub(crate) const PYTHON: Language = Language {
     name: "python",
     image: crate::eval::IMAGE,
@@ -89,23 +56,15 @@ pub(crate) const PYTHON: Language = Language {
     present: &["python3", "--version"],
 };
 
-/// What one run of the catalogue was asked to be: which languages, how
-/// many attempts, which tier (D56).
 #[derive(Debug)]
 pub(crate) struct Plan {
-    /// The languages, in the order named.
     pub languages: Vec<&'static Language>,
-    /// How many attempts a challenge gets in a language.
     pub retries: usize,
-    /// One tier, or every tier.
     pub tier: Option<Tier>,
-    /// The window every ask is made in, where the person set it; sized
-    /// to each turn otherwise.
     pub window: Option<u64>,
 }
 
 impl Plan {
-    /// The plan `mcf eval` was given, or what is wrong with it.
     pub(crate) fn asked(
         languages: Option<&str>,
         retries: Option<usize>,
@@ -154,10 +113,6 @@ impl Plan {
         })
     }
 
-    /// What the run will use, a line each, said before it runs: the
-    /// engine and device MCF resolves for the model here, the window, the
-    /// answer budget, the retries, the languages, the tier and the seed
-    /// (B-564, D56). What the daemon decides at the ask is said as such.
     #[must_use]
     pub(crate) fn said(&self, model: &Path) -> Vec<String> {
         let resolved = crate::explain::choice_for(model);
@@ -201,7 +156,6 @@ impl Plan {
         lines
     }
 
-    /// The plan as the run's conditions, beside the engine's.
     pub(crate) fn conditions(&self) -> Vec<(&'static str, Value)> {
         vec![
             (
@@ -249,7 +203,6 @@ impl Plan {
     }
 }
 
-/// The language of a name, where MCF has one.
 pub(crate) fn language_named(name: &str) -> Option<&'static Language> {
     match name {
         "python" => Some(&PYTHON),
@@ -260,7 +213,6 @@ pub(crate) fn language_named(name: &str) -> Option<&'static Language> {
     }
 }
 
-/// A language's own words for a kind, as a parameter and as a return.
 fn kind_said(language: &str, kind: Kind, returned: bool) -> &'static str {
     match (language, kind, returned) {
         ("rust", Kind::Int, _) => "i64",
@@ -285,7 +237,6 @@ fn kind_said(language: &str, kind: Kind, returned: bool) -> &'static str {
     }
 }
 
-/// The signature a language is asked to write, in words it knows.
 #[must_use]
 pub(crate) fn signature(language: &str, challenge: &Challenge) -> String {
     let params: Vec<String> = challenge
@@ -315,7 +266,6 @@ pub(crate) fn signature(language: &str, challenge: &Challenge) -> String {
     }
 }
 
-/// What a language is asked, the first time.
 #[must_use]
 pub(crate) fn ask_for(language: &Language, challenge: &Challenge) -> String {
     let typed: Vec<String> = challenge
@@ -347,7 +297,6 @@ pub(crate) fn ask_for(language: &Language, challenge: &Challenge) -> String {
     )
 }
 
-/// A literal in a language.
 fn literal(language: &str, lit: &Lit) -> String {
     let text = |t: &str| {
         let escaped = t.replace('\\', "\\\\").replace('"', "\\\"");
@@ -399,27 +348,20 @@ fn literal(language: &str, lit: &Lit) -> String {
     }
 }
 
-/// What the harness expects to see printed for a result, in the form the
-/// harness canonicalises results to.
 fn expected_said(language: &str, kind: Kind, lit: &Lit) -> String {
     match (language, kind, lit) {
-        // Rust prints `{:?}`: Some(5), None, "text", ["a", "b"], [1, 2].
         ("rust", Kind::OptInt, Lit::Int(n)) => format!("Some({n})"),
         ("rust", Kind::OptInt, Lit::None) => "None".to_owned(),
         ("rust", _, Lit::Text(t)) => format!("{t:?}"),
         ("rust", _, Lit::Texts(items)) => format!("{items:?}"),
         ("rust", _, Lit::Ints(items)) => format!("{items:?}"),
         ("rust", _, other) => literal("rust", other),
-        // Go prints the JSON of the result, or `v ok` for the optional.
         ("go", Kind::OptInt, Lit::Int(n)) => format!("{n} true"),
         ("go", Kind::OptInt, Lit::None) => "0 false".to_owned(),
-        // Python prints json.dumps of the result; JavaScript JSON.stringify;
-        // Go the JSON of the result.
         (_, _, other) => json_of(other),
     }
 }
 
-/// A literal as canonical JSON: no spaces.
 fn json_of(lit: &Lit) -> String {
     match lit {
         Lit::Int(n) => n.to_string(),
@@ -445,8 +387,6 @@ fn json_of(lit: &Lit) -> String {
     }
 }
 
-/// The program the container runs: the model's code, then every case,
-/// each printing `ok` or `no <what came back>`.
 #[must_use]
 pub(crate) fn checker(language: &Language, challenge: &Challenge, written: &str) -> String {
     use std::fmt::Write as _;
@@ -548,8 +488,6 @@ pub(crate) fn checker(language: &Language, challenge: &Challenge, written: &str)
     out
 }
 
-/// A Go answer without its package line and its imports, since the
-/// harness supplies both.
 #[must_use]
 pub(crate) fn go_plain(written: &str) -> String {
     let mut out = Vec::new();
@@ -574,12 +512,10 @@ pub(crate) fn go_plain(written: &str) -> String {
         }
         out.push(line);
     }
-    // A written `func main` would collide with the harness's.
     let joined = out.join("\n");
     crate::languages::without_main_named(&joined, "func main(")
 }
 
-/// A Python string literal holding the text.
 fn python_string(text: &str) -> String {
     format!(
         "'''{}'''",
@@ -592,49 +528,32 @@ fn go_string(text: &str) -> String {
     format!("`{}`", text.replace('`', "` + \"`\" + `"))
 }
 
-/// What one attempt came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Attempt {
-    /// Whether anything was written.
     pub wrote: bool,
-    /// Whether it compiled, where the language compiles; `None` otherwise.
     pub compiled: Option<bool>,
-    /// Whether the harness reached every case.
     pub ran: bool,
-    /// Which cases held, in order, with what came back where one did not.
     pub cases: Vec<(bool, String)>,
-    /// The tokens the answer took.
     pub tokens: usize,
-    /// What the asking took.
     pub ask_ns: u64,
-    /// The window the turn ran in, where the account said.
     pub window: Option<u64>,
-    /// The compiler's first lines where the answer did not compile;
-    /// empty otherwise (B-565).
     pub compiler: String,
-    /// The program's own first lines where it did not run to the end of
-    /// the cases — a traceback, a panic, a thrown error, nothing on a
-    /// deadline; empty otherwise (B-566).
     pub runtime: String,
-    /// The code, kept for the next attempt's feedback.
     pub code: String,
 }
 
 impl Attempt {
-    /// Whether every case held.
     #[must_use]
     pub(crate) fn whole(&self) -> bool {
         self.ran && self.cases.iter().all(|(held, _)| *held)
     }
 
-    /// How many cases held.
     #[must_use]
     pub(crate) fn held(&self) -> usize {
         self.cases.iter().filter(|(held, _)| *held).count()
     }
 }
 
-/// Reads the harness's lines: `ok`, `no <got>`, `compiled`, `notcompiled`.
 #[must_use]
 pub(crate) fn read_harness(
     said: &str,
@@ -656,7 +575,6 @@ pub(crate) fn read_harness(
     (built, ran, read)
 }
 
-/// The feedback a failed attempt is handed back with.
 #[must_use]
 pub(crate) fn feedback(language: &Language, challenge: &Challenge, last: &Attempt) -> String {
     use std::fmt::Write as _;
@@ -720,7 +638,6 @@ pub(crate) fn feedback(language: &Language, challenge: &Challenge, last: &Attemp
     out
 }
 
-/// One challenge in one language, up to `retries` attempts.
 #[must_use]
 #[allow(
     clippy::too_many_arguments,
@@ -797,9 +714,6 @@ pub(crate) fn attempt_all(
             code,
         };
         let solved = attempt.whole();
-        // Every attempt is a line on the stream as it ends, so a struggle of
-        // ten attempts is watched as it happens and not read at its end
-        // (B-572).
         crate::eval::result(&format!(
             "        attempt {} of {retries}: {} · {} of {} held · {} token(s) · {}",
             attempts.len().saturating_add(1),
@@ -818,8 +732,6 @@ pub(crate) fn attempt_all(
             took_said(attempt.ask_ns)
         ));
         attempts.push(attempt);
-        // A stop asked mid-pair ends the pair after this attempt: the rows
-        // say how many attempts it had (B-571).
         if solved || crate::eval::stop_asked() {
             break;
         }
@@ -827,27 +739,14 @@ pub(crate) fn attempt_all(
     attempts
 }
 
-/// A run to go on from: the newest under the method whose conditions are
-/// these and which did not finish — stopped, or cut off (B-571).
 #[derive(Debug)]
 pub(crate) struct Resumable {
-    /// The run's identity in the record.
     pub run: String,
-    /// When it began, as the record says.
     pub at: String,
-    /// The challenge-language pairs it already has a `solved` row for.
     pub pairs: Vec<(String, String)>,
-    /// How many rows it holds.
     pub rows: usize,
 }
 
-/// Finds the run to resume, asking the daemon for the model's runs under
-/// the method: the newest whose conditions match the plan's and whose
-/// end is not `finished`. `None` where there is none.
-///
-/// # Errors
-///
-/// The daemon could not be asked.
 pub(crate) fn resumable(
     named: &str,
     method: &str,
@@ -903,8 +802,6 @@ pub(crate) fn resumable(
     Ok(None)
 }
 
-/// The rows of one challenge in one language: each attempt, and the
-/// whole.
 #[must_use]
 #[allow(clippy::too_many_lines, reason = "one row a line, each named")]
 pub(crate) fn rows_of(challenge: &Challenge, language: &str, attempts: &[Attempt]) -> Vec<Reading> {
@@ -1047,7 +944,6 @@ pub(crate) fn rows_of(challenge: &Challenge, language: &str, attempts: &[Attempt
     rows
 }
 
-/// A span of nanoseconds in seconds, to a tenth, in words.
 #[expect(
     clippy::integer_division,
     reason = "a tenth of a second is the unit said"
@@ -1057,7 +953,6 @@ fn took_said(ns: u64) -> String {
     format!("{}.{}s", tenths / 10, tenths % 10)
 }
 
-/// One challenge in one language, in words.
 #[must_use]
 pub(crate) fn said_of(language: &str, attempts: &[Attempt]) -> String {
     let tokens = attempts
@@ -1096,8 +991,6 @@ pub(crate) fn said_of(language: &str, attempts: &[Attempt]) -> String {
     }
 }
 
-/// Runs the catalogue: every challenge asked for in every language, each
-/// with its retries; the lines said, the rows, the engine that answered.
 #[allow(
     clippy::too_many_arguments,
     reason = "one run's conditions, each named in the rows"
@@ -1140,11 +1033,6 @@ pub(crate) fn run(
     }
     let of = challenges.len().saturating_mul(present.len().max(1));
     let mut done = 0_usize;
-    // Every challenge's lines go out as they are known — the challenge, its
-    // statement, then a language a line — so that a person, or a window
-    // reading the stream, sees each result the moment it is in, not at the
-    // end of a run that can take hours (B-569). The report at the end
-    // repeats none of them.
     for challenge in &challenges {
         crate::eval::result(&format!(
             "{} · {} · {}",
@@ -1157,8 +1045,6 @@ pub(crate) fn run(
             challenge.statement.chars().take(160).collect::<String>()
         ));
         for language in &present {
-            // A pair the run being resumed already has is skipped, and said
-            // so, so that the stream still names every pair (B-571).
             if done_already
                 .iter()
                 .any(|(held, in_language)| held == challenge.name && in_language == language.name)
@@ -1192,8 +1078,6 @@ pub(crate) fn run(
                 &mut engine_ran,
             );
             let pair = rows_of(challenge, language.name, &attempts);
-            // Landed the moment they are known, so that a run stopped or
-            // killed keeps them (B-570).
             if let Some(landing) = landing.as_deref_mut()
                 && let Err(why) = landing.land(engine_ran.as_deref(), &pair)
             {
@@ -1202,8 +1086,6 @@ pub(crate) fn run(
             rows.extend(pair);
             crate::eval::result(&format!("    {}", said_of(language.name, &attempts)));
             done = done.saturating_add(1);
-            // Asked to stop: the attempt in hand was finished and its rows
-            // landed; nothing further is started (B-571).
             if crate::eval::stop_asked() {
                 stopped = Some(format!("stopped after {done} of {of}"));
                 crate::eval::result(&format!(
@@ -1231,9 +1113,6 @@ mod tests {
     use super::{Attempt, expected_said, feedback, read_harness, signature};
     use crate::catalogue::{CHALLENGES, Kind, Lit};
 
-    /// One correct answer to the first challenge in every language, run
-    /// through its harness in its container: each harness compiles,
-    /// runs and reads `ok` for every case. Needs podman and the images.
     #[test]
     #[ignore = "needs podman and the pinned images; run with --ignored"]
     fn every_harness_holds_a_reference_answer() {
@@ -1278,8 +1157,6 @@ mod tests {
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
-    /// What was asked becomes the plan and its conditions; a window too
-    /// small for an answer and its correction is refused with the floor.
     #[test]
     fn the_plan_says_what_it_runs_under_and_refuses_a_window_too_small() {
         let plan =
@@ -1342,8 +1219,6 @@ mod tests {
         assert!(why.contains("at least one"), "{why}");
     }
 
-    /// A compile failure is handed back with the compiler's first lines,
-    /// bounded, and a row counts them (B-565).
     #[test]
     fn a_compile_failure_is_handed_back_with_what_the_compiler_said() {
         let merge = CHALLENGES
@@ -1396,10 +1271,6 @@ mod tests {
         assert_eq!(count, Some(12));
     }
 
-    /// A run that did not reach the end is handed back with what the
-    /// program said on its way out — a traceback — and a row counts the
-    /// lines; one that said nothing is told it may have run past the
-    /// deadline (B-566).
     #[test]
     fn a_run_that_did_not_reach_the_end_is_handed_back_with_what_it_said() {
         let merge = CHALLENGES
@@ -1445,10 +1316,6 @@ mod tests {
         assert!(fed.contains("run past the deadline"), "{fed}");
     }
 
-    /// An answer that raises outside the cases, run through the Python
-    /// harness in its container: the harness reports no case, the error
-    /// stream carries the traceback, and the bounded reading names the
-    /// exception. Needs podman.
     #[test]
     #[ignore = "needs podman and the pinned image; run with --ignored"]
     fn a_traceback_reaches_the_correction() {

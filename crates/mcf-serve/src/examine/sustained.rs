@@ -1,37 +1,20 @@
-//! Sustained generation: tokens a second sampled every thirty seconds
-//! over five minutes, with the card's temperature, clock and power
-//! beside each sample (B-530, D55, D11).
-//!
-//! A throughput figure is taken in the first seconds after a load, on a
-//! cold card at its highest clock. A card that heats and throttles, or a
-//! machine that shares the card, gives a different figure at minute
-//! four. This keeps the model generating from one prompt, completion
-//! after completion, and every thirty seconds writes down what it did
-//! since the last sample and what the sensors said at that moment.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "sustained";
 
-/// How long it runs, in seconds.
 pub const DURATION_S: u64 = 300;
 
-/// How often a sample is taken, in seconds.
 pub const EVERY_S: u64 = 30;
 
-/// How many tokens each completion produces, at most.
 const PRODUCE: usize = 256;
 
-/// What is generated from.
 const ASK: &str = "Write a long, plain account of a walk along a river from its source to the \
 sea, one paragraph after another, with no headings and no lists.";
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

@@ -1,26 +1,3 @@
-//! Suite data and user traffic are different categories, structurally
-//! (B-146, §6.8, A17, A25, B9, F114).
-//!
-//! **§6.8 says why the separation must be structural**: *benchmark suites —
-//! whose content is fixture data, not user data — may be recorded in full, and
-//! this distinction is exactly why suite data and user traffic must be
-//! structurally separated rather than separated by convention.* A flag on one
-//! store is separation by convention. It is right until something forgets to
-//! set it, and what it protects is the operator's most sensitive text.
-//!
-//! **It was not academic.** Seven hours after MCF's content store began holding
-//! anything, 614 files were in it, and most were MCF's own probe traffic — the
-//! chat-template probe's three constant questions and a model's answers — filed
-//! beside a person's `mcf run` and indistinguishable from it (F114).
-//!
-//! **What is structural here.** Two types with no conversion (`Whose::User`,
-//! `Whose::Fixture`), two directories, and a store that is opened *for* a
-//! category and can write only there. Which one a turn is travels on the wire
-//! with the request, because the daemon cannot tell a probe's constant question
-//! from a person's prompt by looking at it — they arrive on the same socket in
-//! the same shape.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used)]
 
 use mcf_record::content::Whose;
@@ -31,14 +8,10 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// The two categories live in two places and neither is the other.
 #[test]
 fn the_two_categories_are_two_directories() {
     assert_ne!(Whose::User.directory(), Whose::Fixture.directory());
     assert_ne!(Whose::User.as_str(), Whose::Fixture.as_str());
-    // A third category would be a third retention policy nobody has decided
-    // (DEC-005), and a reader meeting one would have to guess which of the two
-    // rules it follows.
     for name in ["suite", "benchmark", "other", ""] {
         assert_eq!(
             Whose::parse(name),
@@ -48,11 +21,6 @@ fn the_two_categories_are_two_directories() {
     }
 }
 
-/// The category is not a setting.
-///
-/// "Cannot be defeated by configuration" is B-146's done-when. What decides is
-/// the surface that made the request, in code, at the point the request is
-/// built — so there is nothing to configure and nothing to get wrong twice.
 #[test]
 fn nothing_reads_the_category_from_configuration() {
     for file in [
@@ -75,18 +43,11 @@ fn nothing_reads_the_category_from_configuration() {
     );
 }
 
-/// Every surface that asks for a generation says whose text it is.
-///
-/// The compiler requires the field — there is no `Default` — so what this adds
-/// is that no site fills it in with the *wrong* one by copying a neighbour: MCF
-/// asking a model something is fixture, and a person's prompt is theirs.
 #[test]
 fn each_surface_files_its_traffic_where_it_belongs() {
     for (file, expected) in [
         ("crates/mcf-cli/src/run.rs", "Whose::User"),
         ("crates/mcf-cli/src/bench.rs", "Whose::User"),
-        // The cross-check's constant prompt is asked for by the daemon since
-        // B-424 (`cross_checking`); the console only asks the daemon.
         ("crates/mcf-serve/src/daemon.rs", "Whose::Fixture"),
         ("crates/mcf-serve/src/probes.rs", "Whose::Fixture"),
         ("crates/mcf-serve/src/cost.rs", "Whose::Fixture"),
@@ -110,7 +71,6 @@ fn each_surface_files_its_traffic_where_it_belongs() {
     }
 }
 
-/// A store can only write where its category says.
 #[test]
 fn a_store_writes_only_in_its_own_directory() {
     let source = read("crates/mcf-record/src/content.rs");
@@ -122,8 +82,6 @@ fn a_store_writes_only_in_its_own_directory() {
         source.contains("whose: Whose,") && source.contains("pub const fn whose(&self)"),
         "and must carry the category it was opened for, or nothing can check what it holds"
     );
-    // `keep` writes under `self.path`, which came from the category. A `keep`
-    // that took a path or a category would be one a caller could aim.
     let (_, keep) = source
         .split_once("pub fn keep(")
         .expect("the store keeps content");
@@ -137,11 +95,6 @@ fn a_store_writes_only_in_its_own_directory() {
     }
 }
 
-/// And the record says which kind of turn it was.
-///
-/// Whose text a generation was is a *condition* of it, not content: a turn MCF
-/// asked for is a different experiment from one a person asked for, and §3.4
-/// makes that a thing the record carries.
 #[test]
 fn the_record_says_who_asked() {
     let daemon = read("crates/mcf-serve/src/daemon.rs");

@@ -1,12 +1,3 @@
-//! Concurrency: how a server's throughput scales with simultaneous
-//! requests (B-500, D52).
-//!
-//! A hosted server answers more than one caller, and what each of them
-//! gets is a figure nobody had: the aggregate rises with the count while
-//! each request's own rate falls, and where those cross is a fact about
-//! this model on this machine. One server with eight slots, and one,
-//! two, four and eight pinned generations at once.
-
 use mcf_record::json::Value;
 
 use super::{
@@ -15,22 +6,16 @@ use super::{
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "concurrency";
 
-/// How many slots the server is started with.
 const SLOTS: u32 = 8;
 
-/// The counts of simultaneous requests tried.
 const COUNTS: [usize; 4] = [1, 2, 4, 8];
 
-/// How deep each request's prompt is.
 const DEPTH: usize = 128;
 
-/// How many tokens each request produces, pinned.
 const PRODUCE: usize = 32;
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -144,8 +129,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// `count` requests at once: each one's own time where it produced what
-/// it was pinned to, why one did not, and the wall time of them all.
 fn at_once(
     count: usize,
     ask: &(dyn Fn() -> Result<crate::served::Completed, mcf_core::Failure> + Sync),

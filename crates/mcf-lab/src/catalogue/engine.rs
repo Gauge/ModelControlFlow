@@ -1,22 +1,9 @@
-//! Scenarios in which no vendored engine will run the artifact.
-//!
-//! D31: MCF ships a stand-in so that a model no vendored engine runs still
-//! runs — marked, behaviour-class only, and never reporting a speed (B65). The
-//! failure MCF claims to handle here is `engine.unavailable`, and A13 requires
-//! it be reproducible.
-//!
-//! **What is simulated is the observation** (D26). MCF cannot conjure an
-//! artifact no engine supports, and does not need to: what it observes in that
-//! case is a run that fell through to the stand-in and a result that carries
-//! the mark saying so. That is what this constructs.
-
 use mcf_core::engine::{Run, StandIn};
 use mcf_core::failure::Category;
 
 use crate::scenario::{Outcome, Scenario};
 use crate::world::World;
 
-/// The vendored engine will not run it, so the stand-in did.
 pub(super) const NO_VENDORED_ENGINE: Scenario = Scenario {
     id: "engine/no-vendored-engine",
     produces: Category::EngineUnavailable,
@@ -29,22 +16,12 @@ fn no_vendored_engine(_world: &World) -> Outcome {
     let stand_in: Run<StandIn> = Run::at_build("mcf-0.1.0-m0");
     let marked = stand_in.mark(stand_in.behaviour("the tool call parsed"));
 
-    // A5: the mark is what makes the result usable. A stand-in result with no
-    // mark would be a corrupted result, so the scenario produces the mark's own
-    // cause — which is the classified failure MCF is claiming to handle.
     match marked.degradation().causes().first() {
         Some(failure) => Outcome::Produced(failure.clone()),
         None => Outcome::Unexpected("a stand-in result carried no mark".to_owned()),
     }
 }
 
-/// The supervision contract, at every stage a process can die in (B-033, §3.1).
-///
-/// Each scenario hands `supervise` a command that dies a particular way, and
-/// what comes back is the classified failure MCF claims to handle. The engine
-/// is a shell rather than a model because the contract is about the process,
-/// not the weights (D26: the observable is the exit, and that is what is
-/// built).
 pub(super) const ENGINE_NOT_FOUND: Scenario = Scenario {
     id: "engine/spawn-not-found",
     produces: Category::EngineSpawnNotFound,
@@ -60,7 +37,6 @@ fn engine_not_found(_world: &World) -> Outcome {
     }
 }
 
-/// Dies before saying anything.
 pub(super) const ENGINE_EXIT_IMMEDIATE: Scenario = Scenario {
     id: "engine/exit-immediate",
     produces: Category::EngineExitImmediate,
@@ -78,7 +54,6 @@ fn engine_exit_immediate(_world: &World) -> Outcome {
     }
 }
 
-/// Dies after part of an answer.
 pub(super) const ENGINE_EXIT_MIDSTREAM: Scenario = Scenario {
     id: "engine/exit-midstream",
     produces: Category::EngineExitMidstream,
@@ -102,7 +77,6 @@ fn engine_exit_midstream(_world: &World) -> Outcome {
     }
 }
 
-/// Killed by a signal.
 pub(super) const ENGINE_EXIT_SIGNAL: Scenario = Scenario {
     id: "engine/exit-signal",
     produces: Category::EngineExitSignal,
@@ -119,7 +93,6 @@ fn engine_exit_signal(_world: &World) -> Outcome {
     }
 }
 
-/// A program that is there and cannot be run: refused, not "not found".
 pub(super) const ENGINE_SPAWN_REFUSED: Scenario = Scenario {
     id: "engine/spawn-refused",
     produces: Category::EngineSpawnRefused,
@@ -129,8 +102,6 @@ pub(super) const ENGINE_SPAWN_REFUSED: Scenario = Scenario {
 };
 
 fn engine_spawn_refused(world: &World) -> Outcome {
-    // A directory is there and is not executable: `spawn` fails with something
-    // other than not-found, which is the case this category is for.
     let directory = world.scratch().join("an-engine-that-is-a-directory");
     if std::fs::create_dir_all(&directory).is_err() {
         return Outcome::Unexpected("the scratch directory could not be made".to_owned());
@@ -142,7 +113,6 @@ fn engine_spawn_refused(world: &World) -> Outcome {
     }
 }
 
-/// Two provisioned pins of one component: the operator's choice, not MCF's.
 pub(super) const TWO_ENGINES_PROVISIONED: Scenario = Scenario {
     id: "engine/two-provisioned",
     produces: Category::ConfigConflict,
@@ -174,7 +144,6 @@ fn two_engines_provisioned(world: &World) -> Outcome {
     }
 }
 
-/// A server that binds nothing: started, alive, never ready.
 pub(super) const SERVER_NEVER_LISTENS: Scenario = Scenario {
     id: "engine/server-never-listens",
     produces: Category::EngineHangNoOutput,
@@ -184,24 +153,12 @@ pub(super) const SERVER_NEVER_LISTENS: Scenario = Scenario {
 };
 
 fn server_never_listens(world: &World) -> Outcome {
-    // A "server" that lives and does nothing: the case the readiness wait is
-    // for. It is not enough for the process to be absent — that is
-    // `engine.spawn.not_found` — nor for it to die, which is
-    // `engine.exit.immediate`. It has to be alive and silent.
     let prefix = world.scratch().join("llama.cpp@cccccccccccc");
     let bin = prefix.join("build").join("bin");
     if std::fs::create_dir_all(&bin).is_err() {
         return Outcome::Unexpected("the fixture prefix could not be made".to_owned());
     }
     let server = bin.join("llama-server");
-    // Five seconds, not six hundred. The wait under test is three attempts of
-    // a tenth of a second, so five is ample — and this scenario is run a
-    // hundred times by the reproducibility test, on a machine that is also
-    // compiling. A sleeper that outlives the run by ten minutes is a process
-    // MCF left behind, and enough of them make `fork` fail, at which point
-    // this scenario reports *could not start* — true, and not what it claims
-    // to produce. It is killed on drop either way; this makes the drop
-    // unnecessary rather than load-bearing.
     if std::fs::write(&server, b"#!/bin/sh\nexec sleep 5\n").is_err() {
         return Outcome::Unexpected("the fixture server could not be written".to_owned());
     }
@@ -218,46 +175,15 @@ fn server_never_listens(world: &World) -> Outcome {
         commit: "cccccccccccc".to_owned(),
         component: "llama.cpp".to_owned(),
     };
-    // Three attempts rather than the six hundred a real start is given: the
-    // bound is a parameter so that this scenario can exist at all (A13).
-    //
-    // Spawning is not what this scenario is about — the readiness wait is —
-    // and on a machine that is compiling while the suite runs, `fork` can
-    // fail. That produces a true report of a different failure, which is not
-    // the one declared, and the catalogue's reproducibility check then sees
-    // two passes disagree. So a spawn that did not happen is retried rather
-    // than reported: the scenario has not run yet, and saying it produced
-    // something would be the lie.
-    //
-    // **Twenty attempts, and the number came from a measurement** (F113). At
-    // three, the load tier failed: of 1,024 concurrent runs, 1,018 produced the
-    // declared failure and **six produced `engine.spawn.refused` — `Text file
-    // busy`**. That is `ETXTBSY`, and it is not this machine being short of
-    // resources. It is the write-then-exec race every multi-threaded program
-    // that creates an executable has: this scenario writes its fixture server
-    // and execs it, and a *sibling* worker that forked while the file was open
-    // for writing holds an inherited copy of that descriptor until its own
-    // exec. The close-on-exec flag closes it *at* exec, not at fork, so the
-    // window is real and belongs to the other thread. Nothing this scenario can
-    // do from its own side removes it; retrying past it is the remedy, and
-    // three attempts landed inside one window six times in a thousand.
     for attempt in 0..20 {
         let waited = mcf_serve::served::Served::start_within(
             &llama,
             &world.scratch().join("no-such-model.gguf"),
             world.scratch(),
             3,
-            // No layers on the card: this scenario is about a server that
-            // never begins listening, and putting a model nowhere is the
-            // quickest way to reach that.
             0,
-            // A small window: this scenario never gets as far as holding one,
-            // and a scenario that asked for the whole trained context would be
-            // waiting on an allocation rather than on the thing it observes.
             4096,
-            // No projector: a model that is nowhere has nothing beside it.
             None,
-            // And nothing beyond the plain load, for the same reason.
             mcf_serve::declared::Started::default(),
         );
         match waited {
@@ -266,8 +192,6 @@ fn server_never_listens(world: &World) -> Outcome {
                     "a server that binds nothing was called ready".to_owned(),
                 );
             }
-            // Retried only while it is the transient race: a spawn refused
-            // for any other reason is a real observation and is reported.
             Err(failure) if failure.category() == Category::EngineSpawnRefused && attempt < 19 => {}
             Err(failure) => return Outcome::Produced(failure),
         }
@@ -275,7 +199,6 @@ fn server_never_listens(world: &World) -> Outcome {
     Outcome::Unexpected("the fixture server could not be started at all".to_owned())
 }
 
-/// A server whose answer MCF cannot read.
 pub(super) const SERVER_ANSWER_UNREADABLE: Scenario = Scenario {
     id: "engine/server-answer-unreadable",
     produces: Category::EngineProtocolMalformed,
@@ -286,10 +209,6 @@ pub(super) const SERVER_ANSWER_UNREADABLE: Scenario = Scenario {
 };
 
 fn server_answer_unreadable(_world: &World) -> Outcome {
-    // Two shapes, because the second is the dangerous one: an error carries no
-    // `stop_type` and no content, which reads exactly like a model that
-    // emitted its end-of-turn token and nothing else — the observation F38
-    // turns on. Reading it as that would blame the model for the server.
     let error_shaped =
         mcf_serve::served::interpret("{\"error\":{\"code\":503,\"message\":\"Loading model\"}}");
     if error_shaped.is_ok() {
@@ -303,7 +222,6 @@ fn server_answer_unreadable(_world: &World) -> Outcome {
     }
 }
 
-/// A cross-check with nothing to check against.
 pub(super) const NOTHING_TO_CROSS_CHECK: Scenario = Scenario {
     id: "engine/nothing-to-cross-check",
     produces: Category::ProbeInconclusive,
@@ -313,13 +231,6 @@ pub(super) const NOTHING_TO_CROSS_CHECK: Scenario = Scenario {
 };
 
 fn nothing_to_cross_check(_world: &World) -> Outcome {
-    // The bytes are deliberately not a model, and are never reached: the
-    // emptiness is noticed first. That ordering is the thing under test as
-    // much as the category — a comparison against nothing must not be reported
-    // as a comparison that found nothing wrong (A7, D42), and it must not cost
-    // a model load to say so (F44).
-    // No memory figure: this feeds a few bytes that are not a model, and what
-    // is being observed is how the reading fails (A7).
     match mcf_serve::crosscheck::against(b"not a model either", &[1], &[], None) {
         Err(failure) => Outcome::Produced(failure),
         Ok(_) => {
@@ -328,7 +239,6 @@ fn nothing_to_cross_check(_world: &World) -> Outcome {
     }
 }
 
-/// The client that asked for a generation leaves before the engine answers.
 pub(super) const CLIENT_LEFT_MIDSTREAM: Scenario = Scenario {
     id: "engine/client-left-midstream",
     produces: Category::LabInterrupted,
@@ -337,15 +247,6 @@ pub(super) const CLIENT_LEFT_MIDSTREAM: Scenario = Scenario {
     run: client_left_midstream,
 };
 
-/// A request in flight whose client hangs up.
-///
-/// The observable is a client connection read to its end while the engine's
-/// answer is still owed (D26). The engine is a socket that accepts and never
-/// answers — the half of a served engine this is about is the one that takes
-/// hours — and the client is the near end of a pair whose far end has been
-/// dropped. What has to happen is that the request is closed *because the
-/// client left*, not that it times out: a request that ran on for nobody
-/// was the thing D48 was written against.
 fn client_left_midstream(world: &World) -> Outcome {
     let socket = world.path("engine.sock");
     let Ok(listener) = std::os::unix::net::UnixListener::bind(&socket) else {
@@ -354,14 +255,9 @@ fn client_left_midstream(world: &World) -> Outcome {
     let Ok((near, far)) = std::os::unix::net::UnixStream::pair() else {
         return Outcome::Unexpected("the client pair could not be made".to_owned());
     };
-    // The client goes before the request is even made: the watcher has to
-    // notice a connection that is already at its end, which is the same
-    // reading as one that reaches its end later.
     drop(far);
     std::thread::scope(|scope| {
         let engine = scope.spawn(move || {
-            // Hold the connection open and say nothing until the request is
-            // shut down from the other side, which is what closing it does.
             if let Ok((mut connection, _)) = listener.accept() {
                 let mut sink = Vec::new();
                 let _read = std::io::Read::read_to_end(&mut connection, &mut sink);

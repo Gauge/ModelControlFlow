@@ -1,27 +1,5 @@
-//! Nine of ten trials completing is nine data points (A4, B-087, §3.1).
-//!
-//! A4 is **absolute**, and its violation is named: *an all-or-nothing return
-//! type on anything that can partially succeed.* That is a shape, and a shape
-//! is checkable — which matters here more than usual, because the all-or-
-//! nothing return is the *natural* thing to write. A loop that gives up on an
-//! error and returns it has thrown away every trial that came before, and
-//! nothing about it looks wrong.
-//!
-//! MCF wrote exactly that once: `mcf bench`'s runner returned
-//! `Result<Comparison, String>` and discarded a hundred completed pairs when
-//! the hundred-and-first request failed. This is what keeps it from coming
-//! back.
-//!
-//! A source check rather than a compile-fail harness, for the reason given in
-//! `measurement_has_one_way_in.rs`.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
-/// The benchmark runner has no all-or-nothing return.
-///
-/// It always yields the comparison it built, however far it got, and the
-/// reason it stopped travels *with* the trials rather than instead of them.
 #[test]
 fn the_benchmark_runner_returns_what_it_produced() {
     let source = code_only(&read("crates/mcf-cli/src/bench.rs"));
@@ -41,11 +19,6 @@ fn the_benchmark_runner_returns_what_it_produced() {
     );
 }
 
-/// A comparison carries why it stopped, and a run that finished carries
-/// nothing there.
-///
-/// *It finished* and *it was interrupted and nobody recorded why* are different
-/// facts, and an `Option` is what keeps them apart (A7).
 #[test]
 fn a_comparison_says_why_it_stopped_or_says_nothing() {
     let source = code_only(&read("crates/mcf-bench/src/compare.rs"));
@@ -66,10 +39,6 @@ fn a_comparison_says_why_it_stopped_or_says_nothing() {
     }
 }
 
-/// The interruption reaches the record.
-///
-/// A partial result that is not written down is a partial result nobody can
-/// tell from a short one that decided quickly, six weeks later (A4, B-086).
 #[test]
 fn the_interruption_is_written_down() {
     let source = code_only(&read("crates/mcf-bench/src/record.rs"));
@@ -83,11 +52,6 @@ fn the_interruption_is_written_down() {
     );
 }
 
-/// Everything that can end mid-stream keeps what arrived.
-///
-/// The generation path already does — eleven tokens before a runtime died are
-/// eleven tokens, marked truncated — and this asserts it stays that way, since
-/// it is the other half of A4's own example.
 #[test]
 fn a_generation_that_ended_early_keeps_its_tokens() {
     let source = code_only(&read("crates/mcf-cli/src/run.rs"));
@@ -101,8 +65,6 @@ fn a_generation_that_ended_early_keeps_its_tokens() {
     );
 }
 
-/// The source with its documentation comments removed, so that a sentence
-/// quoting a forbidden shape is not read as the shape itself.
 fn code_only(source: &str) -> String {
     source
         .lines()
@@ -121,13 +83,6 @@ fn read(relative: &str) -> String {
     })
 }
 
-/// The verdict the operator was shown is the verdict the record keeps.
-///
-/// Not this file's rule, and found while checking it: the record was written
-/// from a finding recomputed at the *default* resolution, so a caller who asked
-/// about half a percent was shown one verdict and the record kept another. Two
-/// answers to one question is what A6 exists to prevent, and a record that
-/// disagrees with the screen is the worst place to have them.
 #[test]
 fn the_record_keeps_the_verdict_the_operator_was_shown() {
     let source = code_only(&read("crates/mcf-cli/src/bench.rs"));

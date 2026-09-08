@@ -1,30 +1,7 @@
-//! Four outcomes, no total (B-200, B-201, B40, B41, D2, §3.23, §3.9).
-//!
-//! **What goes wrong without this.** B40: *a model with no tool-calling that
-//! scores 4% on an agentic suite has not been measured badly — it has not been
-//! measured.* Once that four percent is a number in a column, nothing
-//! downstream can tell it from a real one. It sorts, it averages, it loses a
-//! comparison, and it becomes a verdict about a model arrived at by grading it
-//! on a capability it does not have.
-//!
-//! B40 and B41 both name `compiler` as their check, and most of the work is
-//! done by the shape: `NotApplicable`, `Unknown` and `Failed` have nowhere to
-//! put a score, and `Profile` has no arithmetic. What a compiler cannot check
-//! is that nobody *adds* the escape hatch, which is what this file is for —
-//! every method named here would be a one-line change that silently restores
-//! the failure.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use mcf_core::graded::{Graded, LabId, Profile, Score};
 
-/// The code, without the doc comments.
-///
-/// The prose names the escape hatches in order to say they are absent, so a
-/// check reading the whole file would fail on the sentence explaining why it
-/// passes. A check that blocks the correct work teaches people to write around
-/// it.
 fn source() -> String {
     std::fs::read_to_string(mcf_checks::workspace::root().join("crates/mcf-core/src/graded.rs"))
         .expect("graded.rs is readable")
@@ -37,7 +14,6 @@ fn source() -> String {
         .join("\n")
 }
 
-/// There is exactly one way a number leaves an outcome, and it is fallible.
 #[test]
 fn no_outcome_without_a_reading_yields_a_number() {
     let held = source();
@@ -61,7 +37,6 @@ fn no_outcome_without_a_reading_yields_a_number() {
     }
 }
 
-/// The three outcomes with no reading really have nowhere to put one.
 #[test]
 fn the_empty_outcomes_carry_no_score() {
     for empty in [
@@ -77,8 +52,6 @@ fn the_empty_outcomes_carry_no_score() {
     }
 }
 
-/// Scores from two laboratories do not compare, and the type says so rather
-/// than picking an answer.
 #[test]
 fn no_ordering_spans_two_laboratories() {
     let one = Score::new(LabId::new("agentic"), 800_000);
@@ -105,7 +78,6 @@ fn no_ordering_spans_two_laboratories() {
     }
 }
 
-/// A profile has no total, and no way to grow one.
 #[test]
 fn a_profile_has_no_overall_number() {
     let held = source();
@@ -130,7 +102,6 @@ fn a_profile_has_no_overall_number() {
     }
 }
 
-/// A recommendation's inputs can only have been measured here (B-167).
 #[test]
 fn no_foreign_number_can_reach_a_recommendation() {
     let held = source();
@@ -165,7 +136,6 @@ fn no_foreign_number_can_reach_a_recommendation() {
     }
 }
 
-/// A field of one is refused, not ranked (B-127).
 #[test]
 fn a_single_candidate_produces_a_refusal_with_its_reasoning() {
     let held = source();
@@ -184,7 +154,6 @@ fn a_single_candidate_produces_a_refusal_with_its_reasoning() {
     );
 }
 
-/// A ranking cannot be rendered without what it rested on (B-202).
 #[test]
 fn coverage_is_computed_from_the_field_it_describes() {
     let held = source();
@@ -207,7 +176,6 @@ fn coverage_is_computed_from_the_field_it_describes() {
     );
 }
 
-/// Coverage travels, which is the half a reader is least likely to be shown.
 #[test]
 fn a_profile_renders_what_it_did_not_measure() {
     let shown = Profile::empty()

@@ -1,15 +1,3 @@
-//! Scenarios in which a bundle does not survive leaving the machine.
-//!
-//! D20 makes export one portable file, and §XIV will send those files between
-//! machines. What MCF claims to handle is that a bundle which arrived damaged,
-//! or which was written by a version this one cannot read, is **refused rather
-//! than read short** — the failure being that a bundle with rows missing looks
-//! exactly like a smaller bundle.
-//!
-//! What is simulated is the observation (D26): a file with a line removed, and
-//! a file whose header names a format nobody here implements. MCF cannot
-//! simulate a truncating transfer and does not need to.
-
 use mcf_core::failure::Category;
 use mcf_record::export::{FORMAT_VERSION, Kind, read, write};
 use mcf_record::journal::{Entry, EntryKind, Journal, Writer};
@@ -18,7 +6,6 @@ use mcf_record::json::Value;
 use crate::scenario::{Outcome, Scenario};
 use crate::world::World;
 
-/// A bundle that lost a row on the way.
 pub(super) const TRUNCATED_BUNDLE: Scenario = Scenario {
     id: "exchange/truncated-bundle",
     produces: Category::ArtifactCorrupt,
@@ -26,12 +13,6 @@ pub(super) const TRUNCATED_BUNDLE: Scenario = Scenario {
     run: truncated_bundle,
 };
 
-/// A pinned checkout that came back as something else.
-///
-/// B-367's provisioning pins a commit; a remote that moved or a hash mistyped
-/// produces a checkout that is not the pin, and MCF refuses to record it as if
-/// it were (§3.12). The observation is two hashes that differ; the judgement
-/// is the shipped one.
 pub(super) const PIN_DIVERGED: Scenario = Scenario {
     id: "exchange/pin-diverged",
     produces: Category::ExchangeReproduceDivergent,
@@ -50,7 +31,6 @@ fn pin_diverged(_world: &World) -> Outcome {
     }
 }
 
-/// A bundle from a format this build does not implement.
 pub(super) const UNREADABLE_BUNDLE: Scenario = Scenario {
     id: "exchange/unreadable-bundle",
     produces: Category::ExchangeSchemaUnreadable,
@@ -61,9 +41,6 @@ pub(super) const UNREADABLE_BUNDLE: Scenario = Scenario {
 fn a_bundle_of(world: &World, entries: u64) -> Result<std::path::PathBuf, Outcome> {
     let journal = world.path("record.jsonl");
     {
-        // A stated writer, because §3.17 wants a scenario to reproduce byte
-        // for byte and an identifier carries who wrote it (DEC-037). Everything
-        // outside a laboratory takes a distinct writer it did not choose.
         let mut open = Journal::open(&journal)
             .map_err(|failure| Outcome::Unexpected(format!("no journal: {failure}")))?
             .writing_as(Writer::stated("labbed01"));

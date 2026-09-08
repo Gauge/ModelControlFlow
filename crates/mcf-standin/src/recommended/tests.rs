@@ -1,5 +1,3 @@
-//! What reading a recommendation has to get right.
-
 use std::collections::BTreeMap;
 
 use mcf_core::attested::Attested;
@@ -9,7 +7,6 @@ use crate::gguf::{Model, Value};
 
 use super::{Recommendation, read};
 
-/// A model file carrying exactly the metadata a test names.
 fn file(entries: &[(&str, Value)]) -> Model {
     Model {
         version: 3,
@@ -23,9 +20,6 @@ fn file(entries: &[(&str, Value)]) -> Model {
     }
 }
 
-/// **The ordinary case, and the one six of six real files gave** (F63): the
-/// file recommends nothing, which is a state to report rather than a hole to
-/// fill.
 #[test]
 fn a_file_that_says_nothing_recommends_nothing() {
     let held = read(&file(&[
@@ -36,9 +30,6 @@ fn a_file_that_says_nothing_recommends_nothing() {
     assert!(held.sampling().is_none());
 }
 
-/// A file that states a temperature has recommended a temperature, and the
-/// parameters it did not state stay unknown — inventing the rest is the
-/// substitution A7 forbids.
 #[test]
 fn what_the_file_states_is_read_and_no_more() {
     let held = read(&file(&[
@@ -59,12 +50,6 @@ fn what_the_file_states_is_read_and_no_more() {
     );
 }
 
-/// Every parameter the type carries can be read, under the architecture the
-/// file declares — which is how GGUF namespaces everything else it says.
-///
-/// The architecture here is invented rather than named from a real family:
-/// what is under test is the namespacing, and B28 keeps a particular model out
-/// of the code either way.
 #[test]
 fn every_parameter_is_read_under_the_declared_architecture() {
     let held = read(&file(&[
@@ -94,11 +79,6 @@ fn every_parameter_is_read_under_the_declared_architecture() {
     assert_eq!(keys.len(), 6);
 }
 
-/// **The namespace the converter writes and the engine reads** (F157). Three
-/// of ten files on the machine that found this state their recommendation as
-/// `general.sampling.temp`, `general.sampling.top_p` and
-/// `general.sampling.top_k` — the engine's own spellings, under no
-/// architecture — and were reported as recommending nothing.
 #[test]
 fn the_engines_namespace_is_read_with_its_own_spellings() {
     let held = read(&file(&[
@@ -134,8 +114,6 @@ fn the_engines_namespace_is_read_with_its_own_spellings() {
     );
 }
 
-/// The engine's namespace needs no architecture to be looked in: it is where
-/// the engine looks, and the engine does not ask first.
 #[test]
 fn the_engines_namespace_is_read_without_an_architecture() {
     let held = read(&file(&[("general.sampling.temp", Value::Float(0.6))]));
@@ -145,9 +123,6 @@ fn the_engines_namespace_is_read_without_an_architecture() {
     );
 }
 
-/// Where a file states one parameter in both namespaces, the engine's governs
-/// — it is the value the provisioned engine applies when it runs the file —
-/// and the key recorded is the one whose value was taken.
 #[test]
 fn where_both_namespaces_state_a_parameter_the_engines_governs() {
     let held = read(&file(&[
@@ -162,9 +137,6 @@ fn where_both_namespaces_state_a_parameter_the_engines_governs() {
     assert_eq!(keys, &["general.sampling.temp".to_owned()]);
 }
 
-/// A file that declares no architecture has no namespace to look in, so it
-/// recommends nothing — the same answer as a file that declares one and says
-/// nothing in it, and right for the same reason.
 #[test]
 fn a_file_with_no_architecture_recommends_nothing() {
     assert_eq!(
@@ -174,10 +146,6 @@ fn a_file_with_no_architecture_recommends_nothing() {
     );
 }
 
-/// **Every input is untrusted** (§3.7). A value outside what a sampler
-/// parameter can be is not read rather than clamped: a clamped value is a
-/// number MCF chose, and a file stating one is a file MCF should not adopt
-/// from.
 #[test]
 fn a_value_outside_what_a_parameter_can_be_is_not_read() {
     for hostile in [
@@ -200,9 +168,6 @@ fn a_value_outside_what_a_parameter_can_be_is_not_read() {
     }
 }
 
-/// A top-k of a size no vocabulary has is still an integer and is read: what
-/// is checkable here is the *type*, and whether the number is sensible for a
-/// given model is a question about that model (A21 reads, it does not judge).
 #[test]
 fn an_implausible_but_well_typed_value_is_read_and_marked_rather_than_refused() {
     let held = read(&file(&[

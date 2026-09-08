@@ -55,9 +55,6 @@ license = "GPL-3.0-only"
 # erodes. Denied rather than forbidden so that the C-ABI work D4 anticipates
 # can opt in per module, with the reason written at the opt-in site.
 unsafe_code = "deny"
-# A23: work cites intent. An undocumented public item is a boundary nobody
-# justified.
-missing_docs = "deny"
 missing_debug_implementations = "deny"
 unreachable_pub = "deny"
 rust_2018_idioms = { level = "deny", priority = -1 }
@@ -89,6 +86,11 @@ exit = "deny"
 cast_possible_truncation = "deny"
 cast_precision_loss = "deny"
 cast_sign_loss = "deny"
+# These two require a `# Errors` / `# Panics` section in a doc comment. The
+# crates carry no doc comments, so the sections they ask for have nowhere to
+# live.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 
 # Release profile. `panic = "abort"` follows A2: a panic is an
 # `internal.invariant_violated` that the type system was meant to prevent, and

@@ -1,13 +1,3 @@
-//! Countable instructions: exactly so many words, no digits, uppercase
-//! only, a list of a stated length, a stated closing phrase — each a
-//! parser's check, one row a constraint a trial (B-526, D55, A19).
-//!
-//! Whether a model does what it is told is otherwise a matter of
-//! opinion. These instructions are the ones a program can check: the
-//! words are counted, the digits looked for, the case read, the lines
-//! numbered, the ending compared. Eight asks carry one to three of them;
-//! nothing here reads what the words say.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, timed};
@@ -15,41 +5,27 @@ use crate::generation::{Draw, Truncation};
 use crate::served::{Prompt, Startup};
 use mcf_core::configuration::Thousandths;
 
-/// The measurement's name.
 pub const NAME: &str = "instructions";
 
-/// How many trials an ask: the first greedy, the rest drawn.
 pub const TRIALS: usize = 3;
 
-/// The temperature of the drawn trials, in thousandths.
 const TEMPERATURE: u32 = 700;
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 120;
 
-/// One thing a program can check an answer for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Constraint {
-    /// Exactly this many words, split on whitespace.
     Words(usize),
-    /// No decimal digit anywhere.
     NoDigits,
-    /// No lowercase letter anywhere.
     Uppercase,
-    /// Exactly this many non-empty lines.
     Lines(usize),
-    /// Every non-empty line begins with this.
     LinesBegin(&'static str),
-    /// Every non-empty line begins with a digit.
     LinesNumbered,
-    /// The trimmed answer ends with exactly this.
     EndsWith(&'static str),
-    /// Exactly this many sentences, counted by `.`, `!` and `?`.
     Sentences(usize),
 }
 
 impl Constraint {
-    /// Its name as a dimension.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -64,7 +40,6 @@ impl Constraint {
         }
     }
 
-    /// Whether an answer holds to it.
     #[must_use]
     pub fn holds(self, said: &str) -> bool {
         let said = said.trim();
@@ -98,18 +73,13 @@ impl Constraint {
     }
 }
 
-/// One ask and what it can be checked for.
 #[derive(Debug)]
 pub struct Ask {
-    /// Its name.
     pub name: &'static str,
-    /// What is asked.
     pub asks: &'static str,
-    /// What the answer is checked for.
     pub constraints: &'static [Constraint],
 }
 
-/// The asks.
 pub const ASKS: &[Ask] = &[
     Ask {
         name: "twelve-words",
@@ -163,7 +133,6 @@ pub const ASKS: &[Ask] = &[
     },
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

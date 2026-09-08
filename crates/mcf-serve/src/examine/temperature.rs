@@ -1,14 +1,3 @@
-//! Temperature sensitivity: how many distinct answers an exact question
-//! draws at five temperatures, and how many are right (B-540, D55,
-//! A19).
-//!
-//! A temperature is a knob a person turns without a figure for what it
-//! does to this model. Three questions with a whole-number answer are
-//! each drawn six times at each of five temperatures; the answers are
-//! read by the paraphrase measurement's rule, counted for how many
-//! different ones there were and how many were right. Where the count
-//! of distinct answers rises is where the knob starts to cost.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::answer_in;
@@ -17,19 +6,14 @@ use crate::generation::{Draw, Truncation};
 use crate::served::{Prompt, Startup};
 use mcf_core::configuration::Thousandths;
 
-/// The measurement's name.
 pub const NAME: &str = "temperature";
 
-/// The temperatures, in thousandths.
 pub const TEMPERATURES: [u32; 5] = [0, 300, 700, 1000, 1500];
 
-/// How many draws a question a temperature.
 pub const DRAWS: usize = 6;
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 60;
 
-/// The questions and their answers.
 pub const QUESTIONS: &[(&str, &str, i64)] = &[
     (
         "twelve-times-twelve",
@@ -48,7 +32,6 @@ pub const QUESTIONS: &[(&str, &str, i64)] = &[
     ),
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

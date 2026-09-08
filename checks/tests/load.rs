@@ -1,24 +1,3 @@
-//! The load tier: MCF's own code under concurrency, against the simulated
-//! laboratory (B-191, D10, §6.34).
-//!
-//! §6.34 settles what load runs against: *the simulated laboratory, not real
-//! weights, so it stays cheap enough to run often and deterministic enough to
-//! believe*. At M0 that means the two things a machine can do many of at once —
-//! reproduce failures, and write records — and the question is whether they
-//! still mean what they mean when thirty-two of them are happening.
-//!
-//! **What this tier asserts is correctness, never speed.** A18 keeps tests and
-//! benchmarks apart: a test has a pass condition and a benchmark has none, and
-//! a throughput assertion in a suite is how suites become flaky and then
-//! ignored. So nothing below times anything. What it asserts is that the
-//! laboratory's determinism (B27) and the journal's completeness (B62) are
-//! properties of the code rather than of there having been only one caller.
-//!
-//! **Scheduled, not gating** — `scripts/ci.sh --with-load`. It runs the whole
-//! fault catalogue on every core.
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::sync::Arc;
@@ -34,23 +13,12 @@ use mcf_record::export;
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
 
-/// How many workers the tier runs. Twice the reported parallelism, so that
-/// threads genuinely contend rather than each getting a core to itself —
-/// contention is the condition being tested.
 fn workers() -> usize {
     thread::available_parallelism()
         .map_or(8, |count| count.get() * 2)
         .min(64)
 }
 
-/// B27: determinism is a property of the laboratory, not of the world. Every
-/// scenario, on every worker, at the same time — and each one still produces
-/// the category it declares.
-///
-/// The failure this exists to catch is a scenario that shares something: a
-/// fixed path, a static, an environment variable. Run one at a time it looks
-/// deterministic; run thirty-two at once and it is not, and every fault-
-/// injection result MCF reports would then be a result about the scheduler.
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn every_scenario_produces_its_category_on_every_worker_at_once() {
@@ -91,12 +59,6 @@ fn every_scenario_produces_its_category_on_every_worker_at_once() {
     );
 }
 
-/// The same scenario, run concurrently, produces the identical outcome every
-/// time — not merely the right category.
-///
-/// `mcf_lab::repeat` asserts this serially. Under load it is the stronger
-/// claim: §3.17's *a failure found once reproduces exactly, forever* has to
-/// survive the machine being busy, or a reproduction is a coin toss.
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn a_concurrent_reproduction_is_identical_to_a_solitary_one() {
@@ -126,13 +88,6 @@ fn a_concurrent_reproduction_is_identical_to_a_solitary_one() {
     }
 }
 
-/// Many records at once, each complete. D20 makes the journal the record, and
-/// a record that lost entries when the machine was busy would be the silent
-/// shortening B62 forbids.
-///
-/// One journal per worker, because who writes to *one* journal is DEC-037 and
-/// it is open (B-332). This tier tests what MCF has decided, and says which
-/// question it is not answering rather than inventing an answer.
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn every_concurrent_record_replays_complete() {
@@ -172,9 +127,6 @@ fn every_concurrent_record_replays_complete() {
                 let replayed = replay(&scratch.journal()).expect("the journal replays");
                 assert!(replayed.is_complete(), "{}", replayed.statement());
                 assert_eq!(replayed.entries.len(), entries);
-                // Each entry is the one this worker wrote, in order: a journal
-                // that had picked up another worker's line would still be
-                // "complete" and would be wrong.
                 for (sequence, entry) in replayed.entries.iter().enumerate() {
                     let body = entry.body();
                     assert_eq!(
@@ -192,9 +144,6 @@ fn every_concurrent_record_replays_complete() {
     println!("  {workers} concurrent journals × {entries} entries, all complete and in order");
 }
 
-/// A bundle written while the machine is busy is a bundle that reads back.
-/// B-302's one mechanism is what §XIV and PR2 will both use, so it is worth
-/// knowing it does not depend on being the only thing running.
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn every_concurrent_export_reads_back() {
@@ -235,11 +184,6 @@ fn every_concurrent_export_reads_back() {
     println!("  {workers} concurrent bundles, each read back against its own manifest");
 }
 
-/// A3, one level up: a scenario that goes wrong under load is reported, and
-/// the harness that ran it is still there to report it. Asserted by running
-/// the whole catalogue concurrently and requiring every outcome to be a
-/// *classified* one — `Unexpected` is a finding, not a crash, and either way
-/// the tier finishes and says so.
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn the_harness_survives_everything_it_runs() {
@@ -274,35 +218,11 @@ fn the_harness_survives_everything_it_runs() {
     );
 }
 
-/// Two *processes* appending to one record leave a record that replays whole
-/// (DEC-037, D20, B62).
-///
-/// The test above runs many writers, each with a journal of its own — which is
-/// the shape a laboratory has and not the shape a machine has. A machine has
-/// one record and, since the daemon exists, more than one thing that writes to
-/// it: `mcf pull` records an acquisition, `mcf rm` a removal, and the daemon
-/// its own starting and stopping.
-///
-/// What is asserted here is the property that survives without any coordination
-/// at all: **no line is torn**. Every writer opens the journal in append mode
-/// and writes one whole line per entry, and
-/// [findings.md](../../doc/findings.md) F13 measures what that is worth — at
-/// 400 bytes, 8 KiB and 128 KiB a line, on tmpfs and on btrfs, sixteen thousand
-/// lines from eight processes arrived intact.
-///
-/// **And that the identifiers are unique**, which is the other half DEC-037
-/// settled: every writer carries a token no other writer has, so two programs
-/// recording the same kind of event in the same second still name two things
-/// (B-332). Before that, each writer counted its own appends from zero and two
-/// entries could carry one identifier — a record nothing could cite.
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn two_processes_writing_one_record_leave_it_readable() {
     let scratch = Scratch::new("load-two-writers");
     let journal = scratch.journal();
-    // The header is written once, before anybody races for it: a journal's
-    // first line is its format version, and two processes creating one at the
-    // same moment is a different question (B-332).
     drop(Journal::open(&journal).expect("a journal opens"));
 
     let writers = 4;
@@ -311,9 +231,6 @@ fn two_processes_writing_one_record_leave_it_readable() {
         for worker in 0..writers {
             let journal = journal.clone();
             let _writing = scope.spawn(move || {
-                // A process of its own, so that nothing is shared but the file:
-                // two threads in one process share a `Journal` if they are not
-                // careful, and what a machine actually has is two programs.
                 let mut writing = Journal::open(&journal).expect("a journal opens");
                 for _entry in 0..each {
                     writing
@@ -342,7 +259,6 @@ fn two_processes_writing_one_record_leave_it_readable() {
         usize::try_from(writers * each).unwrap_or(0),
         "entries were lost between the writers and the record"
     );
-    // Every identifier names one entry (DEC-037, B-332).
     let mut identifiers = std::collections::BTreeSet::new();
     for entry in &replayed.entries {
         let id = entry
@@ -355,8 +271,6 @@ fn two_processes_writing_one_record_leave_it_readable() {
         );
     }
 
-    // And every entry is one somebody wrote, whole: a torn line that happened
-    // to parse would show up as a body missing its filler.
     for entry in &replayed.entries {
         assert!(
             entry

@@ -1,40 +1,22 @@
-//! Multilingual exact answers: the same arithmetic and reading tasks put
-//! in six languages, the same exact match (B-528, D55, B-057).
-//!
-//! Every task has a whole-number answer, so the same parser reads every
-//! language: the first whole number in the reply. What the rows show is
-//! whether a model that gets a sum right in English gets it right in
-//! Portuguese, task by task and language by language; nothing here
-//! judges the prose the number came in.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, timed};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "multilingual";
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 80;
 
-/// The languages, by their own names' first letters, in one order.
 pub const LANGUAGES: [&str; 6] = ["en", "fr", "de", "es", "it", "pt"];
 
-/// One task: its answer and its wording in each language, in
-/// `LANGUAGES` order.
 #[derive(Debug)]
 pub struct Task {
-    /// Its name.
     pub name: &'static str,
-    /// The answer, a whole number.
     pub answer: i64,
-    /// The task in each language.
     pub asks: [&'static str; 6],
 }
 
-/// The tasks.
 pub const TASKS: &[Task] = &[
     Task {
         name: "seventeen-times-twenty-three",
@@ -110,7 +92,6 @@ pub const TASKS: &[Task] = &[
     },
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

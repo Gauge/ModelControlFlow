@@ -1,23 +1,7 @@
-//! Nothing turns what somebody said into what MCF found (B-050, §3.18, A21).
-//!
-//! §3.18 forbids MCF treating a model card's claims as facts.
-//! `mcf_core::capability::Capability` is that rule as a type: two separately
-//! optional halves, `declaration()` and `observation()`, with no operation
-//! between them. What a check adds is that the *shape* stays that way — the
-//! failure mode is not somebody writing `declared_is_verified()`, it is
-//! somebody adding a convenience that reads well at a call site and quietly
-//! collapses the two.
-//!
-//! The convenience to watch for has a name: `unwrap_or`. A capability with a
-//! default is a capability whose absence looks like a value, which is A7's
-//! substitution arriving through a method signature.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use std::path::Path;
 
-/// The type offers no way to read a value without saying which kind it is.
 #[test]
 fn there_is_no_way_to_take_the_value_without_its_kind() {
     let source = code_only(&ships(&read(&capability())));
@@ -39,7 +23,6 @@ fn there_is_no_way_to_take_the_value_without_its_kind() {
     }
 }
 
-/// The two halves are what a caller reads, and both say what they are.
 #[test]
 fn the_two_halves_are_named_for_what_they_are() {
     let source = code_only(&ships(&read(&capability())));
@@ -57,10 +40,6 @@ fn the_two_halves_are_named_for_what_they_are() {
     );
 }
 
-/// Only an observation is established. A test of the type is next door; what is
-/// asserted here is that the *implementation* still says so, because a version
-/// that returned true for a declaration would pass every test that only ever
-/// constructs verified capabilities.
 #[test]
 fn established_means_verified_and_nothing_else() {
     let source = code_only(&ships(&read(&capability())));
@@ -70,11 +49,6 @@ fn established_means_verified_and_nothing_else() {
     );
 }
 
-/// Nothing in the shipped tree builds a verification out of a declaration.
-///
-/// The literal shape of the mistake: taking the declared half and handing it to
-/// the verified one. A caller that genuinely observed something passes what it
-/// observed, and this is what that looks like when somebody has not.
 #[test]
 fn nothing_feeds_a_declaration_into_the_observed_half() {
     let root = mcf_checks::workspace::root();
@@ -110,7 +84,6 @@ fn read(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
-/// A file with its inline test module cut off.
 fn ships(source: &str) -> String {
     match source.find("#[cfg(test)]") {
         Some(at) => source.get(..at).unwrap_or(source).to_owned(),
@@ -118,8 +91,6 @@ fn ships(source: &str) -> String {
     }
 }
 
-/// A file with its documentation removed: the prose names what it forbids in
-/// order to say it is absent.
 fn code_only(source: &str) -> String {
     source
         .lines()

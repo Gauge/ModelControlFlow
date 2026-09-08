@@ -1,5 +1,3 @@
-//! What a repository claims, against what is true.
-
 use mcf_core::provenance::Licence;
 
 use super::{architecture, arrived_as_promised, ceiling_for, deception, terms_are_legible};
@@ -19,9 +17,6 @@ fn listing(licence: Option<&str>, size: u64) -> Listing {
     }
 }
 
-/// A card that agrees with the weights is a verified architecture with a
-/// declaration behind it — and still not a verification of anything else about
-/// the model (§3.18).
 #[test]
 fn a_card_that_agrees_with_the_weights_agrees() {
     let compared = architecture(Some("llama"), Some("llama"));
@@ -35,8 +30,6 @@ fn a_card_that_agrees_with_the_weights_agrees() {
     );
 }
 
-/// A card that disagrees with the weights is the finding, and the failure names
-/// both sides so that a reader knows which to distrust (B-058, A21).
 #[test]
 fn a_card_that_disagrees_with_the_weights_is_the_finding() {
     let compared = architecture(Some("llama"), Some("mamba"));
@@ -47,8 +40,6 @@ fn a_card_that_disagrees_with_the_weights_is_the_finding() {
     assert_eq!(failure.context_value("found_in_the_weights"), Some("mamba"));
 }
 
-/// A repository with no card is not deceptive: the weights say what they say,
-/// and nothing declared them (A7).
 #[test]
 fn a_repository_with_no_card_is_not_deceptive() {
     let compared = architecture(None, Some("llama"));
@@ -61,9 +52,6 @@ fn a_repository_with_no_card_is_not_deceptive() {
     );
 }
 
-/// Weights MCF has not read leave a *declared* architecture rather than an
-/// unknown one: what the card said is a thing MCF knows and must not throw away
-/// (B-050, A1).
 #[test]
 fn weights_that_cannot_be_read_leave_the_question_open() {
     let compared = architecture(Some("llama"), None);
@@ -79,8 +67,6 @@ fn weights_that_cannot_be_read_leave_the_question_open() {
     assert_eq!(nothing.state(), State::Unknown);
 }
 
-/// A declared licence is surfaced; an absent one is a state to report, because
-/// a repository whose terms nobody can read is one nobody should use blind.
 #[test]
 fn terms_are_read_or_their_absence_is_reported() {
     assert_eq!(
@@ -104,7 +90,6 @@ fn terms_are_read_or_their_absence_is_reported() {
     );
 }
 
-/// Fewer bytes than promised is a truncation — partial, and B-021's to resume.
 #[test]
 fn fewer_bytes_than_promised_is_a_truncation() {
     let entry = Entry::new("model.gguf", 1000);
@@ -125,9 +110,6 @@ fn fewer_bytes_than_promised_is_a_truncation() {
     );
 }
 
-/// More bytes than promised is the repository lying about a number MCF plans
-/// with, which is a different failure from a short transfer and needs a
-/// different response.
 #[test]
 fn more_bytes_than_promised_is_a_lie_rather_than_a_windfall() {
     let entry = Entry::new("model.gguf", 1000);
@@ -136,9 +118,6 @@ fn more_bytes_than_promised_is_a_lie_rather_than_a_windfall() {
     assert!(arrived_as_promised(&entry, 1000).is_ok(), "exactly is fine");
 }
 
-/// The ceiling a fetcher reads to is the listing's own figure. A stream that
-/// does not end is the cheapest attack a hostile source has, and the only
-/// defence is refusing to keep reading.
 #[test]
 fn the_ceiling_is_what_the_listing_promised() {
     let entry = Entry::new("model.gguf", 4_294_967_296);

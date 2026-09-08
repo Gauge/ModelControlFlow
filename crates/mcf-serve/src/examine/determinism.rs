@@ -1,33 +1,17 @@
-//! Determinism: whether a figure on this model is comparable with itself
-//! (B-496, D52, §3.12).
-//!
-//! The embedding probe asks for the same vector twice; nothing asked the
-//! same of a generation. The same prompt, the same seed, greedy, five
-//! times on one server, then once each under another thread count and
-//! another batch size: how many runs match the first token for token,
-//! and where the first that does not parts from it. A divergence here is
-//! arithmetic summing in a different order, and it is the floor under
-//! every comparison taken on this engine.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer};
 use crate::generation::Draw;
 use crate::served::{Prompt, Served, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "determinism";
 
-/// How many runs on the first server.
 const REPEATS: usize = 5;
 
-/// How many tokens each run produces, at most.
 const PRODUCE: usize = 64;
 
-/// The batch the other server is started with.
 const OTHER_BATCH: u32 = 256;
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -43,10 +27,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     };
     let identical = runs.iter().filter(|run| **run == first).count();
     let first_divergence = runs.iter().find_map(|run| divergence_at(&first, run));
-    // How many different sequences the repeats produced, and whether the
-    // runs after the first agree among themselves: a first request that
-    // stands alone while every later one agrees is the engine settling
-    // after a start, which is a different fact from runs that scatter.
     let distinct = distinct_of(&runs);
     let later_agree = runs.get(1..).is_some_and(|later| distinct_of(later) <= 1);
     let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
@@ -174,7 +154,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// A run under another setting, in words.
 fn said(held: &Result<Option<usize>, String>) -> String {
     match held {
         Ok(None) => "identical".to_owned(),
@@ -183,8 +162,6 @@ fn said(held: &Result<Option<usize>, String>) -> String {
     }
 }
 
-/// The same, as the record's two fields: whether it was identical, and
-/// where it parted.
 fn as_fields(held: &Result<Option<usize>, String>) -> (Value, Value) {
     match held {
         Ok(None) => (Value::Bool(true), Value::Null),
@@ -193,7 +170,6 @@ fn as_fields(held: &Result<Option<usize>, String>) -> (Value, Value) {
     }
 }
 
-/// The prompt's identifiers and the repeats on one server.
 fn repeated(site: &Site<'_>) -> Result<(Vec<usize>, Vec<Vec<usize>>), String> {
     let engine = site.server(&Startup {
         projector: None,
@@ -229,8 +205,6 @@ fn one_run(engine: &Served, prompt: &[usize], site: &Site<'_>) -> Result<Vec<usi
         .map_err(|failure| failure.detail().to_owned())
 }
 
-/// One run on a server started another way, against the first run:
-/// `None` where they match, else where they part.
 fn another(
     site: &Site<'_>,
     prompt: &[usize],
@@ -245,16 +219,12 @@ fn another(
     Ok(divergence_at(first, &words))
 }
 
-/// How many different sequences a set of runs holds.
 pub(crate) fn distinct_of(runs: &[Vec<usize>]) -> usize {
     runs.iter()
         .collect::<std::collections::BTreeSet<&Vec<usize>>>()
         .len()
 }
 
-/// Where two runs part: the first position whose tokens differ, or the
-/// shorter one's length where one is a prefix of the other; `None` where
-/// they are the same.
 pub(crate) fn divergence_at(first: &[usize], other: &[usize]) -> Option<usize> {
     if first == other {
         return None;

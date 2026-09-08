@@ -1,24 +1,3 @@
-//! What the record costs as it grows, measured rather than assumed (B-300,
-//! D20, [findings.md](../../../doc/findings.md) F14).
-//!
-//! **Why this exists as a test that asserts almost nothing.** D20 says the
-//! queryable thing over the journal is *derived*, and B15 says weight is
-//! admitted for a stated reason. The reason has to be a number, and a number
-//! has to be repeatable somewhere other than in a changelog. This is that
-//! place: it prints what a replay costs, what the index costs, and what the
-//! index buys, on the machine it is run on (§3.4 — the figures are about this
-//! machine and no other).
-//!
-//! **`#[ignore]`d, because it writes a million entries.** B38 keeps the gating
-//! tier fast; this is one of the scheduled measurements, run by
-//! `scripts/ci.sh --with-budget` and by hand when the question comes up again.
-//! It asserts only the one thing that is a fact rather than a timing: that the
-//! index and the journal agree about what happened.
-//!
-//! **It is not a performance gate.** A18 keeps the two apart, and the numbers
-//! here are read by a person deciding whether an index earns its bytes, not by
-//! CI deciding whether a change is green.
-
 #![allow(
     clippy::panic,
     clippy::expect_used,
@@ -34,9 +13,6 @@ use mcf_record::journal::index::{self, Index};
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
 
-/// The sizes a record reaches: a week of ordinary use, a year of it, and a
-/// machine that has been measuring models for a long time (M5 writes an entry
-/// per trial, so the last is not hypothetical).
 const SIZES: [usize; 4] = [1_000, 10_000, 100_000, 1_000_000];
 
 #[test]
@@ -80,8 +56,6 @@ fn how_the_record_grows() {
             .collect();
         let querying = started.elapsed();
 
-        // The one assertion: the index and the journal agree. Everything else
-        // here is a reading, and a reading is reported rather than gated (A18).
         assert_eq!(built.entries().len(), count);
         assert_eq!(opened.entries().len(), count);
         assert_eq!(entries.len(), 20.min(count));
@@ -97,8 +71,6 @@ fn how_the_record_grows() {
     drop(std::fs::remove_dir_all(&root));
 }
 
-/// One entry written the way MCF writes them, to time a durable append and to
-/// get a realistic line to repeat.
 fn one_real_entry(root: &std::path::Path) -> (String, String, std::time::Duration) {
     let path = root.join("seed.jsonl");
     let mut journal = Journal::open(&path).expect("it opens");
@@ -141,11 +113,6 @@ fn one_real_entry(root: &std::path::Path) -> (String, String, std::time::Duratio
     (header, line, per_append)
 }
 
-/// A journal of a given size, written without the durability barrier.
-///
-/// The barrier is what an append costs and is timed separately; paying it a
-/// million times to produce a file to *read* would be measuring the disk's
-/// patience rather than the replay.
 fn write_journal(path: &std::path::Path, header: &str, line: &str, count: usize) {
     let file = std::fs::File::create(path).expect("it creates");
     let mut out = std::io::BufWriter::new(file);

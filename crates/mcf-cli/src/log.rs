@@ -1,46 +1,11 @@
-//! `mcf log`: what happened on this machine, read back (B-363, §3.3, A22, B62).
-//!
-//! **The record has been write-only until now.** MCF has written to it since
-//! M0 — machine profiles, self-cost figures, failures, acquisitions, removals,
-//! the daemon's own life — and the only way to read it was to open the file.
-//! §3.3 ranks machine-readability first and legibility second, but *second is
-//! not omitted*, and A22 makes the headless surface the complete one: a record
-//! nobody can read from a command is a record only its author can read.
-//!
-//! **A replay is not a `cat`.** The journal is line-delimited and a crash
-//! mid-append leaves a torn last line, so reading it is the record's own job:
-//! it reports the line, the offset and the bytes of anything it could not read
-//! (B62). This surface shows that report rather than hiding it — a log that
-//! quietly stopped at a damaged line would be the silent failure A2 calls worse
-//! than a crash.
-//!
-//! **It reads through the index, and only the entries it prints.** D20's
-//! derived index says where each entry is and what kind it is, so *the last
-//! twenty acquisitions* costs twenty seeks rather than a parse of the whole
-//! history — 196 µs against 7.9 s at a million entries (F14). The index is
-//! never the answer: every line printed here is read back out of the journal
-//! at the offset the index gave.
-//!
-//! **One line per event, and the interesting field first.** What a reader wants
-//! from an acquisition is what was acquired; from a failure, the category and
-//! what it was about; from the daemon, why it stopped. The whole entry is still
-//! there — `--full` prints the record's own JSON, which is what a script reads
-//! and what `mcf export` sends.
-
 use mcf_record::journal::index::{self, Index};
 use mcf_record::journal::{Entry, EntryId, EntryKind};
 use mcf_record::json::Value;
 
 use crate::Response;
 
-/// How many entries are shown when nobody says.
-///
-/// Twenty, because a record grows for the life of a machine and a command that
-/// printed all of it by default would be a command people pipe to `tail` —
-/// which is the same as MCF choosing twenty, with less said about it (§3.15).
 pub(crate) const SHOWN: usize = 20;
 
-/// Reads the record back.
 pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Response {
     let Some(path) = mcf_record::journal::default_path() else {
         return Response {
@@ -106,8 +71,6 @@ pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Respon
     lines.push(String::new());
 
     for located in index.latest(wanted, shown) {
-        // The entry comes from the journal, at the offset the index gave: the
-        // index is a pointer and never an answer (D20).
         match index.read(&located) {
             Ok(entry) => lines.push(if full {
                 entry.to_value().to_line()
@@ -125,8 +88,6 @@ pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Respon
         }
     }
 
-    // B62: what could not be read is said, at the end where it is the last
-    // thing a reader sees rather than the first thing they scroll past.
     if let Some(loss) = index.loss() {
         lines.push(String::new());
         lines.push(format!("PART OF THE RECORD COULD NOT BE READ: {loss}"));
@@ -152,17 +113,8 @@ fn counted(entries: usize, kind: Option<EntryKind>) -> String {
     }
 }
 
-/// One line for one event, with the field a reader wants first.
-///
-/// Every kind gets its own sentence rather than a generic dump: what makes a
-/// log readable is that the interesting thing is in the same place every time,
-/// and what a reader wants from an acquisition is not what they want from a
-/// failure.
 pub(crate) fn summarize(entry: &Entry) -> String {
     let said = described(entry);
-    // Any instrument defect that applies to this entry, beside it (F93). A
-    // measurement whose instrument was later found wrong must say so where it
-    // is read, not in a document the reader has no reason to open.
     let errata = errata_for(entry.recorded_at());
     if errata.is_empty() {
         said
@@ -171,12 +123,6 @@ pub(crate) fn summarize(entry: &Entry) -> String {
     }
 }
 
-/// The entry, as one line, before any erratum is attached.
-/// A hosting entry, in one line.
-///
-/// What it is reachable from is in it because that is the question §6.12 asks,
-/// and the settings somebody moved because a model held under a changed one is
-/// not the one MCF advised (§3.15).
 fn hosted(body: &Value) -> String {
     let said = |key: &str| body.get(key).and_then(Value::as_text);
     let moved = match body.get("changed").and_then(Value::as_list) {
@@ -194,10 +140,6 @@ fn hosted(body: &Value) -> String {
     )
 }
 
-/// A timing entry, in one line.
-///
-/// A9: the rungs that would not separate are results too, so the count says
-/// both rather than only the ones that worked.
 fn timed(body: &Value) -> String {
     let readings = body.get("readings").and_then(Value::as_list).unwrap_or(&[]);
     let measured = readings
@@ -214,7 +156,6 @@ fn timed(body: &Value) -> String {
     )
 }
 
-/// A cross-check entry, in one line: the verdict and what it rests on.
 fn cross_checked(body: &Value) -> String {
     let agreement = body.get("agreement");
     let count = |key: &str| {
@@ -241,8 +182,6 @@ fn cross_checked(body: &Value) -> String {
     )
 }
 
-/// A prompt report entry, in one line: the figures, and never the text —
-/// there is none in it to show (A25, B-432).
 fn prompt_reported(body: &Value) -> String {
     let conditions = body.get("conditions");
     let of = |held: Option<&Value>, key: &str| {
@@ -390,36 +329,13 @@ fn described(entry: &Entry) -> String {
                 .map_or(0, <[Value]>::len),
             text(body, "reason").unwrap_or_else(|| "no reason recorded".to_owned())
         ),
-        // A9: a comparison that found nothing is a result, and it reads as
-        // one here.
         EntryKind::Comparison => comparison(body),
-        // B24 with a name attached: a measurement that could not be
-        // attributed, and what else was here when it happened (PR5, B-216).
         EntryKind::ContentionSnapshot => contention(body),
-        // The other half of A9, and the one §6.3 already calls a complete
-        // success: *this will not run here, because it needs 131 GiB and you
-        // have 24.*
         EntryKind::FitmentPlanned => fitment(body),
-        // `EntryKind` is non-exhaustive: an entry from a newer build is shown as
-        // what it is rather than hidden, because a log that skipped what it did
-        // not understand would be a log that lies by omission (§7.30, A1).
         other => format!("{other}: {}", body.to_line()),
     }
 }
 
-/// A comparison, as a reader meets it in the log (A9, B-086).
-///
-/// Three of the four outcomes are things a reader will call *it didn't work*,
-/// and none of them is a failure. The line says which it was rather than
-/// leaving anyone to infer it from a missing number.
-/// Any instrument defect that applies to something recorded at this moment
-/// (F93).
-///
-/// **Rendered beside the entry rather than left in a findings document.** A
-/// reader meeting a measurement is the person who needs to know the instrument
-/// that took it was later found wrong, and they will not go looking. A2: no
-/// silent failure, and an uncorrected reading rendered as though nothing were
-/// known about it is exactly that.
 fn errata_for(at: mcf_core::time::Timestamp) -> Vec<String> {
     let nanos = i64::try_from(at.utc_nanos()).unwrap_or(i64::MAX);
     mcf_core::errata::affecting(nanos)
@@ -428,13 +344,6 @@ fn errata_for(at: mcf_core::time::Timestamp) -> Vec<String> {
         .collect()
 }
 
-/// The interval on the size, recomputed from the pairs the entry carries.
-///
-/// **Derived on read, never stored** (B55, B56, F92). The trials are kept, so
-/// every comparison in the record — including one written before the interval
-/// existed — renders with the range its own pairs always supported. Nothing is
-/// rewritten: the entry on disk is what it was, and the summary is computed
-/// each time it is asked for, which is the rule that made this possible.
 fn recomputed_spread(body: &Value) -> Option<mcf_bench::enough::Spread> {
     let pairs = body.get("pairs").and_then(Value::as_list)?;
     let differences: Vec<i64> = pairs
@@ -477,11 +386,6 @@ fn comparison(body: &Value) -> String {
         .and_then(|held| held.get("quicker"))
         .and_then(Value::as_text);
     let said = match kind {
-        // A size without a direction is not a comparison (F67), and the log's
-        // one line is where most readers meet the verdict.
-        // The size as a range, recomputed from the pairs (F92). A record
-        // written before the interval existed renders with one anyway,
-        // because the trials it kept are what the interval is made of.
         "differ" | "ordered" | "apart" => {
             let sized = recomputed_spread(body)
                 .map_or_else(|| per_cent(of("difference")), |held| format!("{held}"));
@@ -518,7 +422,6 @@ fn comparison(body: &Value) -> String {
     )
 }
 
-/// The conditions a comparison found differing, as one phrase.
 fn differing(body: &Value) -> String {
     let Some(held) = body
         .get("isolation")
@@ -533,7 +436,6 @@ fn differing(body: &Value) -> String {
         .join(", ")
 }
 
-/// A contention snapshot, as a reader meets it in the log (B-216, PR5).
 fn contention(body: &Value) -> String {
     let competitors = body.get("competitors").and_then(Value::as_list);
     let busiest = competitors
@@ -553,7 +455,6 @@ fn contention(body: &Value) -> String {
     )
 }
 
-/// A plan, as a reader meets it in the log (A9, §6.3, B-213).
 fn fitment(body: &Value) -> String {
     let variants = body
         .get("plan")
@@ -576,10 +477,6 @@ fn fitment(body: &Value) -> String {
     )
 }
 
-/// A ratio in parts per million, as a reader wants it.
-///
-/// Integer arithmetic: this crate renders what the record holds and does not
-/// introduce a float to do it (A6).
 fn per_cent(held: i64) -> String {
     let whole = held.wrapping_div(10_000);
     let tenths = held.wrapping_div(1_000).wrapping_rem(10).abs();
@@ -590,8 +487,6 @@ fn text(body: &Value, key: &str) -> Option<String> {
     body.get(key).and_then(Value::as_text).map(str::to_owned)
 }
 
-/// The words for a daemon's start: what it recovered, and what it stopped
-/// on the way up where the last daemon left engine servers behind (B-574).
 fn daemon_started_said(body: &Value) -> String {
     let stopped = body
         .get("engines_stopped")

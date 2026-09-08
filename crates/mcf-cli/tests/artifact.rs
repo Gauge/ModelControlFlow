@@ -1,59 +1,13 @@
-//! What the shipped artifact needs from the machine it lands on (B-192, B36,
-//! §XVI).
-//!
-//! B36: *the user obtains MCF and runs it — no runtime, interpreter, toolchain,
-//! framework or separately-fetched engine.* B-192's condition is the checkable
-//! half of that: **the artifact has no dynamic dependency a stock machine
-//! lacks.** A binary that needs one is a binary whose first honest message is an
-//! installation instruction, which B36 calls an unpinned dependency wearing a
-//! helpful face.
-//!
-//! **The check reads the binary rather than asking a tool.** `ldd` is the
-//! obvious route and it is a program that may not be installed, that runs the
-//! loader, and that answers a slightly different question — what resolves *on
-//! this machine* rather than what the file *requires*. The requirement is in
-//! the file: `DT_NEEDED` entries in the dynamic section. Eighty lines of ELF
-//! reading is the same trade `mcf_record::json` made, for the same reason
-//! (B15).
-//!
-//! **It examines whichever binary cargo built for this run**, and says which
-//! profile that was. The gating tier therefore checks the test-profile binary
-//! and the scheduled `--with-budget` run — which is `cargo test --release` —
-//! checks the artifact D24's ceilings are about. The set of libraries does not
-//! differ between the two today, and if it ever does, the release run is the
-//! one that is about the shipped thing (§3.4).
-//!
-//! **What it cannot check here it says rather than skips.** The vendored
-//! inference stack is B-320 and needs an engine, which needs DEC-004; a
-//! from-scratch container with no toolchain is B-183. This test is about what
-//! the artifact requires of a machine, which is checkable now and stays true as
-//! those arrive.
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::path::{Path, PathBuf};
 
 use mcf_core::build_identity::BuildIdentity;
 
-/// The binary under test: the one cargo built for this test run.
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mcf"))
 }
 
-/// The libraries a stock Linux machine has, and MCF may therefore need.
-///
-/// Short, and each entry is here because it is part of what "a Linux machine"
-/// means rather than because MCF happens to link it: the C library, the
-/// compiler's unwinding support, the maths library and the dynamic loader
-/// itself. Anything else — a vendor runtime, a maths kernel, a compression
-/// library — is a prerequisite the user would have to obtain, which is exactly
-/// what B36 refuses.
-///
-/// Adding an entry is a decision about what MCF requires of a machine, and it
-/// belongs in `doc/vendored.md` with its reasoning (B-321) rather than here
-/// alone.
 const STOCK: &[&str] = &[
     "libc.so.6",
     "libm.so.6",
@@ -62,7 +16,6 @@ const STOCK: &[&str] = &[
     "ld-linux-aarch64.so.1",
 ];
 
-/// The artifact requires nothing a stock machine lacks.
 #[test]
 fn the_artifact_needs_nothing_a_stock_machine_lacks() {
     let path = binary();
@@ -101,13 +54,6 @@ fn the_artifact_needs_nothing_a_stock_machine_lacks() {
     );
 }
 
-/// The artifact does not carry a search path of its own.
-///
-/// `DT_RUNPATH` and `DT_RPATH` say *look for libraries over there*, and "over
-/// there" is a directory on the machine that built it. A binary that needs one
-/// is a binary that works where it was made, which is the opposite of what
-/// §XVI asks for; it is also how a vendored stack gets shipped by accident
-/// rather than by decision (B-320).
 #[test]
 fn the_artifact_carries_no_library_search_path() {
     let bytes = std::fs::read(binary()).expect("the binary is readable");
@@ -121,7 +67,6 @@ fn the_artifact_carries_no_library_search_path() {
     );
 }
 
-/// The one thing the loader is asked for is the loader every Linux has.
 #[test]
 fn the_interpreter_is_the_platforms_own() {
     let bytes = std::fs::read(binary()).expect("the binary is readable");
@@ -146,11 +91,6 @@ fn the_interpreter_is_the_platforms_own() {
     }
 }
 
-/// Just enough ELF to answer "what does this file require".
-///
-/// Sixty-four-bit, little-endian, which is every platform D29 calls
-/// characterized today. Anything else reads as *not this format* rather than as
-/// a guess (A7).
 struct Elf<'a> {
     bytes: &'a [u8],
     program_headers: Vec<ProgramHeader>,
@@ -163,12 +103,10 @@ struct ProgramHeader {
     file_size: u64,
 }
 
-/// Segment kinds, from the ELF specification.
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
 const PT_INTERP: u32 = 3;
 
-/// Dynamic-section tags, from the ELF specification.
 const DT_NULL: u64 = 0;
 const DT_NEEDED: u64 = 1;
 const DT_STRTAB: u64 = 5;
@@ -177,7 +115,6 @@ const DT_RUNPATH: u64 = 29;
 
 impl<'a> Elf<'a> {
     fn read(bytes: &'a [u8]) -> Option<Self> {
-        // \x7fELF, 64-bit, little-endian.
         if bytes.get(..4)? != b"\x7fELF" || *bytes.get(4)? != 2 || *bytes.get(5)? != 1 {
             return None;
         }
@@ -201,8 +138,6 @@ impl<'a> Elf<'a> {
         })
     }
 
-    /// The file offset a virtual address lives at, if a loadable segment covers
-    /// it.
     fn offset_of(&self, address: u64) -> Option<usize> {
         self.program_headers
             .iter()
@@ -216,7 +151,6 @@ impl<'a> Elf<'a> {
             })
     }
 
-    /// Every `(tag, value)` in the dynamic section.
     fn dynamic(&self) -> Vec<(u64, u64)> {
         let Some(section) = self
             .program_headers
@@ -248,7 +182,6 @@ impl<'a> Elf<'a> {
         entries
     }
 
-    /// The string table the dynamic section names, as a file offset.
     fn string_table(&self) -> Option<usize> {
         self.dynamic()
             .into_iter()
@@ -263,7 +196,6 @@ impl<'a> Elf<'a> {
         Some(String::from_utf8_lossy(&rest[..end]).into_owned())
     }
 
-    /// The libraries this file requires by name.
     fn needed(&self) -> Vec<String> {
         let Some(table) = self.string_table() else {
             return Vec::new();
@@ -275,7 +207,6 @@ impl<'a> Elf<'a> {
             .collect()
     }
 
-    /// Any library search path baked into the file.
     fn search_paths(&self) -> Vec<String> {
         let Some(table) = self.string_table() else {
             return Vec::new();
@@ -287,7 +218,6 @@ impl<'a> Elf<'a> {
             .collect()
     }
 
-    /// The dynamic loader this file asks for, if it asks for one.
     fn interpreter(&self) -> Option<String> {
         let segment = self
             .program_headers
@@ -313,13 +243,6 @@ fn u64_at(bytes: &[u8], at: usize) -> Option<u64> {
     Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
 }
 
-/// The reader is right about a file whose answer is known independently.
-///
-/// A19, and the negative control this check needs: an ELF reader that returned
-/// nothing would report every binary as depending on nothing at all, and the
-/// three tests above would pass on an artifact that required a vendor runtime.
-/// `/bin/sh` is on every machine this runs on and is dynamically linked against
-/// the C library.
 #[test]
 fn the_reader_agrees_with_a_file_whose_dependencies_are_known() {
     let known = Path::new("/bin/sh");
@@ -343,11 +266,6 @@ fn the_reader_agrees_with_a_file_whose_dependencies_are_known() {
         "the reader found no interpreter for a dynamically linked /bin/sh"
     );
 
-    // And the predicate, not only the reader. `/bin/sh` on this machine needs
-    // a terminal library that is not on the stock list, so the filter the first
-    // test applies has something it must reject — without this, a STOCK list
-    // that accidentally matched everything would look identical to a clean
-    // artifact.
     let strangers: Vec<&String> = needed
         .iter()
         .filter(|library| !STOCK.contains(&library.as_str()))

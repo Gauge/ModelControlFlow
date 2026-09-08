@@ -1,36 +1,7 @@
-//! The codebooks the non-linear schemes index into (B-364, D38, B-330).
-//!
-//! **These are data, transcribed rather than derived.** An IQ scheme does not
-//! compute its values from a scale — it looks them up in a fixed table that the
-//! quantizer used, and a table MCF invented would decode every such tensor into
-//! confident nonsense. There is no way to check one against arithmetic, because
-//! it *is* the arithmetic.
-//!
-//! **Where they came from, and under what terms.** Transcribed from
-//! `ggml/src/ggml-common.h` in `ggml-org/llama.cpp`, which is MIT licensed
-//! (Copyright 2023-2026 The ggml authors) and therefore compatible with the
-//! GPL-3.0-only MCF ships under (D22, D28). They are recorded in
-//! [vendored.md](../../../doc/vendored.md) as what they are: somebody else's
-//! data, in MCF's tree, with the finding that admitted them.
-//!
-//! **They are not a licence to guess at the next one.** A scheme whose
-//! codebook MCF does not hold is `engine.unavailable` naming the scheme, which
-//! is the same refusal as before (A7, D31).
-
-/// The sixteen values a four-bit non-linear code stands for.
-///
-/// `IQ4_NL` and `IQ4_XS` share it: the codes are indices into this table
-/// rather than numbers, which is what *non-linear* means here.
 pub const IQ4_VALUES: [i8; 16] = [
     -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113,
 ];
 
-/// The five hundred and twelve four-byte groups `IQ3_S` indexes into.
-///
-/// Each entry is four unsigned bytes, one per value, whose signs come from
-/// the block's own sign plane. Read here as bytes rather than as a packed
-/// integer, because that is what the decoder wants and a reader should not
-/// have to unpack a constant to see what it holds.
 pub const IQ3S_GRID: [[u8; 4]; 512] = [
     [1, 1, 1, 1],
     [3, 1, 1, 1],

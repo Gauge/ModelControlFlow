@@ -1,46 +1,9 @@
-//! Filling in the §3.3 floor from a live machine.
-//!
-//! §3.3 fixes what varies and could change a result, and calls it a floor that
-//! *does not shrink under §VII*. [`Floor`] is that list as a type; this module
-//! is what fills it in from what MCF can actually read at the moment a
-//! measurement is taken.
-//!
-//! **Captured at measurement time, never harvested from a stream.** §3.3 is
-//! explicit: the floor is *captured deliberately at measurement time rather
-//! than harvested from a continuous stream*, which is what lets B4 refuse
-//! ambient telemetry without costing §II anything. So this is a function
-//! somebody calls when they take a reading, and there is nothing here that
-//! runs on its own.
-//!
-//! **What is read and what stays unknown.** Four of the eleven come from the
-//! machine profile and are as good as the profiler is (B-013, D25). One is
-//! MCF's own configuration, which MCF always knows, and one is the storage the
-//! artifact under measurement was read from (B-193). The remaining
-//! four — quantization, context length, batch shape, realized placement —
-//! describe a *model being run*, and at M0 nothing runs a model, so they stay
-//! [`Attested::Unknown`] rather than being filled with something plausible
-//! (A7). A measurement taken now says so, which is a weak claim honestly made
-//! rather than a strong one that lies.
-
 use crate::attested::Attested;
 use crate::build_identity::BuildIdentity;
 use crate::configuration::Configuration;
 use crate::hardware::{Characterization, Machine, storage_of};
 use crate::measurement::{ConditionValue, Conditions, Floor};
 
-/// Captures the floor from a machine and, where there is one, a configuration.
-///
-/// `configuration` is what is being run. At M0 there is never one; the argument
-/// exists because the four fields it supplies are part of the floor whether or
-/// not anything can supply them yet, and a capture function that grew the
-/// argument later would be a capture function that silently omitted them until
-/// then.
-///
-/// `artifact` is the file the measurement is *about* — at M0 that is MCF's own
-/// binary, since nothing else is measured yet, and from M1 it is the model. The
-/// storage it lives on is a condition because F5 measured it changing a figure
-/// by three orders of magnitude (B-193). `None` where the caller does not know,
-/// which stays unknown rather than becoming the current directory's storage.
 #[must_use]
 pub fn floor(
     machine: &Machine,
@@ -62,32 +25,19 @@ pub fn floor(
                 None => Attested::Unknown,
             }
         }),
-        // Batch shape is not part of a configuration's identity (D17) and is
-        // set by whatever drives the engine, which does not exist yet.
         batch_shape: Attested::Unknown,
         mcf_configuration: Attested::Known(ConditionValue::text(mcf_configuration)),
-        // The realized layout is what the machine did with the declared intent
-        // (intent v16), and nothing has realized one yet.
         realized_placement: Attested::Unknown,
         instrumentation: Attested::Known(ConditionValue::text(instrumentation)),
         artifact_storage: artifact.map_or(Attested::Unknown, |path| match storage_of(path) {
             Attested::Known(storage) => Attested::Known(ConditionValue::text(storage.to_string())),
             Attested::Unknown => Attested::Unknown,
         }),
-        // Which seed set a run drew from is a property of the run, not of the
-        // machine, and this function reads the machine. A run that took seeded
-        // trials fills it in from its own `SeedSet`; a timing laboratory has
-        // no answer to give, because D19 has it hold the seed still and pin the
-        // generation length instead (B-290).
         seed_set: Attested::Unknown,
-        // What a measurement reused is a property of the run, not of the
-        // machine, and this function reads the machine. A benchmark fills it
-        // in from what the engine said about each trial (B-081, §6.13).
         reuse: Attested::Unknown,
     }
 }
 
-/// The conditions in force now: the floor, bound to the instrument.
 #[must_use]
 pub fn conditions(
     machine: &Machine,
@@ -108,12 +58,6 @@ pub fn conditions(
     )
 }
 
-/// What the machine is, in one line a record can hold and a person can read.
-///
-/// Every accelerator's characterization is in here, because D25 makes that a
-/// per-run verdict: a measurement taken while a device was uncharacterized is
-/// not comparable with one taken while it was, and the condition is where that
-/// becomes visible.
 fn describe_hardware(machine: &Machine) -> Option<String> {
     let processor = machine.processor.model.known()?;
     let mut parts = vec![format!(
@@ -141,16 +85,7 @@ fn describe_hardware(machine: &Machine) -> Option<String> {
     Some(parts.join(", "))
 }
 
-/// The thermal state, which is only what the accelerators report.
-///
-/// The processor's own temperature is not read: no route supplies it yet, and
-/// A7 forbids reporting the accelerator's as though it were the machine's.
 fn describe_thermal(machine: &Machine) -> Option<String> {
-    // **The processor first, and it was missing entirely until F91.** This
-    // condition reported accelerator temperatures and nothing else, so every
-    // measurement MCF has taken carries no record of how hot the thing doing
-    // the work was — which is the half of the thermal condition DEC-007's open
-    // question is actually about.
     let sensors = crate::hardware::thermal::sensors();
     let mut described: Vec<String> = Vec::new();
     if let Some(found) = crate::hardware::thermal::processor(&sensors) {

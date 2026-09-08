@@ -1,44 +1,3 @@
-//! Nothing MCF looks for is found by matching its name exactly (B-417, B16).
-//!
-//! **Nine times.** A guard, a discovery or a tripwire written against what a
-//! thing is *called* rather than what it *is* has failed in this repository
-//! nine separate times, and the failures are the same shape every time: the
-//! code works, the tests pass, and something real is invisible.
-//!
-//! - [findings.md](../../doc/findings.md) F129 — the surface tripwire named
-//!   four guessed crate names; the surface arrived called something else and
-//!   the guard never fired.
-//! - F130 — engine discovery matched `component == "llama.cpp"`, so the CUDA
-//!   build MCF had provisioned an hour earlier was reported as *no engines*.
-//! - F133 — the *generation* path had its own copy of that discovery. F130
-//!   fixed one and not the other, so every generation and every depth reading
-//!   MCF took went through the processor build while the interface said
-//!   *`NVIDIA GeForce RTX 5080`*. Between 4.9× and 5.7× of speed, and a device
-//!   label that was false.
-//! - And provisioning once asserted `-DGGML_NATIVE=OFF` on every component,
-//!   which was llama.cpp's flags spelled as a rule; SDL3 failed for not being
-//!   llama.cpp.
-//!
-//! **The remedy is not vigilance.** B16 prefers a machine-checked rule to a
-//! remembered one, and eight rounds of remembering is the evidence. What this
-//! check holds is narrow and mechanical: no shipped source compares anything
-//! to the literal name of a component MCF provisions. Matching on a
-//! *property* — a prefix that holds a server, a crate that reaches the control
-//! plane — is what discovery is for, and none of those look like this.
-//!
-//! **Nothing is exempt, and that is the finding.** The first version of this
-//! check carried an allowance for `provision.rs`, on the reasoning that the
-//! table which *defines* the names must mention them. It does — as struct
-//! fields, not as comparisons — and the lookup that turns what an operator
-//! typed into one of its rows compares a field to a variable rather than to a
-//! literal. So the allowance was holding a door nobody was using, and the
-//! staleness test that would have caught that later caught it immediately.
-//!
-//! **The names are read from the catalogue, not listed here.** A list of
-//! names in a check is the same mistake one level up: it goes stale the week a
-//! component is added, and the component it then misses is the new one.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use std::path::{Path, PathBuf};
@@ -49,12 +8,6 @@ fn read(path: &Path) -> String {
     })
 }
 
-/// The component names MCF provisions, from the table that defines them.
-///
-/// The table moved to `mcf-core` when the daemon had to read it too: what MCF
-/// can build is asked for by a surface as well as built by a command, and a
-/// second copy of a pinned digest is a second thing to forget to change. The
-/// names are still read rather than listed, for the reason in the note above.
 fn component_names(root: &Path) -> Vec<String> {
     let source = read(&root.join("crates/mcf-core/src/component.rs"));
     let mut found = Vec::new();
@@ -78,7 +31,6 @@ fn component_names(root: &Path) -> Vec<String> {
     found
 }
 
-/// Every `.rs` file that ships.
 fn shipped_sources(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut looking = vec![root.join("crates")];
@@ -93,7 +45,6 @@ fn shipped_sources(root: &Path) -> Vec<PathBuf> {
                 continue;
             }
             let named = path.display().to_string();
-            // A test may compare against a name: it is asserting about one.
             let is_rust = path
                 .extension()
                 .is_some_and(|held| held.eq_ignore_ascii_case("rs"));
@@ -105,7 +56,6 @@ fn shipped_sources(root: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// Nothing is discovered by comparing against a component's name.
 #[test]
 fn no_discovery_matches_a_component_by_its_name() {
     let root = mcf_checks::workspace::root();
@@ -121,8 +71,6 @@ fn no_discovery_matches_a_component_by_its_name() {
         let source = read(&file);
         for (number, line) in source.lines().enumerate() {
             let trimmed = line.trim();
-            // A comment saying what the defect *was* is how this repository
-            // records one; it is not the defect.
             if trimmed.starts_with("//") || trimmed.starts_with("///") {
                 continue;
             }

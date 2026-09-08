@@ -1,19 +1,3 @@
-//! The property tier: invariants MCF claims universally, examined over
-//! generated inputs (B-191, D10).
-//!
-//! Each test below states one thing MCF's documents claim for *every* input,
-//! and tries to falsify it over [`GATING_CASES`] generated cases. The seeds are
-//! fixed (see `mcf_checks::property`), so a failure here is reproducible on
-//! another machine from the seed the verdict prints.
-//!
-//! What belongs here and what does not: a property is a claim with a
-//! quantifier in it. "The spread is five values that were actually observed"
-//! (A6) is one; "a torn journal reports the byte it stopped at and how much it
-//! did not read" (B62) is one. "`mcf doctor` renders a heading" is not — that
-//! is an example, and examples belong to the unit and functional tiers.
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use mcf_checks::property::{FILESYSTEM_CASES, GATING_CASES, Rng, Verdict, check};
@@ -34,14 +18,10 @@ use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::{self, Value};
 use mcf_record::{decode, encode};
 
-/// Fails the test with the verdict's own account of what it found, seed
-/// included.
 fn assert_held(verdict: &Verdict) {
     assert!(verdict.held(), "{verdict}");
 }
 
-/// The conditions generated measurements are taken under. A6 requires them;
-/// what they say is not what these properties are about.
 fn conditions() -> Conditions {
     Conditions::new(
         BuildIdentity::current(),
@@ -52,7 +32,6 @@ fn conditions() -> Conditions {
     )
 }
 
-/// A measurement over between two and forty generated samples.
 fn measurement(rng: &mut Rng) -> (Measurement<Count>, Vec<u64>) {
     let extra = rng.index(39);
     let samples: Vec<u64> = (0..extra + 2)
@@ -64,9 +43,6 @@ fn measurement(rng: &mut Rng) -> (Measurement<Count>, Vec<u64>) {
     (Measurement::of(first, second, rest, conditions()), samples)
 }
 
-/// A6: the spread is five values that *were actually observed*, and they are
-/// ordered. An interpolating percentile would break the first half; a sort bug
-/// would break the second. Neither is visible from any single example.
 #[test]
 fn every_reported_statistic_is_a_sample_that_was_observed() {
     let verdict = check(GATING_CASES, |rng| {
@@ -107,9 +83,6 @@ fn every_reported_statistic_is_a_sample_that_was_observed() {
     assert_held(&verdict);
 }
 
-/// A6 again, on the count: `n` is how many samples there were, not how many
-/// the type happened to keep. The two are the same only while nothing summarizes
-/// early, which is exactly what B56 forbids and what a property can watch for.
 #[test]
 fn the_sample_count_is_the_number_of_samples() {
     let verdict = check(GATING_CASES, |rng| {
@@ -126,9 +99,6 @@ fn the_sample_count_is_the_number_of_samples() {
     assert_held(&verdict);
 }
 
-/// Every percentile between 0 and 100 lands on an observed sample, and the
-/// function is monotone in the rank. Stated separately from the spread because
-/// the spread only asks about five of the hundred and one ranks.
 #[test]
 fn percentiles_are_monotone_in_the_rank() {
     let verdict = check(GATING_CASES, |rng| {
@@ -150,11 +120,6 @@ fn percentiles_are_monotone_in_the_rank() {
     assert_held(&verdict);
 }
 
-/// A generated JSON value, up to a bounded depth.
-///
-/// Depth is bounded rather than left to chance: an unbounded generator produces
-/// a stack overflow eventually, which would be a finding about the generator
-/// and not about the codec.
 fn value(rng: &mut Rng, depth: u32) -> Value {
     match rng.below(if depth == 0 { 4 } else { 6 }) {
         0 => Value::Null,
@@ -170,10 +135,6 @@ fn value(rng: &mut Rng, depth: u32) -> Value {
     }
 }
 
-/// §7.30 makes the record's format an interface MCF keeps for ever, and a
-/// codec is only that if it is exact. Written and read back is the same value —
-/// for strings a uniform generator would never reach: quotes, backslashes, the
-/// C0 controls, and the astral plane that travels as a surrogate pair.
 #[test]
 fn every_record_value_survives_the_round_trip() {
     let verdict = check(GATING_CASES, |rng| {
@@ -188,10 +149,6 @@ fn every_record_value_survives_the_round_trip() {
     assert_held(&verdict);
 }
 
-/// B62's *one line per entry* is what makes a torn write a torn line, and a
-/// torn line is what replay can bound and report. A value that encoded a raw
-/// newline would silently split one entry into two, and the second would be
-/// unreadable — the loss A2 forbids, arriving through the codec.
 #[test]
 fn an_encoded_value_is_always_one_line() {
     let verdict = check(GATING_CASES, |rng| {
@@ -204,9 +161,6 @@ fn an_encoded_value_is_always_one_line() {
     assert_held(&verdict);
 }
 
-/// B-301 re-verifies a checksum by streaming a file, and `mcf export` digests
-/// one in a single pass. If the two disagreed for any chunking, an artifact
-/// would verify against itself and not against its record.
 #[test]
 fn a_streamed_digest_equals_a_single_pass_one() {
     let verdict = check(GATING_CASES, |rng| {
@@ -234,9 +188,6 @@ fn a_streamed_digest_equals_a_single_pass_one() {
     assert_held(&verdict);
 }
 
-/// A7 is the property: what MCF did not know comes back unknown, and what it
-/// knew comes back as what it wrote. A decoder that turned an unknown into the
-/// word "unknown" would compare equal to a floor that had read something.
 #[test]
 fn a_condition_floor_survives_the_record_including_its_unknowns() {
     let verdict = check(GATING_CASES, |rng| {
@@ -276,22 +227,12 @@ fn a_condition_floor_survives_the_record_including_its_unknowns() {
     assert_held(&verdict);
 }
 
-/// A provenance of any shape survives the record (§3.6, B-029).
-///
-/// The unit tests write the chain §XII names as the hard case. This writes
-/// chains nobody would think of: eleven links deep, unknowns in every optional
-/// field, transformation kinds with no name, revisions present and absent. An
-/// artifact's provenance travels with it only as far as the decoder can carry
-/// it, and *as far as* is the quantifier this tier is for.
 #[test]
 fn a_provenance_of_any_shape_survives_the_record() {
     let verdict = check(GATING_CASES, |rng| {
         let depth = rng.index(4);
         let original = a_provenance(rng, depth);
         let written = encode::provenance(&original);
-        // Through the bytes, because that is what goes to the disk: an encoder
-        // and a decoder that agree in memory and disagree about JSON are two
-        // halves of nothing.
         let line = written.to_line();
         let parsed =
             json::parse(&line).map_err(|error| format!("MCF wrote unreadable JSON: {error}"))?;
@@ -304,11 +245,6 @@ fn a_provenance_of_any_shape_survives_the_record() {
     assert_held(&verdict);
 }
 
-/// What MCF later found upstream, appended rather than written over (D37,
-/// B-331).
-///
-/// Every finding shape, because each carries different fields and a round trip
-/// that only ever saw *unchanged* would not exercise them.
 fn an_observation(rng: &mut Rng) -> Observation {
     let found = match rng.below(6) {
         0 => Decay::Unchanged,
@@ -336,7 +272,6 @@ fn an_observation(rng: &mut Rng) -> Observation {
     )
 }
 
-/// A provenance with an arbitrary chain under it.
 fn a_provenance(rng: &mut Rng, depth: usize) -> Provenance {
     let origin = match rng.below(3) {
         0 => Origin::hub(
@@ -352,8 +287,6 @@ fn a_provenance(rng: &mut Rng, depth: usize) -> Provenance {
         },
         _ => Origin::Unattributed,
     };
-    // A link MCF never fetched is a state of its own (B-019), and a round trip
-    // that only ever saw acquired artifacts would not exercise it.
     if rng.below(4) == 0 {
         let mut never_fetched = Provenance::known_of(origin);
         if depth > 0 {
@@ -434,8 +367,6 @@ fn a_provenance(rng: &mut Rng, depth: usize) -> Provenance {
     provenance
 }
 
-/// The journal is the record (D20, B62), so what a journal holds is what was
-/// appended to it — for any entry, not for the handful the unit tests write.
 #[test]
 fn every_entry_survives_the_journal() {
     let verdict = check(FILESYSTEM_CASES, |rng| {
@@ -483,15 +414,6 @@ fn every_entry_survives_the_journal() {
     assert_held(&verdict);
 }
 
-/// The index is a pointer and the journal is the record (D20, B-300), so for
-/// any journal the index must agree with a replay about what is in it — the
-/// same entries, in the same order, at offsets that read back to the same
-/// bytes.
-///
-/// This is the invariant the whole of B-300 rests on. The unit tests write six
-/// entries of two kinds; a record has whatever somebody's machine put in it,
-/// and an index that agreed on those and not on these would be a faster way to
-/// be wrong.
 #[test]
 fn the_index_agrees_with_a_replay_about_every_journal() {
     let verdict = check(FILESYSTEM_CASES, |rng| {
@@ -516,12 +438,6 @@ fn the_index_agrees_with_a_replay_about_every_journal() {
         }
 
         let replayed = replay(&scratch.journal()).map_err(|failure| failure.to_string())?;
-        // Opened twice on purpose: the first builds it, the second reads what
-        // the first wrote. Both must agree with the journal, and the second
-        // must say it *loaded* — an index that rebuilt itself every time would
-        // still be correct and would have thrown away the only reason it
-        // exists, so a property that did not assert this would pass on an
-        // index that was never read back at all.
         for attempt in 0..2 {
             let index = Index::over(&scratch.journal(), &index::default_path(&scratch.journal()))
                 .map_err(|failure| failure.to_string())?;
@@ -564,10 +480,6 @@ fn the_index_agrees_with_a_replay_about_every_journal() {
     assert_held(&verdict);
 }
 
-/// B62: a replay that cannot complete says which line, which byte, and how
-/// much it did not read. The property is that those three agree with the file
-/// for *every* place a crash could have torn it — which is the whole point,
-/// since a crash does not choose convenient offsets.
 #[test]
 fn a_journal_torn_anywhere_reports_exactly_what_it_lost() {
     let verdict = check(FILESYSTEM_CASES, |rng| {
@@ -593,8 +505,6 @@ fn a_journal_torn_anywhere_reports_exactly_what_it_lost() {
 
         let replayed = match replay(&scratch.journal()) {
             Ok(replayed) => replayed,
-            // A journal cut inside its header is refused rather than replayed,
-            // which is a different honest answer and not a loss report.
             Err(_) if cut < first_line_length(&whole) => return Ok(()),
             Err(failure) => return Err(format!("cut at {cut} of {}: {failure}", whole.len())),
         };
@@ -627,7 +537,6 @@ fn a_journal_torn_anywhere_reports_exactly_what_it_lost() {
     assert_held(&verdict);
 }
 
-/// How long the header line is, including its newline.
 fn first_line_length(bytes: &[u8]) -> usize {
     bytes
         .iter()
@@ -635,15 +544,10 @@ fn first_line_length(bytes: &[u8]) -> usize {
         .map_or(bytes.len(), |index| index + 1)
 }
 
-/// Whether a cut at this offset landed on a line boundary.
 fn ends_at_a_line_boundary(bytes: &[u8], cut: usize) -> bool {
     cut == 0 || bytes.get(cut - 1) == Some(&b'\n')
 }
 
-/// B-271: thinning declares what it dropped. The property is that a thinned
-/// series keeps the points the factor names and says so — a series that kept a
-/// different number than its factor implies would make interior detail
-/// uninterpretable.
 #[test]
 fn thinning_keeps_what_its_factor_names() {
     let verdict = check(GATING_CASES, |rng| {
@@ -680,14 +584,6 @@ fn thinning_keeps_what_its_factor_names() {
     assert_held(&verdict);
 }
 
-/// A19: anything MCF reports is tested against an independently known value.
-/// The calendar is MCF's own arithmetic (Hinnant's `civil_from_days`), and the
-/// system's `date` is a separate implementation of the same question — so
-/// agreement over generated moments is evidence and disagreement is a defect
-/// here.
-///
-/// Skipped, loudly, where `date` is not the one this reads: a check that cannot
-/// run says so rather than passing (B38).
 #[test]
 fn the_civil_calendar_agrees_with_an_independent_one() {
     let Some(oracle) = date_oracle() else {
@@ -698,9 +594,6 @@ fn the_civil_calendar_agrees_with_an_independent_one() {
         return;
     };
     let verdict = check(64, |rng| {
-        // 1901-12-13 to 2038-01-19: the range every implementation of this
-        // question agrees is representable, so a disagreement is about the
-        // calendar and not about somebody's 32-bit boundary.
         let seconds = rng.integer_between(-2_100_000_000, 2_100_000_000);
         let moment =
             Timestamp::from_utc_nanos(i128::from(seconds) * 1_000_000_000, Attested::Unknown);
@@ -721,8 +614,6 @@ fn the_civil_calendar_agrees_with_an_independent_one() {
     assert_held(&verdict);
 }
 
-/// The system's own answer to the same question, or `None` where there is not
-/// one to ask.
 fn date_oracle() -> Option<impl Fn(i64) -> Option<String>> {
     let probe = ask_date(0)?;
     if probe != "1970-01-01T00:00:00" {
@@ -742,26 +633,9 @@ fn ask_date(seconds: i64) -> Option<String> {
     Some(String::from_utf8(output.stdout).ok()?.trim().to_owned())
 }
 
-/// A product is the same bytes however many threads compute it (B-366, D38).
-///
-/// **The quantifier is what makes this a property rather than an example.**
-/// D38 requires bit-identical output *whatever the thread count*, over every
-/// shape and every set of weights — and the failure it is against is invisible
-/// by construction: a reduction split across workers gives an answer that
-/// differs in the last bits and depends on how busy the machine was. Fixed
-/// shapes could only ever say that these shapes are safe.
-///
-/// The values span six orders of magnitude on purpose. Adding a million to a
-/// thousandth and then to another thousandth is not the same number as adding
-/// the two thousandths first, so a generator producing values of one size would
-/// make this property pass without exercising the thing it is about.
 #[test]
 fn a_product_is_the_same_bytes_at_every_thread_count() {
     let verdict = check(GATING_CASES, |rng| {
-        // Big enough to be partitioned. The engine hands a product only as many
-        // workers as its size earns (F99), so a shape below that threshold runs
-        // serially and would compare the serial path against itself — a case
-        // that cannot fail. The assertion below is what says these did not.
         let columns = rng.index(192) + 64;
         let wanted = mcf_standin::threads::WORTH_A_WORKER * (rng.index(6) + 2);
         let rows = wanted.div_ceil(columns) + rng.index(8);
@@ -769,8 +643,6 @@ fn a_product_is_the_same_bytes_at_every_thread_count() {
         let vector: Vec<f32> = (0..columns).map(|_| weight(rng)).collect();
 
         let definition = mcf_standin::ops::matmul_vec(&matrix, &vector, rows, columns);
-        // Zero is a thread count a caller can ask for and is not one; the
-        // partition must survive it as the definition does.
         let count = rng.index(40);
         let threads = mcf_standin::threads::Threads::stated(count);
         if count > 1 && threads.worth_starting(rows * columns) < 2 {
@@ -802,11 +674,6 @@ fn a_product_is_the_same_bytes_at_every_thread_count() {
     assert_held(&verdict);
 }
 
-/// One weight: mixed sign, and a magnitude drawn from six orders.
-///
-/// Never a `NaN` and never an infinity. Both would compare equal to themselves
-/// by bits and neither says anything about summation order, so admitting them
-/// would spend cases on inputs the property is not about.
 fn weight(rng: &mut Rng) -> f32 {
     let unit = f32::from(u16::try_from(rng.below(65_536)).unwrap_or(0));
     let signed = (unit - 32_768.0) / 32_768.0;

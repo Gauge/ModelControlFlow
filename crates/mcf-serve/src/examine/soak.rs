@@ -1,29 +1,15 @@
-//! Soak: two hundred requests through one server, one after another —
-//! which failed, what each took, and the server's resident bytes at the
-//! start and the end (B-535, D55, B-232).
-//!
-//! A server that answers once is not a server that answers all evening.
-//! Two hundred short requests, each a row with its own clock, show a
-//! server that slows, a request that fails, or memory that grows from
-//! the first request to the last; and none of that shows in a figure
-//! taken from one request.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, framed_ids, timed};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "soak";
 
-/// How many requests.
 pub const REQUESTS: usize = 200;
 
-/// How many tokens each produces, at most.
 const PRODUCE: usize = 32;
 
-/// The prompts cycled through, so the cache is not one prompt's.
 const ASKS: [&str; 4] = [
     "Name a colour and say one thing about it.",
     "Give a short sentence about the weather.",
@@ -31,7 +17,6 @@ const ASKS: [&str; 4] = [
     "Describe a chair in one sentence.",
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

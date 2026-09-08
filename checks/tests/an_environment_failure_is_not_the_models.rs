@@ -1,30 +1,3 @@
-//! Environment failures are a distinct branch from model failures
-//! (B-233, B49, §7.10, §3.1, §3.4).
-//!
-//! **The failure this prevents.** An out-of-memory caused by another process
-//! competing for the machine is a condition of the run. Recorded as the
-//! model's, it becomes *this model gave up* — a claim about a model arrived at
-//! by measuring a busy afternoon. Nothing downstream can undo it: the
-//! attribution is what a reader sees, and a wrong one reads exactly like a
-//! right one.
-//!
-//! **Which axis answers.** The first design here read the branch from the
-//! *category*, and that is wrong in a way worth recording, because it is the
-//! obvious design. `probe.inconclusive` is MCF's when its own logic could not
-//! decide and the machine's when the machine misbehaved; `engine.unavailable`
-//! is MCF's when the stand-in does not implement a format and the machine's
-//! when nothing is installed; `config.invalid` is the operator's. A category
-//! says *what went wrong*. Only the attribution says *whose* — which is why
-//! `Failure::new` demands one and has no default, and why B-233 was already
-//! structurally satisfied before this file existed.
-//!
-//! So what is checked here is the part that is not structural: that the
-//! grouping exists and is unambiguous, that *MCF cannot tell* stays its own
-//! answer rather than being folded into a branch, and that no failure in this
-//! workspace attributes a model's behaviour to anything but the model or a
-//! non-behavioural category to the model.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use std::path::{Path, PathBuf};
@@ -42,7 +15,6 @@ const EVERY: [Attribution; 8] = [
     Attribution::Unattributable,
 ];
 
-/// Only the model under test reaches the model's branch.
 #[test]
 fn nothing_but_the_model_is_evidence_about_the_model() {
     for attribution in EVERY {
@@ -56,7 +28,6 @@ fn nothing_but_the_model_is_evidence_about_the_model() {
     }
 }
 
-/// The machine's conditions are the environment's, not anybody's fault.
 #[test]
 fn the_machine_and_the_hub_are_the_environment() {
     for attribution in [Attribution::Machine, Attribution::Hub] {
@@ -68,7 +39,6 @@ fn the_machine_and_the_hub_are_the_environment() {
     }
 }
 
-/// *MCF cannot tell* is its own answer, not a fifth branch and not a fourth.
 #[test]
 fn unattributable_is_not_folded_into_a_branch() {
     assert_eq!(
@@ -79,7 +49,6 @@ fn unattributable_is_not_folded_into_a_branch() {
     );
 }
 
-/// Every attribution answers, and answers once.
 #[test]
 fn the_grouping_is_total_and_unambiguous() {
     for attribution in EVERY {
@@ -104,7 +73,6 @@ fn the_grouping_is_total_and_unambiguous() {
     }
 }
 
-/// A failure reports its branch from its attribution.
 #[test]
 fn a_failure_carries_the_branch_of_its_attribution() {
     let competed = Failure::new(
@@ -121,8 +89,6 @@ fn a_failure_carries_the_branch_of_its_attribution() {
     );
 }
 
-/// Nothing in this workspace records a model's behaviour as anybody else's,
-/// or anybody else's as the model's.
 #[test]
 fn no_construction_crosses_the_two_branches() {
     let mut wrong = Vec::new();
@@ -157,7 +123,6 @@ fn no_construction_crosses_the_two_branches() {
     );
 }
 
-/// The first two arguments of a `Failure::new` call, as written.
 fn pair(call: &str) -> Option<(String, String)> {
     let inner = call.split_once("Failure::new(")?.1;
     let mut arguments = inner.split(',');
@@ -178,7 +143,6 @@ fn attributed(written: &str) -> Option<Attribution> {
     EVERY.into_iter().find(|held| format!("{held:?}") == wanted)
 }
 
-/// Every Rust source in the workspace's crates.
 fn sources() -> Vec<PathBuf> {
     let mut found = Vec::new();
     walk(&mcf_checks::workspace::root().join("crates"), &mut found);

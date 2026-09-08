@@ -1,11 +1,3 @@
-//! A hub, answered by a server this test is holding.
-//!
-//! The answers below are the shapes the real hub sends
-//! ([findings.md](../../../../doc/findings.md) F9 and its `/api/models` and
-//! `/tree` calls), served from the loopback address so the whole path — two
-//! metadata calls, a redirect, a range, a digest — runs in the gating tier with
-//! no network (B19, B38).
-
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
@@ -23,12 +15,6 @@ use crate::wire::{Deadlines, Duplex, Tcp, Wire};
 use mcf_core::digest::sha256;
 use mcf_core::failure::Category;
 
-/// A wire that carries what TCP carries and claims it can keep a secret.
-///
-/// The loopback address is not a network, so a credential on it goes nowhere —
-/// but the *code* under test is the one that decides whether a credential may
-/// travel, and testing it needs a wire that says yes. Deliberately not a
-/// capability MCF offers an operator: the only honest yes is TLS.
 struct Trusted(Tcp);
 
 impl Wire for Trusted {
@@ -45,10 +31,8 @@ impl Wire for Trusted {
     }
 }
 
-/// A hub that answers by path.
 struct Server {
     port: u16,
-    /// What was asked for, in order.
     asked: Arc<Mutex<Vec<String>>>,
     handle: Option<thread::JoinHandle<()>>,
 }
@@ -65,8 +49,6 @@ impl Server {
                 let Ok(stream) = connection else { break };
                 let request = read_request(&stream);
                 let Some(line) = request.lines().next().map(str::to_owned) else {
-                    // The connection this test's own `Drop` makes to wake the
-                    // listener: nothing was asked, so nothing more is coming.
                     break;
                 };
                 if let Ok(mut seen) = recording.lock() {
@@ -155,8 +137,6 @@ fn answer(body: &str) -> String {
     )
 }
 
-/// The card the hub sends, in its own shape — including the tags §XII's hard
-/// case lives in.
 fn card() -> String {
     answer(
         r#"{"id":"owner/model","sha":"50968a4468ef4233ed78cd7c3de230dd1d61a56b","gated":false,
@@ -166,8 +146,6 @@ fn card() -> String {
     )
 }
 
-/// The tree the hub sends, with an LFS digest on the weights and none on the
-/// small files.
 fn tree() -> String {
     answer(
         r#"[{"type":"file","oid":"c4d8","size":3135,"path":".gitattributes"},
@@ -180,7 +158,6 @@ fn a_hub_with(extra: &[(&str, String)]) -> Server {
     Server::answering(answers_with(extra))
 }
 
-/// The two answers every listing needs, plus whatever a test replaces or adds.
 fn answers_with(extra: &[(&str, String)]) -> BTreeMap<String, String> {
     let mut answers = BTreeMap::new();
     answers.insert("/api/models/owner/model".to_owned(), card());
@@ -210,8 +187,6 @@ fn scratch(name: &str) -> PathBuf {
     path
 }
 
-/// The listing is what B-213 plans against and what B-021 verifies: every file,
-/// its size, and the digest the hub declares for the ones that have one.
 #[test]
 fn a_listing_carries_the_sizes_the_digests_and_the_revision() {
     let server = a_hub_with(&[]);
@@ -238,8 +213,6 @@ fn a_listing_carries_the_sizes_the_digests_and_the_revision() {
     );
 }
 
-/// A repository with no `cardData` still has terms, in the tag the hub
-/// publishes them under.
 #[test]
 fn terms_are_read_from_the_tag_when_the_card_has_no_field() {
     let server = Server::answering(answers_with(&[
@@ -254,7 +227,6 @@ fn terms_are_read_from_the_tag_when_the_card_has_no_field() {
     assert_eq!(listing.declared_licence.as_deref(), Some("llama3.1"));
 }
 
-/// The two questions MCF asks before a byte of weights moves, and no others.
 #[test]
 fn a_listing_costs_two_cheap_questions() {
     let server = a_hub_with(&[]);
@@ -270,7 +242,6 @@ fn a_listing_costs_two_cheap_questions() {
     assert!(asked[1].contains("recursive=true"), "{asked:?}");
 }
 
-/// A name the hub publishes nothing at is that, and not a mystery.
 #[test]
 fn a_repository_that_is_not_there_is_not_found() {
     let server = Server::answering(BTreeMap::new());
@@ -281,8 +252,6 @@ fn a_repository_that_is_not_there_is_not_found() {
     assert_eq!(failure.category(), Category::HubRefNotFound);
 }
 
-/// A private repository asked for without a credential says which is missing,
-/// in `mcf_hub::credentials`' own words (B-024).
 #[test]
 fn a_private_repository_asks_for_a_credential() {
     let server = a_hub_with(&[(
@@ -304,7 +273,6 @@ fn a_private_repository_asks_for_a_credential() {
     );
 }
 
-/// And with a credential the hub refuses, it is the other answer.
 #[test]
 fn a_refused_credential_is_a_different_answer() {
     let server = a_hub_with(&[(
@@ -321,7 +289,6 @@ fn a_refused_credential_is_a_different_answer() {
     assert!(matches!(hub.identity(), Identity::Offered { .. }));
 }
 
-/// Terms not accepted is its own answer, and no better token will help.
 #[test]
 fn a_gated_repository_says_the_terms_are_the_problem() {
     let server = a_hub_with(&[(
@@ -332,8 +299,6 @@ fn a_gated_repository_says_the_terms_are_the_problem() {
     assert_eq!(failure.category(), Category::HubAccessGated);
 }
 
-/// Throttling carries the hub's own hint, so waiting is a decision rather than
-/// a guess (B7).
 #[test]
 fn throttling_carries_the_hint_the_hub_gave() {
     let server = a_hub_with(&[(
@@ -349,8 +314,6 @@ fn throttling_carries_the_hint_the_hub_gave() {
     );
 }
 
-/// A credential is not sent to a hub over a wire that cannot keep it: refused
-/// rather than downgraded (B-024).
 #[test]
 fn a_credential_is_not_offered_over_a_wire_that_cannot_keep_it() {
     let server = a_hub_with(&[]);
@@ -362,8 +325,6 @@ fn a_credential_is_not_offered_over_a_wire_that_cannot_keep_it() {
     assert!(server.asked().is_empty(), "the request went out anyway");
 }
 
-/// The file arrives, and the digest is of what arrived rather than of what the
-/// source said it sent (§3.7, B-021).
 #[test]
 fn a_fetch_writes_the_file_and_digests_what_arrived() {
     let server = a_hub_with(&[(
@@ -385,8 +346,6 @@ fn a_fetch_writes_the_file_and_digests_what_arrived() {
     let _cleared = std::fs::remove_dir_all(into.parent().unwrap_or(&into));
 }
 
-/// A download that redirects to another host is followed, which is what the
-/// real hub does with every file (F9 §9.1).
 #[test]
 fn a_download_follows_the_redirect_the_hub_sends() {
     let cdn = Server::answering(BTreeMap::from([(
@@ -419,7 +378,6 @@ fn a_download_follows_the_redirect_the_hub_sends() {
     let _cleared = std::fs::remove_dir_all(into.parent().unwrap_or(&into));
 }
 
-/// A resumption asks for the rest and appends it.
 #[test]
 fn a_resumption_appends_what_it_asked_for() {
     let target = "/owner/model/resolve/50968a4468ef4233ed78cd7c3de230dd1d61a56b/model.gguf";
@@ -457,8 +415,6 @@ fn a_resumption_appends_what_it_asked_for() {
     let _cleared = std::fs::remove_dir_all(&directory);
 }
 
-/// A source that answers a resumption by starting again is refused: appending
-/// what it sent would build a file that is the first part twice (B-021).
 #[test]
 fn a_source_that_restarts_a_resumption_is_refused() {
     let target = "/owner/model/resolve/50968a4468ef4233ed78cd7c3de230dd1d61a56b/model.gguf";
@@ -483,8 +439,6 @@ fn a_source_that_restarts_a_resumption_is_refused() {
     let _cleared = std::fs::remove_dir_all(&directory);
 }
 
-/// And one that answers a resumption with the whole file, saying nothing about
-/// ranges, is refused for the same reason.
 #[test]
 fn a_source_that_ignores_the_range_is_refused() {
     let target = "/owner/model/resolve/50968a4468ef4233ed78cd7c3de230dd1d61a56b/model.gguf";
@@ -508,8 +462,6 @@ fn a_source_that_ignores_the_range_is_refused() {
     let _cleared = std::fs::remove_dir_all(&directory);
 }
 
-/// A source that answers a small question with an enormous answer is noticed
-/// rather than allowed to fill this machine (§3.7).
 #[test]
 fn an_answer_larger_than_the_ceiling_is_refused() {
     let enormous = "x".repeat(usize::try_from(METADATA_CEILING).unwrap_or(usize::MAX) + 1);
@@ -524,8 +476,6 @@ fn an_answer_larger_than_the_ceiling_is_refused() {
     assert_eq!(failure.category(), Category::HubMetadataMalformed);
 }
 
-/// An answer that is not JSON is refused saying what it saw, bounded so a
-/// source cannot write into MCF's record (A1, §3.7).
 #[test]
 fn an_answer_that_is_not_json_is_refused() {
     let server = a_hub_with(&[(
@@ -543,8 +493,6 @@ fn an_answer_that_is_not_json_is_refused() {
     );
 }
 
-/// A hub says what it is and what it is to the hub, because both are conditions
-/// of anything acquired through it (§3.4).
 #[test]
 fn a_hub_describes_itself_without_naming_the_credential() {
     let server = a_hub_with(&[]);
@@ -562,9 +510,6 @@ fn a_hub_describes_itself_without_naming_the_credential() {
     );
 }
 
-/// An answer that is not the file never reaches the file. A hub's error page
-/// written into `model.gguf` would be a corrupt artifact MCF put there itself,
-/// and the check that stops it happens before a byte is written (B-021, A1).
 #[test]
 fn an_error_page_is_never_written_into_the_artifact() {
     let target = "/owner/model/resolve/50968a4468ef4233ed78cd7c3de230dd1d61a56b/model.gguf";
@@ -598,8 +543,6 @@ fn an_error_page_is_never_written_into_the_artifact() {
     let _cleared = std::fs::remove_dir_all(&directory);
 }
 
-/// And a redirect's own body is never read: the head named somewhere else to
-/// go, and what is underneath it is bytes nobody asked for.
 #[test]
 fn a_redirects_body_is_not_read() {
     let cdn = Server::answering(BTreeMap::from([(
@@ -632,8 +575,6 @@ fn a_redirects_body_is_not_read() {
     let _cleared = std::fs::remove_dir_all(&directory);
 }
 
-/// §XII's hard case, as the hub actually publishes it: the repository that
-/// made these weights says which weights it made them from, and what it did.
 #[test]
 fn the_lineage_a_publisher_states_is_read() {
     let server = a_hub_with(&[]);
@@ -644,8 +585,6 @@ fn the_lineage_a_publisher_states_is_read() {
     assert_eq!(lineage.relation.as_deref(), Some("quantized"));
 }
 
-/// A repository that says nothing about where its weights came from leaves the
-/// link absent rather than unlinked-and-assumed-original (A7).
 #[test]
 fn a_repository_that_says_nothing_about_its_base_leaves_it_absent() {
     let server = Server::answering(answers_with(&[(
@@ -656,8 +595,6 @@ fn a_repository_that_says_nothing_about_its_base_leaves_it_absent() {
     assert_eq!(listing.lineage, None);
 }
 
-/// A base named without a relation is still a link: what the publisher said is
-/// kept, and what they did not say stays unsaid.
 #[test]
 fn a_base_with_no_relation_is_still_a_link() {
     let server = Server::answering(answers_with(&[(

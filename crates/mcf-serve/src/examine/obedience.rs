@@ -1,13 +1,3 @@
-//! System-prompt obedience: a checkable rule in the system turn —
-//! capitals only, a closing word, a language by its script — held across
-//! a conversation of several turns (B-548, D55, B-526).
-//!
-//! A system prompt is the one instruction a person expects to hold for
-//! the whole conversation, and whether it does at turn five is not the
-//! same question as whether it does at turn one. Each rule is one a
-//! parser can check on every reply; the turns are fixed questions and
-//! the model's own replies are kept in the transcript.
-
 use mcf_record::json::Value;
 
 use super::instructions::Constraint;
@@ -16,13 +6,10 @@ use super::{Found, Reading, Site, as_integer};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "obedience";
 
-/// How many tokens a reply may take.
 const BUDGET: usize = 80;
 
-/// The user turns, in order.
 const TURNS: [&str; 5] = [
     "What is the capital of Italy?",
     "Name a colour of the rainbow.",
@@ -31,7 +18,6 @@ const TURNS: [&str; 5] = [
     "What day comes after Monday?",
 ];
 
-/// The rules: name, the system prompt, the check.
 pub const RULES: &[(&str, &str, Constraint)] = &[
     (
         "capitals",
@@ -55,7 +41,6 @@ pub const RULES: &[(&str, &str, Constraint)] = &[
     ),
 ];
 
-/// One turn of a transcript.
 fn turn(role: &str, content: &str) -> Value {
     Value::map([
         ("role", Value::text(role)),
@@ -63,7 +48,6 @@ fn turn(role: &str, content: &str) -> Value {
     ])
 }
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let engine = match site.server(&Startup {

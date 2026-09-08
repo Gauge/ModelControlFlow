@@ -1,15 +1,3 @@
-//! Multi-fact retrieval: several facts planted through a long prompt,
-//! then asked to list, to order and to sum — found, in the right order,
-//! summed rightly, at each depth (B-529, D55, B-497).
-//!
-//! Retrieval by depth plants one number and asks for it back. A person
-//! who hands a model a long document asks for more than one thing from
-//! it, and asks for them together: everything of a kind, the order they
-//! came in, a total. Four prices for four named items are planted at
-//! four places through the filler, fresh each run; three questions are
-//! put at each depth; each answer is read by a parser — the values found
-//! in it, the names in their order, the one number it gives as a total.
-
 use mcf_record::json::Value;
 
 use super::retrieval::FILLER;
@@ -17,25 +5,18 @@ use super::{Found, Reading, Site, as_integer, framed_ids, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "multi-fact-retrieval";
 
-/// The depths tried, in tokens; each is capped at the server's window.
 const DEPTHS: [usize; 3] = [1024, 4096, 16384];
 
-/// Where the facts are planted, as hundredths of the filler, in order.
 const PLACEMENTS: [usize; 4] = [15, 40, 65, 90];
 
-/// The items the facts are about, in the order they are planted.
 pub const ITEMS: [&str; 4] = ["kestrel", "marlin", "osprey", "heron"];
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 160;
 
-/// The room kept for the template, the questions and the answer.
 const ROOM: usize = 360;
 
-/// The three questions, by name.
 const ASKS: [(&str, &str); 3] = [
     (
         "list",
@@ -54,7 +35,6 @@ const ASKS: [(&str, &str); 3] = [
     ),
 ];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -196,8 +176,6 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// The filler repeated, one fact planted at each placement, and the
-/// question after it.
 #[must_use]
 pub fn planted(repeats: usize, prices: &[i64], question: &str) -> String {
     let mut text = String::with_capacity(FILLER.len() * (repeats + 1) + 400);
@@ -222,8 +200,6 @@ pub fn planted(repeats: usize, prices: &[i64], question: &str) -> String {
     text
 }
 
-/// How many item names an answer holds, and whether every one is there
-/// in the planted order.
 #[must_use]
 pub fn order_in(said: &str) -> (usize, bool) {
     let lowered = said.to_lowercase();
@@ -236,8 +212,6 @@ pub fn order_in(said: &str) -> (usize, bool) {
     (named, ordered)
 }
 
-/// Four three-digit prices nothing has seen before this run, all
-/// different, from the clock.
 fn fresh_prices() -> Vec<i64> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

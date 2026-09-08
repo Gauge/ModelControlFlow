@@ -1,30 +1,15 @@
-//! The offload curve: tokens a second at nought, a quarter, half, three
-//! quarters and all of the layers on the card (B-492, D52).
-//!
-//! **Why it is a curve and not a number.** MCF resolves a model to the
-//! card whole or not at all, because a partial offload needs a
-//! measurement nobody had taken. This is that measurement: one pinned
-//! generation and one first-token timing at each of five layer counts,
-//! so a person whose model does not fit whole can read what each count
-//! buys. Nothing here chooses; the settings stay where somebody put them
-//! (D43).
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, as_ms, filler, per_second, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name, as the run and the record know it.
 pub const NAME: &str = "offload-curve";
 
-/// How deep the prompt is, in identifiers.
 const DEPTH: usize = 256;
 
-/// How many tokens the longer of the pair produces.
 const PRODUCE: usize = 32;
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     if !site.has_card {
@@ -40,8 +25,6 @@ pub fn measure(site: &Site<'_>) -> Found {
         .map(|quarter| {
             #[expect(clippy::integer_division, reason = "a quarter of the layers, floored")]
             let some = layers * quarter / 4;
-            // All of them means the output layer too, which the engine
-            // counts as one past the blocks.
             if *quarter == 4 { layers + 1 } else { some }
         })
         .collect();
@@ -107,13 +90,10 @@ pub fn measure(site: &Site<'_>) -> Found {
     }
 }
 
-/// A figure as the record's integer.
 fn whole_i64(held: u64) -> i64 {
     i64::try_from(held).unwrap_or(i64::MAX)
 }
 
-/// One layer count: the time to a first token, and the time of the longer
-/// run of the pair, both raw (D16).
 fn at_layers(site: &Site<'_>, count: u32) -> Result<(u64, u64), String> {
     let engine = site.server(&Startup {
         gpu_layers: count,
@@ -123,8 +103,6 @@ fn at_layers(site: &Site<'_>, count: u32) -> Result<(u64, u64), String> {
     })?;
     let prompt = filler(DEPTH);
     let said = |failure: mcf_core::Failure| failure.detail().to_owned();
-    // A first request after a start pays for what the engine sets up
-    // lazily; it is made and not read.
     let _warm = engine
         .complete(
             Prompt::Identifiers(&prompt),
@@ -166,7 +144,6 @@ fn at_layers(site: &Site<'_>, count: u32) -> Result<(u64, u64), String> {
     Ok((first, long))
 }
 
-/// How many blocks the file declares.
 pub(crate) fn layers_of(model: &std::path::Path) -> Option<u32> {
     let bytes = crate::probes::run::read_prefix(model)?;
     let file = mcf_standin::gguf::parse(&bytes).ok()?;

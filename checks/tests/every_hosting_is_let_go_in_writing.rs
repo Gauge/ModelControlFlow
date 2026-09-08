@@ -1,23 +1,3 @@
-//! A model held is a model let go, in the record (B-210, A26, A1).
-//!
-//! **The record keeps its lifecycle events in pairs**, and every pair exists
-//! for the same reason: after the second one the thing is gone, and the entry
-//! is the only evidence it was ever there. `ArtifactAcquired` with
-//! `ArtifactRemoved`, `ComponentProvisioned` with `ComponentRemoved`,
-//! `DaemonStarted` with `DaemonStopped`.
-//!
-//! **`ModelHosted` arrived without its pair being written on every path.**
-//! Stopping the daemon while it held a model did stop the engine — dropping
-//! what owns it is what stops it — and wrote nothing. The record then read
-//! *hosted* with no answer, and anybody reading it later would conclude a
-//! model was still being served on a port. The engine had gone and the record
-//! said otherwise, which is worse than either alone (A1).
-//!
-//! What this holds is that every place which lets go writes it down. It is a
-//! structural check rather than a run, because the failing case is a *path*
-//! nobody took rather than a value nobody checked.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use std::path::Path;
@@ -29,17 +9,10 @@ fn read(relative: &str) -> String {
     })
 }
 
-/// Every place that drops what is held writes down that it did.
-///
-/// The one function that takes the held model out of its slot is the one
-/// place that records it, so a second path cannot let go quietly: there is
-/// nowhere else to let go from.
 #[test]
 fn letting_go_happens_in_one_place_and_that_place_records_it() {
     let source = read("crates/mcf-serve/src/daemon.rs");
 
-    // `holding.take()` is how a held model stops being held. Every occurrence
-    // must be inside the function that records it.
     let mut taking = Vec::new();
     for (number, line) in source.lines().enumerate() {
         let trimmed = line.trim();
@@ -57,7 +30,6 @@ fn letting_go_happens_in_one_place_and_that_place_records_it() {
          go without writing it down (B-210, A26): {taking:#?}"
     );
 
-    // And that place records it.
     let (_, body) = source
         .split_once("fn let_go(")
         .expect("there is one place that lets go, and it is called let_go");
@@ -73,11 +45,6 @@ fn letting_go_happens_in_one_place_and_that_place_records_it() {
     );
 }
 
-/// Stopping the daemon lets go before it records its own stop.
-///
-/// The order matters for reading the record back: a `daemon_stopped` between
-/// a hosting and its release would read as a daemon that stopped while still
-/// serving.
 #[test]
 fn a_daemon_lets_go_before_it_records_its_own_stop() {
     let source = read("crates/mcf-serve/src/daemon.rs");
@@ -97,7 +64,6 @@ fn a_daemon_lets_go_before_it_records_its_own_stop() {
     );
 }
 
-/// Both halves of the pair exist in the record's own vocabulary.
 #[test]
 fn the_pair_is_a_pair() {
     let kinds = read("crates/mcf-record/src/journal/entry.rs");

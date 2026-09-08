@@ -1,5 +1,3 @@
-//! Three provenances, never collapsed.
-
 use super::{Energy, PerSecond};
 
 fn measured(millijoules: u64, rate: u32, counter: &str) -> Energy {

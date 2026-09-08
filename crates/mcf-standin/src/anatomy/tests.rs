@@ -1,5 +1,3 @@
-//! A directory is counted, and the header is set against it.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeMap;
@@ -34,8 +32,6 @@ fn model(architecture: &str, declared: &[(&str, Value)], tensors: Vec<Tensor>) -
     }
 }
 
-/// A two-block dense model with the shapes the format writes: width 64,
-/// 4 heads of 16, 2 key/value heads, feed-forward 128, vocabulary 256.
 fn dense() -> Model {
     let mut tensors = vec![
         tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K),
@@ -99,8 +95,6 @@ fn every_tensor_is_placed_by_its_name() {
 #[test]
 fn a_dense_model_is_counted_from_its_shapes() {
     let counted = of(&dense());
-    // Two embedding-sized tables, plus per block: 64·64·2 + 64·32·2 + 3·64·128
-    // + two norms of 64, plus the output norm.
     let per_block = 64 * 64 * 2 + 64 * 32 * 2 + 3 * 64 * 128 + 2 * 64;
     assert_eq!(counted.elements, 2 * 64 * 256 + 2 * per_block + 64);
     assert_eq!(counted.blocks, 2);
@@ -115,8 +109,6 @@ fn a_dense_model_is_counted_from_its_shapes() {
         .unwrap();
     assert_eq!(attention.tensors, 8);
     assert_eq!(attention.elements, 2 * (64 * 64 * 2 + 64 * 32 * 2));
-    // A share is sized like the whole is: from zero, tensor by tensor. Q4_K
-    // and Q6_K are both sized, so this one has bits.
     let attention_bytes: u64 = dense()
         .tensors
         .iter()
@@ -125,15 +117,12 @@ fn a_dense_model_is_counted_from_its_shapes() {
         .sum();
     assert_eq!(attention.bytes, Some(attention_bytes));
     assert!(attention.hundredths_of_a_bit().is_some());
-    // Bytes are the sum of every tensor's encoding, and the whole is known
-    // because every kind here is one the reader sizes.
     let bytes: u64 = dense()
         .tensors
         .iter()
         .map(|held| held.bytes().unwrap())
         .sum();
     assert_eq!(counted.bytes, Some(bytes));
-    // The kinds are listed largest first.
     assert_eq!(
         counted.kinds.first().map(|(kind, _)| *kind),
         Some(TensorKind::Q4_K)
@@ -158,7 +147,6 @@ fn the_header_is_set_against_the_directory_and_agrees() {
     assert_eq!(row("attention heads").agrees, Some(true));
     assert_eq!(row("key/value heads").agrees, Some(true));
     assert_eq!(row("feed-forward width").agrees, Some(true));
-    // Nothing declared experts and nothing holds any: no row.
     assert!(counted.agreements.iter().all(|held| held.what != "experts"));
     assert_eq!(row("parameters").declared.as_deref(), Some("106816"));
     assert_eq!(row("parameters").agrees, Some(true));
@@ -208,8 +196,6 @@ fn a_figure_the_header_does_not_state_is_not_a_disagreement() {
 
 #[test]
 fn a_mixture_counts_what_a_token_activates() {
-    // One block, 8 experts of which 2 are used, each expert 64→32→64 with a
-    // gate; a router of 64×8; attention as the dense one; tied output.
     let tensors = vec![
         tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K),
         tensor("output_norm.weight", &[64], TensorKind::F32),
@@ -280,26 +266,20 @@ fn an_encoding_the_reader_cannot_size_leaves_the_bytes_unknown() {
         "a total with a hole in it is not a total (A7)"
     );
     assert_eq!(counted.unsized_tensors, 1);
-    // The elements are still counted: the shape is known even where the
-    // encoding is not.
     assert_eq!(counted.elements, of(&dense()).elements + 64 * 32 * 8);
 }
 
 #[test]
 fn a_label_agrees_to_its_own_resolution() {
-    // Rounded or truncated: 8B covers 7.5 up to 9 billion; 2.6B covers 2.55
-    // up to 2.7.
     assert_eq!(label_agrees("8B", 8_250_000_000), Some(true));
     assert_eq!(label_agrees("8B", 7_500_000_000), Some(true));
     assert_eq!(label_agrees("8B", 8_999_000_000), Some(true));
     assert_eq!(label_agrees("8B", 9_000_000_000), Some(false));
     assert_eq!(label_agrees("8B", 7_400_000_000), Some(false));
-    // Qwen3-Coder-30B-A3B holds 30.53 billion: a truncated label.
     assert_eq!(label_agrees("30B", 30_532_122_624), Some(true));
     assert_eq!(label_agrees("2.6B", 2_640_000_000), Some(true));
     assert_eq!(label_agrees("2.6B", 2_699_000_000), Some(true));
     assert_eq!(label_agrees("2.6B", 2_700_000_000), Some(false));
-    // Not a count: experts times a size.
     assert_eq!(label_agrees("64x2.6B", 2_600_000_000), None);
     assert_eq!(label_agrees("large", 1), None);
 }
@@ -321,14 +301,10 @@ fn one_token_is_costed_from_the_widths_the_header_names() {
         .insert("llama.attention.key_length".to_owned(), Value::Integer(16));
     let counted = of(&file);
     let work = super::work::of(&file, &counted);
-    // Every element but the embedding table, which is looked up, and the
-    // output head is its own table here.
     assert_eq!(work.multiply_adds, counted.elements - 64 * 256);
     assert_eq!(work.head_width, Some(16));
     assert_eq!(work.queries_per_key, Some(2));
-    // 4 heads × (16 + 16) × 1024 positions × 2 blocks.
     assert_eq!(work.attention_at_context, Some(4 * 32 * 1024 * 2));
-    // 2 key/value heads × (16 + 16) × 2 blocks × 2 bytes.
     assert_eq!(
         work.cache,
         super::work::Cache::Sized {
@@ -350,8 +326,6 @@ fn a_head_width_the_header_omits_is_the_embedding_over_the_heads() {
     let counted = of(&file);
     let work = super::work::of(&file, &counted);
     assert_eq!(work.head_width, Some(16));
-    // No context length declared: the cache is sized per token and not for a
-    // window, and attention over a window is not computed.
     assert_eq!(work.attention_at_context, None);
     assert!(matches!(
         work.cache,
@@ -363,17 +337,11 @@ fn a_head_width_the_header_omits_is_the_embedding_over_the_heads() {
     ));
 }
 
-/// A latent cache is the key width alone: the engine allocates a key cache of
-/// the latent's width and no value cache, and reads values back out of the
-/// latent (F151). A formula that added a value for every key stated it nearly
-/// twice its size — and before that, MCF withheld it as unsized.
 #[test]
 fn a_latent_cache_is_a_key_with_no_value() {
     let mut file = dense();
     for (key, value) in [
         ("llama.attention.kv_lora_rank", 12),
-        // The converter writes the latent and its rope as the key length,
-        // the latent alone as the value length, and one key/value head.
         ("llama.attention.key_length", 16),
         ("llama.attention.value_length", 12),
         ("llama.attention.head_count_kv", 1),
@@ -383,7 +351,6 @@ fn a_latent_cache_is_a_key_with_no_value() {
     }
     let counted = of(&file);
     let work = super::work::of(&file, &counted);
-    // 1 head × 16 (the latent and its rope, nothing for values) × 2 blocks × 2 bytes.
     assert_eq!(
         work.cache,
         super::work::Cache::Sized {
@@ -397,8 +364,6 @@ fn a_latent_cache_is_a_key_with_no_value() {
             recurrent: 0,
         }
     );
-    // Every head still reads the latent as key and value per position:
-    // 4 heads × (16 + 12) × 1024 × 2 blocks.
     assert_eq!(work.attention_at_context, Some(4 * 28 * 1024 * 2));
 }
 
@@ -418,8 +383,6 @@ fn a_tied_output_head_multiplies_the_embedding_table_once() {
     assert_eq!(work.multiply_adds, 64 * 256 + 64 * 64);
 }
 
-/// A byte-level vocabulary of eight tokens with types, named tokens and a
-/// template.
 fn spoken() -> Model {
     let tokens = [
         "<|end|>",
@@ -487,12 +450,8 @@ fn a_vocabulary_is_counted_from_its_list() {
         ])
     );
     assert_eq!(counted.adds_beginning, Some(false));
-    // "<|start|>" and "<|end|>" tie at 9 bytes with "<0x41>" shorter; the
-    // first of the longest is kept.
     assert_eq!(counted.longest, Some(("<|start|>".to_owned(), 9)));
-    // "Ġthe", "Ġ123", "Ġ" carry the mark.
     assert_eq!(counted.word_starts, 3);
-    // "Ġ123" and "12" are digit runs; the longest is three digits.
     assert_eq!(counted.digit_tokens, (2, 3));
 }
 
@@ -539,14 +498,6 @@ fn a_vocabulary_without_types_says_so_rather_than_guessing() {
     assert_eq!(counted.template.unwrap().markers, None);
 }
 
-/// A model whose blocks are not alike is grouped by what each is made of,
-/// and the cache is sized from the blocks that keep keys, not from the block
-/// count.
-///
-/// Four blocks: 0, 1 and 2 keep a recurrent state (`ssm_*`, with an
-/// `attn_qkv` that is their input projection and not attention); 3 attends.
-/// All four carry experts and a shared expert. Sized from the block count the
-/// cache was four times what it is.
 #[test]
 fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
     use super::blocks::{Feed, Mixing, ranges};
@@ -614,8 +565,6 @@ fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
             shared: true
         }
     );
-    // Block 0 is encoded more finely than 1 and 2, so the family's bits are
-    // a range, not a figure.
     let (least, most) = recurrent.bits.expect("every block is sized");
     assert!(least < most, "{least} {most}");
     let attending = &census.families[1];
@@ -627,7 +576,6 @@ fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
     assert_eq!(ranges(&[3, 7, 11], 5), "3, 7, 11");
 
     let work = super::work::of(&file, &counted);
-    // 4 heads × (16 + 16) × 1024 positions × the ONE block that attends.
     assert_eq!(work.attention_at_context, Some(4 * 32 * 1024));
     assert_eq!(
         work.cache,
@@ -642,9 +590,7 @@ fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
             recurrent: 3,
         }
     );
-    // The recurrent blocks' state tensors are their own part, not *other*.
     assert_eq!(role_of("blk.0.ssm_conv1d.weight"), Role::Recurrent);
-    // A decay with no `.weight` after it is still the leaf, not a suffix.
     assert_eq!(role_of("blk.0.ssm_a"), Role::Recurrent);
     assert_eq!(role_of("blk.0.ssm_norm.weight"), Role::NormsAndBiases);
     assert!(
@@ -657,18 +603,11 @@ fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
     );
 }
 
-/// Heads are read off the output projection, not the query projection.
-///
-/// A hybrid's query projection carries a gate beside every query, so it is
-/// twice as wide as its heads: read from it, sixteen declared heads were
-/// thirty-two observed and the row said DISAGREE about a file that was fine
-/// (F150). The output projection gathers exactly one head's output per head.
 #[test]
 fn heads_are_read_off_the_output_projection() {
     let mut tensors = vec![tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K)];
     let named = |leaf: &str| format!("blk.0.{leaf}");
     tensors.extend([
-        // Four heads of sixteen, and a gate of the same width beside them.
         tensor(&named("attn_q.weight"), &[64, 128], TensorKind::Q4_K),
         tensor(&named("attn_k.weight"), &[64, 32], TensorKind::Q4_K),
         tensor(&named("attn_v.weight"), &[64, 32], TensorKind::Q4_K),
@@ -701,8 +640,6 @@ fn heads_are_read_off_the_output_projection() {
         (Some("4"), Some("4"), Some(true))
     );
 
-    // Latent attention: the output projection gathers the latent value width
-    // per head, which the header declares apart from the cache's value width.
     let mut tensors = vec![tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K)];
     tensors.extend([
         tensor(&named("attn_kv_a_mqa.weight"), &[64, 72], TensorKind::Q4_K),
@@ -737,7 +674,6 @@ fn heads_are_read_off_the_output_projection() {
         ),
         (Some("5"), Some("5"), Some(true))
     );
-    // And its one key/value head is the latent projection.
     let key_heads = counted
         .agreements
         .iter()

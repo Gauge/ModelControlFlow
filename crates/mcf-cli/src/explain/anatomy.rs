@@ -1,22 +1,11 @@
-//! The model counted from its directory, and the header set against it (A21).
-//!
-//! Everything here is [`mcf_standin::anatomy`]'s arithmetic, laid out. A
-//! parameter count is printed with its thousands separated and its billions
-//! beside it, because *8250000000* is a figure a reader has to count the
-//! digits of and *8.3B* is the one they came for — and the exact one stays,
-//! because the label is what the publisher rounded to and the count is what
-//! the file holds.
-
 use mcf_standin::anatomy::blocks::{Census, ranges};
 use mcf_standin::anatomy::vocabulary::{self, Vocabulary};
 use mcf_standin::anatomy::work::{self, Cache};
 use mcf_standin::anatomy::{self, Agreement, Anatomy, Share};
 use mcf_standin::gguf::Model;
 
-/// The value column's width: what is left of a terminal after the label.
 const VALUE_WIDTH: usize = 80;
 
-/// One labelled row, its prose wrapped under the label.
 fn row(label: &str, text: &str) -> Vec<String> {
     super::wrapped(text, VALUE_WIDTH)
         .into_iter()
@@ -28,7 +17,6 @@ fn row(label: &str, text: &str) -> Vec<String> {
         .collect()
 }
 
-/// The lines under *what MCF read from the bytes*.
 pub(crate) fn counted(file: &Model) -> Vec<String> {
     let body = anatomy::of(file);
     let mut lines = Vec::new();
@@ -86,12 +74,6 @@ pub(crate) fn counted(file: &Model) -> Vec<String> {
     lines
 }
 
-/// Each shape of block: which blocks, what they are made of, what they hold.
-///
-/// A block count says nothing about whether the blocks are alike, and a
-/// model that keeps a recurrent state in three of every four, or whose first
-/// block is dense among experts, is a different thing from its count. Each
-/// shape is two lines: the blocks, then the make-up and the share.
 fn by_block(body: &Anatomy) -> Vec<String> {
     let census: &Census = &body.census;
     let mut lines = Vec::new();
@@ -125,7 +107,6 @@ fn by_block(body: &Anatomy) -> Vec<String> {
     lines
 }
 
-/// Hundredths of a bit as `4.37`.
 fn hundredths(held: u64) -> String {
     #[allow(
         clippy::integer_division,
@@ -135,7 +116,6 @@ fn hundredths(held: u64) -> String {
     format!("{whole}.{fraction:02}")
 }
 
-/// Each part of the model, as a share of the elements.
 fn by_part(body: &Anatomy) -> Vec<String> {
     let mut lines = Vec::new();
     let mut label = "by part";
@@ -152,7 +132,6 @@ fn by_part(body: &Anatomy) -> Vec<String> {
     lines
 }
 
-/// Each encoding, as a share of the elements.
 fn by_encoding(body: &Anatomy) -> Vec<String> {
     let mut lines = Vec::new();
     let mut label = "by encoding";
@@ -170,7 +149,6 @@ fn by_encoding(body: &Anatomy) -> Vec<String> {
     lines
 }
 
-/// The section that sets the header against the directory.
 pub(crate) fn agreed(file: &Model) -> Vec<String> {
     let body = anatomy::of(file);
     let mut lines = vec![
@@ -206,7 +184,6 @@ pub(crate) fn agreed(file: &Model) -> Vec<String> {
     lines
 }
 
-/// One row: declared, observed, and the verdict.
 fn agreement_line(row: &Agreement) -> String {
     let declared = row.declared.as_deref().map_or_else(
         || "the header does not say".to_owned(),
@@ -227,7 +204,6 @@ fn agreement_line(row: &Agreement) -> String {
     )
 }
 
-/// The section that costs one token, in arithmetic.
 pub(crate) fn costed(file: &Model) -> Vec<String> {
     let body = anatomy::of(file);
     let work = work::of(file, &body);
@@ -277,7 +253,6 @@ pub(crate) fn costed(file: &Model) -> Vec<String> {
     lines
 }
 
-/// The cache rows.
 fn cache_lines(cache: &Cache) -> Vec<String> {
     match cache {
         Cache::Sized {
@@ -336,7 +311,6 @@ fn cache_lines(cache: &Cache) -> Vec<String> {
     }
 }
 
-/// The section that counts the vocabulary.
 pub(crate) fn spoken(file: &Model) -> Vec<String> {
     let held = vocabulary::of(file);
     let mut lines = vec![
@@ -391,7 +365,6 @@ pub(crate) fn spoken(file: &Model) -> Vec<String> {
     lines
 }
 
-/// The tokens the header names, spelled or shown to be beyond the list.
 fn named_lines(held: &Vocabulary) -> Vec<String> {
     let mut lines = Vec::new();
     let mut label = "named tokens";
@@ -408,7 +381,6 @@ fn named_lines(held: &Vocabulary) -> Vec<String> {
     lines
 }
 
-/// The template rows.
 fn template_lines(held: &Vocabulary) -> Vec<String> {
     let Some(template) = &held.template else {
         return row("chat template", vocabulary::NO_TEMPLATE);
@@ -443,7 +415,6 @@ fn template_lines(held: &Vocabulary) -> Vec<String> {
     lines
 }
 
-/// A token's spelling, quoted and escaped, and cut where a row would run off.
 fn clipped(token: &str) -> String {
     const LONGEST_SHOWN: usize = 48;
     let spelled = format!("{token:?}");
@@ -454,9 +425,7 @@ fn clipped(token: &str) -> String {
     format!("{kept}…")
 }
 
-/// Bytes in gibibytes, to one decimal.
 fn gibibytes(bytes: u64) -> String {
-    // Tenths of a gibibyte, remainder dropped.
     #[allow(
         clippy::integer_division,
         reason = "one decimal is the resolution shown"
@@ -470,7 +439,6 @@ fn gibibytes(bytes: u64) -> String {
     format!("{whole}.{tenth} GiB")
 }
 
-/// Bits per element, to two decimals, or why not.
 fn bits(share: &Share) -> String {
     share.hundredths_of_a_bit().map_or_else(
         || "unsized".to_owned(),
@@ -485,12 +453,10 @@ fn bits(share: &Share) -> String {
     )
 }
 
-/// A share of a whole, to one decimal.
 fn percent(part: u64, whole: u64) -> String {
     if whole == 0 {
         return "—".to_owned();
     }
-    // Tenths of a percent: exact to the tenth, remainder dropped.
     #[allow(
         clippy::integer_division,
         reason = "one decimal is the resolution shown"
@@ -504,7 +470,6 @@ fn percent(part: u64, whole: u64) -> String {
     format!("{whole}.{tenth}%")
 }
 
-/// A count with its thousands separated.
 pub(crate) fn with_thousands(number: u64) -> String {
     anatomy::grouped(number)
 }

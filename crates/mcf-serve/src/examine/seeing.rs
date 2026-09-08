@@ -1,14 +1,3 @@
-//! What the model sees: computed pictures with countable content — so
-//! many circles, a number written in seven-segment strokes, a square of
-//! one colour, the larger of two circles — each asked back exactly
-//! (B-543, D55, B-503).
-//!
-//! The vision probe asks whether a picture reaches the model, and the
-//! image-cost measurement what it costs. Neither asks what the model
-//! saw. Every picture here is computed, so two machines put the same
-//! pixels in front of the same model, and every answer is read by a
-//! parser: a count, a number, a colour word, a side.
-
 use mcf_record::json::Value;
 
 use super::paraphrase::answer_in;
@@ -17,47 +6,33 @@ use crate::generation::Draw;
 use crate::probes::vision::png;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "seeing";
 
-/// The pictures' side, in pixels.
 const SIDE: u32 = 448;
 
-/// How many tokens an answer may take.
 const BUDGET: usize = 40;
 
-/// The ground the shapes sit on, and the inks.
 const GROUND: [u8; 3] = [250, 249, 247];
 const INK: [u8; 3] = [30, 30, 34];
 const RED: [u8; 3] = [200, 60, 45];
 const BLUE: [u8; 3] = [40, 90, 190];
 const GREEN: [u8; 3] = [50, 150, 70];
 
-/// What one picture asks and what the right answer is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Wants {
-    /// A whole number.
     Number(i64),
-    /// One of these words, case aside.
     Word(&'static str),
 }
 
-/// One picture: its name, its kind, the pixels, the question, the answer.
 #[derive(Debug)]
 pub struct Picture {
-    /// Its name, as the rows' dimension.
     pub name: String,
-    /// Its kind: count, number, colour or larger.
     pub kind: &'static str,
-    /// The PNG.
     pub bytes: Vec<u8>,
-    /// The question put beside it.
     pub asks: &'static str,
-    /// The right answer.
     pub wants: Wants,
 }
 
-/// A blank picture as rows of pixels.
 fn blank() -> Vec<Vec<u8>> {
     (0..SIDE)
         .map(|_| {
@@ -70,7 +45,6 @@ fn blank() -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// Paints every pixel inside the disc.
 fn disc(rows: &mut [Vec<u8>], centre: (i64, i64), radius: i64, ink: [u8; 3]) {
     for (y, row) in rows.iter_mut().enumerate() {
         let y = i64::try_from(y).unwrap_or(0);
@@ -86,7 +60,6 @@ fn disc(rows: &mut [Vec<u8>], centre: (i64, i64), radius: i64, ink: [u8; 3]) {
     }
 }
 
-/// Paints a filled rectangle.
 fn block(rows: &mut [Vec<u8>], x0: i64, y0: i64, w: i64, h: i64, ink: [u8; 3]) {
     for (y, row) in rows.iter_mut().enumerate() {
         let y = i64::try_from(y).unwrap_or(0);
@@ -102,8 +75,6 @@ fn block(rows: &mut [Vec<u8>], x0: i64, y0: i64, w: i64, h: i64, ink: [u8; 3]) {
     }
 }
 
-/// The seven segments lit for each digit: a b c d e f g, top, upper
-/// right, lower right, bottom, lower left, upper left, middle.
 const SEGMENTS: [[bool; 7]; 10] = [
     [true, true, true, true, true, true, false],
     [false, true, true, false, false, false, false],
@@ -117,8 +88,6 @@ const SEGMENTS: [[bool; 7]; 10] = [
     [true, true, true, true, false, true, true],
 ];
 
-/// Where a digit is drawn: its top-left corner, its width and height,
-/// and how thick its strokes are.
 #[derive(Debug, Clone, Copy)]
 struct Cell {
     left: i64,
@@ -128,7 +97,6 @@ struct Cell {
     stroke: i64,
 }
 
-/// Draws one digit in seven-segment strokes in its cell.
 fn digit(rows: &mut [Vec<u8>], which: usize, cell: Cell) {
     let Some(lit) = SEGMENTS.get(which) else {
         return;
@@ -142,13 +110,13 @@ fn digit(rows: &mut [Vec<u8>], which: usize, cell: Cell) {
     } = cell;
     let half = height.saturating_div(2);
     let strokes = [
-        (left, top, width, stroke),                                   // a top
-        (left + width - stroke, top, stroke, half),                   // b upper right
-        (left + width - stroke, top + half, stroke, height - half),   // c lower right
-        (left, top + height - stroke, width, stroke),                 // d bottom
-        (left, top + half, stroke, height - half),                    // e lower left
-        (left, top, stroke, half),                                    // f upper left
-        (left, top + half - stroke.saturating_div(2), width, stroke), // g middle
+        (left, top, width, stroke),
+        (left + width - stroke, top, stroke, half),
+        (left + width - stroke, top + half, stroke, height - half),
+        (left, top + height - stroke, width, stroke),
+        (left, top + half, stroke, height - half),
+        (left, top, stroke, half),
+        (left, top + half - stroke.saturating_div(2), width, stroke),
     ];
     for (on, (sx, sy, sw, sh)) in lit.iter().zip(strokes) {
         if *on {
@@ -157,11 +125,9 @@ fn digit(rows: &mut [Vec<u8>], which: usize, cell: Cell) {
     }
 }
 
-/// The pictures, computed.
 #[must_use]
 pub fn pictures() -> Vec<Picture> {
     let mut out = Vec::new();
-    // So many circles: on a grid so none touch, blue.
     let places = [(112, 112), (336, 112), (112, 336), (336, 336), (224, 224)];
     for count in [1_usize, 2, 3, 4, 5] {
         let mut rows = blank();
@@ -176,7 +142,6 @@ pub fn pictures() -> Vec<Picture> {
             wants: Wants::Number(i64::try_from(count).unwrap_or(0)),
         });
     }
-    // A number in seven-segment strokes.
     for number in [305_i64, 472, 918] {
         let mut rows = blank();
         let text = number.to_string();
@@ -210,7 +175,6 @@ pub fn pictures() -> Vec<Picture> {
             wants: Wants::Number(number),
         });
     }
-    // A square of one colour.
     for (word, ink) in [("red", RED), ("blue", BLUE), ("green", GREEN)] {
         let mut rows = blank();
         block(&mut rows, 124, 124, 200, 200, ink);
@@ -222,7 +186,6 @@ pub fn pictures() -> Vec<Picture> {
             wants: Wants::Word(word),
         });
     }
-    // The larger of two circles.
     for (side, left_radius, right_radius) in [("left", 90, 40), ("right", 40, 90)] {
         let mut rows = blank();
         disc(&mut rows, (120, 224), left_radius, RED);
@@ -238,7 +201,6 @@ pub fn pictures() -> Vec<Picture> {
     out
 }
 
-/// Whether an answer is the one wanted.
 #[must_use]
 pub fn right(said: &str, wants: &Wants) -> bool {
     match wants {
@@ -255,7 +217,6 @@ pub fn right(said: &str, wants: &Wants) -> bool {
     }
 }
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

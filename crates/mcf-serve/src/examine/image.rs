@@ -1,29 +1,15 @@
-//! Image cost: what a picture adds to a prompt, in tokens and in time
-//! (B-503, D52, B-452).
-//!
-//! A vision model charges a picture to the same window as its words,
-//! and how much depends on the picture's size and the projector's
-//! stride — a figure any budget on a vision model needs and none had. A
-//! computed picture at three sides goes in with a one-token turn; the
-//! tokens the engine read less the words alone is the picture's cost,
-//! and the time the prefill took is its price.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer, as_ms, timed, whole};
 use crate::generation::Draw;
 use crate::served::{Prompt, Startup};
 
-/// The measurement's name.
 pub const NAME: &str = "image-cost";
 
-/// The sides tried, in pixels.
 pub const SIDES: [u32; 3] = [224, 448, 896];
 
-/// What is asked beside the picture.
 const ASK: &str = "Describe the picture.";
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,

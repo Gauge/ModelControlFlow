@@ -1,23 +1,9 @@
-//! Embedding retrieval: over fixed triples, whether the paraphrase ranks
-//! above the unrelated sentence by the model's own embedding (B-552,
-//! D55, B-501).
-//!
-//! The embedding probe asks whether a vector comes back; this asks
-//! whether the vectors order meaning. Each triple is a sentence, a
-//! paraphrase of it and a sentence about something else; the model's own
-//! engine embeds all three in this process, and the paraphrase should sit
-//! closer. The two distances are rows, in millionths, so that a person
-//! can see the margin and not only the order. A model that is not an
-//! embedding model says so and has no rows.
-
 use mcf_record::json::Value;
 
 use super::{Found, Reading, Site, as_integer};
 
-/// The measurement's name.
 pub const NAME: &str = "nearest";
 
-/// The triples: name, the sentence, its paraphrase, the unrelated one.
 pub const TRIPLES: &[(&str, &str, &str, &str)] = &[
     (
         "ferry",
@@ -69,7 +55,6 @@ pub const TRIPLES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
-/// Runs it.
 #[must_use]
 pub fn measure(site: &Site<'_>) -> Found {
     let texts: Vec<[&str; 3]> = TRIPLES.iter().map(|(_, a, b, c)| [*a, *b, *c]).collect();

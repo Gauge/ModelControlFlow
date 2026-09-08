@@ -1,27 +1,3 @@
-//! A hub that behaves badly on purpose (B-028, §3.17, D26).
-//!
-//! B-028: *a complete, deterministic simulated Hugging Face — well-formed,
-//! malformed, gated, hostile, truncated, mutating*, so that **every M1 test
-//! runs against it with no network** (B19). This is that hub.
-//!
-//! **It simulates what MCF observes, never what causes it** (D26). There is no
-//! model of a rate limiter here, no queue and no clock: there is a source that
-//! *answers* "throttled", because what MCF has to get right is what it does
-//! with that answer. A simulator that modelled the cause would be a second,
-//! unvalidated implementation of somebody else's server, and A12 would then
-//! have MCF believing it over the world.
-//!
-//! **Every behaviour is declared, not random.** A repository in this hub is a
-//! constant: these files, this licence, and this way of misbehaving. §3.17's
-//! requirement is that a failure found once reproduces exactly, forever, and a
-//! hub that decided at random when to fail would make every scenario a
-//! different scenario each run.
-//!
-//! **Bytes are real where bytes matter.** A truncated transfer writes the file
-//! it truncated: B-021 has to detect a partial artifact on the disk, and a
-//! simulation that returned an error without writing anything would be testing
-//! the wrong half.
-
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -33,89 +9,33 @@ use mcf_hub::source::{Entry, Fetched, Listing, Source};
 
 const WHERE: Subsystem = Subsystem::new("mcf-lab::hub");
 
-/// How a repository in this hub behaves.
-///
-/// One variant per thing a real hub does that MCF must survive. Adding one is
-/// the same decision B32 governs for scenarios: it earns its place by making a
-/// claim MCF cannot otherwise make.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Behaviour {
-    /// Lists and serves what it says it has.
     WellFormed,
-    /// Exists, and will not be listed without credentials.
     NeedsCredentials,
-    /// Exists, and refuses the credential it is offered.
-    ///
-    /// A different world from [`Self::NeedsCredentials`]: something *was*
-    /// offered and the hub would not have it — expired, revoked, or scoped for
-    /// something else — and a better-worded request will not help.
     RejectsCredentials,
-    /// Exists, credentials accepted, terms not agreed for this account.
     Gated,
-    /// Throttled, with the hint a hub usually gives.
-    RateLimited {
-        /// How many seconds it suggests waiting.
-        retry_after: u64,
-    },
-    /// Lists, and serves fewer bytes than it promised.
-    ///
-    /// The file that arrives is written: B-021 has to find a partial artifact
-    /// on the disk rather than an absence.
-    Truncates {
-        /// How many bytes of the file actually arrive.
-        after: u64,
-    },
-    /// Lists one thing and serves another, which is the mutation-under-us case.
+    RateLimited { retry_after: u64 },
+    Truncates { after: u64 },
     ServesDifferentBytes,
-    /// Publishes metadata that disagrees with the weights it publishes.
     DeceptiveMetadata,
-    /// Publishes an archive whose members climb out of the extraction root.
     HostileArchive,
-    /// Serves in pieces: every transfer stops after this many bytes, wherever
-    /// it started.
-    ///
-    /// Distinct from [`Behaviour::Truncates`], which always stops at the same
-    /// absolute offset and therefore never finishes. This one is a source that
-    /// keeps stopping and can be carried across by resuming — which is B-021's
-    /// case, and the only way to test that a resumption actually continues
-    /// rather than starting again.
-    StopsEvery {
-        /// How many bytes each attempt delivers.
-        bytes: u64,
-    },
-    /// Cannot continue from an offset at all, which is a real kind of hub.
+    StopsEvery { bytes: u64 },
     NeverResumes,
 }
 
-/// One repository this hub publishes.
 #[derive(Debug, Clone)]
 pub struct Repository {
-    /// How this repository is gated, in the hub's own word, where it is.
-    ///
-    /// A laboratory needs it to reproduce the one decay a hub announces before
-    /// it bites: a repository that is gated now and was not when MCF acquired
-    /// from it (B-331, F17).
     pub gated: Option<String>,
-    /// Its files, and the bytes each holds.
     pub files: BTreeMap<String, Vec<u8>>,
-    /// The licence it declares, where it declares one.
     pub declared_licence: Option<String>,
-    /// What it says its weights were made from (§XII, B-019).
     pub lineage: Option<mcf_hub::source::Lineage>,
-    /// The revision it answers with.
     pub revision: Option<String>,
-    /// Whether its listings carry a digest per file.
-    ///
-    /// Both states are real: a hub that publishes plain files often declares
-    /// none, and an artifact acquired from one is *held* rather than verified
-    /// (A21). A scenario picks which world it is testing.
     pub declares_digests: bool,
-    /// How it misbehaves.
     pub behaviour: Behaviour,
 }
 
 impl Repository {
-    /// A repository that publishes one file and behaves.
     #[must_use]
     pub fn holding(path: &str, bytes: &[u8]) -> Self {
         let mut files = BTreeMap::new();
@@ -131,23 +51,18 @@ impl Repository {
         }
     }
 
-    /// The same, declaring no digest — which is what a hub publishing plain
-    /// files usually does, and the state an acquisition cannot verify against.
     #[must_use]
     pub fn without_digests(mut self) -> Self {
         self.declares_digests = false;
         self
     }
 
-    /// The same, misbehaving in a stated way.
     #[must_use]
     pub fn behaving(mut self, behaviour: Behaviour) -> Self {
         self.behaviour = behaviour;
         self
     }
 
-    /// The same, saying what its weights were made from — §XII's hard case,
-    /// where the provenance that matters is another repository's.
     #[must_use]
     pub fn derived_from(mut self, base: &str, relation: Option<&str>) -> Self {
         self.lineage = Some(mcf_hub::source::Lineage {
@@ -157,7 +72,6 @@ impl Repository {
         self
     }
 
-    /// The same, declaring no licence — which is a real state and a common one.
     #[must_use]
     pub fn without_licence(mut self) -> Self {
         self.declared_licence = None;
@@ -165,28 +79,18 @@ impl Repository {
     }
 }
 
-/// A hub, holding whichever repositories a scenario put in it.
 #[derive(Debug, Default)]
 pub struct FakeHub {
     repositories: BTreeMap<String, Repository>,
-    /// The credential a caller has offered, where one has been.
-    ///
-    /// The real type rather than a flag, so what the scenarios drive is what
-    /// the acquisition path will hold (B-024). What the hub does *not* do is
-    /// check the token's shape: which tokens a hub accepts is the cause, and
-    /// D26 keeps causes out of here — a repository declares that it refuses
-    /// what it is offered, and that is the observation.
     credential: Option<Credential>,
 }
 
 impl FakeHub {
-    /// An empty hub.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds a repository at `owner/name`.
     #[must_use]
     pub fn with(mut self, repository_name: &str, repository: Repository) -> Self {
         self.repositories
@@ -194,21 +98,12 @@ impl FakeHub {
         self
     }
 
-    /// The same hub, offered a credential.
-    ///
-    /// The lab holds the real type rather than a boolean, so what the scenarios
-    /// exercise is what the acquisition path will hold: a secret that redacts
-    /// itself and an origin that is part of the conditions (B-024).
     #[must_use]
     pub fn offered(mut self, credential: Credential) -> Self {
         self.credential = Some(credential);
         self
     }
 
-    /// The same hub, offered the laboratory's credential.
-    ///
-    /// Which token it is does not matter to any scenario — that a credential
-    /// was offered does — so the scenarios say the shorter thing.
     #[must_use]
     pub fn authenticated(self) -> Self {
         self.offered(Credential::new(
@@ -230,12 +125,7 @@ impl FakeHub {
             })
     }
 
-    /// The failure a repository's behaviour produces before anything else
-    /// happens, if it produces one.
     fn gate(&self, repository: &Repository, reference: &Reference) -> Option<Failure> {
-        // The refusals are `mcf_hub::credentials`' own, so a scenario asserts
-        // the words MCF will really say rather than words a simulator invented
-        // (D26: the observation is simulated, the response is not).
         match &repository.behaviour {
             Behaviour::NeedsCredentials if self.credential.is_none() => {
                 Some(credentials::missing(reference, &self.describe()))
@@ -273,9 +163,6 @@ impl FakeHub {
 
 impl Source for FakeHub {
     fn identity(&self) -> Identity {
-        // *Offered*, never *confirmed*: this hub has no account directory, and
-        // a simulator that named an account MCF was never told would be
-        // inventing the one thing identity exists to establish.
         match &self.credential {
             None => Identity::Anonymous,
             Some(credential) => Identity::Offered {
@@ -306,9 +193,6 @@ impl Source for FakeHub {
             .files
             .iter()
             .map(|(path, bytes)| {
-                // The size and digest it *claims*. `ServesDifferentBytes` is the
-                // case where these and what arrives disagree, which is the whole
-                // point of keeping the claim and the measurement apart (A21).
                 let entry =
                     Entry::new(path.clone(), u64::try_from(bytes.len()).unwrap_or(u64::MAX));
                 if repository.declares_digests {
@@ -344,14 +228,10 @@ impl Source for FakeHub {
         })?;
 
         let served: Vec<u8> = match &repository.behaviour {
-            // Fewer bytes than promised, *written*: B-021 has to find a partial
-            // artifact on the disk rather than an absence.
             Behaviour::Truncates { after } => bytes
                 .get(..usize::try_from(*after).unwrap_or(0).min(bytes.len()))
                 .unwrap_or(&[])
                 .to_vec(),
-            // The same length, different content: the file changed under the
-            // fetch, which a size check cannot see and a digest can.
             Behaviour::ServesDifferentBytes => bytes.iter().map(|byte| byte ^ 0xFF).collect(),
             Behaviour::StopsEvery { bytes: limit } => bytes
                 .get(..usize::try_from(*limit).unwrap_or(0).min(bytes.len()))
@@ -404,9 +284,6 @@ impl Source for FakeHub {
             return Err(failure);
         }
         if repository.behaviour == Behaviour::NeverResumes {
-            // The default answer the trait gives, said by a source that means
-            // it: this hub has no ranges. A caller turns that into a restart it
-            // records rather than a failure.
             return Err(failure(
                 Category::HubUnreachable,
                 Attribution::Machine,
@@ -427,9 +304,6 @@ impl Source for FakeHub {
         let rest = bytes.get(start..).unwrap_or(&[]);
         let served: Vec<u8> = match &repository.behaviour {
             Behaviour::Truncates { after } => {
-                // Always stops at the same absolute offset, so a resumption
-                // past it delivers nothing at all — which is what a source that
-                // is simply broken looks like.
                 let stop = usize::try_from(*after).unwrap_or(0);
                 if start >= stop {
                     Vec::new()
@@ -452,7 +326,6 @@ impl Source for FakeHub {
             | Behaviour::NeverResumes => rest.to_vec(),
         };
 
-        // Appended, because that is what continuing a transfer is.
         let mut file = match std::fs::OpenOptions::new()
             .create(true)
             .append(true)

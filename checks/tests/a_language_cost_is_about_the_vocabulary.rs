@@ -1,28 +1,7 @@
-//! What a language costs is a fact about a file, never about a model or a
-//! people (B-379, §3.15, DEC-002, A6).
-//!
-//! **Why this needs a check rather than only a test.** The measurement is
-//! trivial — count the tokens — and the wording is the hard part. *Expensive*
-//! reads as *bad* to a reader who is not being careful, and a sentence that
-//! lets a vocabulary's spelling be heard as a judgement about a language or
-//! about how well a model speaks it would be the most damaging thing in this
-//! repository, and the easiest to write by accident.
-//!
-//! So: the sentence set is declared and cited, the result says what it is a
-//! property *of*, and nothing rates anything.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use mcf_standin::languages::{DECLARED, SOURCE};
 
-/// The source with Rust's string continuations joined up.
-///
-/// A sentence in this repository is written across several lines with a
-/// trailing `\\`, so searching the raw source for a phrase finds nothing and
-/// the check silently asserts about a string that never appears. Joining the
-/// continuations first is what makes the check about the sentence rather than
-/// about where `rustfmt` happened to break it.
 fn explain() -> String {
     let raw = std::fs::read_to_string(
         mcf_checks::workspace::root().join("crates/mcf-cli/src/explain.rs"),
@@ -41,7 +20,6 @@ fn explain() -> String {
     joined
 }
 
-/// The sentences are declared, cited, and the same meaning in each.
 #[test]
 fn the_sentence_set_is_declared_and_cited() {
     assert!(
@@ -71,7 +49,6 @@ fn the_sentence_set_is_declared_and_cited() {
     assert_eq!(held, named.len(), "a language appears twice");
 }
 
-/// The result says what it is a property of, and rates nothing.
 #[test]
 fn the_wording_keeps_the_vocabulary_and_the_model_apart() {
     let source = explain();
@@ -91,7 +68,6 @@ fn the_wording_keeps_the_vocabulary_and_the_model_apart() {
     );
 }
 
-/// No judgement leaks into the table.
 #[test]
 fn no_word_in_the_answer_grades_a_language() {
     let source = explain();
@@ -99,7 +75,7 @@ fn no_word_in_the_answer_grades_a_language() {
         .split_once("fn language_cost(")
         .expect("`language_cost` is what produces the table");
     let (answer, _) = answer
-        .split_once("\n/// ")
+        .split_once("\n}\n")
         .expect("and it ends before the next item");
     for judgement in [
         "inefficient",
@@ -121,7 +97,6 @@ fn no_word_in_the_answer_grades_a_language() {
     }
 }
 
-/// The comparison is the same meaning, not the same character count.
 #[test]
 fn the_ratio_is_over_the_same_meaning() {
     let source = explain();

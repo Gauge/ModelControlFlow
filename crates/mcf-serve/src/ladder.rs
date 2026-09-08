@@ -1,87 +1,10 @@
-//! What a ladder of readings says beyond its rungs.
-//!
-//! **Two measurements were in the run and not in the answer.** Each rung of
-//! the ladder is two timed generations — one token and seventeen — and the
-//! per-token cost is their difference. The shorter of the pair is a
-//! measurement in its own right: the time to a first token, which is the
-//! model loading, the prompt being read, and one token produced. Across the
-//! rungs the load is the same and the prompt is not, so the first-token time
-//! at the deepest rung less the shallowest, over the tokens between, is what
-//! reading a token of prompt costs. Both were taken on every run and thrown
-//! away, while the screen listed *prompt reading speed* and *start-up* as
-//! tests that never ran (A7, §3.15).
-//!
-//! **Both runs of a pair are pinned, and the pin is proven.** The difference
-//! is divided by sixteen because sixteen tokens separate the two runs, which
-//! is only so if the engine produced one and seventeen — a model whose end of
-//! text came fifth would have produced five, and a cost read off that pair
-//! would be a cost of nothing in particular (F117). So the request tells the
-//! engine to run past its end of text, and the daemon reads the count back
-//! from the account rather than assuming it: a pair that did not produce what
-//! it pinned is not a sample, and a rung with none says so (B-396, A21).
-//!
-//! **Derived here, once** — in the daemon, from the readings it took — so that
-//! the command line, the window and the record hold one figure, not three
-//! arithmetics that agree today (B-072).
-//!
-//! **The start-up figure is warm, and says so.** The daemon loads the model
-//! for every request (DEC-018), but the file is in the page cache after the
-//! first, and nothing here evicts it; the figure is the time to a first
-//! token with the file already in memory, which is what a second request
-//! costs and not what the first one after a reboot does. A cold disk is a
-//! different measurement, not taken here.
-//!
-//! **The memory a rung costs is read off the engine's process** (B-424). The
-//! kernel keeps each process's high-water mark of resident memory, and the
-//! engine that served a rung is asked for it after the rung. The window an
-//! engine runs in is sized for the request, and the cache is allocated for
-//! the window, so between two rungs that ran in different windows the growth
-//! in the high-water mark over the tokens between is what a token of window
-//! costs — measured, against the figure the header plans. What the two say a
-//! machine's free memory can hold is then the same arithmetic the planner
-//! does, on the measured figure instead of the declared one (A20, A21). What
-//! is not observed is said: the mark is the process's own memory, and a
-//! device's memory is not in it.
-//!
-//! **The fall-off is read off the rungs and set against the header** (B-400).
-//! The cost a token at the deepest rung less the shallowest, over the tokens
-//! between, is what every token of depth adds to a token; the header's cache a
-//! token of depth over that slope is the rate the engine re-read the cache
-//! at. A header that describes a fixed state instead of a growing cache is
-//! said to be outside that arithmetic rather than predicted wrongly.
-//!
-//! **And predicted from the machine** (B-427). Before the engine is up the
-//! daemon reads a working set the size the cache takes at each rung, with
-//! every core, and the rate at the deepest rung's size is the one the
-//! prediction divides the header's bytes by — the deepest is the rung whose
-//! cache is furthest from fitting a faster level of the memory (F121). The
-//! predicted slope stands beside the measured one with what the engine
-//! reached of it, and each attending block's read a position is set against
-//! the 2 KiB from which a read streams rather than waits, which is where the
-//! corpus divided into a regime the header predicts and one it does not.
-//! A prediction is a prediction (A20): it is never in the figure's place.
-//!
-//! **The slope sits in a bracket the rungs' spread draws** (F155). Each rung
-//! says how far its samples spread, and the slope read between the two
-//! extremes each way is where the measured slope could be. The method
-//! measures sixteen tokens of generation against a prefill that grows with
-//! depth, and at depth the prefill's jitter is larger than the generation,
-//! so a deep rung can spread wider than the slope it is read off — then no
-//! slope is resolved, and the line says so rather than a figure (A9, A7).
-//!
-//! **The sentences travel with the figures.** What a surface prints of each
-//! figure is composed here too, so that the window's row and the console's
-//! line cannot drift into two readings of one object (B-072).
-
 use mcf_record::json::Value;
 use mcf_standin::anatomy::grouped;
 
-/// A count, as the wire carries one.
 fn count(held: u64) -> Value {
     Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
 }
 
-/// A reading's depth and first-token time, where it measured one.
 fn first_token_of(reading: &Value) -> Option<(u64, u64)> {
     if reading.get("measured") != Some(&Value::Bool(true)) {
         return None;
@@ -91,12 +14,6 @@ fn first_token_of(reading: &Value) -> Option<(u64, u64)> {
     Some((u64::try_from(depth).ok()?, u64::try_from(ns).ok()?))
 }
 
-/// The nanoseconds a token of prompt costs to read, from the first-token
-/// times at the shallowest and deepest measured rungs.
-///
-/// Not measured — and said so — where fewer than two rungs measured, or
-/// where the deeper rung's first token came no later than the shallower's,
-/// which is a difference that is not a cost (A7, A9).
 #[must_use]
 pub fn prompt_reading(readings: &[Value], as_milliseconds: fn(u64) -> String) -> Value {
     let rungs: Vec<(u64, u64)> = readings.iter().filter_map(first_token_of).collect();
@@ -160,8 +77,6 @@ pub fn prompt_reading(readings: &[Value], as_milliseconds: fn(u64) -> String) ->
     ])
 }
 
-/// The time to a first token at the shallowest measured rung: loading the
-/// model, reading that many tokens, and producing one.
 #[must_use]
 pub fn first_token(readings: &[Value], as_milliseconds: fn(u64) -> String) -> Value {
     let Some((depth, ns)) = readings.iter().find_map(first_token_of) else {
@@ -186,32 +101,17 @@ pub fn first_token(readings: &[Value], as_milliseconds: fn(u64) -> String) -> Va
     ])
 }
 
-/// What the run knew about memory before it ran: the header's arithmetic
-/// and the machine, for the measured figure to be set against.
 #[derive(Debug, Clone, Default)]
 pub struct Planned {
-    /// The cache one token costs by the header's widths, where it names them.
     pub per_token: Option<u64>,
-    /// The weights, whole.
     pub weights: Option<u64>,
-    /// The memory free on the machine when the run started.
     pub free: Option<u64>,
-    /// The context the model was trained for, where the header says.
     pub trained: Option<u64>,
-    /// A sliding window the header declares, within which some blocks stop
-    /// reading further back — so the cache a token of depth re-reads is at
-    /// most the header's figure past it.
     pub sliding_window: Option<u64>,
-    /// How many blocks keep the cache, which is how many separate reads a
-    /// position is spread over.
     pub attending_blocks: Option<u64>,
-    /// What this machine read at, measured at the working set the cache
-    /// takes at each depth, before the engine was up (B-427).
     pub bandwidth: Vec<crate::bandwidth::Reading>,
 }
 
-/// A reading's depth, the window it ran in and the engine's peak resident
-/// memory, where it measured and the engine's process was observed.
 fn peak_of(reading: &Value) -> Option<(u64, u64, u64)> {
     if reading.get("measured") != Some(&Value::Bool(true)) {
         return None;
@@ -229,20 +129,10 @@ fn peak_of(reading: &Value) -> Option<(u64, u64, u64)> {
     ))
 }
 
-/// A figure that was not taken, and why (A7).
 fn unmeasured(why: String) -> Value {
     Value::map([("measured", Value::Bool(false)), ("why", Value::text(why))])
 }
 
-/// The memory a token of window costs, read off the engine's peak resident
-/// memory between the shallowest and deepest rungs that ran in different
-/// windows — and the largest context the machine's free memory holds at
-/// that cost, by the planner's own arithmetic.
-///
-/// Not measured, and said so, where no rung's engine was observed, where
-/// every rung ran in one window (the cache is sized to the window, so it did
-/// not grow between them), or where the deeper rung held no more than the
-/// shallower (A7, A9).
 #[must_use]
 pub fn memory(readings: &[Value], planned: &Planned) -> Value {
     let rungs: Vec<(u64, u64, u64)> = readings.iter().filter_map(peak_of).collect();
@@ -334,10 +224,6 @@ pub fn memory(readings: &[Value], planned: &Planned) -> Value {
     ])
 }
 
-/// The bracket line, where the rungs said their spread: what the slope sits
-/// between, or that the spread reaches it and no slope is resolved.
-/// The first of the named rungs whose reading has no spread, and why that
-/// is: read off one pair, the others having not separated.
 fn unspread_rung(readings: &[Value], depths: &[u64]) -> Option<String> {
     depths.iter().find_map(|depth| {
         let reading = readings
@@ -350,9 +236,6 @@ fn unspread_rung(readings: &[Value], depths: &[u64]) -> Option<String> {
         {
             return None;
         }
-        // Only where the pairs were counted: a reading from before the
-        // count has no spread and no story about it, and nothing is made
-        // up for it.
         let pairs = Some(reading.get("pairs")?);
         let figure = |key: &str| {
             pairs
@@ -394,23 +277,14 @@ fn bracket_said(held: &Value) -> Option<String> {
     })
 }
 
-/// Where the slope sits by the spread at the rungs it was read between.
 #[derive(Debug, Clone, Copy)]
 struct Bracket {
-    /// The shallowest slope the rungs' spread allows, in nanoseconds a token
-    /// of depth — zero where the spread reaches the slope.
     low: u64,
-    /// The steepest.
     high: u64,
-    /// Whether the predicted slope sits inside the bracket, where there is
-    /// a prediction.
     prediction_within: Option<bool>,
 }
 
 impl Bracket {
-    /// The bracket on the wire: both ends as nanoseconds a token of depth
-    /// and as milliseconds a thousand deep, whether a slope is resolved at
-    /// all, and where the prediction sits.
     fn as_value(self, as_milliseconds: fn(u64) -> String) -> Value {
         let count = |ns: u64| Value::Integer(i64::try_from(ns).unwrap_or(i64::MAX));
         let a_thousand = |ns: u64| Value::text(as_milliseconds(ns.saturating_mul(1_000)));
@@ -428,13 +302,6 @@ impl Bracket {
     }
 }
 
-/// The bracket the slope sits in: each rung's median is taken to sit
-/// within half its spread either way, and the slope between the two
-/// extremes is read the way the slope itself is. Where the bracket reaches
-/// zero the run has not resolved a slope at all — the method measures
-/// sixteen tokens of generation against a prefill that grows with depth,
-/// and at depth the prefill's jitter is larger than the generation (F155).
-/// `None` where a rung did not say its spread, which older records do not.
 fn bracket_of(
     readings: &[Value],
     shallow: (u64, u64),
@@ -468,7 +335,6 @@ fn bracket_of(
     })
 }
 
-/// Whether the slope was predicted, and from what — or why not (A7).
 fn why_predicted(reread: Option<u64>, measured: bool) -> &'static str {
     match (reread, measured) {
         (Some(0), _) => {
@@ -493,23 +359,13 @@ fn why_predicted(reread: Option<u64>, measured: bool) -> &'static str {
     }
 }
 
-/// The slope the header and the machine predict, beside the measured one.
 struct Prediction {
-    /// What this machine read at, at the working set of the deepest rung.
     machine: Option<crate::bandwidth::Reading>,
-    /// The header's bytes a token of depth over that rate, in nanoseconds.
     predicted: Option<u64>,
-    /// The predicted slope's share of the measured one, in whole percent.
     reached: Option<u64>,
-    /// What each attending block reads a position, in bytes.
     per_block: Option<u64>,
 }
 
-/// The prediction: the header's bytes over what this machine read at,
-/// measured at the working set the cache takes at the deepest rung — the
-/// rung whose cache is furthest from fitting a faster level (F121). What the
-/// engine reached of it is the predicted slope over the measured, in whole
-/// percent — a slope no steeper than predicted is the whole of it.
 fn predicted_slope(planned: &Planned, deepest: u64, per_token_of_depth: u64) -> Prediction {
     let reread = planned.per_token.filter(|bytes| *bytes > 0);
     let machine = planned
@@ -541,13 +397,8 @@ fn predicted_slope(planned: &Planned, deepest: u64, per_token_of_depth: u64) -> 
     }
 }
 
-/// The contiguous read per block per position from which a read streams
-/// rather than waits: 2 KiB, where the corpus divided into a bandwidth-bound
-/// regime the header predicts to within 7% and a latency-bound one it does
-/// not (F121).
 const STREAMS_FROM: u64 = 2048;
 
-/// A reading's depth and per-token cost, where it measured one.
 fn per_token_of(reading: &Value) -> Option<(u64, u64)> {
     if reading.get("measured") != Some(&Value::Bool(true)) {
         return None;
@@ -557,22 +408,6 @@ fn per_token_of(reading: &Value) -> Option<(u64, u64)> {
     Some((u64::try_from(depth).ok()?, u64::try_from(ns).ok()?))
 }
 
-/// What a token costs more for every token of depth: the per-token cost at
-/// the deepest measured rung less the shallowest, over the tokens between —
-/// and, set against it, what the header says a token of depth makes the
-/// engine re-read, so that the rate the cache was read at is read off the two
-/// (B-400, F121).
-///
-/// **The slope is measured; nothing here predicts it.** A prediction divides
-/// the header's bytes by this machine's read bandwidth, and MCF has not
-/// measured that bandwidth, so the figure a prediction would have to
-/// reproduce is stated and the prediction is not (A20, A7). Where the header
-/// describes a model whose cost does not grow with depth — a fixed recurrent
-/// state — the arithmetic does not describe the model, and the slope is
-/// reported as unpredicted by it rather than predicted wrongly (F122).
-///
-/// Not read, and said so, where fewer than two rungs measured or where the
-/// deeper rung cost no more a token than the shallower (A9).
 #[must_use]
 pub fn fall_off(
     readings: &[Value],
@@ -606,9 +441,6 @@ pub fn fall_off(
                   is under a nanosecond a token"
     )]
     let per_token_of_depth = (deep.1 - shallow.1) / (deep.0 - shallow.0);
-    // What the header says a token of depth adds to the read, and the rate
-    // that read went at: bytes a token of depth over the nanoseconds a token
-    // of depth costs, in bytes a second.
     let reread = planned.per_token;
     let rate = reread.filter(|bytes| *bytes > 0).and_then(|bytes| {
         bytes
@@ -622,9 +454,6 @@ pub fn fall_off(
         per_block,
     } = predicted_slope(planned, deep.0, per_token_of_depth);
     let bracket = bracket_of(readings, *shallow, *deep, predicted);
-    // Where there is no bracket because a rung has no spread, the reason
-    // travels: a rung read off one pair has a figure and nothing to bracket
-    // it with, and a reader is owed which rung (A7, F174).
     let bracket_why = bracket
         .is_none()
         .then(|| unspread_rung(readings, &[shallow.0, deep.0]))
@@ -686,9 +515,6 @@ pub fn fall_off(
     ])
 }
 
-/// The lines a surface prints of the fall-off: the slope, the depths it was
-/// read between, what the header says a token of depth re-reads and the rate
-/// that went at, and why the slope is not predicted — or why there is none.
 #[must_use]
 pub fn fall_off_said(held: Option<&Value>) -> Vec<String> {
     let Some(held) = measured_or_said(held) else {
@@ -784,10 +610,6 @@ pub fn fall_off_said(held: Option<&Value>) -> Vec<String> {
     lines
 }
 
-/// The lines a surface prints of the memory figure: the cost of a token of
-/// window against the planned one, what the deepest rung held, the largest
-/// context the machine holds at that cost, and what was observed — or why
-/// there is none.
 #[must_use]
 pub fn memory_said(held: Option<&Value>) -> Vec<String> {
     let Some(held) = measured_or_said(held) else {
@@ -849,7 +671,6 @@ pub fn memory_said(held: Option<&Value>) -> Vec<String> {
     ]
 }
 
-/// A size in gigabytes to two places, exact and without a float.
 fn gigabytes(bytes: u64) -> String {
     #[expect(
         clippy::integer_division,
@@ -862,12 +683,6 @@ fn gigabytes(bytes: u64) -> String {
     }
 }
 
-/// The lines a surface prints of the prompt-reading figure: the cost, the
-/// depths it was read between, and how — or why there is none (A7).
-///
-/// `None` is a run that never reached its last line, or a record from
-/// before the figure was derived, which said nothing and is printed as
-/// having said nothing.
 #[must_use]
 pub fn prompt_reading_said(held: Option<&Value>) -> Vec<String> {
     let Some(held) = measured_or_said(held) else {
@@ -892,8 +707,6 @@ pub fn prompt_reading_said(held: Option<&Value>) -> Vec<String> {
     ]
 }
 
-/// The lines a surface prints of the first-token figure: the time and the
-/// depth it was taken at, and what the time includes — or why there is none.
 #[must_use]
 pub fn first_token_said(held: Option<&Value>) -> Vec<String> {
     let Some(held) = measured_or_said(held) else {
@@ -909,20 +722,16 @@ pub fn first_token_said(held: Option<&Value>) -> Vec<String> {
         text(held, "ms"),
         grouped(depth)
     )];
-    // What the time includes is said when the daemon said it; a line that
-    // reads "?" tells a person nothing.
     if let Some(includes) = held.get("includes").and_then(Value::as_text) {
         said.push(includes.to_owned());
     }
     said
 }
 
-/// The figure, where it says it measured.
 fn measured_or_said(held: Option<&Value>) -> Option<&Value> {
     held.filter(|figure| figure.get("measured") == Some(&Value::Bool(true)))
 }
 
-/// Why there is no figure: the daemon's reason, or that it said nothing.
 fn not_measured(held: Option<&Value>) -> Vec<String> {
     let Some(held) = held else {
         return vec!["MCF did not say".to_owned()];
@@ -934,7 +743,6 @@ fn not_measured(held: Option<&Value>) -> Vec<String> {
     vec![format!("not measured: {why}")]
 }
 
-/// A text the figure carries, or a mark that it does not.
 fn text<'a>(held: &'a Value, key: &str) -> &'a str {
     held.get(key).and_then(Value::as_text).unwrap_or("?")
 }
@@ -963,8 +771,6 @@ mod tests {
         }
     }
 
-    /// 512 deep in 1 s, 2048 deep in 4 s: 1 536 tokens cost 3 s, which is
-    /// about 1.95 ms a token — and the unmeasured rung between is skipped.
     #[test]
     fn a_prompt_cost_is_read_between_the_outer_rungs() {
         let readings = [
@@ -987,7 +793,6 @@ mod tests {
         assert_eq!(start.get("ms").and_then(Value::as_text), Some("1000"));
     }
 
-    /// One rung, or a deeper rung that came no later, is not a cost (A9).
     #[test]
     fn what_cannot_be_read_is_said_not_read() {
         let one = [rung(512, Some(1_000_000_000))];
@@ -1020,8 +825,6 @@ mod tests {
         );
     }
 
-    /// The sentences are the figures' own, and a figure that is not there is
-    /// said to be missing rather than left blank.
     #[test]
     fn the_sentences_follow_the_figures() {
         let readings = [
@@ -1063,9 +866,6 @@ mod tests {
         Value::map(fields)
     }
 
-    /// Windows of 4,096 and 8,228 with 500 MB between them: about 121 kB a
-    /// token of window, read between the outer rungs whatever the rungs
-    /// between held — and the ceiling is the planner's arithmetic on it.
     #[test]
     fn a_memory_cost_is_read_between_the_outer_windows() {
         let readings = [
@@ -1127,8 +927,6 @@ mod tests {
         );
     }
 
-    /// One window, an engine that held no more deeper, or no peak at all is
-    /// not a cost (A7, A9) — and without the machine there is no ceiling.
     #[test]
     fn what_memory_cannot_be_read_is_said_not_read() {
         let why = |readings: &[Value]| {
@@ -1170,7 +968,6 @@ mod tests {
         assert_eq!(memory_said(None), vec!["MCF did not say".to_owned()]);
     }
 
-    /// A rung's depth and cost a token, for the slope read between rungs.
     fn costing(depth: i64, ns_per_token: i64) -> Value {
         Value::map([
             ("depth", Value::Integer(depth)),
@@ -1179,7 +976,6 @@ mod tests {
         ])
     }
 
-    /// What the header planned, with a cache of the given bytes a token.
     fn header_says(per_token: Option<u64>, sliding_window: Option<u64>) -> Planned {
         Planned {
             per_token,
@@ -1188,10 +984,6 @@ mod tests {
         }
     }
 
-    /// 15 ms a token at 512 deep and 139 ms at 8,192: 124 ms over 7,680
-    /// tokens of depth is 16,145 ns a token of depth — and a header that
-    /// re-reads 114,688 bytes a token of depth was read at 7.10 GB/s. The
-    /// slope is measured and the prediction is declined, with the reason.
     #[test]
     fn a_fall_off_is_read_between_the_outer_rungs_and_set_against_the_header() {
         let readings = [
@@ -1234,9 +1026,6 @@ mod tests {
         );
     }
 
-    /// A sliding window bounds the re-read, so the rate is *at most*; a
-    /// fixed state is not a growing cache, so the slope is unpredicted; a
-    /// header that does not size its cache gives nothing to predict from.
     #[test]
     fn what_the_header_cannot_predict_is_said_unpredicted() {
         let readings = [costing(512, 15_000_000), costing(8192, 139_000_000)];
@@ -1268,10 +1057,6 @@ mod tests {
         );
     }
 
-    /// With the machine measured, the slope is predicted: 114,688 bytes over
-    /// 110 GB/s is 1,042 ns a token of depth, and a measured 16,145 ns is
-    /// 6% of it reached. The reading at the deepest rung is the one used,
-    /// and each block's read is set against where a read streams.
     #[test]
     fn with_the_machine_measured_the_slope_is_predicted() {
         let readings = [costing(512, 15_000_000), costing(8192, 139_000_000)];
@@ -1324,11 +1109,6 @@ mod tests {
         }));
     }
 
-    /// A rung that said its spread brackets the slope: 512 deep at 17.6 ms
-    /// ± 1.4 and 8,192 deep at 164.4 ± 34.4 put the slope between 14.5 and
-    /// 23.8 ms a thousand, and a prediction of 1.2 sits outside it. Where
-    /// the deep rung's spread reaches the shallow one — 23.2 ± 12.3 against
-    /// 17.6 ± 1.4 — nothing is resolved, and the line says why (F155).
     #[test]
     fn the_rungs_spread_brackets_the_slope_or_says_none_is_resolved() {
         let spread = |depth: i64, ns: i64, spread: i64| {
@@ -1397,7 +1177,6 @@ mod tests {
         assert_eq!(unsaid.get("bracket"), Some(&Value::Null));
     }
 
-    /// One rung, or a deeper rung that cost no more, is not a slope (A9).
     #[test]
     fn a_fall_off_that_cannot_be_read_is_said_not_read() {
         let one = [costing(512, 15_000_000)];

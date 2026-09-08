@@ -1,27 +1,5 @@
-//! A laboratory declares its work in countable units, never in minutes
-//! (B-224, B-225, B46, D14, A20).
-//!
-//! **What goes wrong without this.** A lab that declares *twenty minutes* has
-//! declared a property of the machine it was written on. The declaration is
-//! wrong on a slower machine and wrong in the other direction on a faster one,
-//! and in neither case has the work changed. Worse, it is wrong *silently*:
-//! nothing in the record says the number was a guess about somebody else's
-//! hardware.
-//!
-//! So the declaration is counts — trials, arms, tokens — and the duration is
-//! **derived** from those counts and a rate this machine measured, which makes
-//! it an `Estimate` and puts A20's wall between it and any measurement.
-//!
-//! **Why a source check.** Rust cannot express *this struct has no field whose
-//! meaning is a duration*: `usize` is `usize` whether it counts trials or
-//! seconds. What can be checked is that the declaration type mentions no time
-//! unit, that its rendering does not, and that the derivation goes through
-//! `Estimate` — the three places the rule could quietly be lost.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
-/// The declaration is counts, and nothing in it is a time.
 #[test]
 fn the_declaration_carries_no_duration() {
     let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
@@ -55,7 +33,6 @@ fn the_declaration_carries_no_duration() {
     }
 }
 
-/// The duration is derived, banded, and carries the basis it came from.
 #[test]
 fn the_duration_is_derived_and_banded() {
     let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
@@ -79,7 +56,6 @@ fn the_duration_is_derived_and_banded() {
     );
 }
 
-/// The multiplication saturates, because a wrapped one reads as reassuring.
 #[test]
 fn an_impossible_amount_of_work_does_not_wrap() {
     let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
@@ -96,8 +72,6 @@ fn an_impossible_amount_of_work_does_not_wrap() {
     );
 }
 
-/// What the operator is shown is counts, and the estimate is marked in the
-/// sentence rather than only in a type nobody sees.
 #[test]
 fn the_operator_is_shown_counts_and_a_marked_estimate() {
     let rendering = code_only(&read("crates/mcf-bench/src/planned.rs"));
@@ -128,8 +102,6 @@ fn the_operator_is_shown_counts_and_a_marked_estimate() {
     );
 }
 
-/// A behaviour laboratory's bound is countable, and a run needs a calibration
-/// to exist (B-230, B-223, B45, D13, D8).
 #[test]
 fn a_behaviour_bound_has_nowhere_to_put_a_wall_clock() {
     let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
@@ -156,7 +128,6 @@ fn a_behaviour_bound_has_nowhere_to_put_a_wall_clock() {
     );
 }
 
-/// Calibration precedes measurement, in the type (B-223, B45, D13).
 #[test]
 fn a_run_cannot_be_built_without_a_calibration() {
     let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
@@ -178,8 +149,6 @@ fn a_run_cannot_be_built_without_a_calibration() {
     }
 }
 
-/// Doc comments carry the reasoning and would otherwise trip every check
-/// above; the rules are about the code.
 fn code_only(source: &str) -> String {
     source
         .lines()

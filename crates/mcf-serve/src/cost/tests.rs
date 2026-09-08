@@ -1,5 +1,3 @@
-//! The reading exists, says what it excludes, and is about a real daemon.
-
 use std::path::PathBuf;
 
 use mcf_core::build_identity::BuildIdentity;
@@ -7,8 +5,6 @@ use mcf_core::measurement::{Conditions, Floor};
 
 use super::interposed;
 
-/// The floor a unit test can state: this build, and nothing claimed about the
-/// machine. The tier that asserts against D24 reads a real one (§3.4).
 fn conditions() -> Conditions {
     Conditions::new(BuildIdentity::current(), Floor::nothing_known())
 }
@@ -20,8 +16,6 @@ fn scratch(name: &str) -> PathBuf {
     root
 }
 
-/// Nothing listening is not a fast round trip: it is no round trip, and the
-/// answer is that there is no measurement (A7).
 #[test]
 fn a_socket_with_nothing_behind_it_measures_nothing() {
     let root = scratch("nobody");
@@ -30,9 +24,6 @@ fn a_socket_with_nothing_behind_it_measures_nothing() {
     drop(std::fs::remove_dir_all(&root));
 }
 
-/// A real daemon, asked a hundred times, and a reading that says what it leaves
-/// out — which is what keeps it from being read as the whole of D24's figure
-/// (A21, §3.4).
 #[test]
 fn a_running_daemon_answers_and_the_reading_names_what_it_omits() {
     let root = scratch("interposed");

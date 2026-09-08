@@ -1,13 +1,5 @@
-//! SHA-256 against the published vectors.
-//!
-//! A19 in its strongest available form: every expectation here is a value
-//! published by NIST, not one this implementation produced. An implementation
-//! checked against itself is an implementation nobody has checked.
-
 use super::{Sha256, sha256};
 
-/// The three vectors from NIST's SHA-256 examples, and the empty string, which
-/// exercises the padding path with no message at all.
 #[test]
 fn the_published_vectors_hold() {
     let cases: [(&str, &str); 3] = [
@@ -29,9 +21,6 @@ fn the_published_vectors_hold() {
     }
 }
 
-/// NIST's long message: one million `a`. It is the vector that catches a length
-/// counter that overflows or a block loop that drifts, which the short ones
-/// cannot.
 #[test]
 fn the_long_vector_holds() {
     let mut hasher = Sha256::new();
@@ -44,9 +33,6 @@ fn the_long_vector_holds() {
     );
 }
 
-/// The same bytes fed in different-sized pieces give the same digest. This is
-/// the property §7.49 depends on: a gigabyte file is read a block at a time,
-/// and a buffering error would show as a digest that depends on the read size.
 #[test]
 fn the_digest_does_not_depend_on_how_the_bytes_arrived() {
     let message: Vec<u8> = (0..1_000_u32).map(|i| (i % 251) as u8).collect();
@@ -60,8 +46,6 @@ fn the_digest_does_not_depend_on_how_the_bytes_arrived() {
     }
 }
 
-/// A single changed bit changes the digest. Stated because it is the whole
-/// point: §7.49's silent disk corruption is a handful of flipped bits.
 #[test]
 fn one_flipped_bit_changes_the_digest() {
     let clean = [0_u8; 4096];
@@ -72,8 +56,6 @@ fn one_flipped_bit_changes_the_digest() {
     assert_ne!(sha256(&clean), sha256(&corrupted));
 }
 
-/// The hexadecimal form is lower-case and sixty-four characters, which is what
-/// `Checksum` requires and what the hubs publish.
 #[test]
 fn the_hexadecimal_form_is_what_the_rest_of_mcf_expects() {
     let hex = sha256(b"abc").hex();
@@ -88,7 +70,6 @@ fn the_hexadecimal_form_is_what_the_rest_of_mcf_expects() {
     );
 }
 
-/// A digest is thirty-two bytes, and the hexadecimal is those bytes.
 #[test]
 fn the_bytes_and_the_hexadecimal_agree() {
     let digest = sha256(b"abc");

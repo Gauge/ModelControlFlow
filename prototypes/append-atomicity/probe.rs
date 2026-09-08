@@ -1,8 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 
-/// Appends `count` lines of `size` bytes, each tagged with this worker's mark,
-/// with one `write` per line — the shape MCF's journal uses.
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let path = args.get(1).cloned().unwrap_or_default();

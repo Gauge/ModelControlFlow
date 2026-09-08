@@ -1,15 +1,9 @@
-//! A benchmark has no pass condition, and refuses what it cannot measure.
-
 use super::{bench_where, held_the_pin, is_a_stand_in, per_cent_of};
 use mcf_core::measurement::PartsPerMillion;
 use mcf_record::json::Value;
 
-/// A model MCF will not find, so the refusal is about the reference rather
-/// than about the machine.
 const NOWHERE: &str = "/nonexistent/mcf-bench-test/model.gguf";
 
-/// A benchmark with no daemon is a refusal, not a result — and it says which
-/// command starts one.
 #[test]
 fn without_a_daemon_it_refuses_rather_than_reporting() {
     let response = bench_where(
@@ -33,8 +27,6 @@ fn without_a_daemon_it_refuses_rather_than_reporting() {
     );
 }
 
-/// And where the models exist but nothing is listening, the refusal is about
-/// the daemon.
 #[test]
 fn a_missing_daemon_is_named() {
     let scratch = std::env::temp_dir().join(format!("mcf-bench-{}.gguf", std::process::id()));
@@ -62,10 +54,6 @@ fn a_missing_daemon_is_named() {
     );
 }
 
-/// **B65 by name.** MCF's own stand-in is written to be read rather than to be
-/// fast, so a timing taken from it measures the stand-in — and a benchmark
-/// must refuse rather than mark, because a marked number is a number somebody
-/// will quote without its mark.
 #[test]
 fn a_stand_in_is_recognized_by_name() {
     for named in [
@@ -81,9 +69,6 @@ fn a_stand_in_is_recognized_by_name() {
     }
 }
 
-/// A percentage is read as two integers, because this crate holds no float
-/// (A6) — and more precision than the unit admits is refused rather than
-/// rounded away (A7).
 #[test]
 fn a_resolution_is_read_without_a_float() {
     assert_eq!(per_cent_of("5"), Some(PartsPerMillion(50_000)));
@@ -99,9 +84,6 @@ fn a_resolution_is_read_without_a_float() {
     assert_eq!(per_cent_of("five"), None);
 }
 
-/// `--cold` is how an operator asks for a uniform run when the warm path
-/// cannot give one (§6.13, F65) — so it must reach the runner, and the flag
-/// must be the thing that decides it rather than a default nobody set.
 #[test]
 fn asking_for_a_cold_run_is_an_argument_and_not_a_default() {
     let source = include_str!("../bench.rs");
@@ -116,8 +98,6 @@ fn asking_for_a_cold_run_is_an_argument_and_not_a_default() {
     );
 }
 
-/// A benchmark that could not produce a uniform run says what to do about it,
-/// rather than leaving an operator with a refusal and no next step (§3.9).
 #[test]
 fn a_mixed_run_says_what_to_do_about_it() {
     let source = include_str!("../bench.rs");
@@ -133,8 +113,6 @@ fn a_mixed_run_says_what_to_do_about_it() {
     }
 }
 
-/// The rendering of a run that could not decide, built once for the
-/// assertions that follow it.
 fn rendering_of_a_run_that_could_not_decide() -> String {
     use mcf_bench::compare::{Discipline, Interleaving, UnderTest};
     use mcf_bench::warmth::Warmth;
@@ -162,7 +140,6 @@ fn rendering_of_a_run_that_could_not_decide() -> String {
             tokens: 32,
         },
     );
-    // Two pairs of wildly scattered timings: too few and too noisy to decide.
     let mut round = 0_u64;
     for _ in 0..2 {
         let _ran = running.round(|which, _drew| {
@@ -225,13 +202,6 @@ fn rendering_of_a_run_that_could_not_decide() -> String {
     )
 }
 
-/// **B24 with a name attached.** A run that could not decide renders what was
-/// competing with it, and says plainly that MCF is not attributing the
-/// indecision to the arms (PR5, §3.8, B-216).
-///
-/// Deterministic, because the trigger is not: five attempts to provoke a real
-/// *not decided* at loads up to sixty-one all reached a verdict instead, which
-/// is a fact about the stopping condition rather than about this path (F70).
 #[test]
 fn a_run_that_could_not_decide_renders_what_competed_with_it() {
     let said = rendering_of_a_run_that_could_not_decide();
@@ -260,8 +230,6 @@ fn a_run_that_could_not_decide_renders_what_competed_with_it() {
     );
 }
 
-/// A run that *did* decide takes no snapshot, because there is nothing to
-/// explain and B4 refuses sampling for its own sake.
 #[test]
 fn a_run_that_decided_renders_no_snapshot() {
     let source = include_str!("../bench.rs");
@@ -275,9 +243,6 @@ fn a_run_that_decided_renders_no_snapshot() {
     );
 }
 
-/// A trial is a trial only where the account's count is the pinned one; a
-/// trial that fell short, or went through a path that does not count, is
-/// refused with the reason (B-396, A21).
 #[test]
 fn a_trial_that_did_not_produce_what_it_pinned_is_refused() {
     let account = |tokens: i64, stopped: &str, length: &str| {

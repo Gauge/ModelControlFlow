@@ -1,24 +1,3 @@
-//! Turning what MCF knows into what the record holds.
-//!
-//! The encoders live here rather than beside the types they encode, and the
-//! layering is the reason: `mcf-core` holds the types every rule is enforced
-//! through and depends on nothing, so it cannot know about a serialization.
-//! The record crate is the one that knows how to *record* things, which is what
-//! it is for.
-//!
-//! Two rules shape every encoder below.
-//!
-//! **Unknown is `null`, never a substitute** (A7). A condition MCF could not
-//! read, a device whose memory it could not query, a licence it did not find —
-//! each is `null` in the record, and a reader can tell the difference between
-//! *nothing was there* and *nothing was looked for* only because MCF never
-//! writes a plausible value into either.
-//!
-//! **A measurement never loses its conditions** (A6). There is no encoder that
-//! writes a value without them; the only way to put a measured quantity in the
-//! record is through [`measurement`], and it writes the samples, the count, the
-//! spread and the condition set together.
-
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::degradation::{Degradation, Degraded};
@@ -34,7 +13,6 @@ use mcf_core::trial::{Draw, Series, Trial, Trials};
 
 use crate::json::Value;
 
-/// What built the running binary (§3.4, §3.12).
 #[must_use]
 pub fn build_identity(identity: BuildIdentity) -> Value {
     Value::map([
@@ -43,28 +21,16 @@ pub fn build_identity(identity: BuildIdentity) -> Value {
         ("rustc", Value::text(identity.rustc)),
         ("target", Value::text(identity.target)),
         ("profile", Value::text(identity.profile)),
-        // **What actually took the measurement** (F93). The four fields above
-        // are identical across builds whose instruments differ: three
-        // measuring instruments changed in this repository in one working
-        // day and every record on either side of all three says `0.1.0-m0`.
-        // A binary's own digest cannot be forgotten by a build environment
-        // and differs exactly when the instrument does.
         (
             "instrument",
             match mcf_core::build_identity::instrument() {
                 mcf_core::attested::Attested::Known(digest) => Value::text(digest.hex()),
-                // A7: a platform that will not let MCF read its own
-                // executable is a capability of the platform, and a
-                // placeholder here would be the very thing this field exists
-                // to stop.
                 mcf_core::attested::Attested::Unknown => Value::Null,
             },
         ),
     ])
 }
 
-/// A classified failure, with everything the laboratory needs to rebuild it
-/// (A2, B21).
 #[must_use]
 pub fn failure(failure: &Failure) -> Value {
     Value::map([
@@ -93,18 +59,11 @@ pub fn failure(failure: &Failure) -> Value {
     ])
 }
 
-/// What was lost, and why (A5).
 #[must_use]
 pub fn degradation(degradation: &Degradation) -> Value {
     Value::List(degradation.causes().iter().map(failure).collect())
 }
 
-/// A degraded value, with its mark attached to it in the record as well as in
-/// the type.
-///
-/// The mark is a sibling key rather than a wrapper, so no reader can take the
-/// value without seeing it — a nested value could be lifted out by a query that
-/// did not know to look one level up.
 #[must_use]
 pub fn degraded<T>(value: &Degraded<T>, encode: impl FnOnce(&T) -> Value) -> Value {
     Value::map([
@@ -114,13 +73,6 @@ pub fn degraded<T>(value: &Degraded<T>, encode: impl FnOnce(&T) -> Value) -> Val
     ])
 }
 
-/// Where an artifact came from, and everything that happened to it since
-/// (§3.6, B-006).
-///
-/// The chain is written whole rather than summarized. §XII's hard case is a
-/// requantization of somebody else's weights, and a record that kept only the
-/// nearest repository would be a record that cannot answer *what were these
-/// originally* — which is the question the chain exists for (A1).
 #[must_use]
 pub fn provenance(provenance: &Provenance) -> Value {
     Value::map([
@@ -155,11 +107,6 @@ pub fn provenance(provenance: &Provenance) -> Value {
     ])
 }
 
-/// What MCF found upstream when it looked (B-331, D37).
-///
-/// The finding's own fields are written beside its name rather than folded into
-/// a sentence: a reader that wanted *which licence it was before* should not
-/// have to parse English out of a record (§3.3).
 #[must_use]
 pub fn observation(observed: &Observation) -> Value {
     let mut fields = vec![
@@ -179,20 +126,11 @@ pub fn observation(observed: &Observation) -> Value {
             fields.push(("now", Value::text(now)));
         }
         Decay::Unreachable { said } => fields.push(("said", Value::text(said))),
-        // `Unchanged` has no fields to write, and `Decay` is non-exhaustive: a
-        // finding a later version adds is written by its name rather than being
-        // dropped (§7.30, A1).
         Decay::Unchanged | _ => {}
     }
     Value::map(fields)
 }
 
-/// Where bytes came from.
-///
-/// The variant is named in the record rather than inferred from which fields
-/// are present: *a local file* and *nobody can say* are different answers, and
-/// a reader that had to deduce which one it was holding would deduce wrongly
-/// the first time a field went missing for another reason (A7, A9).
 #[must_use]
 pub fn origin(origin: &Origin) -> Value {
     match origin {
@@ -211,9 +149,6 @@ pub fn origin(origin: &Origin) -> Value {
             ("kind", Value::text("local_file")),
             ("path", Value::text(path.display().to_string())),
         ]),
-        // `Origin` is non-exhaustive; anything added later is recorded as what
-        // MCF can say about it rather than silently as `unattributed`, which
-        // would be a claim.
         Origin::Unattributed => Value::map([("kind", Value::text("unattributed"))]),
         other => Value::map([
             ("kind", Value::text("unrecorded")),
@@ -222,7 +157,6 @@ pub fn origin(origin: &Origin) -> Value {
     }
 }
 
-/// A digest of an artifact's bytes, and what computed it.
 #[must_use]
 pub fn checksum(checksum: &Checksum) -> Value {
     Value::map([
@@ -231,7 +165,6 @@ pub fn checksum(checksum: &Checksum) -> Value {
     ])
 }
 
-/// What an artifact's terms are, in the three states B-023 keeps apart.
 #[must_use]
 pub fn licence(licence: &Licence) -> Value {
     match licence {
@@ -239,8 +172,6 @@ pub fn licence(licence: &Licence) -> Value {
             ("state", Value::text("identified")),
             ("identifier", Value::text(identifier.clone())),
         ]),
-        // Terms are present and MCF could not name them. Distinct from the
-        // absent case, which is `null` because the whole field is `Unknown`.
         Licence::Stated => Value::map([("state", Value::text("stated_and_unmatched"))]),
         other => Value::map([
             ("state", Value::text("unrecorded")),
@@ -249,7 +180,6 @@ pub fn licence(licence: &Licence) -> Value {
     }
 }
 
-/// One thing that was done to an artifact.
 #[must_use]
 pub fn transformation(transformation: &Transformation) -> Value {
     Value::map([
@@ -276,8 +206,6 @@ fn transformation_kind(kind: &TransformationKind) -> Value {
         TransformationKind::Quantization => Value::text("quantization"),
         TransformationKind::Requantization => Value::text("requantization"),
         TransformationKind::FormatConversion => Value::text("format_conversion"),
-        // The operator's own words, kept as they were given: a kind MCF has no
-        // name for is recorded as what it was called (A7).
         TransformationKind::Other(name) => Value::text(name.clone()),
         other => Value::text(other.to_string()),
     }
@@ -293,13 +221,6 @@ fn tool_identity(tool: &ToolIdentity) -> Value {
     ])
 }
 
-/// A moment, as nanoseconds and as something a person can read.
-///
-/// Both, because they answer different questions and neither is derivable in
-/// this record's absence: the integer is what a reader compares and the
-/// rendering is what a person checks against their own memory of the day. The
-/// integer is text when it does not fit in one — a `Timestamp` holds more range
-/// than JSON's integers do, and A1 puts the whole value above the tidier type.
 #[must_use]
 pub fn timestamp(at: Timestamp) -> Value {
     let nanos = match i64::try_from(at.utc_nanos()) {
@@ -318,7 +239,6 @@ pub fn timestamp(at: Timestamp) -> Value {
     ])
 }
 
-/// The conditions a measurement is bound to (§3.4).
 #[must_use]
 pub fn conditions(conditions: &Conditions) -> Value {
     let mut floor: Vec<(String, Value)> = conditions
@@ -329,14 +249,6 @@ pub fn conditions(conditions: &Conditions) -> Value {
             (
                 question.to_owned(),
                 match value {
-                    // A condition keeps the shape it was read in. Rendering
-                    // an integer through `Display` was the first defect the
-                    // property tier found (B-191): a context length written as
-                    // `"4096"` read back as text, so B-007's *round-trips
-                    // losslessly* held for every floor question but the one
-                    // that is naturally a number. §3.3 asks the
-                    // record be machine-readable first, and a number a reader
-                    // has to re-parse from a string is not that.
                     Attested::Known(ConditionValue::Integer(number)) => Value::Integer(*number),
                     Attested::Known(value) => Value::text(value.to_string()),
                     Attested::Unknown => Value::Null,
@@ -348,19 +260,6 @@ pub fn conditions(conditions: &Conditions) -> Value {
     Value::map(floor)
 }
 
-/// The conditions a record entry carries, read back (B-160).
-///
-/// **The inverse of [`conditions`], and it exists because a contribution has to
-/// refuse.** `mcf share` selects rows out of the record, and whether a row may
-/// travel is decided by its condition floor — an absolute without one is a
-/// number from a stranger's machine that nobody can scale (B54). Deciding that
-/// needs the floor as a value rather than as text, so the record is read rather
-/// than the rendering parsed (C1).
-///
-/// `None` where the value is not a condition set at all. A floor question that
-/// is absent or null reads back as [`Attested::Unknown`], which is what it was
-/// written as: what was not known is still not known, and A7 forbids the
-/// round-trip inventing an answer.
 #[must_use]
 pub fn conditions_from(value: &Value) -> Option<Conditions> {
     let identity = value.get("mcf")?;
@@ -398,26 +297,10 @@ pub fn conditions_from(value: &Value) -> Option<Conditions> {
     ))
 }
 
-/// A build identity's fields are `&'static str` because they are compiled in;
-/// one read back from a record is not, and this is where that difference is
-/// paid for.
-///
-/// **Deliberate and bounded.** A record read back holds a handful of build
-/// identities — one per entry a share considers — and each is a few dozen
-/// bytes that live as long as the process. The alternative is making the
-/// identity own its strings everywhere, which would put an allocation on the
-/// path of every measurement MCF takes to serve one that reads them back.
 fn leaked(text: &str) -> &'static str {
     Box::leak(text.to_owned().into_boxed_str())
 }
 
-/// A measurement: its trials, its count, its spread and its conditions.
-///
-/// B56 keeps the trials and derives the summary, and this writes both — the
-/// trials because they are the record, and the spread because a reader that
-/// had to recompute it might compute a different one. The summary is written
-/// *beside* the trials it came from and never instead of them, which is the
-/// distinction B56 draws.
 #[must_use]
 pub fn measurement<Q: Quantity>(measured: &Measurement<Q>, as_integer: impl Fn(Q) -> i64) -> Value {
     let spread = measured.spread();
@@ -451,11 +334,6 @@ pub fn measurement<Q: Quantity>(measured: &Measurement<Q>, as_integer: impl Fn(Q
     ])
 }
 
-/// One trial: the row D16 makes the record.
-///
-/// Everything a later question needs, and nothing derived. B56's violation is a
-/// stored mean; the shape that prevents it is that this is what gets stored and
-/// a summary is projected from a set of these when somebody asks.
 #[must_use]
 pub fn trial<Q: Quantity>(trial: &Trial<Q>, as_integer: impl Fn(Q) -> i64) -> Value {
     Value::map([
@@ -468,15 +346,6 @@ pub fn trial<Q: Quantity>(trial: &Trial<Q>, as_integer: impl Fn(Q) -> i64) -> Va
     ])
 }
 
-/// What a trial drew, and under which discipline (B61, D19, B-290).
-///
-/// **The seed is written as text, and that is not laziness.** A seed is a
-/// `u64` and this record's integers are `i64`, so half the seed space would
-/// wrap or saturate on the way in — losing a *condition*, which is the one
-/// thing §3.4 will not have. It is also not a quantity: nothing orders,
-/// subtracts or averages a seed, so the argument for a numeric type does not
-/// apply to it. Decimal rather than hexadecimal, because that is how every
-/// language will print it back.
 #[must_use]
 pub fn draw(drew: &Draw) -> Value {
     match drew {
@@ -487,9 +356,6 @@ pub fn draw(drew: &Draw) -> Value {
             ("tokens", Value::Null),
         ]),
         Draw::LengthPinned { seed, tokens } => Value::map([
-            // A timing trial, which D19 has hold its seed still and pin the
-            // generation length instead. Named as its own discipline so that a
-            // reader cannot mistake it for a behaviour trial's fixed seed.
             ("discipline", Value::text("length_pinned")),
             ("seed", Value::text(seed.to_string())),
             ("from", Value::Null),
@@ -498,11 +364,6 @@ pub fn draw(drew: &Draw) -> Value {
     }
 }
 
-/// A session's trials, and the conditions they were taken under.
-///
-/// The conditions are written once for the set rather than repeated on every
-/// row: they are conditions *of the session*, and repeating them would invite
-/// a reader to believe two rows could disagree about them.
 #[must_use]
 pub fn trials<Q: Quantity>(
     trials: &Trials<Q>,
@@ -524,12 +385,6 @@ pub fn trials<Q: Quantity>(
     ])
 }
 
-/// Interior detail, with what was done to it (B-271).
-///
-/// The thinning factor is a sibling of the points rather than a wrapper around
-/// them, for the reason [`degraded`] gives about a degradation mark: a nested
-/// value can be lifted out by a query that did not know to look one level up,
-/// and a series read without its factor is a resolution claim nobody made.
 #[must_use]
 pub fn series<Q: Quantity>(series: &Series<Q>, as_integer: impl Fn(Q) -> i64) -> Value {
     let (points, thinning) = series.points();
@@ -555,12 +410,6 @@ pub fn series<Q: Quantity>(series: &Series<Q>, as_integer: impl Fn(Q) -> i64) ->
     ])
 }
 
-/// What was competing for the machine (B-216, PR5).
-///
-/// The command lines are the operator's own machine's and go into the
-/// operator's own record; §3.20's gate is on whatever *sends* a record rather
-/// than on writing one, and a snapshot naming no names would be a number where
-/// a diagnosis was asked for.
 #[must_use]
 pub fn contention(held: &mcf_core::hardware::Snapshot) -> Value {
     let fraction = |value: Attested<u64>| match value {
@@ -586,7 +435,6 @@ pub fn contention(held: &mcf_core::hardware::Snapshot) -> Value {
                 Attested::Unknown => Value::Null,
             },
         ),
-        // D25: a capability of the observer, and *unknown* is not *none*.
         (
             "accelerator_occupancy",
             match &held.accelerator {
@@ -616,7 +464,6 @@ pub fn contention(held: &mcf_core::hardware::Snapshot) -> Value {
     ])
 }
 
-/// The machine, as read at this moment (§3.8).
 #[must_use]
 pub fn machine(machine: &Machine) -> Value {
     Value::map([
@@ -667,7 +514,6 @@ pub fn machine(machine: &Machine) -> Value {
     ])
 }
 
-/// One accelerator, with D25's verdict and what it rests on.
 #[must_use]
 pub fn accelerator(device: &Accelerator) -> Value {
     let reading = device.reading();
@@ -739,7 +585,6 @@ pub fn accelerator(device: &Accelerator) -> Value {
     ])
 }
 
-/// An attested value, or `null` (A7).
 fn attested<T>(value: &Attested<T>, encode: impl FnOnce(&T) -> Value) -> Value {
     match value {
         Attested::Known(value) => encode(value),
@@ -747,7 +592,6 @@ fn attested<T>(value: &Attested<T>, encode: impl FnOnce(&T) -> Value) -> Value {
     }
 }
 
-/// Text that may itself read as `unknown`, written as `null` when it does.
 fn attested_text(rendered: &str) -> Value {
     if rendered == "unknown" {
         Value::Null

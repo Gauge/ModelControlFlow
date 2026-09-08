@@ -1,8 +1,3 @@
-//! Tests for the failure type.
-//!
-//! A19 holds failure paths to the same standard as success paths, because A2
-//! makes them a feature: untested error handling is decorative.
-
 use super::{Attribution, Category, Disposition, Domain, Failure, Subsystem};
 
 const WHERE: Subsystem = Subsystem::new("mcf-core::failure::tests");
@@ -17,7 +12,6 @@ fn a_failure() -> Failure {
     )
 }
 
-/// The three axes are what construction requires, and what a failure reports.
 #[test]
 fn a_failure_carries_all_three_axes() {
     let failure = a_failure();
@@ -27,8 +21,6 @@ fn a_failure_carries_all_three_axes() {
     assert_eq!(failure.subsystem(), WHERE);
 }
 
-/// A19: the codes are checked against the taxonomy's own spelling, which is
-/// what travels between machines (§XIV) and may never be renamed (C5).
 #[test]
 fn codes_are_the_taxonomy_spelling() {
     assert_eq!(Category::HubAuthRequired.code(), "hub.auth.required");
@@ -46,8 +38,6 @@ fn codes_are_the_taxonomy_spelling() {
     );
 }
 
-/// Every code is unique. A duplicate would make two different failures
-/// indistinguishable in the record, which is A1's loss of information.
 #[test]
 fn every_code_is_unique() {
     let mut codes: Vec<&str> = Category::ALL.iter().map(|c| c.code()).collect();
@@ -57,8 +47,6 @@ fn every_code_is_unique() {
     assert_eq!(codes.len(), count, "two categories share a code");
 }
 
-/// Every code sits in the domain its prefix names. A code filed under the
-/// wrong domain is a code consumers switch on incorrectly.
 #[test]
 fn every_code_belongs_to_the_domain_its_prefix_names() {
     for category in Category::ALL {
@@ -77,8 +65,6 @@ fn every_code_belongs_to_the_domain_its_prefix_names() {
     }
 }
 
-/// No code is deeper than three segments — the shallowness the taxonomy's
-/// three-axis split exists to buy.
 #[test]
 fn no_code_is_deeper_than_three_segments() {
     for category in Category::ALL {
@@ -91,7 +77,6 @@ fn no_code_is_deeper_than_three_segments() {
     }
 }
 
-/// Every category has a meaning, and no meaning is a placeholder.
 #[test]
 fn every_category_states_what_it_means() {
     for category in Category::ALL {
@@ -105,8 +90,6 @@ fn every_category_states_what_it_means() {
     }
 }
 
-/// Round-tripping a code is exact. This is the property the record depends on
-/// when it reads back what an earlier version wrote.
 #[test]
 fn a_code_round_trips() {
     for category in Category::ALL {
@@ -114,10 +97,6 @@ fn a_code_round_trips() {
     }
 }
 
-/// A7: a code this version does not know is `None`, never a fallback to
-/// `internal.unclassified`. Deciding which it is belongs to the caller with
-/// the context — a record written by a newer schema is
-/// `record.schema.unknown`, not an MCF invariant violation.
 #[test]
 fn an_unknown_code_does_not_become_unclassified() {
     assert_eq!(Category::from_code("hub.invented"), None);
@@ -125,7 +104,6 @@ fn an_unknown_code_does_not_become_unclassified() {
     assert_eq!(Category::from_code("internal"), None);
 }
 
-/// Both other axes round-trip too, for the same reason.
 #[test]
 fn the_other_axes_round_trip() {
     for attribution in Attribution::ALL {
@@ -138,9 +116,6 @@ fn the_other_axes_round_trip() {
     assert_eq!(Disposition::parse("succeeded"), None);
 }
 
-/// Every domain is reachable from at least one category. A domain with no
-/// codes is a domain that was added and never used, which the taxonomy's
-/// extension policy treats as a decision to revisit.
 #[test]
 fn every_domain_has_at_least_one_category() {
     for domain in Domain::ALL {
@@ -151,9 +126,6 @@ fn every_domain_has_at_least_one_category() {
     }
 }
 
-/// B21: context is what the laboratory rebuilds a failure from, and it is kept
-/// in the order it was added, because order is information about what the
-/// failing code knew and when.
 #[test]
 fn context_is_kept_in_order_and_queryable() {
     let failure = a_failure()
@@ -166,8 +138,6 @@ fn context_is_kept_in_order_and_queryable() {
     assert_eq!(keys, ["chunks_expected", "chunks_received"]);
 }
 
-/// A1: a wrapping failure keeps what it wrapped rather than replacing it with
-/// a summary.
 #[test]
 fn a_cause_is_kept_whole() {
     let underlying = Failure::new(
@@ -186,15 +156,11 @@ fn a_cause_is_kept_whole() {
     );
 }
 
-/// The chain of a failure with no cause is the failure itself, so a caller
-/// never has to special-case the single-link case.
 #[test]
 fn a_chain_of_one_is_still_a_chain() {
     assert_eq!(a_failure().chain().count(), 1);
 }
 
-/// `std::error::Error::source` exposes the same chain, so a failure composes
-/// with anything that expects an error.
 #[test]
 fn the_error_source_is_the_cause() {
     use std::error::Error as _;
@@ -212,9 +178,6 @@ fn the_error_source_is_the_cause() {
     );
 }
 
-/// The rendering drops no axis. A6's habit: a surface that shows a result and
-/// drops its conditions is doing damage, and the axes are a failure's
-/// conditions.
 #[test]
 fn the_rendering_names_all_three_axes_and_the_subsystem() {
     let rendered = a_failure().to_string();
@@ -232,8 +195,6 @@ fn the_rendering_names_all_three_axes_and_the_subsystem() {
     }
 }
 
-/// The unclassified category is detectable, which is what lets its count be
-/// reported against a target of zero rather than discovered in a log.
 #[test]
 fn the_unclassified_category_is_detectable() {
     assert!(!a_failure().is_unclassified());
@@ -247,8 +208,6 @@ fn the_unclassified_category_is_detectable() {
     assert!(unclassified.is_unclassified());
 }
 
-/// The counts the taxonomy states, checked against the types. A19: the
-/// document is the independently known value.
 #[test]
 fn the_taxonomy_counts_hold() {
     assert_eq!(Domain::ALL.len(), 16);

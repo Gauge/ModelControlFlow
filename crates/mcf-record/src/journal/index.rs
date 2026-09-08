@@ -1,41 +1,3 @@
-//! The derived index: where every entry is, without reading the history to
-//! find out (B-300, D20, D6, §3.3).
-//!
-//! **The journal is the record and this is not.** D20 settles the shape:
-//! entries are appended to a journal, and the queryable thing over it is
-//! *derived* — discardable, rebuildable, and never a second place where a fact
-//! lives. Everything here can be deleted with `rm` and the next open rebuilds
-//! it from the journal; nothing here is consulted for what happened, only for
-//! **where it is written**.
-//!
-//! **Why it exists, in numbers.** A replay parses every line: 10 µs an entry on
-//! the machine that measured it, so a million-entry record costs 8.5 s at every
-//! daemon start and 390 MiB of parsed values held to answer *what happened
-//! recently* ([findings.md](../../../../doc/findings.md) F14). The index is
-//! 32 bytes an entry, is read as bytes rather than parsed, and turns *the last
-//! twenty acquisitions* into a scan of a few tens of megabytes and twenty
-//! seeks. That is the whole of its justification, and B15 asks for exactly that
-//! before weight is admitted.
-//!
-//! **It is append-only too, and for the same reason.** A crash during an
-//! extension leaves a torn final record, which is arithmetic to detect —
-//! the record area is a multiple of a fixed width or it is not — and the
-//! remedy is to drop the incomplete tail and read the journal forward from
-//! where the whole records stop. There is no mutable header: what the index
-//! covers is read from its last record, so no update ever rewrites a byte that
-//! was already correct.
-//!
-//! **Nothing here is durable, deliberately.** The journal pays for a barrier
-//! per entry because it is the record (D24 budgets it); an index that did the
-//! same would double that cost to protect something a rebuild reproduces
-//! exactly. A2 is satisfied by saying what happened instead: every open reports
-//! whether it loaded, extended, repaired or rebuilt, and why.
-//!
-//! **A damaged journal stops the index where the damage is.** The index never
-//! covers past a [`Loss`], so the loss is found again at the next open and
-//! reported again rather than being indexed around — a history with a hole in
-//! the middle that queried cleanly would be the silent failure B62 names.
-
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 
@@ -47,30 +9,12 @@ use super::{Entry, EntryKind};
 
 const WHERE: Subsystem = Subsystem::new("mcf-record::journal::index");
 
-/// What an index file starts with, so that a file which is not one is not read
-/// as one.
 const MAGIC: [u8; 8] = *b"MCFINDEX";
 
-/// The index format's version.
-///
-/// Separate from the journal's: this is a derived file, and changing its layout
-/// costs a rebuild rather than a migration. A file naming any other version is
-/// rebuilt rather than read (C5's stability obligation does not reach a
-/// derivative nobody can cite).
 pub const FORMAT_VERSION: u32 = 1;
 
-/// How many bytes one located entry takes.
-///
-/// Fixed, because a torn write is then detectable by division: a record area
-/// whose length is not a multiple of this ends in a record that was being
-/// written when the process died.
 const RECORD: usize = 32;
 
-/// Where one entry is, and the little about it a query needs before reading it.
-///
-/// Everything here is what an index can honestly hold: *where* the entry is,
-/// *when* it was recorded, and *what kind* it was. The entry's body is not
-/// here, because a copy of the body is a second place for a fact to live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Located {
     kind: EntryKind,
@@ -81,37 +25,31 @@ pub struct Located {
 }
 
 impl Located {
-    /// What kind of event it was.
     #[must_use]
     pub const fn kind(&self) -> EntryKind {
         self.kind
     }
 
-    /// When it was recorded, in nanoseconds since the epoch, UTC.
     #[must_use]
     pub const fn at_utc_nanos(&self) -> i64 {
         self.at_utc_nanos
     }
 
-    /// Which line of the journal it is.
     #[must_use]
     pub const fn line(&self) -> u32 {
         self.line
     }
 
-    /// Where its line begins in the journal.
     #[must_use]
     pub const fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 
-    /// How long its line is, terminator included.
     #[must_use]
     pub const fn byte_length(&self) -> u32 {
         self.byte_length
     }
 
-    /// The byte after its line.
     #[must_use]
     pub const fn ends_at(&self) -> u64 {
         self.byte_offset.saturating_add(self.byte_length as u64)
@@ -140,45 +78,26 @@ impl Located {
     }
 }
 
-/// How this index came to be what it is.
-///
-/// Always reported, never inferred: an index that quietly rebuilt itself is an
-/// index whose cost nobody can see, and a rebuild is the most expensive thing
-/// that happens on an open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Built {
-    /// There was no index; one was built from the whole journal.
     Fresh {
-        /// How many entries it covers.
         entries: usize,
     },
-    /// The index was current and was read as it stood.
     Loaded {
-        /// How many entries it covers.
         entries: usize,
     },
-    /// The index was behind the journal and the difference was read.
     Extended {
-        /// How many entries it already covered.
         had: usize,
-        /// How many the journal had added since.
         added: usize,
     },
-    /// The index ended mid-record and the incomplete tail was dropped.
     Repaired {
-        /// How many whole records survived.
         kept: usize,
-        /// How many bytes of a partial record were discarded.
         discarded: usize,
-        /// How many entries were read from the journal afterwards.
         added: usize,
     },
-    /// The index could not be used and was built again from the journal.
     Rebuilt {
-        /// Why, in a sentence: what was wrong with the file that was there.
         why: String,
-        /// How many entries the new one covers.
         entries: usize,
     },
 }
@@ -207,7 +126,6 @@ impl core::fmt::Display for Built {
     }
 }
 
-/// A derived index over one journal.
 #[derive(Debug)]
 pub struct Index {
     journal: PathBuf,
@@ -218,19 +136,6 @@ pub struct Index {
 }
 
 impl Index {
-    /// Opens the index over a journal, building, extending or rebuilding it as
-    /// the two files require.
-    ///
-    /// The journal is the authority in every case: nothing an index file says
-    /// survives disagreeing with it.
-    ///
-    /// # Errors
-    ///
-    /// Whatever reading the *journal* produces — `record.unwritable`,
-    /// `record.corrupt.journal`, `record.schema.unknown`. A damaged **index**
-    /// is never an error, because a derived file that cannot be read is a file
-    /// to rebuild rather than a failure to report (A4); which of those
-    /// happened is in [`Index::built`].
     pub fn over(journal: &Path, index: &Path) -> Result<Self> {
         let fingerprint = fingerprint(journal)?;
 
@@ -239,9 +144,6 @@ impl Index {
             Err(why) => (Kept::nothing(), Some(why)),
         };
 
-        // The journal is shorter than what the index claims to cover: it was
-        // truncated, replaced or restored from somewhere older. Nothing about
-        // the index can be trusted against a file it does not describe.
         let journal_bytes = std::fs::metadata(journal)
             .map_err(|error| unreadable(journal, &error))?
             .len();
@@ -268,10 +170,6 @@ impl Index {
                 kind: placed.entry.kind(),
                 at_utc_nanos: i64::try_from(placed.entry.recorded_at().utc_nanos())
                     .unwrap_or(i64::MAX),
-                // The line the reading found, rather than a count: a journal
-                // with a blank line in it would otherwise shift every number
-                // after it, and a line number that is nearly right is worse
-                // than none (A6's habit at the smallest scale).
                 line: u32::try_from(placed.line).unwrap_or(u32::MAX),
                 byte_offset: placed.byte_offset,
                 byte_length: placed.byte_length,
@@ -315,34 +213,26 @@ impl Index {
         Ok(mine)
     }
 
-    /// How this index came to be what it is.
     #[must_use]
     pub const fn built(&self) -> &Built {
         &self.built
     }
 
-    /// What the journal would not give up, if anything.
-    ///
-    /// The index stops where a loss starts, so this is both *what is missing*
-    /// and *why the index goes no further* (B62).
     #[must_use]
     pub const fn loss(&self) -> Option<&Loss> {
         self.loss.as_ref()
     }
 
-    /// Every entry the index covers, in the order they were written.
     #[must_use]
     pub fn entries(&self) -> &[Located] {
         &self.located
     }
 
-    /// How many bytes of the journal are covered.
     #[must_use]
     pub fn covers(&self) -> u64 {
         self.located.last().map_or(0, Located::ends_at)
     }
 
-    /// How many entries match, of one kind or of every kind.
     #[must_use]
     pub fn count_matching(&self, kind: Option<EntryKind>) -> usize {
         match kind {
@@ -351,7 +241,6 @@ impl Index {
         }
     }
 
-    /// How many entries of one kind there are.
     #[must_use]
     pub fn count(&self, kind: EntryKind) -> usize {
         self.located
@@ -360,10 +249,6 @@ impl Index {
             .count()
     }
 
-    /// The last `wanted` entries, of one kind or of every kind.
-    ///
-    /// In the order they were written, so that a surface printing them reads
-    /// forwards even though the question was asked backwards.
     #[must_use]
     pub fn latest(&self, kind: Option<EntryKind>, wanted: usize) -> Vec<Located> {
         let mut found: Vec<Located> = self
@@ -378,7 +263,6 @@ impl Index {
         found
     }
 
-    /// Every entry recorded at or after a moment.
     #[must_use]
     pub fn since(&self, utc_nanos: i64) -> Vec<Located> {
         self.located
@@ -388,41 +272,20 @@ impl Index {
             .collect()
     }
 
-    /// Reads one entry out of the journal.
-    ///
-    /// This is where the index stops being an answer and becomes a pointer: the
-    /// entry comes from the journal, parsed from the bytes the index says it
-    /// occupies (D20 — the record is the journal).
-    ///
-    /// # Errors
-    ///
-    /// `record.unwritable` when the journal cannot be read, and
-    /// `record.corrupt.journal` when the bytes at that offset are not an entry
-    /// — which means the index is describing a journal that changed under it,
-    /// and the remedy is a rebuild.
     pub fn read(&self, located: &Located) -> Result<Entry> {
         read_entry_at(&self.journal, located.byte_offset, located.byte_length)
     }
 
-    /// Whether the index file is on the disk.
-    ///
-    /// For a test to assert what a rebuild costs; nothing in MCF branches on
-    /// it, because the answer to a missing index is to build one.
     #[must_use]
     pub fn index_file_exists(&self) -> bool {
         self.path.exists()
     }
 
-    /// Where this index lives.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Writes the index out.
-    ///
-    /// Appends where it can and rewrites where it cannot, and never barriers:
-    /// see the module's note on durability.
     fn write(&self, from_scratch: bool, fingerprint: &[u8; 32]) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| unwritable(&self.path, &error))?;
@@ -460,10 +323,6 @@ impl Index {
     }
 }
 
-/// Where an index lives when the journal is at `journal`.
-///
-/// Beside it, named after it: the two belong together, and an index somewhere
-/// else is one that outlives the journal it describes.
 #[must_use]
 pub fn default_path(journal: &Path) -> PathBuf {
     let mut name = journal.file_name().unwrap_or_default().to_os_string();
@@ -471,7 +330,6 @@ pub fn default_path(journal: &Path) -> PathBuf {
     journal.with_file_name(name)
 }
 
-/// What survived reading an existing index file.
 struct Kept {
     located: Vec<Located>,
     discarded: usize,
@@ -488,15 +346,8 @@ impl Kept {
     }
 }
 
-/// How long the fixed part of an index file is.
 const HEADER: usize = 8 + 4 + 32 + 2 + KIND_NAMES;
 
-/// How many bytes the kind dictionary takes.
-///
-/// The names this build knows, written into the file so that a later build
-/// whose list differs rebuilds rather than misreading a number as a kind. The
-/// dictionary is fixed-width for the same reason the records are: a file whose
-/// length is arithmetic is a file a torn write cannot hide in.
 const KIND_NAMES: usize = EntryKind::ALL.len() * NAME;
 const NAME: usize = 32;
 
@@ -522,11 +373,6 @@ fn header(fingerprint: &[u8; 32]) -> Vec<u8> {
     bytes
 }
 
-/// Reads an index file, or says in one sentence why it cannot be used.
-///
-/// Every refusal here is a rebuild rather than a failure, so each one is a
-/// string a person can read rather than a classified failure: the operator is
-/// being told what the open cost, not what went wrong with the record.
 fn read_existing(
     path: &Path,
     fingerprint: &[u8; 32],
@@ -598,7 +444,6 @@ fn read_existing(
     ))
 }
 
-/// Which position in `EntryKind::ALL` a kind has.
 fn position_of(kind: EntryKind) -> usize {
     EntryKind::ALL
         .iter()
@@ -606,12 +451,6 @@ fn position_of(kind: EntryKind) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// What identifies the journal this index is over.
-///
-/// The header line, digested: it carries the format version and the build that
-/// created the journal, and it is the one part of a journal that never changes
-/// after the file exists. An index whose fingerprint does not match is an index
-/// over some other file, whatever its name says.
 fn fingerprint(journal: &Path) -> Result<[u8; 32]> {
     let mut file = std::fs::File::open(journal).map_err(|error| unreadable(journal, &error))?;
     file.seek(SeekFrom::Start(0))

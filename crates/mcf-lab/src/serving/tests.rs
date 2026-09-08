@@ -1,5 +1,3 @@
-//! The server answers what it was told to and remembers what it was asked.
-
 use std::collections::BTreeMap;
 
 use super::{Serving, answer, status};
@@ -15,8 +13,6 @@ fn quick() -> Tcp {
     }
 }
 
-/// A scripted path is answered and a path nobody scripted is a refusal, so a
-/// test that mistypes a URL finds out rather than seeing an empty answer.
 #[test]
 fn it_answers_what_it_was_scripted_and_refuses_the_rest() {
     let serving = Serving::answering(BTreeMap::from([(
@@ -37,8 +33,6 @@ fn it_answers_what_it_was_scripted_and_refuses_the_rest() {
     assert_eq!(refused.response.status(), 404);
 }
 
-/// It remembers what it was asked, which is how a test asserts that MCF sent a
-/// range or did not send a credential.
 #[test]
 fn it_remembers_what_it_was_asked() {
     let serving = Serving::answering(BTreeMap::from([("/x".to_owned(), status(200, "OK"))]))
@@ -53,7 +47,6 @@ fn it_remembers_what_it_was_asked() {
     assert!(asked[0].contains("Range: bytes=64-"), "{asked:?}");
 }
 
-/// A server that says nothing ends at the client's deadline rather than never.
 #[test]
 fn a_silent_server_ends_at_the_clients_deadline() {
     let serving = Serving::holding_open().expect("a loopback port");

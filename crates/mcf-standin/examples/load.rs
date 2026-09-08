@@ -1,16 +1,3 @@
-//! What loading a model costs, apart from running it (DEC-018, D41).
-//!
-//! Residency is a decision about whether to pay a load on every request, so the
-//! load has to be measured on its own: `mcf run` pays it inside a figure that
-//! also holds every forward pass. This reads the file, parses the directory,
-//! and dequantizes every tensor — and prints how long each took, on this
-//! machine, once. It is a diagnostic and not a benchmark: one reading, no
-//! window, no conditions recorded (B65 does not reach it because nothing here
-//! is a model's speed, but B20 does, and this claims nothing beyond the line it
-//! prints).
-//!
-//!   cargo run --release -p mcf-standin --example load -- <model.gguf>
-
 fn main() -> std::process::ExitCode {
     let Some(path) = std::env::args().nth(1) else {
         eprintln!("usage: load <model.gguf>");

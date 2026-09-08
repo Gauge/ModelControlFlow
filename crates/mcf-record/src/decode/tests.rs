@@ -1,5 +1,3 @@
-//! What survives the trip to the disk and back.
-
 use mcf_core::attested::Attested;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 use mcf_core::provenance::{
@@ -17,8 +15,6 @@ fn at(nanos: i128) -> Timestamp {
     Timestamp::from_utc_nanos(nanos, Attested::Unknown)
 }
 
-/// The hard case from §XII: a requantization of somebody else's weights, with
-/// the upstream chain kept whole.
 fn a_chain() -> Provenance {
     let upstream = Provenance::acquired(
         Origin::hub(
@@ -47,7 +43,6 @@ fn a_chain() -> Provenance {
     .derived_from(upstream)
 }
 
-/// The whole point: what is written is what is read.
 #[test]
 fn a_chain_survives_the_record() {
     let original = a_chain();
@@ -56,9 +51,6 @@ fn a_chain_survives_the_record() {
     assert_eq!(read, original);
 }
 
-/// Including through the text of the file, which is what actually goes to the
-/// disk — an encoder and a decoder that agree in memory and disagree about
-/// JSON would be two halves of nothing.
 #[test]
 fn it_survives_the_bytes_as_well_as_the_structure() {
     let original = a_chain();
@@ -67,8 +59,6 @@ fn it_survives_the_bytes_as_well_as_the_structure() {
     assert_eq!(provenance(&parsed).expect("it reads back"), original);
 }
 
-/// A7's round trip: unknown goes out as `null` and comes back as unknown, never
-/// as a plausible value.
 #[test]
 fn unknown_stays_unknown() {
     let bare = Provenance::acquired(Origin::Unattributed, at(0));
@@ -84,8 +74,6 @@ fn unknown_stays_unknown() {
     assert!(read.source().is_none());
 }
 
-/// The three origins are distinct on the way back, because *a local file* and
-/// *nobody can say* are different answers (A9).
 #[test]
 fn every_origin_comes_back_as_itself() {
     for origin in [
@@ -105,7 +93,6 @@ fn every_origin_comes_back_as_itself() {
     }
 }
 
-/// And so do the licence's three states, which B-023 exists to keep apart.
 #[test]
 fn the_licence_states_stay_apart() {
     let identified = Provenance::acquired(Origin::Unattributed, at(1))
@@ -124,8 +111,6 @@ fn the_licence_states_stay_apart() {
     );
 }
 
-/// A timestamp comes back to the nanosecond, offset included — the offset is
-/// what makes a record from another machine legible (B-352).
 #[test]
 fn a_moment_comes_back_to_the_nanosecond() {
     let east = UtcOffset::from_seconds_east(3600).expect("an hour east");
@@ -137,14 +122,8 @@ fn a_moment_comes_back_to_the_nanosecond() {
     assert_eq!(read_at.offset(), Attested::Known(east));
 }
 
-/// A record missing something it must state is refused, naming the field.
-/// Nothing is filled in: a provenance MCF partly invented is indistinguishable
-/// from one it read (A7, A21).
 #[test]
 fn a_record_missing_a_field_is_refused_and_says_which() {
-    // The origin, which is the one field a provenance cannot be without: where
-    // these bytes came from is the whole of what it is for. Everything else has
-    // an honest absent state and is tested for it above.
     let field = "origin";
     let Value::Map(mut entries) = encode::provenance(&a_chain()) else {
         panic!("the encoder writes an object");
@@ -161,9 +140,6 @@ fn a_record_missing_a_field_is_refused_and_says_which() {
     );
 }
 
-/// A record with no retrieval time is a link MCF never fetched — the upstream
-/// half of §XII's chain — and it reads back as exactly that rather than being
-/// refused or given a moment it does not have (A7, B-019).
 #[test]
 fn a_link_nobody_fetched_reads_back_as_one() {
     let never_fetched = Provenance::known_of(Origin::hub(
@@ -177,7 +153,6 @@ fn a_link_nobody_fetched_reads_back_as_one() {
     assert_eq!(read, never_fetched);
     assert!(read.retrieved_at().known().is_none());
 
-    // And the whole chain: a derivative MCF did fetch, of weights it did not.
     let chain = Provenance::acquired(Origin::Unattributed, at(5)).derived_from(never_fetched);
     assert_eq!(
         provenance(&encode::provenance(&chain)).expect("it reads back"),
@@ -185,8 +160,6 @@ fn a_link_nobody_fetched_reads_back_as_one() {
     );
 }
 
-/// A chain whose upstream link is unreadable refuses the derivative too: a
-/// chain with an invented link is worse than no chain (A1, §XII).
 #[test]
 fn an_unreadable_link_refuses_the_whole_chain() {
     let Value::Map(mut entries) = encode::provenance(&a_chain()) else {
@@ -200,9 +173,6 @@ fn an_unreadable_link_refuses_the_whole_chain() {
     assert_eq!(failure.category(), Category::ArtifactProvenanceIncomplete);
 }
 
-/// An algorithm this build does not compute is refused rather than recorded: a
-/// checksum MCF cannot check is not a checksum, and keeping it would make an
-/// unverifiable artifact look verified (A21).
 #[test]
 fn a_checksum_mcf_cannot_compute_is_not_kept() {
     let Value::Map(mut entries) = encode::provenance(&a_chain()) else {
@@ -219,7 +189,6 @@ fn a_checksum_mcf_cannot_compute_is_not_kept() {
     assert_eq!(failure.category(), Category::ArtifactProvenanceIncomplete);
 }
 
-/// A transformation nobody has a name for keeps the words it was given (A7).
 #[test]
 fn a_transformation_keeps_the_words_it_was_given() {
     let original =
@@ -233,9 +202,6 @@ fn a_transformation_keeps_the_words_it_was_given() {
     assert_eq!(read, original);
 }
 
-/// An origin from a later MCF is refused rather than guessed at (§7.30): a
-/// build that invented a meaning for a kind it does not know would be a build
-/// that reads newer records wrongly and says nothing.
 #[test]
 fn an_origin_this_build_does_not_know_is_refused() {
     let value = Value::map([
@@ -256,9 +222,6 @@ fn an_origin_this_build_does_not_know_is_refused() {
     );
 }
 
-/// A refusal carries its detail, its context and its cause to the person
-/// reading it; a reader that finds none of them has been handed something
-/// that is not a failure, and says so rather than *MCF did not say why* (A2).
 #[test]
 fn what_a_failure_said_is_read_back_whole() {
     let inner = Failure::new(

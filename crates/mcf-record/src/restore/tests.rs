@@ -1,11 +1,3 @@
-//! Tests for the restoration ledger.
-//!
-//! A27's test has one right answer, and it is about the worst moment rather
-//! than the ordinary one: *if this run were interrupted at the worst possible
-//! moment, could the machine be returned to how it was found?* So most of what
-//! is tested here is the interrupted case — a ledger left on disk by a process
-//! that never ran a destructor.
-
 use std::path::PathBuf;
 
 use super::{Change, Ledger};
@@ -32,7 +24,6 @@ impl Drop for Scratch {
     }
 }
 
-/// The ordinary path: MCF changes something, finishes, and puts it back.
 #[test]
 fn what_was_changed_is_put_back() {
     let scratch = Scratch::new("ordinary");
@@ -56,9 +47,6 @@ fn what_was_changed_is_put_back() {
     );
 }
 
-/// A27's actual test: the process is killed, no destructor runs, and the next
-/// one puts the machine back. Simulated by leaking the ledger, which is what a
-/// killed process leaves behind.
 #[test]
 fn a_killed_process_leaves_a_machine_the_next_one_restores() {
     let scratch = Scratch::new("killed");
@@ -72,8 +60,6 @@ fn a_killed_process_leaves_a_machine_the_next_one_restores() {
             .record(Change::about_to_replace(&subject).expect("readable"))
             .expect("the ledger records");
         std::fs::write(&subject, "performance").expect("writable");
-        // What a `kill -9` does: no destructor, no restoration, the ledger
-        // still on disk.
         core::mem::forget(ledger);
     }
 
@@ -98,8 +84,6 @@ fn a_killed_process_leaves_a_machine_the_next_one_restores() {
     );
 }
 
-/// A file that did not exist is restored by being removed again, which is a
-/// different restoration from writing an empty one.
 #[test]
 fn a_file_that_did_not_exist_is_removed_again() {
     let scratch = Scratch::new("created");
@@ -121,8 +105,6 @@ fn a_file_that_did_not_exist_is_removed_again() {
     assert!(!subject.exists(), "the file MCF created is still there");
 }
 
-/// Overlapping changes are undone newest first, so a file replaced twice comes
-/// back to what it was before the first replacement.
 #[test]
 fn overlapping_changes_are_undone_newest_first() {
     let scratch = Scratch::new("overlapping");
@@ -151,20 +133,14 @@ fn overlapping_changes_are_undone_newest_first() {
     );
 }
 
-/// A27: what MCF cannot restore, it does not touch. A file it could not read
-/// is refused *before* the change, not discovered afterwards.
 #[test]
 fn a_file_that_cannot_be_read_is_refused_before_it_is_changed() {
     let scratch = Scratch::new("unreadable");
-    // A directory is present and cannot be read as a file.
     let failure = Change::about_to_replace(&scratch.0).expect_err("a directory is not readable");
     assert_eq!(failure.category(), Category::ArtifactUnreadable);
     assert!(failure.detail().contains("could not then put it back"));
 }
 
-/// A ledger entry this version does not understand is neither restored nor
-/// discarded, and the ledger is not cleared — so the work is still there for a
-/// version that does understand it (A1, §7.30).
 #[test]
 fn an_entry_from_another_version_is_kept_rather_than_discarded() {
     let scratch = Scratch::new("unknown");
@@ -189,8 +165,6 @@ fn an_entry_from_another_version_is_kept_rather_than_discarded() {
     );
 }
 
-/// Nothing left behind is the ordinary case, and it says so rather than saying
-/// nothing.
 #[test]
 fn a_clean_start_says_it_found_nothing() {
     let scratch = Scratch::new("clean");

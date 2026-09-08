@@ -1,9 +1,5 @@
 use super::*;
 
-/// Every action either reaches a control-plane request or asks MCF nothing.
-///
-/// The parity check reads this table (A22, B-072). An action naming a request
-/// the control plane does not have would be a capability only this surface has.
 #[test]
 fn every_action_reaches_a_request_or_asks_nothing() {
     assert!(!ACTIONS.is_empty(), "a surface with no actions is not one");
@@ -27,7 +23,6 @@ fn every_action_reaches_a_request_or_asks_nothing() {
     );
 }
 
-/// No key is offered twice, or the second would never be reached.
 #[test]
 fn the_legend_does_not_promise_twice() {
     for (index, action) in ACTIONS.iter().enumerate() {
@@ -37,8 +32,6 @@ fn the_legend_does_not_promise_twice() {
     }
 }
 
-/// A model the daemon could not work out says so, and says what MCF said —
-/// never a zero and never a guess (A7).
 #[test]
 fn a_model_that_cannot_run_carries_the_reason() {
     let model = Value::map([
@@ -67,7 +60,6 @@ fn a_model_that_cannot_run_carries_the_reason() {
     }
 }
 
-/// A model the daemon did work out carries the engine, device and window.
 #[test]
 fn a_model_that_runs_carries_where() {
     let model = Value::map([
@@ -105,8 +97,6 @@ fn a_model_that_runs_carries_where() {
     );
 }
 
-/// What the ladder measured reaches the card in the daemon's own figures,
-/// and a rung that did not separate is not the deepest reading (A7, A9).
 #[test]
 fn a_measured_model_carries_the_ends_of_its_ladder() {
     let reading = |depth: i64, ms: Option<&str>| {
@@ -154,7 +144,6 @@ fn a_measured_model_carries_the_ends_of_its_ladder() {
     );
     assert_eq!(held.measured.start_up.as_deref(), Some("1258.213"));
 
-    // And the card says them, with their units, rather than Unknown.
     let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
     console.models = vec![held];
     console.at = Where::Models;
@@ -169,8 +158,6 @@ fn a_measured_model_carries_the_ends_of_its_ladder() {
     );
 }
 
-/// A daemon that is not there is drawn as a refusal, not as an empty screen —
-/// which would report success (A2).
 #[test]
 fn a_daemon_that_is_not_there_is_drawn_as_one() {
     let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -185,11 +172,6 @@ fn a_daemon_that_is_not_there_is_drawn_as_one() {
     assert!(drawn.contains("mcf serve"), "it does not say what to do");
 }
 
-/// Every screen fills exactly the terminal it was given, and no row is short.
-///
-/// The layouts in `../layout/` are drawn at eighty by twenty-four and checked
-/// line by line; a screen that came out a different shape would not be the
-/// screen that was agreed.
 #[test]
 fn every_screen_fills_the_terminal() {
     for at in Where::ALL {
@@ -207,7 +189,6 @@ fn every_screen_fills_the_terminal() {
                 line.chars().count()
             );
         }
-        // The frame closes on every side.
         assert!(screen.line(0).starts_with('┌'), "{at:?} has no top-left");
         assert!(
             screen.line(23).starts_with('└'),
@@ -216,8 +197,6 @@ fn every_screen_fills_the_terminal() {
     }
 }
 
-/// The menu offers Exit, so leaving is something a person can see rather than
-/// a key they have to know.
 #[test]
 fn the_menu_offers_a_way_out() {
     assert!(Where::ALL.contains(&Where::Exit));
@@ -228,7 +207,6 @@ fn the_menu_offers_a_way_out() {
     assert!(screen.line(1).contains("Exit"), "{}", screen.line(1));
 }
 
-/// A model as the daemon lists one that runs, for a console to be set up on.
 fn a_runnable(name: &str, context: i64) -> Held {
     Console::describe(&Value::map([
         ("path", Value::text(format!("/models/{name}"))),
@@ -247,9 +225,6 @@ fn a_runnable(name: &str, context: i64) -> Held {
     ]))
 }
 
-/// The buttons do what they say, from the keyboard: Tab reaches them, Enter
-/// presses the one under the cursor, and a press that cannot run says why in
-/// words rather than doing nothing (A2).
 #[test]
 fn the_buttons_are_pressed_rather_than_drawn() {
     let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -260,14 +235,10 @@ fn the_buttons_are_pressed_rather_than_drawn() {
     ];
     console.at = Where::Models;
 
-    // Down chooses the second model; Tab, Down, Enter presses *Run
-    // diagnostics*, which opens the screen set up for that model.
     act(&mut console, Key::Down);
     act(&mut console, Key::Tab);
     act(&mut console, Key::Down);
     assert_eq!(console.button, 1, "the second button is Run diagnostics");
-    // Opening a screen asks the daemon, which is not there; the models it
-    // has are what it keeps until it is.
     let kept = console.models.clone();
     act(&mut console, Key::Enter);
     console.models = kept;
@@ -279,7 +250,6 @@ fn the_buttons_are_pressed_rather_than_drawn() {
         "the runs are buttons and there are no rows, so the cursor lands on them (D50)"
     );
 
-    // The diagnostics screen names that model and its ladder.
     let mut screen = Screen::new(80, 24);
     draw(&console, &mut screen);
     let drawn = screen.rendered();
@@ -290,16 +260,11 @@ fn the_buttons_are_pressed_rather_than_drawn() {
         "half the window is the deepest rung"
     );
     assert_eq!(console.deepest(), Some(2048));
-    // The estimate under Quick Run is a sixth of the ladder's, the way the
-    // window prints it — 180 s / 6, at 0.58× and 1.42× (B-072).
     assert!(drawn.contains("21 s – 51 s"), "{drawn}");
 
-    // One line a run, with what it answers, and nothing ticked (D50).
     assert!(drawn.contains("Capabilities"), "{drawn}");
     assert!(drawn.contains("Prompt analysis"), "{drawn}");
     assert!(!drawn.contains("[x]") && !drawn.contains("[ ]"), "{drawn}");
-    // The Capabilities button starts the probes, the same request `mcf
-    // probe` sends (B-478, B-482).
     for _ in 0..3 {
         act(&mut console, Key::Down);
     }
@@ -314,15 +279,12 @@ fn the_buttons_are_pressed_rather_than_drawn() {
     );
     console.running = None;
 
-    // Back, from the buttons, returns to the Models screen on the same model.
     act(&mut console, Key::Down);
     act(&mut console, Key::Enter);
     assert_eq!(console.at, Where::Models);
     assert_eq!(console.model, 1, "the choice survives the round trip");
 }
 
-/// A model MCF has not resolved a window for has no ladder to climb, and the
-/// button says so rather than measuring a window somebody guessed (§3.15).
 #[test]
 fn a_model_without_a_window_is_not_measured_against_one() {
     let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -341,18 +303,12 @@ fn a_model_without_a_window_is_not_measured_against_one() {
         .map(|(said, _)| said)
         .unwrap_or_default();
     assert!(said.contains("no ladder to climb"), "{said}");
-    // A Quick Run climbs to a depth of its own, not the window's, so it
-    // needs no window — the same two rungs the window's Quick Run measures
-    // (B-072), which the estimate under the button assumes.
     console.button = 0;
     act(&mut console, Key::Enter);
     assert!(console.running.is_some());
     assert_eq!(screens::diagnostics::QUICK_DEPTH, 1024);
 }
 
-/// A finished run fills the rows in the daemon's words, and the screen shows
-/// what the highlighted row found under the table — the console's own
-/// filling, which the window uses too (B-072).
 #[test]
 fn a_finished_run_fills_the_rows_and_the_screen_shows_the_one_under_the_cursor() {
     let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -397,8 +353,6 @@ fn a_finished_run_fills_the_rows_and_the_screen_shows_the_one_under_the_cursor()
             vec![reading(512, "15.430"), reading(1024, "17.276"), last],
         ),
     });
-    // Hearing a finished job keeps it and refreshes from a daemon that is
-    // not there; the models are what it had.
     let kept = console.models.clone();
     console.hear();
     console.models = kept;
@@ -451,10 +405,6 @@ fn a_finished_run_fills_the_rows_and_the_screen_shows_the_one_under_the_cursor()
     after_the_run(console, ladder_ran);
 }
 
-/// A run the console started is the daemon's whole attention — it answers
-/// one connection at a time — so the last status it gave is not what it is
-/// doing now, and the header says what the console knows instead (A7).
-/// Driving the console showed *Idle* through a whole ladder (F153).
 #[test]
 fn the_header_says_what_the_console_is_running() {
     let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
@@ -475,11 +425,6 @@ fn the_header_says_what_the_console_is_running() {
     assert!(!drawn.contains("Idle"), "{drawn}");
 }
 
-/// A finished run is heard once — a second pass must not fill the rows
-/// again with a longer time, nor ask the daemon again — and the keys work
-/// as before it: the cursor stays on the buttons, Tab has no rows to cross
-/// to, and Back leaves. Driving the console in a terminal showed a run's
-/// time growing with every key pressed (F153).
 fn after_the_run(mut console: Console, ladder_ran: Option<u64>) {
     console.at = Where::Diagnostics;
     console.on_buttons = true;
@@ -505,13 +450,6 @@ fn after_the_run(mut console: Console, ladder_ran: Option<u64>) {
     assert_eq!(console.at, Where::Models);
 }
 
-/// A run under way says where it is: the estimate, what has been read, and
-/// the step the daemon last announced — and a finished run does not claim to
-/// still be on a step.
-///
-/// The step is the thing the screen had nothing of: between the estimate and
-/// the first reading a processor loads a model for minutes, and a screen that
-/// drew nothing in that time drew a run that looked stopped (A7).
 #[test]
 fn a_run_under_way_says_which_step_it_is_on() {
     let mut job = crate::job::Job::start(
@@ -577,9 +515,6 @@ fn a_run_under_way_says_which_step_it_is_on() {
     );
 }
 
-/// The line that names the engine a figure came from names the device too,
-/// with how much of the model was on it, or says nothing where the run did
-/// not say — never a device MCF assumed (A7).
 #[test]
 fn a_figure_names_the_device_it_was_taken_on() {
     let on_the_card = Value::map([
@@ -602,8 +537,6 @@ fn a_figure_names_the_device_it_was_taken_on() {
     );
 }
 
-/// A job cut short says so — stopped at somebody's asking, not failed — and
-/// keeps what it had heard. Cutting a finished job does nothing.
 #[test]
 fn a_job_cut_short_says_so_and_keeps_what_it_heard() {
     let mut job = crate::job::Job::start(
@@ -633,8 +566,6 @@ fn a_job_cut_short_says_so_and_keeps_what_it_heard() {
     );
 }
 
-/// A rung read off fewer pairs than were run says so, and what became of
-/// the rest; one read off every pair says nothing more (A7, F174).
 #[test]
 fn a_rung_says_how_many_pairs_it_was_read_off() {
     let one_of_three = Value::map([(
@@ -663,10 +594,6 @@ fn a_rung_says_how_many_pairs_it_was_read_off() {
     );
 }
 
-/// A job over a command of MCF's own reads the command's lines as answers
-/// and its exit as the conclusion, and drains like a daemon's job (B-519).
-/// The command here is the shell saying two lines and leaving with a code,
-/// which stands in for `mcf eval` without running a suite.
 #[test]
 fn a_spawned_command_is_read_line_by_line_to_its_exit() {
     let mut command = std::process::Command::new("sh");

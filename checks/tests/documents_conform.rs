@@ -1,20 +1,3 @@
-//! Every document in `doc/` holds to the format contract.
-//!
-//! B-041. The contract is in the repository README; this is the command that
-//! fails when a document leaves it. It exists because this project has already
-//! caught three of its own documents disagreeing with themselves — a front
-//! matter two versions behind its own changelog, header counts three revisions
-//! stale, and a register entry still reporting the rule count of the version
-//! that closed it. None of those were noticed by reading; all three are
-//! mechanical.
-//!
-//! What is checked here is structure and citation. Prose is left to review,
-//! and the one clause of the contract that resists a machine — present tense
-//! outside changelogs — is checked only for the constructions the README names
-//! outright, with the rest recorded as a `review` obligation rather than
-//! claimed.
-
-// Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
 #![allow(clippy::panic)]
 
 use mcf_checks::document::{Document, Identifiers, all};
@@ -23,8 +6,6 @@ fn documents() -> Vec<Document> {
     all().unwrap_or_else(|path| panic!("{} is readable", path.display()))
 }
 
-/// There is something to check. A reader that found no documents would make
-/// every test below pass by having nothing to disagree with (A19).
 #[test]
 fn the_documents_are_found() {
     let documents = documents();
@@ -46,7 +27,6 @@ fn the_documents_are_found() {
     }
 }
 
-/// Every document opens with its own title, on the first line.
 #[test]
 fn every_document_opens_with_a_title() {
     for document in documents() {
@@ -58,7 +38,6 @@ fn every_document_opens_with_a_title() {
     }
 }
 
-/// Every document carries front matter naming its type, version and status.
 #[test]
 fn every_document_carries_front_matter() {
     for document in documents() {
@@ -72,7 +51,6 @@ fn every_document_carries_front_matter() {
     }
 }
 
-/// The version is a number that counts up, not a date or a name.
 #[test]
 fn every_version_is_a_number() {
     for document in documents() {
@@ -87,11 +65,6 @@ fn every_version_is_a_number() {
     }
 }
 
-/// Every document ends with a changelog, and it is the last section.
-///
-/// Last because the contract says so and because the reason is legible: the
-/// current state is reached in one screen, and history is what the reader
-/// scrolls *past* the document to find.
 #[test]
 fn every_document_ends_with_its_changelog() {
     for document in documents() {
@@ -112,10 +85,6 @@ fn every_document_ends_with_its_changelog() {
     }
 }
 
-/// The changelog accounts for the version the front matter claims.
-///
-/// This is the check that would have caught the backlog's front matter sitting
-/// at version 4 while its changelog had reached 21.
 #[test]
 fn the_changelog_accounts_for_the_current_version() {
     for document in documents() {
@@ -142,13 +111,6 @@ fn the_changelog_accounts_for_the_current_version() {
     }
 }
 
-/// No document claims to derive from a version of the intent document that
-/// does not exist yet.
-///
-/// A document may lag its source — that is normal, and the lag is exactly what
-/// the front matter is for. What it may not do is claim to have absorbed a
-/// version that was never written, which is how a derived document acquires
-/// authority it does not have.
 #[test]
 fn no_document_derives_from_a_version_that_does_not_exist() {
     let documents = documents();
@@ -185,7 +147,6 @@ fn no_document_derives_from_a_version_that_does_not_exist() {
     }
 }
 
-/// Every relative link resolves to a file that exists.
 #[test]
 fn every_relative_link_resolves() {
     let root = mcf_checks::workspace::root();
@@ -209,11 +170,6 @@ fn every_relative_link_resolves() {
     assert!(broken.is_empty(), "broken relative links: {broken:#?}");
 }
 
-/// Every `B-###` and `DEC-###` cited anywhere resolves to a row in the
-/// register.
-///
-/// C5 makes identifiers stable for life so a citation made once stays valid; a
-/// citation to something that never existed is the other half of that promise.
 #[test]
 fn every_register_citation_resolves() {
     let documents = documents();
@@ -248,7 +204,6 @@ fn every_register_citation_resolves() {
     );
 }
 
-/// Every `§` citation resolves to a clause of the intent document.
 #[test]
 fn every_clause_citation_resolves() {
     let documents = documents();
@@ -276,8 +231,6 @@ fn every_clause_citation_resolves() {
     );
 }
 
-/// Every rule, resolution, laboratory and milestone identifier cited resolves
-/// to the document that defines it.
 #[test]
 fn every_identifier_citation_resolves() {
     let documents = documents();
@@ -314,16 +267,10 @@ fn every_identifier_citation_resolves() {
                 };
                 let known = match letter {
                     'A' | 'B' | 'C' => identifiers.rules.contains(&token),
-                    // `P` is two namespaces: the precedence rules and the
-                    // proposals. C5 forbids renumbering either, so a citation
-                    // resolves if it names one of them (B-353).
                     'P' => {
                         identifiers.rules.contains(&token) || identifiers.proposals.contains(&token)
                     }
                     'D' => identifiers.resolutions.contains(&token),
-                    // Findings, which every decision that rests on evidence
-                    // cites. `F80` was cited four times while its section did
-                    // not exist, because this match had no arm for `F` (F108).
                     'F' => identifiers.findings.contains(&token),
                     'L' => identifiers.laboratories.contains(&token),
                     'M' => identifiers.milestones.contains(&token),
@@ -341,12 +288,6 @@ fn every_identifier_citation_resolves() {
     );
 }
 
-/// The past tense stays in the changelog.
-///
-/// Only the constructions the contract names outright are checked — "this was
-/// resolved in version 4" belongs in a changelog entry, and the clause it
-/// resolved simply states the resolution. The rest of the tense contract
-/// remains a `review` obligation, stated here rather than silently dropped.
 #[test]
 fn the_past_tense_stays_in_the_changelog() {
     const PAST: [&str; 6] = [
@@ -378,11 +319,6 @@ fn the_past_tense_stays_in_the_changelog() {
     );
 }
 
-/// A line with anything inside double quotation marks removed.
-///
-/// The format contract quotes its own counter-example — *"this was resolved in
-/// version 4" belongs in a changelog entry* — and a check that read the
-/// quotation as prose would fail on the sentence that states the rule.
 fn without_quotations(text: &str) -> String {
     let mut kept = String::new();
     let mut inside = false;
@@ -398,13 +334,10 @@ fn without_quotations(text: &str) -> String {
     kept
 }
 
-/// Whether every character is a digit, and there is at least one.
 fn numeric(text: &str) -> bool {
     !text.is_empty() && text.chars().all(|c| c.is_ascii_digit())
 }
 
-/// Words a citation could be, with the punctuation that surrounds prose
-/// stripped off.
 fn tokens(text: &str) -> Vec<String> {
     text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
         .map(|token| token.trim_matches('-'))
@@ -413,10 +346,6 @@ fn tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// `A6` → `('A', "6")`, and nothing for a word or a version string.
-///
-/// `PR6` is handled by [`proposal_identifier`]: a two-letter prefix is not a
-/// rule identifier, and treating it as one would read `PR6` as rule `R6`.
 fn split_identifier(token: &str) -> Option<(char, &str)> {
     if token.starts_with("PR") {
         return None;
@@ -433,7 +362,6 @@ fn split_identifier(token: &str) -> Option<(char, &str)> {
     Some((letter, digits))
 }
 
-/// `PR6` → `PR6`, and nothing else.
 fn proposal_identifier(token: &str) -> Option<&str> {
     let digits = token.strip_prefix("PR")?;
     if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
@@ -442,7 +370,6 @@ fn proposal_identifier(token: &str) -> Option<&str> {
     Some(token)
 }
 
-/// Every `§…` citation in a line.
 fn clause_citations(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     for piece in text.split('§').skip(1) {
@@ -458,13 +385,6 @@ fn clause_citations(text: &str) -> Vec<String> {
     found
 }
 
-/// Every identifier in a register is unique.
-///
-/// The one thing a register has to be. `every_identifier_citation_resolves`
-/// checks that a citation finds *something*; this checks that it finds one
-/// thing. Two rows sharing a number make every reference to it ambiguous, and
-/// the way it happens is not carelessness — it is somebody adding an item at
-/// the end of a long file and choosing a number that looked free.
 #[test]
 fn every_register_identifier_is_used_once() {
     let backlog = documents()
@@ -482,7 +402,6 @@ fn every_register_identifier_is_used_once() {
         let Some((identifier, _)) = identifier.split_once(" |") else {
             continue;
         };
-        // A row in one of the two registers: `| B-021 | …` or `| DEC-011 | …`.
         if !(identifier.starts_with("B-") || identifier.starts_with("DEC-")) {
             continue;
         }

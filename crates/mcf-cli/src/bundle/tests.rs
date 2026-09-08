@@ -1,5 +1,3 @@
-//! What a bundle has to carry, and what it has to say it carries.
-
 use mcf_record::json::Value;
 
 use super::{destination, keeps, prompt_beside, rests_on};
@@ -26,8 +24,6 @@ fn a_claim() -> mcf_record::journal::Entry {
     )
 }
 
-/// A claim rests on the artifacts it names, and the record has no foreign key
-/// but the path — so that is the join, and it is the claim's own words.
 #[test]
 fn a_claim_rests_on_the_artifacts_it_names() {
     assert_eq!(
@@ -36,8 +32,6 @@ fn a_claim_rests_on_the_artifacts_it_names() {
     );
 }
 
-/// The bundle carries the claim, the provenance of what it measured, the
-/// engine and what the machine was — and nothing else.
 #[test]
 fn it_carries_the_claim_and_what_it_rests_on() {
     let arms = rests_on(&a_claim());
@@ -81,10 +75,6 @@ fn it_carries_the_claim_and_what_it_rests_on() {
     ));
 }
 
-/// **A bundle is one claim, not the record.** Another comparison, another
-/// machine's model, a generation, a daemon's life — none of it is what this
-/// claim rests on, and carrying it would make a bundle an export with a
-/// smaller name (PR2, §XIV).
 #[test]
 fn it_carries_nothing_else() {
     let arms = rests_on(&a_claim());
@@ -98,8 +88,6 @@ fn it_carries_nothing_else() {
         ("daemon_started", Value::map::<String>([])),
         ("failure", Value::map::<String>([])),
         ("fitment_planned", Value::map::<String>([])),
-        // The machine on another day is not the machine this claim was taken
-        // on, and carrying it would describe a machine nobody measured.
         ("machine_profile", Value::map::<String>([])),
     ] {
         assert!(
@@ -114,9 +102,6 @@ fn it_carries_nothing_else() {
     }
 }
 
-/// A named directory takes the bundle under the claim's own name; a named file
-/// is taken as written. Neither is invented: a bundle written somewhere the
-/// operator did not name is a file they will not find (§3.9).
 #[test]
 fn where_it_goes_is_where_the_operator_said() {
     let scratch = std::env::temp_dir();
@@ -133,23 +118,12 @@ fn where_it_goes_is_where_the_operator_said() {
     );
 }
 
-/// A bundle can only be made of a claim.
 #[test]
 fn only_a_claim_can_be_bundled() {
     let response = super::run("machine_profile_1970-01-01T00-00-00Z_deadbeef_0000", None);
-    // Whether that entry exists depends on the machine; either way the command
-    // must not serve a bundle of something that is not a claim.
     assert!(!response.served, "{}", response.text);
 }
 
-/// The prompt travels beside the bundle, and each of the three things that can
-/// be true of it is said rather than left out (A25, A7, F105).
-///
-/// The record does not hold the prompt any more — it holds its length and its
-/// digest — so a bundle assembled from record lines cannot carry it, and
-/// `mcf_record::export` must stay unable to reach content or A25's guarantee
-/// becomes a filter again. B-211 still needs the input, so it is disclosed
-/// here, deliberately, into a file of its own.
 #[test]
 fn the_prompt_beside_a_bundle_says_which_of_three_things_is_true() {
     let root = std::env::temp_dir().join(format!("mcf-bundle-prompt-{}", std::process::id()));
@@ -158,12 +132,9 @@ fn the_prompt_beside_a_bundle_says_which_of_three_things_is_true() {
     let journal = root.join("record.jsonl");
     let bundle = root.join("claim.mcf-bundle");
 
-    // Nothing filed: the claim predates content being kept, and the report
-    // says so rather than leaving the line out.
     let said = prompt_beside(&journal, &bundle, "comparison_1");
     assert!(said.contains("NOT here"), "{said}");
 
-    // Filed: it is written beside the bundle, in its own file.
     let store = mcf_record::content::ContentStore::open(
         &mcf_record::content::ContentStore::beside(&journal),
     )
@@ -182,8 +153,6 @@ fn the_prompt_beside_a_bundle_says_which_of_three_things_is_true() {
         "Once upon a time"
     );
 
-    // Filed and unreadable: not the same answer as never filed, which is the
-    // distinction `record.content.unreadable` exists for.
     let filed = mcf_record::content::ContentStore::beside(&journal).join("comparison_1");
     std::fs::remove_file(&filed).expect("the filed prompt is there");
     std::fs::create_dir(&filed).expect("a directory takes its place");

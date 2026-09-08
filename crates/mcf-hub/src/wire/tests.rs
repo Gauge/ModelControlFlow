@@ -1,10 +1,3 @@
-//! Transfers over a real socket, against a server this test is holding.
-//!
-//! Real TCP on the loopback address rather than a mock: what is being tested is
-//! the part that talks to an operating system, and a fake socket would test the
-//! fake. Nothing here reaches a network — the listener is on 127.0.0.1, on a
-//! port the kernel chose — so the whole file runs in the gating tier (B19, B38).
-
 use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
@@ -15,41 +8,30 @@ use super::{Deadlines, Exchanged, Tcp, Wire, fetch};
 use crate::http::{Request, Url};
 use mcf_core::failure::Category;
 
-/// A server that answers from a script, and remembers what it was asked.
 struct Server {
     port: u16,
     asked: mpsc::Receiver<String>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
-/// What the server does with a connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Answers {
-    /// Sends these, one per connection, in order; the last one repeats.
     These(Vec<String>),
-    /// Sends half a header block and closes.
     CutShort,
-    /// Accepts the connection and says nothing at all.
     Silence,
 }
 
 impl Server {
-    /// Starts a server on a port the kernel chooses.
     fn answering(answers: Answers) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let port = listener.local_addr().expect("an address").port();
         let (sender, asked) = mpsc::channel();
         let handle = thread::spawn(move || {
             let mut served = 0_usize;
-            // One connection per request, because the client sends
-            // `Connection: close`.
             for connection in listener.incoming() {
                 let Ok(stream) = connection else { break };
                 let asked_for = read_request(&stream);
                 if asked_for.is_empty() {
-                    // The connection the test's own `Drop` makes to wake this
-                    // thread up. Nothing was asked, so there is nothing to
-                    // answer and no more connections are coming.
                     break;
                 }
                 let _sent = sender.send(asked_for);
@@ -66,10 +48,6 @@ impl Server {
                         write_answer(stream, b"HTTP/1.1 200 OK\r\nContent-Len");
                     }
                     Answers::Silence => {
-                        // Held open and answered never, which is the hang B7
-                        // makes a defined outcome. Long enough for the client's
-                        // deadline to pass and short enough not to outlive the
-                        // test.
                         thread::sleep(Duration::from_millis(1500));
                         drop(stream);
                     }
@@ -88,7 +66,6 @@ impl Server {
         Url::parse(&format!("http://127.0.0.1:{}{target}", self.port)).expect("a URL")
     }
 
-    /// What the next request said, verbatim.
     fn was_asked(&self) -> String {
         self.asked
             .recv_timeout(Duration::from_secs(5))
@@ -98,10 +75,6 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        // Waking the listener so the thread can end. The connection is dropped
-        // *before* the join rather than at the end of this scope: a `let` that
-        // held it open would leave the server blocked reading a request that
-        // never comes, waiting for a thread that is waiting for this one.
         if let Ok(waker) = TcpStream::connect(("127.0.0.1", self.port)) {
             drop(waker);
         }
@@ -112,9 +85,6 @@ impl Drop for Server {
 }
 
 fn read_request(stream: &TcpStream) -> String {
-    // A deadline on this side too: a test server that can be wedged by a
-    // connection nobody writes to is a test that hangs a suite rather than
-    // failing it.
     let _deadline = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let mut reader = stream;
     let mut seen = Vec::new();
@@ -138,8 +108,6 @@ fn wire() -> Tcp {
     Tcp {
         deadlines: Deadlines {
             connect: Duration::from_secs(5),
-            // Short, because two tests below are about a deadline passing and a
-            // suite that waits a minute for each is a suite nobody runs.
             idle: Duration::from_millis(400),
         },
     }
@@ -152,8 +120,6 @@ fn get(server: &Server, target: &str) -> (Vec<u8>, Exchanged) {
     (body, exchanged)
 }
 
-/// The ordinary case, over a socket: the request goes out, the answer comes
-/// back, and the body is what the caller asked for.
 #[test]
 fn a_request_reaches_a_server_and_the_body_comes_back() {
     let server = Server::answering(Answers::These(vec![
@@ -174,8 +140,6 @@ fn a_request_reaches_a_server_and_the_body_comes_back() {
     assert!(asked.contains("Host: 127.0.0.1:"), "{asked}");
 }
 
-/// A body larger than the read buffer arrives whole. A model is larger than
-/// this machine's memory, so the loop that streams it is the one that matters.
 #[test]
 fn a_body_larger_than_the_buffer_arrives_whole() {
     let weights = "w".repeat(100_000);
@@ -190,8 +154,6 @@ fn a_body_larger_than_the_buffer_arrives_whole() {
     assert!(body.iter().all(|byte| *byte == b'w'));
 }
 
-/// A redirect is followed, and the answer records where the bytes actually came
-/// from — which for the hub is a CDN and not the hub (§3.4, F9).
 #[test]
 fn a_redirect_is_followed_and_the_final_host_is_recorded() {
     let server = Server::answering(Answers::These(vec![
@@ -213,9 +175,6 @@ fn a_redirect_is_followed_and_the_final_host_is_recorded() {
     );
 }
 
-/// A source that redirects for ever is stopped at a stated ceiling, and the
-/// refusal names where it was sent. Going round for ever is the failure B7
-/// exists to prevent.
 #[test]
 fn a_redirect_loop_ends_at_the_ceiling() {
     let server = Server::answering(Answers::These(vec![
@@ -235,7 +194,6 @@ fn a_redirect_loop_ends_at_the_ceiling() {
     );
 }
 
-/// Resumption asks for the rest, and the server sees the range.
 #[test]
 fn a_resumed_transfer_asks_the_server_for_the_rest() {
     let server = Server::answering(Answers::These(vec![
@@ -261,9 +219,6 @@ fn a_resumed_transfer_asks_the_server_for_the_rest() {
     assert!(server.was_asked().contains("Range: bytes=4-\r\n"));
 }
 
-/// And a redirected resumption keeps its offset. A transfer that lost its range
-/// on the way to a CDN would start again from zero and report progress that did
-/// not happen (A4).
 #[test]
 fn a_redirect_does_not_lose_the_offset() {
     let server = Server::answering(Answers::These(vec![
@@ -285,9 +240,6 @@ fn a_redirect_does_not_lose_the_offset() {
     assert!(second.contains("Range: bytes=4-\r\n"), "{second}");
 }
 
-/// A credential is not sent in the clear. Refused rather than downgraded: a
-/// token on an unencrypted connection is a token given to everything in between
-/// (B-024, A2).
 #[test]
 fn a_credential_is_not_carried_over_a_wire_that_cannot_keep_it() {
     let server = Server::answering(Answers::These(vec![
@@ -315,8 +267,6 @@ fn a_credential_is_not_carried_over_a_wire_that_cannot_keep_it() {
     );
 }
 
-/// A connection that closes mid-header is an interruption, said rather than
-/// guessed at.
 #[test]
 fn a_connection_that_closes_mid_answer_is_an_interruption() {
     let server = Server::answering(Answers::CutShort);
@@ -328,9 +278,6 @@ fn a_connection_that_closes_mid_answer_is_an_interruption() {
     assert!(body.is_empty(), "half an answer was written out as a body");
 }
 
-/// A host that accepts a connection and says nothing is the hang B7 makes a
-/// defined outcome. The deadline is MCF's, and the refusal says how long it
-/// waited.
 #[test]
 fn a_server_that_never_answers_ends_at_a_deadline() {
     let server = Server::answering(Answers::Silence);
@@ -341,12 +288,8 @@ fn a_server_that_never_answers_ends_at_a_deadline() {
     assert_eq!(failure.category(), Category::TransferStalled);
 }
 
-/// Nothing is listening, which is the ordinary offline case and a different
-/// answer from a slow host.
 #[test]
 fn a_host_that_refuses_a_connection_is_unreachable() {
-    // A port nothing is on: bound and immediately dropped, so the number is
-    // real and the listener is gone.
     let port = TcpListener::bind("127.0.0.1:0")
         .expect("a loopback port")
         .local_addr()
@@ -359,13 +302,6 @@ fn a_host_that_refuses_a_connection_is_unreachable() {
     assert_eq!(failure.category(), Category::HubUnreachable);
 }
 
-/// A name this machine cannot resolve is *that*, and not a guess about why.
-///
-/// One observation with three causes — no resolver, no network, no such name —
-/// and the platform reports the same thing for all of them (F10). What MCF says
-/// is what it saw, and it says out loud which question it is not answering
-/// (A7, D33). `.invalid` is reserved by RFC 2606 precisely so that it never
-/// resolves, on a network or off one.
 #[test]
 fn a_name_that_will_not_resolve_says_so_without_guessing_why() {
     let url = Url::parse("http://this-name-does-not-exist.invalid/x").expect("a URL");
@@ -387,9 +323,6 @@ fn a_name_that_will_not_resolve_says_so_without_guessing_why() {
     );
 }
 
-/// Refused is not unreachable: something answered, which means there is a path.
-/// An operator told *no route* when the host merely said no would look at the
-/// wrong thing (D33).
 #[test]
 fn a_refusal_is_distinguished_from_no_route() {
     let port = TcpListener::bind("127.0.0.1:0")
@@ -410,8 +343,6 @@ fn a_refusal_is_distinguished_from_no_route() {
     );
 }
 
-/// A wire says what it is, because it is part of the conditions of anything
-/// acquired through it (§3.4).
 #[test]
 fn a_wire_describes_itself_and_says_what_it_will_not_carry() {
     let tcp = Tcp::default();
@@ -421,18 +352,10 @@ fn a_wire_describes_itself_and_says_what_it_will_not_carry() {
     assert_eq!(tcp.deadlines.idle, Duration::from_secs(60));
 }
 
-/// **EINTR means *ask again*, not *the transfer was interrupted*.**
-///
-/// It is the one io error whose contract is retry: a signal arrived while the
-/// thread was blocked in the kernel and the read did not happen. Classifying
-/// it as `transfer.interrupted` tells an operator on a busy machine that their
-/// download was cut off by something that was not there, which is the wrong
-/// answer stated confidently (A2, F61).
 #[test]
 fn an_interrupted_read_is_retried_rather_than_classified() {
     use std::io::Read;
 
-    /// A reader that is interrupted twice and then answers.
     struct Twitchy {
         left: usize,
     }
@@ -461,8 +384,6 @@ fn an_interrupted_read_is_retried_rather_than_classified() {
     assert_eq!(buffer.get(..2), Some(b"ok".as_slice()));
 }
 
-/// And every other error still reaches the classifier, so the retry is a
-/// retry and not a swallow (A2).
 #[test]
 fn any_other_error_is_still_reported() {
     use std::io::Read;

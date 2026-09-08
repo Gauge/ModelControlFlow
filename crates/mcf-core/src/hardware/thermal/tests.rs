@@ -1,5 +1,3 @@
-//! Every sensor is carried; none is chosen for the reader.
-
 use super::{Kind, Sensor, kind_of, processor};
 
 fn sensor(chip: &str, label: Option<&str>, millidegrees: i64) -> Sensor {
@@ -14,8 +12,6 @@ fn sensor(chip: &str, label: Option<&str>, millidegrees: i64) -> Sensor {
 
 #[test]
 fn a_compute_die_is_told_from_a_control_temperature() {
-    // A Ryzen publishes both: `Tctl` is derived by firmware and may carry an
-    // offset; `Tccd1` is a die.
     assert_eq!(kind_of("k10temp", Some("Tccd1")), Kind::ProcessorDie);
     assert_eq!(kind_of("k10temp", Some("Tctl")), Kind::ProcessorPackage);
     assert_eq!(kind_of("coretemp", Some("Core 3")), Kind::ProcessorDie);
@@ -27,9 +23,6 @@ fn a_compute_die_is_told_from_a_control_temperature() {
 
 #[test]
 fn the_acpi_zone_is_not_mistaken_for_a_processor() {
-    // The failure F53 recorded as a fact: this board's ACPI zone reads 16.8 °C
-    // while the processor is at 70 °C, and reading it as *the* temperature is
-    // what closed off DEC-007's thermal half.
     assert_eq!(kind_of("acpitz", None), Kind::Board);
     let held = [
         sensor("acpitz", None, 16_800),
@@ -89,7 +82,6 @@ fn a_missing_critical_point_says_so_rather_than_implying_headroom() {
     );
 }
 
-/// This machine, read for real.
 #[test]
 fn this_machine_is_read_without_inventing_anything() {
     let held = super::sensors();
@@ -103,8 +95,6 @@ fn this_machine_is_read_without_inventing_anything() {
             "every reading names the chip that published it"
         );
     }
-    // Not an assertion that this machine has sensors — a container or another
-    // platform may have none, and that is a finding rather than a failure.
     if let Some(found) = processor(&held) {
         assert!(
             matches!(found.kind, Kind::ProcessorDie | Kind::ProcessorPackage),
@@ -113,11 +103,6 @@ fn this_machine_is_read_without_inventing_anything() {
     }
 }
 
-/// **A sentinel is not a temperature.** An `NVMe` drive on this machine
-/// publishes `temp2_max` as 65261850 — 65261.8 °C — which rendered as a
-/// critical point beside real ones. A number no thermometer produced,
-/// presented with the confidence of one that was measured: the same defect as
-/// F90's contention reading above the machine's ceiling.
 #[test]
 fn an_out_of_range_limit_is_read_as_absent() {
     for one in super::sensors() {

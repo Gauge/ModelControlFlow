@@ -1,39 +1,3 @@
-//! One family of model, run one token at a time.
-//!
-//! The llama architecture is what §XII's reference model is, what GGUF was
-//! written for, and what most published open weights are. This assembles
-//! [`crate::ops`] into its forward pass: an embedding lookup, then a stack of
-//! blocks each doing normalized attention and a gated feed-forward, then a
-//! final norm and a projection to logits.
-//!
-//! **What it holds and what it refuses.** Everything about the model comes from
-//! the file's own metadata — the block count, the widths, the head counts, the
-//! epsilon, the rope base — and a model that does not state one of them is
-//! refused by name rather than run under a default (A7). A default here is not
-//! a convenience; it is a different model that produces confident nonsense.
-//!
-//! **Grouped-query attention is the general case.** A model with as many
-//! key/value heads as query heads is the special case where the grouping is
-//! one, so there is one code path rather than two and the special case is
-//! exercised by every test that uses it.
-//!
-//! **The cache is the whole of what makes generation possible.** Each token's
-//! keys and values are kept so the next token attends to them without
-//! recomputing the sequence, which is the one piece of machinery here that
-//! exists for speed — and it is not an optimization but the definition of
-//! autoregressive decoding.
-//!
-//! **Still deliberately slow.** A hidden state is a `Vec<f32>` per token, every
-//! matrix multiply is [`crate::ops::matmul_vec`], and nothing is fused. D32 and
-//! F8 settled that trade.
-//!
-//! **The one thing it does spend is processors.** A loaded model may be asked
-//! to divide each product's rows across threads ([`Loaded::across`]), which
-//! changes what a token costs and nothing about what it says — 347 ms a token
-//! to 66 on a 135-million-parameter model, with the same bytes out (B-366,
-//! [findings.md](../../../doc/findings.md) F99). That is D38's *viability*
-//! exception to D31 and not a licence to optimize the arithmetic.
-
 use std::collections::BTreeMap;
 
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
@@ -47,20 +11,6 @@ const WHERE: Subsystem = Subsystem::new("mcf-standin::llama");
 
 pub use crate::architecture::FAMILIES;
 
-/// Whether this crate implements what the file declares itself to be.
-///
-/// **Separated from [`load`] so a caller can ask before it reads anything.**
-/// Loading a model dequantizes every tensor it names; a surface that wanted to
-/// tell the operator *this is not a model I can run* should not have to spend
-/// that first. It also decides which refusal an operator sees when more than
-/// one thing is unsupported at once, and the architecture is the more useful
-/// of them: a vocabulary MCF cannot read is a component, and an architecture it
-/// cannot read is the whole model.
-///
-/// # Errors
-///
-/// `artifact.format.unsupported` naming what the file declared and what this
-/// crate implements.
 pub fn covers(file: &File) -> Result<()> {
     let architecture = file.architecture().unwrap_or("unstated");
     if FAMILIES.contains(&architecture) {
@@ -83,70 +33,25 @@ pub fn covers(file: &File) -> Result<()> {
     ))
 }
 
-/// The architecture this module was written against, named for a message.
 pub const ARCHITECTURE: &str = "llama";
 
-/// What the file says the model is.
-///
-/// Every field is read from the metadata; none has a default. A model whose
-/// file does not say how many heads it has is a model MCF cannot run, and
-/// saying so is the honest outcome (A7, B7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shape {
-    /// How many transformer blocks.
     pub blocks: usize,
-    /// The width of the residual stream.
     pub embedding: usize,
-    /// How many query heads.
     pub heads: usize,
-    /// How many key/value heads. Equal to `heads` for a model without grouped
-    /// attention.
     pub key_value_heads: usize,
-    /// The inner width of the feed-forward.
     pub feed_forward: usize,
-    /// The longest context the file claims.
     pub context: usize,
-    /// How many tokens the vocabulary has.
     pub vocabulary: usize,
-    /// The width of one attention head, where the file states it.
-    ///
-    /// `None` means it does not, and the width is the embedding divided by the
-    /// heads — which is true of the family this module was written against and
-    /// **false** of the next one. Qwen3 0.6B states 128 against an embedding of
-    /// 1024 and sixteen heads, so the divided answer is 64 and the model is
-    /// twice as wide as MCF would have assumed. A shape MCF assumed is a model
-    /// MCF would have run confidently and wrongly (A21, F19's lesson).
     pub stated_head_dimension: Option<usize>,
-    /// How many experts each feed-forward block holds, where it holds any.
-    ///
-    /// Zero is the ordinary case — one dense feed-forward per block. A file
-    /// that states a count carries its feed-forward as a *stack* of that many,
-    /// with a router choosing between them per token, and MCF reads which shape
-    /// it is from this number rather than from the family: the artifact in the
-    /// corpus declares `llama` and is a mixture of four.
     pub experts: usize,
-    /// How many of those experts each token is actually routed to.
     pub experts_used: usize,
-    /// How far back a *sliding* block may look, where the file states one.
-    ///
-    /// `None` is the ordinary case: every block sees the whole history. A file
-    /// that states a window has blocks that see only the last `window`
-    /// positions — and, more consequentially at short lengths, blocks that
-    /// rotate at a different base (F27).
     pub sliding_window: Option<usize>,
-    /// One block in every `sliding_window_pattern` sees everything; the rest
-    /// slide.
-    ///
-    /// Six unless the file says otherwise, which is what the reference uses
-    /// when the key is absent.
     pub sliding_window_pattern: usize,
 }
 
 impl Shape {
-    /// Whether this block slides rather than seeing the whole history.
-    ///
-    /// The last block of each period is the one that sees everything, so with a
-    /// period of six the blocks that slide are 0–4, 6–10, and so on.
     #[must_use]
     pub fn is_sliding(&self, block: usize) -> bool {
         if self.sliding_window.is_none() || self.sliding_window_pattern == 0 {
@@ -159,7 +64,6 @@ impl Shape {
 }
 
 impl Shape {
-    /// The width of one attention head.
     #[must_use]
     pub const fn head_dimension(&self) -> usize {
         if let Some(stated) = self.stated_head_dimension {
@@ -171,74 +75,35 @@ impl Shape {
         }
     }
 
-    /// The width of every query head together, which is what the query
-    /// projection produces and what the output projection consumes.
-    ///
-    /// Equal to the embedding only where the head width was not stated
-    /// separately, which is why it is a method rather than an assumption.
     #[must_use]
     pub const fn query_width(&self) -> usize {
         self.head_dimension().saturating_mul(self.heads)
     }
 
-    /// The width of every key/value head together.
     #[must_use]
     pub const fn key_value_width(&self) -> usize {
         self.head_dimension().saturating_mul(self.key_value_heads)
     }
 }
 
-/// A model, loaded and ready to run.
 #[derive(Debug)]
 pub struct Loaded {
-    /// What the file said it is.
     pub shape: Shape,
-    /// The normalization epsilon the file states.
     epsilon: f32,
-    /// The rope base frequency the file states.
     rope_theta: f32,
-    /// The rope base frequency a *sliding* block uses.
-    ///
-    /// **Ten thousand when the file does not say, and that is not a guess about
-    /// this model — it is what the reference does.** A file can state a
-    /// sliding window and omit the base its sliding blocks rotate at, and every
-    /// implementation then uses ten thousand rather than the base stated for
-    /// the others. MCF used the stated base for every block, and produced
-    /// different text from the reference by the fourth token (F27).
     rope_theta_swa: f32,
-    /// What this family does that its file does not say it does.
-    ///
-    /// Read from the architecture rather than from the file, because nothing in
-    /// the file states any of it — see [`crate::architecture::habits`].
     habits: crate::architecture::Habits,
-    /// How many processors the forward pass may divide its work across.
-    ///
-    /// One at load, which is the definition; a caller asks for more with
-    /// [`Loaded::across`]. It is not a condition of the *answer* — B-366 is the
-    /// property that the same input produces the same bytes at any count — so it
-    /// is here to be spent, not to be compared against.
     threads: Threads,
-    /// Every tensor, dequantized once and kept.
-    ///
-    /// Dequantizing on load rather than per token is the one memory-for-time
-    /// trade here, and it is made for legibility: the forward pass reads
-    /// numbers, not encodings. It also makes the cost of a large model on the
-    /// stand-in obvious rather than hidden, which is the honest way for
-    /// something D31 admits may be two orders of magnitude slow.
     tensors: BTreeMap<String, Vec<f32>>,
 }
 
-/// The keys and values of the tokens seen so far.
 #[derive(Debug, Default)]
 pub struct Cache {
-    /// Per block, per position, the concatenated key heads.
     keys: Vec<Vec<Vec<f32>>>,
-    /// The same for values.
     values: Vec<Vec<Vec<f32>>>,
 }
 
 impl Cache {
-    /// A cache for a model of this shape.
     #[must_use]
     pub fn for_model(shape: &Shape) -> Self {
         Self {
@@ -247,31 +112,17 @@ impl Cache {
         }
     }
 
-    /// How many tokens it holds.
     #[must_use]
     pub fn length(&self) -> usize {
         self.keys.first().map_or(0, Vec::len)
     }
 }
 
-/// Reads the shape, the constants and every tensor a llama model needs.
-///
-/// # Errors
-///
-/// `artifact.format.unsupported` when the file is not a llama model;
-/// `artifact.provenance.incomplete` when it does not state something the
-/// architecture needs; `artifact.format.malformed` when a tensor it names is
-/// absent or the wrong size; `engine.unavailable` when a tensor is in a scheme
-/// this crate does not decode.
 pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     let architecture = file.architecture().unwrap_or("unstated");
     covers(file)?;
 
     let shape = read_shape(file, architecture)?;
-    // Every quantity is read under the file's own architecture prefix, which is
-    // how GGUF names them: a `qwen3` file states `qwen3.block_count`, and a
-    // reader that looked for `llama.block_count` would find nothing and call it
-    // a file that does not say (A7 misapplied).
     let epsilon = float(
         file,
         &format!("{architecture}.attention.layer_norm_rms_epsilon"),
@@ -286,22 +137,12 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         tensors.insert(name.clone(), read_tensor(file, bytes, &name, elements)?);
     }
 
-    // What some architectures carry and others do not. *Present in the file*
-    // is the whole test — but a tensor that is there and cannot be read is a
-    // failure rather than an absence, which is the difference between an
-    // optional part and a silently skipped one (A2). Skipping it silently is
-    // exactly how MCF ran Qwen3 without its per-head normalization and got
-    // fluent nonsense back (F20).
     for (name, elements) in optional(&shape) {
         if file.tensor(&name).is_some() {
             tensors.insert(name.clone(), read_tensor(file, bytes, &name, elements)?);
         }
     }
 
-    // The output projection is tied to the embedding in some models and its own
-    // tensor in others. Both are ordinary rather than exceptional, so the
-    // absence is not a failure — but which one was used is a fact about the
-    // model, and `output_is_tied` is how a caller can say so.
     if let Ok(output) = read_tensor(
         file,
         bytes,
@@ -322,15 +163,6 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     })
 }
 
-/// The shape, entirely from the file's own metadata.
-///
-/// # Errors
-///
-/// `artifact.provenance.incomplete` when the file does not state something the
-/// architecture needs; `artifact.format.malformed` when what it states does not
-/// divide — an embedding width that is not a whole number of heads is a model
-/// nobody can run, and the arithmetic that discovered it is the honest place to
-/// say so.
 fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
     let key = |name: &str| format!("{architecture}.{name}");
     let shape = Shape {
@@ -339,9 +171,6 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
         heads: count(file, &key("attention.head_count"))?,
         key_value_heads: match number(file, &key("attention.head_count_kv")) {
             Some(value) => usize::try_from(value).unwrap_or(0),
-            // The one field with a defined fallback, and it is the model's own
-            // convention rather than a guess: a file that omits it is a model
-            // without grouped attention, where the two counts are equal.
             None => count(file, &key("attention.head_count"))?,
         },
         feed_forward: count(file, &key("feed_forward_length"))?,
@@ -369,9 +198,6 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
             .ok_or_else(|| missing("tokenizer.ggml.tokens"))?,
     };
 
-    // A file that says it has experts and does not say how many are used is a
-    // file MCF cannot run: the count is not derivable, every value gives a
-    // different model, and picking one would be a hidden choice (§3.15, A7).
     if shape.experts > 0 && shape.experts_used == 0 {
         return Err(missing(&key("expert_used_count")));
     }
@@ -400,11 +226,6 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
     Ok(shape)
 }
 
-/// Every tensor this architecture needs, and how many values each holds.
-///
-/// Derived from the shape rather than from what the file happens to contain, so
-/// a model missing a tensor is a named absence rather than a forward pass that
-/// quietly skips a block.
 fn manifest(shape: &Shape) -> Vec<(String, usize)> {
     let kv_width = shape.key_value_width();
     let query = shape.query_width().saturating_mul(shape.embedding);
@@ -417,9 +238,6 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
         ),
         ("output_norm.weight".to_owned(), shape.embedding),
     ];
-    // A feed-forward is either one of each or a stack of `experts` of each with
-    // a router in front. Which it is comes from the file's own count, so a file
-    // of any family that declares experts is read as having them (§3.18).
     let stack = gate.saturating_mul(shape.experts);
     let feed_forward: Vec<(&str, usize)> = if shape.experts > 0 {
         vec![
@@ -457,11 +275,6 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
     wanted
 }
 
-/// The tensors an architecture may carry and llama does not.
-///
-/// Read for their presence rather than named by a flag: a file that carries
-/// `attn_q_norm` is a file whose model expects it, and a file that does not is
-/// one whose model does not (§3.18, D26 — build the observable).
 fn optional(shape: &Shape) -> Vec<(String, usize)> {
     let head = shape.head_dimension();
     let mut wanted = Vec::new();
@@ -469,9 +282,6 @@ fn optional(shape: &Shape) -> Vec<(String, usize)> {
         for suffix in ["attn_q_norm.weight", "attn_k_norm.weight"] {
             wanted.push((format!("blk.{block}.{suffix}"), head));
         }
-        // The normalizations on the way *out* of each half of a block. A file
-        // that carries them is a file whose model was trained with them; a
-        // file that does not is left alone.
         for suffix in ["post_attention_norm.weight", "post_ffw_norm.weight"] {
             wanted.push((format!("blk.{block}.{suffix}"), shape.embedding));
         }
@@ -479,12 +289,6 @@ fn optional(shape: &Shape) -> Vec<(String, usize)> {
     wanted
 }
 
-/// Normalizes each head of a projection in place, against one set of weights.
-///
-/// The weights are one head wide and shared by every head, which is what makes
-/// this a *per-head* normalization rather than a normalization of the whole
-/// projection: the scale of one head must not depend on what another head is
-/// doing.
 fn normalize_each_head(values: &mut [f32], head: usize, weights: &[f32], epsilon: f32) {
     if head == 0 {
         return;
@@ -503,67 +307,30 @@ fn normalize_each_head(values: &mut [f32], head: usize, weights: &[f32], epsilon
 }
 
 impl Loaded {
-    /// The same model, dividing each product's rows across `threads` (B-366).
-    ///
-    /// **This changes what the run costs and not what it says.** Every output
-    /// element is one row's dot product summed in one fixed order, so a thread
-    /// count decides who does the arithmetic and never how — the same input
-    /// produces the same bytes at one thread and at thirty-two, which
-    /// `tests/threads_do_not_change_the_answer.rs` asserts over generated
-    /// inputs and over this model's own forward pass.
-    ///
-    /// It is a separate step from [`load`] rather than an argument to it
-    /// because one thread is the definition: a caller that wants more asks, and
-    /// the asking is visible at the call site.
     #[must_use]
     pub const fn across(mut self, threads: Threads) -> Self {
         self.threads = threads;
         self
     }
 
-    /// How many processors this model divides its work across, and whose number
-    /// that is.
     #[must_use]
     pub const fn threads(&self) -> Threads {
         self.threads
     }
 
-    /// One matrix-vector product, across whatever this model was given.
-    ///
-    /// Every product in the forward pass goes through here, so there is one
-    /// place a thread count reaches the arithmetic and it is a place that
-    /// cannot change the arithmetic.
     fn product(&self, matrix: &[f32], vector: &[f32], rows: usize, columns: usize) -> Vec<f32> {
         ops::matmul_vec_across(matrix, vector, rows, columns, self.threads)
     }
 
-    /// A tensor this file may or may not carry.
-    ///
-    /// Distinct from [`Self::tensor`], which is for the ones the shape says
-    /// must be there and whose absence is a malformed file.
     fn carried(&self, name: &str) -> Option<&[f32]> {
         self.tensors.get(name).map(Vec::as_slice)
     }
 
-    /// Whether the output projection reuses the embedding matrix.
     #[must_use]
     pub fn output_is_tied(&self) -> bool {
         !self.tensors.contains_key("output.weight")
     }
 
-    /// Runs one token through the model and returns the logits for the next.
-    ///
-    /// `position` is where this token sits in the sequence, which is what `RoPE`
-    /// rotates by and what the cache indexes. A caller that passes the same
-    /// position twice gets a model attending to a sequence that never existed,
-    /// so the cache's own length is what a caller should use.
-    ///
-    /// # Errors
-    ///
-    /// `artifact.format.malformed` when a token identifier is outside the
-    /// vocabulary, or when a tensor's shape and the model's shape disagree at
-    /// the point of use — which is a file that passed loading and is still
-    /// wrong about itself.
     pub fn forward(&self, token: usize, position: usize, cache: &mut Cache) -> Result<Vec<f32>> {
         if token >= self.shape.vocabulary {
             return Err(malformed(
@@ -585,10 +352,6 @@ impl Loaded {
             })?
             .to_vec();
 
-        // Some families scale the embedding on the way in. It is one multiply
-        // and it moves every number that follows, so it is stated in the
-        // architecture table rather than inferred from anything (F20's lesson
-        // about habits no file declares).
         if self.habits.scales_the_embedding {
             let scale = f32::from(u16::try_from(width).unwrap_or(1)).sqrt();
             for value in &mut hidden {
@@ -598,9 +361,6 @@ impl Loaded {
 
         for block in 0..self.shape.blocks {
             let mut attended = self.attention(block, &hidden, position, cache)?;
-            // A normalization on the way out of the attention half, where the
-            // file carries the weights for it — the other half of what makes
-            // these blocks a "sandwich". Read from the tensors, not the name.
             if let Some(weights) = self.carried(&format!("blk.{block}.post_attention_norm.weight"))
             {
                 attended = ops::rms_norm(&attended, weights, self.epsilon);
@@ -623,14 +383,6 @@ impl Loaded {
         Ok(self.product(projection, &normalized, self.shape.vocabulary, width))
     }
 
-    /// One block's attention: normalize, project, rotate, remember, attend,
-    /// project back. What it returns is what the residual stream adds.
-    ///
-    /// # Errors
-    ///
-    /// `artifact.format.malformed` when a projection produces a width the
-    /// model's own shape does not permit — a file that loaded and is still
-    /// wrong about itself.
     #[allow(
         clippy::too_many_lines,
         reason = "one block's attention is one sequence — project, normalize each head, rotate, \
@@ -686,10 +438,6 @@ impl Loaded {
             ));
         }
 
-        // Normalize each head before it is rotated, where the file carries the
-        // weights for it. Qwen3 does and llama does not, and the difference is
-        // whether the tensors are there rather than a flag MCF sets: a file
-        // that carries `attn_q_norm` is a file whose model expects it (§3.18).
         if let Some(weights) = self.carried(&format!("blk.{block}.attn_q_norm.weight")) {
             normalize_each_head(&mut queries, head, weights, self.epsilon);
         }
@@ -697,9 +445,6 @@ impl Loaded {
             normalize_each_head(&mut keys, head, weights, self.epsilon);
         }
 
-        // A sliding block rotates at its own base and sees only the last
-        // `window` positions. Both come from the file; which blocks slide is
-        // the period it states, or the six the reference uses when it does not.
         let sliding = self.shape.is_sliding(block);
         let theta = if sliding {
             self.rope_theta_swa
@@ -707,7 +452,6 @@ impl Loaded {
             self.rope_theta
         };
 
-        // Rotate each head of the query and the key by this position.
         for index in 0..self.shape.heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = queries.get_mut(at..at.saturating_add(head)) {
@@ -725,7 +469,6 @@ impl Loaded {
         push(&mut cache.values, block, values);
         let history = cache.keys.get(block).map_or(0, Vec::len);
 
-        // The scale keeps the logits' variance independent of the head width.
         let scale = f32::from(u16::try_from(head).unwrap_or(1)).sqrt().recip();
         let mut attended = vec![0.0_f32; query_width];
         for head_index in 0..self.shape.heads {
@@ -738,10 +481,6 @@ impl Loaded {
 
             let mut weights = Vec::with_capacity(history);
             for step in 0..history {
-                // A key outside a sliding block's window is not attended to at
-                // all. The boundary is the reference's: a key at `step` is
-                // visible from `position` when `position - step` is less than
-                // the window, so the window counts the current position too.
                 if let Some(window) = self.shape.sliding_window
                     && sliding
                     && position.saturating_sub(step) >= window
@@ -772,12 +511,6 @@ impl Loaded {
         ))
     }
 
-    /// One block's gated feed-forward, on its own normalization. What it
-    /// returns is what the residual stream adds.
-    ///
-    /// # Errors
-    ///
-    /// As [`Loaded::attention`]: a tensor the model names and does not have.
     fn feed_forward(&self, block: usize, hidden: &[f32]) -> Result<Vec<f32>> {
         let normalized = ops::rms_norm(
             hidden,
@@ -790,7 +523,6 @@ impl Loaded {
         self.dense(block, &normalized)
     }
 
-    /// One feed-forward: gate, up, activate, down.
     fn dense(&self, block: usize, normalized: &[f32]) -> Result<Vec<f32>> {
         let width = self.shape.embedding;
         let inner = self.shape.feed_forward;
@@ -815,27 +547,10 @@ impl Loaded {
         ))
     }
 
-    /// A stack of feed-forwards, a router in front, and the two or three the
-    /// router picked, added up in proportion.
-    ///
-    /// **The routing is the whole of what is new here.** Each expert is an
-    /// ordinary feed-forward and MCF runs it with the same three matrix
-    /// multiplies; what a mixture adds is a choice, and the choice is made the
-    /// same way every time: score every expert, take the highest few, weigh
-    /// their outputs by scores that have been renormalized to sum to one.
-    ///
-    /// **Renormalizing is not optional and not a detail.** The scores come from
-    /// a softmax over *all* the experts, so the few that were chosen sum to
-    /// less than one — how much less depends on how confident the router was.
-    /// Using them unnormalized scales the whole block's output by that
-    /// confidence, which is a plausible-looking thing to do and not what these
-    /// models were trained with.
     fn experts(&self, block: usize, normalized: &[f32]) -> Result<Vec<f32>> {
         let width = self.shape.embedding;
         let inner = self.shape.feed_forward;
         let experts = self.shape.experts;
-        // Both counts were checked when the shape was read, so this is the
-        // file's own number rather than a repair of it.
         let used = self.shape.experts_used.min(experts);
 
         let mut scores = self.product(
@@ -846,10 +561,6 @@ impl Loaded {
         );
         ops::softmax(&mut scores);
 
-        // The highest `used` scores, and their experts. A linear selection
-        // rather than a sort: the count is small, and what matters is that ties
-        // go to the lower index every time, so that two runs of one model make
-        // the same choice (§3.12).
         let mut chosen: Vec<usize> = Vec::with_capacity(used);
         for _ in 0..used {
             let mut best: Option<usize> = None;
@@ -871,17 +582,10 @@ impl Loaded {
             }
         }
 
-        // Longhand, like every accumulation in this crate: the ban on summary
-        // statistics checks for `.sum`, and arithmetic that dodged it by
-        // spelling would be obeying the letter against the point.
         let mut total = 0.0_f32;
         for expert in &chosen {
             total += scores.get(*expert).copied().unwrap_or(0.0);
         }
-        // Clamped rather than guarded, at the smallest number a half-precision
-        // float can hold — the same floor the reference uses, and the reason is
-        // that a router which scored every expert at zero must not turn the
-        // block's output into infinities.
         let total = total.max(6.103_515_6e-5);
 
         let gates = self.tensor(&format!("blk.{block}.ffn_gate_exps.weight"))?;
@@ -923,7 +627,6 @@ impl Loaded {
     }
 }
 
-/// One head's slice of a remembered key or value row.
 fn slice_at(steps: Option<&Vec<Vec<f32>>>, step: usize, at: usize, width: usize) -> &[f32] {
     steps
         .and_then(|steps| steps.get(step))
@@ -931,15 +634,12 @@ fn slice_at(steps: Option<&Vec<Vec<f32>>>, step: usize, at: usize, width: usize)
         .unwrap_or(&[])
 }
 
-/// Appends this token's keys or values to a block's history.
 fn push(cache: &mut [Vec<Vec<f32>>], block: usize, row: Vec<f32>) {
     if let Some(steps) = cache.get_mut(block) {
         steps.push(row);
     }
 }
 
-/// Reads and dequantizes one tensor, checking it is the size the model's shape
-/// implies.
 pub(crate) fn read_tensor(
     file: &File,
     bytes: &[u8],
@@ -997,13 +697,6 @@ pub(crate) fn float(file: &File, key: &str) -> Option<f32> {
     }
 }
 
-/// A metadata float, at the width this crate computes in.
-///
-/// GGUF carries these at 32 or 64 bits. A 32-bit one widened to 64 comes back
-/// exactly; a 64-bit one is narrowed, which is what the arithmetic below would
-/// do to it anyway — every weight and every activation here is `f32`, and an
-/// epsilon carried at higher precision than the numbers it is added to is
-/// precision nobody can use.
 #[allow(clippy::cast_possible_truncation)]
 fn narrow(value: f64) -> f32 {
     value as f32

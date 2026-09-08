@@ -1,7 +1,3 @@
-//! What a laboratory may and may not conclude (B-110, B40, B41, A7).
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use super::*;
@@ -29,11 +25,6 @@ fn trials(attempts: &[Ran]) -> Trials {
     }
 }
 
-/// A run that broke is not a model that failed (B40).
-///
-/// The failure this whole type exists to prevent: a container that would not
-/// start, scored as zero, becomes a verdict about a model arrived at by
-/// grading MCF's own machinery.
 #[test]
 fn a_run_that_broke_is_never_a_score() {
     let graded = trials(&[
@@ -57,7 +48,6 @@ fn a_run_that_broke_is_never_a_score() {
     assert!(why.contains("failed to run"), "{why}");
 }
 
-/// A model that wrote nothing is told apart from one whose code broke.
 #[test]
 fn writing_nothing_is_a_different_fact_from_writing_something_broken() {
     let graded = trials(&[Ran::Refused {
@@ -71,11 +61,6 @@ fn writing_nothing_is_a_different_fact_from_writing_something_broken() {
     assert!(why.contains("wrote nothing"), "{why}");
 }
 
-/// A partly-right function is not partly right.
-///
-/// One case of two is a function that is wrong. Giving it half a mark would be
-/// partial credit nobody defined, and it would let a model that handles the
-/// easy input outrank one that handles neither.
 #[test]
 fn a_function_that_satisfies_some_cases_is_not_partly_correct() {
     let graded = trials(&[
@@ -93,7 +78,6 @@ fn a_function_that_satisfies_some_cases_is_not_partly_correct() {
     );
 }
 
-/// The distribution is kept, not the best of it.
 #[test]
 fn every_attempt_is_kept_including_the_ones_that_did_not_run() {
     let held = trials(&[
@@ -107,8 +91,6 @@ fn every_attempt_is_kept_including_the_ones_that_did_not_run() {
     assert_eq!(held.attempts.len(), 3, "nothing is dropped");
     assert_eq!(held.ran(), 2, "two of the three ran");
     assert_eq!(held.whole(), 1, "one of them satisfied every case");
-    // And the reading is over the attempts made, not over the ones that ran:
-    // a model whose answers often fail to run is a model that often fails.
     let score = held
         .graded()
         .score()
@@ -117,7 +99,6 @@ fn every_attempt_is_kept_including_the_ones_that_did_not_run() {
     assert_eq!(score, 333_333);
 }
 
-/// No attempts at all is Unknown, and never zero.
 #[test]
 fn no_attempts_is_unknown() {
     let graded = trials(&[]).graded();
@@ -125,7 +106,6 @@ fn no_attempts_is_unknown() {
     assert!(matches!(graded, Graded::Unknown { .. }));
 }
 
-/// A score belongs to its own laboratory and compares with nothing else.
 #[test]
 fn a_score_is_only_comparable_within_its_own_task() {
     let one = trials(&[Ran::Checked { passed: 2, of: 2 }]).graded();
@@ -144,7 +124,6 @@ fn a_score_is_only_comparable_within_its_own_task() {
     );
 }
 
-/// Asking and running are the caller's, and every attempt goes through both.
 #[test]
 fn each_attempt_asks_once_and_runs_what_came_back() {
     let mut asked = 0_usize;
@@ -165,7 +144,6 @@ fn each_attempt_asks_once_and_runs_what_came_back() {
     assert_eq!(held.whole(), 3);
 }
 
-/// A model that says nothing is never handed to the runner.
 #[test]
 fn nothing_written_is_never_run() {
     let mut ran = 0_usize;

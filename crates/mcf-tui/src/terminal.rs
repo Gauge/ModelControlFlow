@@ -1,47 +1,20 @@
-//! The terminal itself: raw input, an alternate screen, and getting both back.
-//!
-//! **Written rather than depended on, and it is not much to write.** Raw input
-//! is one call on each platform — `tcsetattr` where there is a termios and
-//! `SetConsoleMode` where there is a console — and both live in libraries the
-//! standard library already links, so they can be declared here. Drawing is
-//! escape sequences, which are bytes. P3 keeps every dependency out of the
-//! measuring crates; this one does not need an exception.
-//!
-//! **Restoration is the whole risk.** A terminal left in raw mode is a terminal
-//! that no longer echoes what the operator types, and they will not know why.
-//! So it is given back on three paths and not one: the [`Restored`] guard on
-//! every ordinary return, a panic hook for the path `Drop` does not run on, and
-//! an explicit call before the process exits. A22's *every action is available
-//! with no display attached* is about capability; this is the other side of the
-//! same care — a display that was attached is put back the way it was found.
-
 use std::io::Write;
 
-/// What the terminal was before MCF touched it.
-///
-/// Holding this is what makes the change reversible. It is deliberately not
-/// `Copy`: there is one saved state, and a second copy restored later would put
-/// back a terminal that had moved on.
 #[derive(Debug)]
 pub struct Restored {
     #[cfg(unix)]
     saved: unix::Termios,
     #[cfg(windows)]
     saved: (u32, u32),
-    /// Set once the terminal has been given back, so a guard that has already
-    /// done its work does not do it twice.
     done: bool,
 }
 
 impl Restored {
-    /// Gives the terminal back. Safe to call more than once.
     pub fn now(&mut self) {
         if self.done {
             return;
         }
         self.done = true;
-        // The order matters: leave the alternate screen last, so anything the
-        // caller printed on the way out lands on the screen the operator keeps.
         let mut out = std::io::stdout();
         let _shown = out.write_all(b"\x1b[?25h\x1b[?1049l");
         let _flushed = out.flush();
@@ -58,29 +31,17 @@ impl Drop for Restored {
     }
 }
 
-/// Takes the terminal: raw input, alternate screen, cursor hidden.
-///
-/// # Errors
-///
-/// A string saying what could not be done. The commonest is not a fault: MCF's
-/// output is a pipe or a file, there is no terminal to take, and a caller is
-/// told so rather than drawing a screen nobody is looking at (A7).
 pub fn take() -> Result<Restored, String> {
     #[cfg(unix)]
     let saved = unix::raw()?;
     #[cfg(windows)]
     let saved = windows::raw()?;
 
-    // The alternate screen means the operator's scrollback is not scribbled
-    // over: what was in the terminal before is exactly what is in it after.
     let mut out = std::io::stdout();
     out.write_all(b"\x1b[?1049h\x1b[?25l\x1b[2J")
         .and_then(|()| out.flush())
         .map_err(|error| format!("the alternate screen could not be entered: {error}"))?;
 
-    // The path `Drop` does not run on. A panic while the terminal is raw would
-    // otherwise leave it raw, and the message printed by the panic would be the
-    // last legible thing on the screen.
     let existing = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let mut out = std::io::stdout();
@@ -92,53 +53,25 @@ pub fn take() -> Result<Restored, String> {
     Ok(Restored { saved, done: false })
 }
 
-/// Whether a read waits for a key, or gives up after a moment.
-///
-/// **This is the whole of the live monitor.** Waiting means the process is
-/// asleep in `read` and costs nothing, which is what every screen but one
-/// wants. The monitor wants to redraw about once a second whether or not
-/// anybody typed, so on that screen alone the read gives up after a tenth of a
-/// second and the loop comes round — live where it is looked at, still
-/// everywhere else, and never a thread spinning to keep a clock.
 pub fn wait_for_a_key(should: bool) {
     #[cfg(unix)]
     unix::wait_for_a_key(should);
     #[cfg(windows)]
-    let _ = should; // the console reads with a timeout of its own
+    let _ = should;
 }
 
-/// How many columns and rows there are, or a usable pair if the platform will
-/// not say.
 #[must_use]
 pub fn size() -> (u16, u16) {
     #[cfg(unix)]
     let got = unix::size();
     #[cfg(windows)]
     let got = windows::size();
-    // Eighty by twenty-four is the size a terminal has when nothing says
-    // otherwise. It is a fallback, not a measurement, and the screen is drawn
-    // to fit whatever it turns out to be.
     got.unwrap_or((80, 24))
 }
 
-/// Raw input on a platform that has a termios.
-///
-/// **The opt-in the workspace anticipated.** `unsafe_code` is denied rather
-/// than forbidden precisely so that C-ABI work can opt in per module with the
-/// reason written here, and this is that work: putting a terminal into raw
-/// mode is one call into the C library and there is no safe spelling of it.
-///
-/// **What the unsafety is, exactly.** Four foreign functions, each called with
-/// a pointer to a stack local of the layout the platform documents, and a file
-/// descriptor that is the constant 0. Nothing is allocated, nothing is freed,
-/// no pointer outlives the call it is passed to, and no value crosses the
-/// boundary except integers and the `Termios` this module owns. The one thing
-/// that could be got wrong is the struct layout, which is why it is `repr(C)`
-/// and why `tcgetattr` fills it before anything reads it.
 #[allow(unsafe_code, reason = "termios is a C interface and has no safe form")]
 #[cfg(unix)]
 mod unix {
-    /// `struct termios`, as the platform lays it out.
     #[repr(C)]
     #[derive(Clone, Copy, Debug)]
     pub(super) struct Termios {
@@ -160,8 +93,6 @@ mod unix {
         height_pixels: u16,
     }
 
-    // The standard library links libc already; these are declarations, not a
-    // dependency.
     unsafe extern "C" {
         fn tcgetattr(fd: i32, held: *mut Termios) -> i32;
         fn tcsetattr(fd: i32, when: i32, held: *const Termios) -> i32;
@@ -173,15 +104,10 @@ mod unix {
     const TCSANOW: i32 = 0;
     const TIOCGWINSZ: u64 = 0x5413;
 
-    // Local flags. ISIG is cleared so that ctrl-c arrives as a key: the
-    // application decides to stop and gives the terminal back on its way out,
-    // where a signal would have ended the process with the terminal still raw.
     const ISIG: u32 = 0x0001;
     const ICANON: u32 = 0x0002;
     const ECHO: u32 = 0x0008;
     const IEXTEN: u32 = 0x8000;
-    // Input flags: ctrl-s must not stop the output, and a carriage return must
-    // arrive as itself.
     const IXON: u32 = 0x0400;
     const ICRNL: u32 = 0x0100;
 
@@ -208,8 +134,6 @@ mod unix {
         let saved = held;
         held.local &= !(ISIG | ICANON | ECHO | IEXTEN);
         held.input &= !(IXON | ICRNL);
-        // Block until there is a key, and wait no longer than there is one for.
-        // This is what makes the application cost nothing while nobody types.
         held.characters[VMIN] = 1;
         held.characters[VTIME] = 0;
         if unsafe { tcsetattr(STDIN, TCSANOW, &raw const held) } != 0 {
@@ -218,9 +142,6 @@ mod unix {
         Ok(saved)
     }
 
-    /// Switches between waiting for a key and giving up after a tenth of a
-    /// second. `VMIN` is how many characters a read must have; `VTIME` is how
-    /// many tenths it will wait for them.
     pub(super) fn wait_for_a_key(should: bool) {
         let mut held = Termios {
             input: 0,
@@ -236,9 +157,6 @@ mod unix {
             return;
         }
         held.characters[VMIN] = u8::from(should);
-        // Tenths of a second. Ten is one second, which is as often as a person
-        // can read a changing figure and slow enough that a laptop does not
-        // notice the console is open.
         held.characters[VTIME] = if should { 0 } else { 10 };
         let _set = unsafe { tcsetattr(STDIN, TCSANOW, &raw const held) };
     }
@@ -261,12 +179,6 @@ mod unix {
     }
 }
 
-/// Raw input on a platform that has a console.
-///
-/// The same opt-in as `unix` above and for the same reason: `SetConsoleMode`
-/// is a C interface. The calls take a handle obtained from `GetStdHandle` and
-/// a pointer to a stack local; nothing is allocated and nothing outlives the
-/// call.
 #[allow(
     unsafe_code,
     reason = "the console API is a C interface and has no safe form"
@@ -297,7 +209,6 @@ mod windows {
         maximum: Coordinate,
     }
 
-    // kernel32 is already linked by the standard library.
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn GetStdHandle(which: u32) -> isize;
@@ -312,12 +223,7 @@ mod windows {
     const ENABLE_PROCESSED_INPUT: u32 = 0x0001;
     const ENABLE_LINE_INPUT: u32 = 0x0002;
     const ENABLE_ECHO_INPUT: u32 = 0x0004;
-    /// Without this, arrow keys arrive as console records rather than as the
-    /// escape sequences every other platform sends, and the key decoder would
-    /// need a second implementation.
     const ENABLE_VIRTUAL_TERMINAL_INPUT: u32 = 0x0200;
-    /// Without this, the escape sequences MCF writes are printed rather than
-    /// obeyed. Windows 10 and later understand them once asked.
     const ENABLE_VIRTUAL_TERMINAL_PROCESSING: u32 = 0x0004;
 
     pub(super) fn raw() -> Result<(u32, u32), String> {

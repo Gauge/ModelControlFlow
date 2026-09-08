@@ -1,13 +1,3 @@
-//! Fidelity over length: rank agreement with the reference at a hundred,
-//! five hundred and a thousand tokens deep (B-537, D55, B-491).
-//!
-//! The fidelity measurement reads ninety-six positions. A quantization
-//! that agrees with its reference for a paragraph may drift over a page:
-//! every position's error is a token the next position is conditioned
-//! on. The reference generates a thousand tokens once; the file reads
-//! every one, and the agreement, the bits spent and the worst rank are
-//! written at each depth over the positions up to it.
-
 use mcf_record::json::Value;
 
 use super::fidelity::{
@@ -15,13 +5,10 @@ use super::fidelity::{
 };
 use super::{Found, Reading, Site, as_integer, per_cent, ppm};
 
-/// The measurement's name.
 pub const NAME: &str = "fidelity-over-length";
 
-/// The depths written, in positions.
 pub const DEPTHS: [usize; 3] = [100, 500, 1000];
 
-/// Runs it.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -109,7 +96,6 @@ pub fn measure(site: &Site<'_>) -> Found {
             "count",
         ));
         rows.push(Reading::new(&dims, "bounded", as_integer(bounded), "count"));
-        // The band since the last depth, so drift reads apart from the start.
         lines.push(format!(
             "  depth {depth:>5}   agreed at {agreed} ({}); {} bits a token; worst rank {} at \
              position {worst_at}",

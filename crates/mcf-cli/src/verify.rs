@@ -1,30 +1,3 @@
-//! `mcf verify <bundle>`: does this machine agree, and if not, with what
-//! (B-212, PR2, §II, A8, A7).
-//!
-//! **What a bundle is for.** PR2: *this bundle reproduces this number, or tells
-//! you exactly why your machine cannot.* B-211 built the first half. This is
-//! the second, and its whole discipline is in one clause of the register:
-//! *names which conditions differ and **refuses to attribute the gap**.*
-//!
-//! **Why the refusal is the point.** Two machines, one bundle, two different
-//! numbers, and nine conditions that differ. Saying *the difference is the
-//! quantization* would be picking one of them and calling it the cause, which
-//! is A8's confound wearing a helpful voice. MCF says which nine, says the two
-//! numbers, and stops — the reader has the evidence and the attribution is
-//! theirs.
-//!
-//! **It re-runs rather than reasons.** The bundle carries the method (B-211),
-//! so the same comparison is taken here, through the same code path `mcf bench`
-//! uses. Where the artifacts are not on this machine it says so and compares
-//! only the conditions, which is still an answer: *your machine could not run
-//! this, and here is what is different about it* is exactly what PR2 asks for.
-//!
-//! **Nothing here trusts the bundle.** It arrives from somewhere else, so it is
-//! an untrusted input (§3.7): the digest is checked before anything is read out
-//! of it, a bundle naming a path is not permitted to make MCF read that path
-//! without saying so, and a field this build does not understand is reported
-//! rather than assumed away (§7.30).
-
 use std::path::{Path, PathBuf};
 
 use mcf_core::build_identity::BuildIdentity;
@@ -34,7 +7,6 @@ use mcf_record::json::Value;
 
 use crate::Response;
 
-/// Checks a bundle against this machine.
 pub(crate) fn run(bundle: &str) -> Response {
     let path = PathBuf::from(bundle);
     let (kind, manifest, entries) = match export::read(&path) {
@@ -89,7 +61,6 @@ pub(crate) fn run(bundle: &str) -> Response {
     }
 }
 
-/// What the bundle says was found, and how.
 fn what_it_claims(claim: &Value) -> Vec<String> {
     let method = claim.get("body").and_then(|body| body.get("method"));
     let said = |name: &str| {
@@ -115,12 +86,6 @@ fn what_it_claims(claim: &Value) -> Vec<String> {
     ]
 }
 
-/// What differs between the machine the claim was taken on and this one.
-///
-/// The comparison is `Isolation`'s, which is the same arithmetic that decides
-/// whether two arms of a benchmark are comparable (A8, B-085) — a second way of
-/// answering *which conditions differ* would eventually disagree with the
-/// first.
 fn conditions_then_and_now(claim: &Value) -> Vec<String> {
     let mut lines =
         vec!["── conditions, there and here ───────────────────────────────".to_owned()];
@@ -162,7 +127,6 @@ fn conditions_then_and_now(claim: &Value) -> Vec<String> {
     lines
 }
 
-/// Whether what the claim measured is on this machine.
 fn what_is_here(claim: &Value) -> Vec<String> {
     let mut lines =
         vec!["── what is on this machine ──────────────────────────────────".to_owned()];
@@ -198,11 +162,6 @@ fn what_is_here(claim: &Value) -> Vec<String> {
     lines
 }
 
-/// The command that re-runs the claim, from the method the bundle carries.
-///
-/// Printed rather than run. Verifying a bundle is reading a file somebody sent;
-/// *running a model because a file said to* is a different act with a different
-/// cost, and MCF does not take it on the reader's behalf (§3.7, A16).
 fn rerun(claim: &Value) -> String {
     let body = claim.get("body");
     let arm = |side: &str| {
@@ -239,7 +198,6 @@ fn rerun(claim: &Value) -> String {
     )
 }
 
-/// A ratio in parts per million as a percentage, without a float (A6).
 fn per_cent(held: i64) -> String {
     let whole = held.wrapping_div(10_000);
     let tenths = held.wrapping_div(1_000).wrapping_rem(10);
@@ -250,7 +208,6 @@ fn per_cent(held: i64) -> String {
     }
 }
 
-/// The sentence B-212 exists for.
 fn the_refusal() -> Vec<String> {
     vec![
         "── what MCF will not tell you ───────────────────────────────".to_owned(),

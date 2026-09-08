@@ -1,9 +1,3 @@
-//! A daemon, started and stopped and started again.
-//!
-//! Real sockets and real files: what is being tested is a process that stays
-//! up, and a daemon simulated in memory would be a simulation of the part that
-//! cannot go wrong.
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -15,7 +9,6 @@ use crate::control::{Answer, Request};
 use mcf_core::failure::Category;
 use mcf_record::json::Value;
 
-/// A machine of this test's own.
 struct Machine {
     root: PathBuf,
 }
@@ -47,12 +40,10 @@ impl Drop for Machine {
     }
 }
 
-/// Asks a running daemon one thing and reads the answer.
 fn ask(socket: &std::path::Path, request: &Request) -> Answer {
     ask_within(socket, request, Duration::from_secs(5))
 }
 
-/// The same, waiting no longer than this.
 fn ask_within(socket: &std::path::Path, request: &Request, patience: Duration) -> Answer {
     let mut connection = UnixStream::connect(socket).expect("the daemon is listening");
     connection
@@ -68,18 +59,13 @@ fn ask_within(socket: &std::path::Path, request: &Request, patience: Duration) -
     Answer::read(line.trim_end()).expect("it is an answer")
 }
 
-/// Runs a daemon in a thread until something stops it.
 fn running(places: Places) -> (thread::JoinHandle<Stopped>, PathBuf) {
     let socket = places.socket.clone();
     let mut daemon = Daemon::start(places).expect("it starts");
     let handle = thread::spawn(move || daemon.serve());
-    // The socket exists before `start` returns, so a client can connect at
-    // once: there is no window in which the daemon is up and unreachable.
     (handle, socket)
 }
 
-/// The ordinary life of a daemon: it starts, it answers, it stops when asked,
-/// and it says why it stopped.
 #[test]
 fn it_starts_answers_and_stops_when_asked() {
     let machine = Machine::new("lifecycle");
@@ -105,9 +91,6 @@ fn it_starts_answers_and_stops_when_asked() {
     assert!(!socket.exists(), "the socket outlived the daemon (A27)");
 }
 
-/// It says what it cannot do. A status that listed only capabilities would
-/// leave a reader to infer the rest, and what there is to infer today is that
-/// MCF cannot serve a model (A19, C7).
 #[test]
 fn its_status_says_what_it_cannot_do() {
     let machine = Machine::new("cannot");
@@ -123,10 +106,6 @@ fn its_status_says_what_it_cannot_do() {
         .filter_map(Value::as_text)
         .collect::<Vec<_>>()
         .join(" ");
-    // This machine has nothing provisioned, so the daemon says so and says
-    // what would fix it. It used to say the same sentence whatever was on the
-    // disk, with two rule identifiers in it — which is how two provisioned
-    // engines sat on the operator's machine while the daemon reported none.
     assert!(cannot.contains("no engine is installed"), "{cannot}");
     assert!(cannot.contains("builds one"), "{cannot}");
     for cited in ["B-320", "D32"] {
@@ -145,15 +124,11 @@ fn its_status_says_what_it_cannot_do() {
     let _ended = handle.join();
 }
 
-/// What it knows on starting is what the disk says, and a restart re-reads it
-/// rather than remembering: a record written by one daemon is recovered by the
-/// next (B-030, D20).
 #[test]
 fn a_restart_recovers_what_the_record_holds() {
     let machine = Machine::new("recovery");
     let places = machine.places();
 
-    // A record written by something else, which is what a restart finds.
     {
         let mut journal =
             mcf_record::journal::Journal::open(&places.journal).expect("a journal opens");
@@ -189,10 +164,6 @@ fn a_restart_recovers_what_the_record_holds() {
     );
     let _ended = handle.join();
 
-    // And again: the second daemon recovers what the first *left* — the three
-    // entries plus the two the first wrote about starting and stopping. The
-    // relation matters more than the number: a daemon that recovered a stale
-    // count would be reading its own memory rather than the disk (D20).
     let left = mcf_record::journal::replay(&places.journal)
         .expect("the record replays")
         .entries
@@ -222,8 +193,6 @@ fn a_restart_recovers_what_the_record_holds() {
     let _ended = handle.join();
 }
 
-/// A damaged record is recovered *and said*: a daemon that started quietly on a
-/// torn journal would be the silent failure A2 calls worse than a crash (B62).
 #[test]
 fn a_damaged_record_is_recovered_and_reported() {
     let machine = Machine::new("damaged");
@@ -239,7 +208,6 @@ fn a_damaged_record_is_recovered_and_reported() {
             ))
             .expect("it appends");
     }
-    // A line that stops in the middle, which is what a crash mid-append leaves.
     let mut torn = std::fs::OpenOptions::new()
         .append(true)
         .open(&places.journal)
@@ -271,8 +239,6 @@ fn a_damaged_record_is_recovered_and_reported() {
     let _ended = handle.join();
 }
 
-/// Two daemons would share one record, and D20 makes the record what MCF is.
-/// The second refuses rather than joining.
 #[test]
 fn a_second_daemon_on_one_socket_is_refused() {
     let machine = Machine::new("two");
@@ -297,13 +263,10 @@ fn a_second_daemon_on_one_socket_is_refused() {
     let _ended = handle.join();
 }
 
-/// A socket left by a process that died is not a running daemon, and the next
-/// start takes it over rather than refusing for ever.
 #[test]
 fn a_socket_left_by_a_dead_daemon_is_taken_over() {
     let machine = Machine::new("leftover");
     let places = machine.places();
-    // What a killed daemon leaves: a socket file with nothing behind it.
     std::fs::create_dir_all(places.socket.parent().expect("a parent")).expect("a directory");
     std::fs::write(&places.socket, b"").expect("a leftover file");
 
@@ -319,9 +282,6 @@ fn a_socket_left_by_a_dead_daemon_is_taken_over() {
     let _ended = handle.join();
 }
 
-/// A client that says something that is not a request gets a classified answer
-/// and the daemon stays up: A3's rule, at the smallest scale — nothing a client
-/// does may take MCF down.
 #[test]
 fn a_stranger_cannot_stop_it_by_talking_nonsense() {
     let machine = Machine::new("nonsense");
@@ -339,7 +299,6 @@ fn a_stranger_cannot_stop_it_by_talking_nonsense() {
         }
     }
 
-    // Still up, and still answering.
     assert!(ask(&socket, &Request::Status).served);
     let _stopped = ask(
         &socket,
@@ -350,20 +309,14 @@ fn a_stranger_cannot_stop_it_by_talking_nonsense() {
     let _ended = handle.join();
 }
 
-/// A client that connects and says nothing does not hold the daemon: B7 makes a
-/// hang a defined outcome, and this is the one place a stranger could cause
-/// one.
 #[test]
 fn a_client_that_says_nothing_does_not_wedge_it() {
     let machine = Machine::new("silent-client");
     let (handle, socket) = running(machine.places());
 
     let silent = UnixStream::connect(&socket).expect("it is listening");
-    // Held open and never written to. The daemon's read deadline ends it.
     thread::sleep(Duration::from_millis(50));
 
-    // Another client is answered while the first is still holding its
-    // connection open, which is what "does not wedge" means.
     let status = ask(&socket, &Request::Status);
     assert!(status.served);
     drop(silent);
@@ -377,8 +330,6 @@ fn a_client_that_says_nothing_does_not_wedge_it() {
     let _ended = handle.join();
 }
 
-/// What it is holding is read from the store rather than remembered, so a model
-/// acquired while it was running is one it reports (D20's habit).
 #[test]
 fn what_it_is_holding_is_read_from_the_disk() {
     let machine = Machine::new("holding");
@@ -388,7 +339,6 @@ fn what_it_is_holding_is_read_from_the_disk() {
     let empty = ask(&socket, &Request::Holding);
     assert!(empty.served, "{:?}", empty.body);
 
-    // A model appears while the daemon is up.
     let model = places.models.join("owner/model/model.gguf");
     std::fs::create_dir_all(model.parent().expect("a parent")).expect("a directory");
     std::fs::write(&model, b"GGUF").expect("a model file");
@@ -418,10 +368,6 @@ fn what_it_is_holding_is_read_from_the_disk() {
     let _ended = handle.join();
 }
 
-/// A count is a reading, and the answer names its reader: on a machine with
-/// nothing provisioned MCF's own tokenizer counts, says so, and counts
-/// without the beginning marker — a text's cost, not a turn's. A count of a
-/// model that is not there is refused with the file named (B-442, A2).
 #[test]
 fn a_count_names_who_counted() {
     let machine = Machine::new("tokenize");
@@ -462,8 +408,6 @@ fn a_count_names_who_counted() {
         .get("read")
         .and_then(Value::as_list)
         .expect("the reading itself comes back");
-    // `▁a`, identifier 1: the unigram convention puts a space before the
-    // first word, and the reading shows it rather than tidying it away (A1).
     assert_eq!(
         read.first()
             .and_then(|token| token.get("piece"))
@@ -481,9 +425,6 @@ fn a_count_names_who_counted() {
             beginning: true,
         },
     );
-    // This fixture names no beginning-of-text token, so a turn's start costs
-    // what the text costs: the convention is the file's, and a marker the
-    // file does not name is not invented for it (A7).
     assert!(as_a_turn.served, "{:?}", as_a_turn.body);
     assert_eq!(
         as_a_turn.body.get("tokens").and_then(Value::as_integer),
@@ -513,8 +454,6 @@ fn a_count_names_who_counted() {
     let _ended = handle.join();
 }
 
-/// A cross-check of a model that is not there is refused in one line, with
-/// the file named — before any engine is asked for anything (A2, B-424).
 #[test]
 fn a_cross_check_of_nothing_is_refused_with_the_path() {
     let machine = Machine::new("cross-check-nothing");
@@ -542,8 +481,6 @@ fn a_cross_check_of_nothing_is_refused_with_the_path() {
     let _ended = handle.join();
 }
 
-/// The cross-check's estimate is a range, grows with the model, and is never
-/// nothing (A6, A20).
 #[test]
 fn a_cross_check_estimate_is_a_range_that_grows_with_the_model() {
     let small = super::cross_check_seconds(Some(1 << 30), Some(8 << 30), 9);
@@ -556,10 +493,6 @@ fn a_cross_check_estimate_is_a_range_that_grows_with_the_model() {
         "{small:?} {large:?}"
     );
     assert!(unknown.0 >= 1 && unknown.0 < unknown.1, "{unknown:?}");
-    // The one run the figures come from: Seed-Coder-8B, a 5.2 GB file that
-    // dequantizes to 33 GB, took 162 s end to end on this machine's processor
-    // (7 s generating, 155 s reading). An estimate that does not hold the run
-    // it was fitted to is not an estimate.
     let fitted = super::cross_check_seconds(Some(5_200_000_000), Some(33_000_000_000), 9);
     assert!(
         fitted.0 <= 162 && 162 <= fitted.1,
@@ -567,8 +500,6 @@ fn a_cross_check_estimate_is_a_range_that_grows_with_the_model() {
     );
 }
 
-/// A run is a sample only if it produced exactly what it was pinned to, and
-/// one that did not says how far short and why (B-396, A21).
 #[test]
 fn a_timed_run_holds_its_pin_or_says_how_it_fell_short() {
     let timed = |produced: Option<u64>, stopped: Option<&str>| super::Timed {
@@ -582,9 +513,7 @@ fn a_timed_run_holds_its_pin_or_says_how_it_fell_short() {
     };
     assert!(timed(Some(17), Some("limit")).held_the_pin(17));
     assert!(!timed(Some(16), Some("limit")).held_the_pin(17));
-    // A count the engine did not say is not a count that matched.
     assert!(!timed(None, Some("limit")).held_the_pin(17));
-    // An engine that stopped on the model's ending five tokens in.
     let short = timed(Some(5), Some("stop_token")).short_of(17);
     assert!(short.contains("5 of the 17 tokens pinned"), "{short}");
     assert!(short.contains("stop_token"), "{short}");
@@ -593,11 +522,6 @@ fn a_timed_run_holds_its_pin_or_says_how_it_fell_short() {
     assert!(unsaid.contains("did not name"), "{unsaid}");
 }
 
-/// The record's entry for a prompt report is the figures and the conditions,
-/// with the prompt as a length and a digest and the answer as a length —
-/// never a word of either (A25, B-432).
-/// A served prompt report with text in every place a report carries it.
-/// A reading as served: its figure and the answer it was read from.
 fn a_reading(moved: i64, answer: &str) -> Value {
     Value::map([
         ("moved_parts_per_million", Value::Integer(moved)),
@@ -606,7 +530,6 @@ fn a_reading(moved: i64, answer: &str) -> Value {
     ])
 }
 
-/// Two forms as served: one read, one not rendered (B-444).
 fn a_served_forms() -> Value {
     Value::List(vec![
         Value::map([
@@ -625,7 +548,6 @@ fn a_served_forms() -> Value {
     ])
 }
 
-/// Two clauses as served: one that moved nothing, one that moved most.
 fn a_served_clauses() -> Value {
     Value::List(vec![
         Value::map([
@@ -794,8 +716,6 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
     );
     assert_eq!(at(&["expected_read"]), Some(Value::Integer(3)));
     assert_eq!(at(&["expected_first_choice"]), Some(Value::Integer(1)));
-    // The floor at every position travels whole: positions and figures,
-    // no text (B-434).
     assert_eq!(
         at(&["floor_spread", "most_parts_per_million"]),
         Some(Value::Integer(140_000))
@@ -804,9 +724,6 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
         at(&["floors"]).and_then(|held| held.as_list().map(<[Value]>::len)),
         Some(1)
     );
-    // Each part alone, the control alone, the prompt grown from the front
-    // and the neighbours swapped travel as their figures; the answers stay
-    // behind (B-435, B-436, B-437, A25).
     let first_moved = |key: &str| {
         at(&[key])
             .and_then(|held| held.as_list().and_then(<[Value]>::first).cloned())
@@ -819,7 +736,6 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
         at(&["alone_floor", "moved_parts_per_million"]),
         Some(Value::Integer(980_000))
     );
-    // The reading grouped by part is counts, and travels whole (B-433).
     assert_eq!(
         at(&["expected_by_part", "unplaced"]),
         Some(Value::Integer(1))
@@ -832,8 +748,6 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
     );
 }
 
-/// A form travels as its name and figures, or its name and why it was not
-/// rendered; the answer stays behind (B-444, A25, A7).
 #[test]
 fn a_form_travels_as_its_figures_or_as_why_it_was_not_rendered() {
     let served = a_served_report();
@@ -861,16 +775,11 @@ fn a_form_travels_as_its_figures_or_as_why_it_was_not_rendered() {
         form(1, "not_rendered"),
         Some(Value::text("the prompt is written this way"))
     );
-    // Every key is written, null where the form had nothing for it, so a
-    // reader of the record finds the same shape on every row.
     assert_eq!(form(1, "moved_parts_per_million"), Some(Value::Null));
     assert_eq!(form(0, "not_rendered"), Some(Value::Null));
     assert!(!entry.to_line().contains("Here is a list"));
 }
 
-/// The served report groups the rank reading by part, and serves null for
-/// the grouping where no reading was taken, so that an absent reading is not
-/// read as a prompt the model wholly expected (B-433, A7).
 #[test]
 fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
     use crate::prompt::{Report, Taken, Unit};
@@ -960,19 +869,15 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         Some("no engine resolves this model: it does not fit".to_owned()),
     );
     assert_eq!(served.get("expected_by_part"), Some(&Value::Null));
-    // A forced reading that was not taken says why, apart from a rank (A2).
     assert_eq!(
         served.get("held_refused").and_then(Value::as_text),
         Some("no engine resolves this model: it does not fit")
     );
-    // Not asked is null, not an empty list (A7).
     assert_eq!(served.get("alone"), Some(&Value::Null));
     assert_eq!(served.get("alone_floor"), Some(&Value::Null));
     assert_eq!(served.get("prefixes"), Some(&Value::Null));
 }
 
-/// A report with every extra taken, served: two parts, each alone, the
-/// control alone, one prefix, one swap, one form read and one not rendered.
 fn a_report_with_every_extra_served() -> Value {
     use crate::prompt::{Reading, Report, Taken, Unit};
     let taken = Taken {
@@ -1024,8 +929,6 @@ fn a_report_with_every_extra_served() -> Value {
     super::prompt_report_value(&report, &parts, 6, Ok(9), none, "a test".to_owned(), None)
 }
 
-/// A report that asked each part alone serves each answer beside its figure,
-/// and the control alone with them (B-435).
 #[test]
 fn a_served_report_carries_each_part_alone_with_its_answer() {
     let served = a_report_with_every_extra_served();
@@ -1047,7 +950,6 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
             .and_then(|held| held.get("answer")),
         Some(&Value::text("Hello!"))
     );
-    // The prompt grown from the front travels the same way (B-436).
     let prefixes = served
         .get("prefixes")
         .and_then(Value::as_list)
@@ -1056,7 +958,6 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         prefixes.first().and_then(|held| held.get("answer")),
         Some(&Value::text("Sure."))
     );
-    // And the neighbours swapped (B-437).
     let swaps = served.get("swaps").and_then(Value::as_list).unwrap_or(&[]);
     assert_eq!(
         swaps.first().and_then(|held| held.get("answer")),
@@ -1064,10 +965,6 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
     );
 }
 
-/// **The parts in each form are served as what each form came to**
-/// (B-444, A7): a form read carries its name and its reading, a form not
-/// rendered carries its name and why, and neither borrows the other's
-/// fields.
 #[test]
 fn a_served_report_carries_each_form_read_or_why_it_was_not() {
     let served = a_report_with_every_extra_served();
@@ -1097,10 +994,6 @@ fn a_served_report_carries_each_form_read_or_why_it_was_not() {
     );
 }
 
-/// **The cut the seeds were drawn under travels with their figures**
-/// (B-440, §3.4): the served `settled` names `top_k`, `top_p` and `min_p` as
-/// the file declared them or as *off*, and whose they were — so two models'
-/// seeded readings are never compared under two cuts nobody was shown.
 #[test]
 fn a_served_settledness_carries_the_cut_it_was_drawn_under() {
     use crate::prompt::{Settled, Stated, Truncation, Whose};
@@ -1138,9 +1031,6 @@ fn a_served_settledness_carries_the_cut_it_was_drawn_under() {
     assert_eq!(super::settled_value(None), Value::Null);
 }
 
-/// A prompt report says what its generations were addressed as from their
-/// own accounts, and a prompt that went bare is said to have gone bare
-/// rather than as *one user turn* (A21, F160).
 #[test]
 fn a_prompt_report_says_what_its_generations_were_addressed_as() {
     let none = std::collections::BTreeSet::new();
@@ -1159,9 +1049,6 @@ fn a_prompt_report_says_what_its_generations_were_addressed_as() {
     );
 }
 
-/// A rung read off one pair has a figure and no spread, and says how many
-/// pairs it was read off and what became of the rest; one read off two has a
-/// spread between them (F174).
 #[test]
 fn a_rung_over_one_pair_has_no_spread() {
     let mut pairs = super::Pairs::of(3);
@@ -1215,8 +1102,6 @@ fn a_rung_over_one_pair_has_no_spread() {
     );
 }
 
-/// What the hub answered is kept for a day and served from there with when
-/// it was read; fresh asks again; a refusal is not kept (B-488).
 #[test]
 fn what_the_hub_answered_is_kept_for_a_day() {
     let machine = Machine::new("hub-kept");
@@ -1266,8 +1151,6 @@ fn what_the_hub_answered_is_kept_for_a_day() {
     );
 }
 
-/// A run's body kept by the daemon carries when it was recorded, so that
-/// a surface can say when a diagnostic last ran (D53, B-507).
 #[test]
 fn a_kept_run_body_is_dated() {
     let at = mcf_core::time::Timestamp::now();
@@ -1284,8 +1167,6 @@ fn a_kept_run_body_is_dated() {
     );
 }
 
-/// A model's readings are answered from the record, newest run first, each
-/// dated, and by one method where asked (D54, B-511).
 #[test]
 fn readings_are_answered_from_the_record_newest_first() {
     let machine = Machine::new("readings");
@@ -1359,8 +1240,6 @@ fn readings_are_answered_from_the_record_newest_first() {
     let _ended = handle.join();
 }
 
-/// The newest classified failures are answered from the record, newest
-/// first, with how many the record holds (B-074).
 #[test]
 fn the_newest_failures_are_answered_from_the_record_newest_first() {
     use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
@@ -1439,9 +1318,6 @@ fn the_newest_failures_are_answered_from_the_record_newest_first() {
     let _joined = handle.join();
 }
 
-/// A refusal the daemon answers is a classified failure in the record, with
-/// what was asked beside it; the same refusal within a minute is one row,
-/// and a different one is another (B-588).
 #[test]
 fn a_refusal_answered_is_recorded_once_a_minute_per_refusal() {
     let machine = Machine::new("refusals");
@@ -1507,7 +1383,6 @@ fn a_refusal_answered_is_recorded_once_a_minute_per_refusal() {
     let _joined = handle.join();
 }
 
-/// The engine's milliseconds become whole microseconds digit by digit.
 #[test]
 fn the_engines_milliseconds_are_kept_as_whole_microseconds() {
     assert_eq!(super::micros_of_milliseconds("494.1"), Some(494_100));
@@ -1520,8 +1395,6 @@ fn the_engines_milliseconds_are_kept_as_whole_microseconds() {
     assert_eq!(super::micros_of_milliseconds("1.2x"), None);
 }
 
-/// A file's name shortens toward its repository's name, a segment at a
-/// time, the part suffix and the extension first (B-590).
 #[test]
 fn a_files_name_shortens_toward_its_repositorys() {
     let mut name = "Vega3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf".to_owned();

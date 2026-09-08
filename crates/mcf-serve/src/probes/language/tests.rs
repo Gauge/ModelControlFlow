@@ -1,13 +1,7 @@
-//! What a cost is, and the sentence it must never become (B-057, F81, A6, A7).
-
-// Every item in this file is test code; see the note in
-// checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
 
 use super::{Counted, LANGUAGE_COST, SAMPLES, language_cost};
 
-/// A counter that cannot read the file is inconclusive, not a cost of nought
-/// — and the counter's own reason is the probe's (A7, B-442).
 #[test]
 fn a_counter_that_cannot_read_decides_nothing() {
     let probed = language_cost(
@@ -27,9 +21,6 @@ fn a_counter_that_cannot_read_decides_nothing() {
     );
 }
 
-/// The count is the counter's, sample by sample, and the reader is named:
-/// six samples in, six costs out against the English one, with the dearest
-/// and cheapest read off the counts (B-442).
 #[test]
 fn the_costs_are_what_the_counter_said() {
     let probed = language_cost(
@@ -63,8 +54,6 @@ fn the_costs_are_what_the_counter_said() {
     assert_eq!(spend.dearest, dearest.language);
 }
 
-/// One sample the counter refuses is a fact about that sample, in the
-/// counter's words, and not a reason to withhold the other five (A7).
 #[test]
 fn one_unreadable_sample_is_reported_beside_the_rest() {
     let probed = language_cost(
@@ -100,8 +89,6 @@ fn one_unreadable_sample_is_reported_beside_the_rest() {
     assert_eq!(spend.costs.len() + spend.unencodable.len(), SAMPLES.len());
 }
 
-/// Every sample is the same meaning, so that what differs between two counts is
-/// the vocabulary rather than the sentence.
 #[test]
 fn the_samples_are_one_meaning_in_six_languages() {
     assert_eq!(SAMPLES.len(), 6);
@@ -125,11 +112,6 @@ fn the_samples_are_one_meaning_in_six_languages() {
     }
 }
 
-/// The method says what it decides — and, more importantly, what it does not.
-///
-/// F81's care, kept as a test because it is a sentence and sentences drift: a
-/// cost is a fact about a vocabulary, and *fluency* is the reading it must
-/// never acquire.
 #[test]
 fn the_method_refuses_the_reading_that_would_make_it_a_judgement() {
     let decides = LANGUAGE_COST.decides.to_lowercase();

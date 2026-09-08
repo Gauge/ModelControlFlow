@@ -1,23 +1,11 @@
-//! What the stopping condition has to get right.
-//!
-//! Two nulls, tested separately: the sign flip a paired comparison uses, and
-//! the pooled redraw that is all a comparison assembled from separate sessions
-//! can have.
-
 use mcf_core::measurement::PartsPerMillion;
 
 use super::{Verdict, over_paired_differences, over_separate_arms};
 
-/// Five percent, twenty and two, as this module spells them.
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
 const TWENTY: PartsPerMillion = PartsPerMillion(200_000);
 const TWO: PartsPerMillion = PartsPerMillion(20_000);
 
-/// A repeatable spread with no randomness: values walk a fixed cycle around a
-/// centre, so a test asserts on arithmetic rather than on a seed.
-///
-/// Nanoseconds, because that is what the pooled path takes — exact, orderable,
-/// and with no value that compares false against itself (A6).
 fn around(centre: u64, spread_ppm: u64, count: usize) -> Vec<u64> {
     let steps: [i64; 10] = [0, 10, -10, 5, -5, 7, -7, 2, -2, 9];
     (0..count)
@@ -32,11 +20,6 @@ fn around(centre: u64, spread_ppm: u64, count: usize) -> Vec<u64> {
         .collect()
 }
 
-/// Paired differences around a true effect, with a repeatable wobble on top.
-///
-/// The wobble alternates sign so that the differences are not all the same
-/// number — a set of identical differences is separable by any test and would
-/// prove nothing about the null.
 fn differences(effect_ppm: i64, wobble_ppm: i64, count: usize) -> Vec<i64> {
     let steps: [i64; 8] = [0, 3, -2, 5, -4, 1, -5, 2];
     (0..count)
@@ -47,14 +30,10 @@ fn differences(effect_ppm: i64, wobble_ppm: i64, count: usize) -> Vec<i64> {
         .collect()
 }
 
-/// A paired effect that plainly exists is found, with its size and how often
-/// the sign flip made one that big.
 #[test]
 fn a_real_paired_effect_is_found() {
     match over_paired_differences(&differences(300_000, 40_000, 20), FIVE) {
         Verdict::Differ { by, by_chance, .. } => {
-            // The low bound: a thirty-percent effect must be established as
-            // *at least* something near it, not merely centred there (F92).
             assert!(by.low.0 > 250_000, "a thirty-percent effect: {by:?}");
             assert!(by.high.0 >= by.low.0, "an interval is ordered: {by:?}");
             assert!(by_chance <= super::FALSE_ALARMS_ALLOWED, "{by_chance:?}");
@@ -63,8 +42,6 @@ fn a_real_paired_effect_is_found() {
     }
 }
 
-/// Differences centred on zero are *the same to a stated resolution*, which is
-/// an answer rather than a failure to find one (B-086).
 #[test]
 fn no_paired_difference_is_a_result_and_says_what_it_could_have_seen() {
     match over_paired_differences(&differences(0, 10_000, 40), TWENTY) {
@@ -85,8 +62,6 @@ fn no_paired_difference_is_a_result_and_says_what_it_could_have_seen() {
     }
 }
 
-/// Differences noisier than the question are *not yet decided* — never rounded
-/// to "the same", which would be a null manufactured from impatience (A7).
 #[test]
 fn noise_wider_than_the_question_is_not_yet_decided() {
     let held = over_paired_differences(&differences(5_000, 400_000, 6), TWO);
@@ -96,8 +71,6 @@ fn noise_wider_than_the_question_is_not_yet_decided() {
     );
 }
 
-/// More pairs turn *not yet* into an answer, which is the whole point of a
-/// stopping condition rather than a count.
 #[test]
 fn repeating_resolves_what_a_few_pairs_could_not() {
     let early = over_paired_differences(&differences(60_000, 150_000, 4), FIVE);
@@ -105,17 +78,11 @@ fn repeating_resolves_what_a_few_pairs_could_not() {
         matches!(early, Verdict::NotYet { .. }),
         "four pairs should not settle it: {early}"
     );
-    // Sixty settle the *order*. They do not settle the *size* at five
-    // percent, and F92 is the reason that is now visible: a six-percent effect
-    // under fifteen-percent noise has a magnitude interval that still reaches
-    // zero at sixty pairs. The old assertion here was `Differ`, which was the
-    // point estimate standing in for evidence it did not have.
     let later = over_paired_differences(&differences(60_000, 150_000, 60), FIVE);
     assert!(
         matches!(later, Verdict::Ordered { .. }),
         "sixty should settle the order: {later}"
     );
-    // And a cleaner effect settles both, which is what `Differ` now means.
     let clean = over_paired_differences(&differences(300_000, 20_000, 30), FIVE);
     let Verdict::Differ { by, .. } = clean else {
         panic!("a thirty-percent effect under two-percent noise settles the size: {clean}");
@@ -126,8 +93,6 @@ fn repeating_resolves_what_a_few_pairs_could_not() {
     );
 }
 
-/// The count is part of the answer, because it is the thing that varies
-/// between sittings (F53).
 #[test]
 fn the_answer_carries_what_it_cost() {
     let Verdict::Differ { after, .. } =
@@ -138,7 +103,6 @@ fn the_answer_carries_what_it_cost() {
     assert_eq!(after, 12, "the pairs it took travel with the verdict");
 }
 
-/// Nothing is decided from a single pair, whatever it shows.
 #[test]
 fn one_pair_decides_nothing() {
     assert!(matches!(
@@ -147,10 +111,6 @@ fn one_pair_decides_nothing() {
     ));
 }
 
-/// The test is symmetric: an effect the other way round is found the same way,
-/// at the same size and the same chance — and **the direction is the one thing
-/// that changes**, which is what makes the verdict a comparison rather than a
-/// magnitude (F67).
 #[test]
 fn direction_changes_only_the_direction() {
     let one = over_paired_differences(&differences(300_000, 40_000, 20), FIVE);
@@ -190,26 +150,16 @@ fn direction_changes_only_the_direction() {
     );
 }
 
-/// The pooled null still works, because a comparison assembled from separate
-/// sessions has nothing else — and its answers are labelled by the caller that
-/// chose it.
 #[test]
 fn the_pooled_null_finds_a_real_difference() {
     let slow = around(2_000_000_000, 20_000, 20);
     let fast = around(1_000_000_000, 20_000, 20);
     match over_separate_arms(&slow, &fast, FIVE) {
-        // An assembled comparison establishes the order and cannot bound the
-        // size without pairs (F92, B53, B-388).
-        // Assembled arms report a size with no interval, in a variant that
-        // cannot be mistaken for a paired one (F92, B53).
         Verdict::Apart { by, .. } => assert!(by.low.0 > 500_000, "a doubling: {by:?}"),
         other => panic!("a doubling was not seen: {other}"),
     }
 }
 
-/// A run that took no measurable time is not something to divide by: it is
-/// *not yet decided*, never an infinity and never a NaN — which is the whole
-/// reason this module counts in integers (A6, A7).
 #[test]
 fn a_zero_duration_is_not_divided_by() {
     assert!(matches!(
@@ -218,16 +168,6 @@ fn a_zero_duration_is_not_divided_by() {
     ));
 }
 
-/// **The defect F55 found on a real machine.** Four paired trials of one
-/// command against itself gave differences of thirteen, seven, nought-point-two
-/// and one-point-four percent, and the first draft called that *no difference
-/// as large as five percent*.
-///
-/// It cannot be. A sign flip over four pairs has sixteen assignments, so the
-/// smallest false-alarm rate reachable is one in sixteen — above the one in
-/// twenty this module requires — and `Differ` is therefore **unreachable** at
-/// four pairs whatever the data. A rule that can only ever answer one way is
-/// not a test, so the honest answer is *not yet*.
 #[test]
 fn a_null_result_is_not_declared_where_a_difference_could_not_have_been() {
     let real: [i64; 4] = [129_000, -74_000, -2_000, -14_000];
@@ -238,16 +178,8 @@ fn a_null_result_is_not_declared_where_a_difference_could_not_have_been() {
     );
 }
 
-/// And the refusal above is about the **count**, not about the data: noise of
-/// the same size, centred so that there is genuinely no effect in it, reaches
-/// a null result once there are enough pairs of it.
-///
-/// The count it takes is printed rather than asserted, because F53's whole
-/// finding is that the count is a property of the sitting.
 #[test]
 fn the_same_noise_decides_once_there_are_enough_pairs_of_it() {
-    // The four real differences, centred on their own median so that they
-    // carry no effect — only their spread, which is what decides the count.
     let real: [i64; 4] = [129_000, -74_000, -2_000, -14_000];
     let centre = -8_000_i64;
     let noise: Vec<i64> = real
@@ -275,11 +207,6 @@ fn the_same_noise_decides_once_there_are_enough_pairs_of_it() {
     );
 }
 
-/// **The degeneracy F57 found.** Two arms whose timings are *identical* — every
-/// paired difference exactly zero — are the same, and the resampling test that
-/// stood here first could not say so: flipping the signs of a set of equal
-/// magnitudes cannot move the median's size, so the null was a single point and
-/// the answer was *cannot tell* about data that could not be clearer.
 #[test]
 fn identical_arms_are_the_same_rather_than_undecided() {
     let held = over_paired_differences(&[0; 40], FIVE);
@@ -289,10 +216,6 @@ fn identical_arms_are_the_same_rather_than_undecided() {
     );
 }
 
-/// **More evidence never gives a weaker verdict.** The exact tail leaves
-/// `u128` past about a hundred and twenty pairs, and the first draft answered
-/// *not decided* there about data it had decided at eighty — an instrument
-/// whose confidence falls as its evidence grows.
 #[test]
 fn a_longer_run_never_decides_less() {
     let noise: [i64; 4] = [137_000, -66_000, 6_000, -6_000];
@@ -316,11 +239,6 @@ fn a_longer_run_never_decides_less() {
     assert!(decided_at.is_some(), "this noise resolves at some count");
 }
 
-/// The chance a verdict reports is the exact sign-test tail, not an estimate.
-///
-/// Ten pairs won by one arm is two in one thousand and twenty-four, which is
-/// 1953 parts per million after rounding down. A resampling would have given
-/// something near it and different every time the seed changed.
 #[test]
 fn the_reported_chance_is_exact() {
     let Verdict::Differ { by_chance, .. } = over_paired_differences(&[100_000; 10], FIVE) else {
@@ -333,9 +251,6 @@ fn the_reported_chance_is_exact() {
     );
 }
 
-/// Six pairs is the fewest that can reach one in twenty at all, and five
-/// cannot — which is a property of the test rather than of the data, and is
-/// the general form of the defect F55 caught at four.
 #[test]
 fn five_pairs_cannot_reach_the_threshold_and_six_can() {
     assert!(
@@ -354,16 +269,10 @@ fn five_pairs_cannot_reach_the_threshold_and_six_can() {
     );
 }
 
-/// A tie supports neither arm and is excluded from the count, which is the
-/// standard treatment — and the pair is still reported as having happened.
 #[test]
 fn ties_leave_the_count_but_not_the_record_of_having_run() {
     let mut differences = vec![100_000_i64; 8];
     differences.extend([0, 0, 0, 0]);
-    // The order is settled — eight wins and no losses. The *size* is not: a
-    // third of the pairs showed nothing at all, so the interval on the median
-    // reaches zero, and F92 makes that visible rather than reporting the
-    // point median of 10% as though the ties had not happened.
     let Verdict::Ordered { after, by, .. } = over_paired_differences(&differences, FIVE) else {
         panic!("eight pairs won by one arm separate them: {differences:?}");
     };
@@ -375,22 +284,8 @@ fn ties_leave_the_count_but_not_the_record_of_having_run() {
     );
 }
 
-/// **The defect F59 found on a provisioned engine.** A difference must be real
-/// *and* as large as the caller said they care about.
-///
-/// Two quantizations of one model, asked about at five percent, were reported
-/// as *they differ by 0.8%* after a hundred and thirteen paired trials — a
-/// real difference, found honestly, and an answer to a question nobody asked.
-/// A caller who says five percent has said that eight tenths of one is beneath
-/// notice; reporting it invites acting on it (§3.28).
-///
-/// The honest verdict below the resolution is the null one, and the
-/// measurement travels inside it so nothing is lost (A1).
 #[test]
 fn a_real_difference_smaller_than_the_question_is_a_null_result() {
-    // A consistent eight-tenths-of-a-percent difference, over enough pairs
-    // that the sign test finds it easily: forty of forty is one chance in
-    // five hundred billion.
     let tiny = vec![8_000_i64; 40];
     match over_paired_differences(&tiny, FIVE) {
         Verdict::Same { resolving, by, .. } => {
@@ -407,9 +302,6 @@ fn a_real_difference_smaller_than_the_question_is_a_null_result() {
         }
     }
 
-    // And the same data, asked about at a resolution it exceeds, is a
-    // difference — the size test is against the caller's question and not
-    // against a number this module chose.
     assert!(
         matches!(
             over_paired_differences(&tiny, PartsPerMillion(5_000)),
@@ -419,14 +311,10 @@ fn a_real_difference_smaller_than_the_question_is_a_null_result() {
     );
 }
 
-/// The interval is checked against an independent computation of the same
-/// textbook quantity, on this machine's own recorded runs (F92).
 mod spreads {
     use super::super::{Spread, WANTED_COVERAGE, spread_of};
     use mcf_core::measurement::PartsPerMillion;
 
-    /// Six unanimous pairs: the widest interval is the extremes, covering
-    /// `1 - 2/64` = 96.875%.
     #[test]
     fn six_pairs_reach_the_extremes_at_ninety_six_point_nine() {
         let held = spread_of(&[
@@ -438,8 +326,6 @@ mod spreads {
         assert_eq!(held.high, PartsPerMillion(1_508_000));
     }
 
-    /// Fewer than six cannot reach the coverage asked for, and say so rather
-    /// than reporting a narrower claim.
     #[test]
     fn under_six_pairs_there_is_no_interval() {
         for count in 0..6_usize {
@@ -455,7 +341,6 @@ mod spreads {
         }
     }
 
-    /// An interval straddling zero puts no floor under the magnitude.
     #[test]
     fn disagreeing_pairs_get_a_floor_of_nothing() {
         let held = spread_of(&[-400_000, -300_000, -100_000, 50_000, 200_000, 300_000])
@@ -468,8 +353,6 @@ mod spreads {
         );
     }
 
-    /// What `clears` is for: an interval that starts below the caller's
-    /// resolution has not answered the caller's question.
     #[test]
     fn an_interval_starting_below_the_resolution_does_not_clear_it() {
         let straddling = Spread {
@@ -481,8 +364,6 @@ mod spreads {
         assert!(straddling.clears(PartsPerMillion(40_000)));
     }
 
-    /// The recorded run that motivated all of this: nine pairs from a
-    /// saturated machine, reported as *by 114.0%*.
     #[test]
     fn the_saturated_run_is_wide_and_says_so() {
         let held = spread_of(&[
@@ -490,8 +371,6 @@ mod spreads {
             -335_000, 1_445_000,
         ])
         .expect("nine pairs");
-        // 492 of 512 sign patterns, truncated down so the claim is never
-        // larger than the truth (F94).
         assert_eq!(held.coverage, PartsPerMillion(960_937));
         assert_eq!(
             (held.low, held.high),
@@ -502,29 +381,20 @@ mod spreads {
     }
 }
 
-/// The unpaired interval, and the distribution it is inverted from (B-388).
 mod unpaired {
     use super::super::{rank_sum_counts, spread_of_separate};
 
-    /// **A19 on the distribution itself.** The counts are built by a
-    /// recurrence; this counts the same thing by generating every
-    /// interleaving of two arms and tallying the statistic directly. The two
-    /// share no arithmetic, which is the whole point (F94).
     #[test]
     fn the_distribution_matches_a_brute_force_enumeration() {
         for n in 1_usize..=6 {
             for m in 1_usize..=6 {
                 let held = rank_sum_counts(n, m).expect("small arms are countable");
-                // Every arrangement of n zeroes and m ones, as a bit pattern.
                 let total = n + m;
                 let mut counted = vec![0_u128; n * m + 1];
                 for pattern in 0_u32..(1 << total) {
                     if usize::try_from(pattern.count_ones()).unwrap_or(0) != m {
                         continue;
                     }
-                    // Walking the arrangement, each value from the second arm
-                    // is out of order with every value of the first still to
-                    // come.
                     let mut seen_first = 0_usize;
                     let mut statistic = 0_usize;
                     for at in 0..total {
@@ -544,7 +414,6 @@ mod unpaired {
         }
     }
 
-    /// The counts sum to every way the two arms could interleave.
     #[test]
     fn the_distribution_is_complete() {
         for (n, m, expected) in [(3_usize, 3_usize, 20_u128), (4, 6, 210), (8, 8, 12_870)] {
@@ -553,7 +422,6 @@ mod unpaired {
         }
     }
 
-    /// It is symmetric, as a null distribution over an ordering must be.
     #[test]
     fn the_distribution_is_symmetric() {
         let held = rank_sum_counts(5, 7).expect("countable");
@@ -561,8 +429,6 @@ mod unpaired {
         assert_eq!(held, reversed);
     }
 
-    /// Two arms that plainly differ get an interval that excludes nothing
-    /// absurd, and one that clears a resolution.
     #[test]
     fn two_separated_arms_get_an_interval() {
         let slow: Vec<u64> = (0..8).map(|at| 2_000_000_000 + at * 1_000_000).collect();
@@ -579,7 +445,6 @@ mod unpaired {
         );
     }
 
-    /// Arms drawn from the same place put no floor under the difference.
     #[test]
     fn two_alike_arms_reach_zero() {
         let one: Vec<u64> = (0..8).map(|at| 1_000_000_000 + at * 1_000_000).collect();
@@ -592,7 +457,6 @@ mod unpaired {
         );
     }
 
-    /// Too little evidence is an absence rather than a narrower claim.
     #[test]
     fn tiny_arms_get_no_interval() {
         assert!(spread_of_separate(&[1_000], &[2_000]).is_none());

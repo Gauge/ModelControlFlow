@@ -1,76 +1,28 @@
-//! What a hosted engine reports it can take for the model it holds.
-//!
-//! **Asked of the engine, not read off the model card.** A publisher says a
-//! model sees pictures, calls tools and can be told not to think; whether any
-//! of that reaches a caller on the port depends on what the engine loaded and
-//! what its template does with the words a caller sends. The engine answers
-//! both questions: `/props` says which media it accepts and what the
-//! template supports, and `/apply-template` renders a turn so that a switch
-//! can be seen to change the text or not. Every field here is one of those
-//! answers, and the one thing MCF adds is the comparison (A21).
-//!
-//! **Why the switch is rendered rather than looked up.** The engine keeps
-//! whether a template reads `enable_thinking` in a trace line and nowhere a
-//! client can ask. Rendering the same turn with the switch on, off and unsaid
-//! costs no forward pass and shows three prompts; where two of them are the
-//! same text the template did not read the switch, and which one the unsaid
-//! rendering equals is what the model does when nobody says.
-
 use mcf_record::json::{self, Value};
 
-/// What the engine said it takes, as the record carries it.
-///
-/// Absent fields are absent — the engine did not say — rather than false: a
-/// model the engine did not describe is not thereby a model that takes
-/// nothing (A7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Takes {
-    /// Media the engine accepts in a message, as it reports them.
     pub images: Option<bool>,
-    /// Frames of video, as above.
     pub video: Option<bool>,
-    /// Sound, as above.
     pub audio: Option<bool>,
-    /// The template accepts a list of tools.
     pub tools: Option<bool>,
-    /// The template renders the model's earlier tool calls back to it.
     pub tool_calls: Option<bool>,
-    /// The template renders more than one tool call in a turn.
     pub parallel_tool_calls: Option<bool>,
-    /// The template has a place for a system turn.
     pub system_role: Option<bool>,
-    /// The template reads a reasoning effort.
     pub reasoning_effort: Option<bool>,
-    /// The template keeps earlier reasoning in the conversation.
     pub preserve_reasoning: Option<bool>,
-    /// What the template does with `enable_thinking`, from three renderings.
     pub thinking: Option<Thinking>,
 }
 
-/// What rendering a turn with the thinking switch showed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Thinking {
-    /// On and off render the same text: the template never reads the switch.
     NoSwitch,
-    /// Unsaid renders as on: the model thinks unless told not to.
-    OnUnlessAskedOff {
-        /// What the off rendering ends with, past the text both share.
-        off_ends: String,
-    },
-    /// Unsaid renders as off: the model thinks only when told to.
-    OffUnlessAskedOn {
-        /// What the on rendering ends with, past the text both share.
-        on_ends: String,
-    },
-    /// The switch changes the text, and unsaid is a third text.
+    OnUnlessAskedOff { off_ends: String },
+    OffUnlessAskedOn { on_ends: String },
     ThreeWays,
 }
 
 impl Takes {
-    /// Asks the engine on this port.
-    ///
-    /// `None` where it did not answer `/props` at all; every field is then
-    /// unknown rather than false.
     #[must_use]
     pub fn asked_on(port: u16) -> Option<Self> {
         let props =
@@ -101,7 +53,6 @@ impl Takes {
         })
     }
 
-    /// As the record and the control plane carry it.
     #[must_use]
     pub fn to_value(&self) -> Value {
         let flag = |held: Option<bool>| held.map_or(Value::Null, Value::Bool);
@@ -141,7 +92,6 @@ impl Takes {
         ])
     }
 
-    /// Read back from what the control plane carried.
     #[must_use]
     pub fn from_value(value: &Value) -> Self {
         let flag = |name: &str| value.get(name).and_then(Value::as_bool);
@@ -180,7 +130,6 @@ impl Takes {
         }
     }
 
-    /// The media it takes, as one phrase: `text, images and video`.
     #[must_use]
     pub fn media(&self) -> String {
         let mut held = vec!["text"];
@@ -196,7 +145,6 @@ impl Takes {
         joined(&held)
     }
 
-    /// What the template does, as one phrase, or why nothing is said.
     #[must_use]
     pub fn template(&self) -> String {
         let mut held = Vec::new();
@@ -221,7 +169,6 @@ impl Takes {
         }
     }
 
-    /// What the thinking switch does, as one sentence.
     #[must_use]
     pub fn thinking_said(&self) -> String {
         match &self.thinking {
@@ -242,7 +189,6 @@ impl Takes {
     }
 }
 
-/// Words in a list, the way a sentence lists them.
 fn joined(words: &[&str]) -> String {
     match words {
         [] => String::new(),
@@ -251,12 +197,10 @@ fn joined(words: &[&str]) -> String {
     }
 }
 
-/// A prompt's tail as a person reads it: line breaks written out.
 fn shown(text: &str) -> String {
     format!("`{}`", text.replace('\n', "\\n"))
 }
 
-/// Renders one turn three ways and compares.
 fn thinking_on(port: u16) -> Option<Thinking> {
     let render = |kwargs: Option<Value>| {
         let mut body = vec![(
@@ -289,7 +233,6 @@ fn thinking_on(port: u16) -> Option<Thinking> {
     Some(compared(&unsaid, &on, &off))
 }
 
-/// The three renderings against each other.
 fn compared(unsaid: &str, on: &str, off: &str) -> Thinking {
     if on == off {
         Thinking::NoSwitch
@@ -306,7 +249,6 @@ fn compared(unsaid: &str, on: &str, off: &str) -> Thinking {
     }
 }
 
-/// What `other` says after the longest start it shares with `one`.
 fn past_the_shared(one: &str, other: &str) -> String {
     let shared = one
         .char_indices()
@@ -317,10 +259,6 @@ fn past_the_shared(one: &str, other: &str) -> String {
     other.get(shared..).unwrap_or_default().to_owned()
 }
 
-/// One request to the engine on its port, and the body it answered.
-///
-/// Bounded: a server that streamed forever must not become a read that never
-/// ends, and a `/props` is a few kilobytes.
 fn over_tcp(port: u16, method: &str, path: &str, body: Option<&str>) -> Option<String> {
     use std::io::{Read as _, Write as _};
     let mut connection = std::net::TcpStream::connect((crate::hosting::LOOPBACK, port)).ok()?;
@@ -347,13 +285,11 @@ fn over_tcp(port: u16, method: &str, path: &str, body: Option<&str>) -> Option<S
 mod tests {
     use super::*;
 
-    /// A template that ignores the switch renders on and off the same.
     #[test]
     fn a_template_without_a_switch_renders_the_same_either_way() {
         assert_eq!(compared("a", "a", "a"), Thinking::NoSwitch);
     }
 
-    /// On by default: unsaid equals on, and the off tail is what off adds.
     #[test]
     fn a_model_that_thinks_unasked_shows_what_turns_it_off() {
         let on = "<|im_start|>assistant\n";
@@ -366,7 +302,6 @@ mod tests {
         );
     }
 
-    /// Off by default: unsaid equals off.
     #[test]
     fn a_model_that_thinks_only_when_asked_shows_what_turns_it_on() {
         let on = "assistant\n<think>\n";
@@ -379,13 +314,11 @@ mod tests {
         );
     }
 
-    /// A third rendering is reported as one, not folded into on or off.
     #[test]
     fn a_third_rendering_is_not_folded_into_either() {
         assert_eq!(compared("c", "a", "b"), Thinking::ThreeWays);
     }
 
-    /// The record round-trips every field, unknowns included.
     #[test]
     fn the_record_carries_it_back_unchanged() {
         let takes = Takes {
@@ -411,7 +344,6 @@ mod tests {
         assert!(takes.thinking_said().starts_with("on unless asked off"));
     }
 
-    /// Nothing said is nothing claimed.
     #[test]
     fn an_engine_that_said_nothing_claims_nothing() {
         let takes = Takes::from_value(&Value::map::<&str>([]));
