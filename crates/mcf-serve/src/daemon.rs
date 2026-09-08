@@ -2567,9 +2567,23 @@ const HUB_KEPT_FOR_NANOS: i128 = 86_400 * 1_000_000_000;
 /// time on it and whether it was kept, and read again on request. Only a
 /// served answer is kept; a refusal is not a fact about the hub.
 fn kept_answer(home: &Path, key: &str, fresh: bool, ask: impl FnOnce() -> Answer) -> Answer {
+    // **The build that wrote it is part of the key** (B-598). What is kept
+    // is an answer, not the hub's bytes, and an answer's shape is this
+    // build's: a build that began listing a repository by variant rather
+    // than by file went on serving the file-by-file answers an older build
+    // had written, from a cache neither of them thought to invalidate
+    // (F279). Keying by the binary's own identity means a new build reads
+    // none of an old one's answers and writes none an old one would read.
     let at = home.join("hub-cache").join(format!(
         "{}.json",
-        mcf_core::digest::sha256(key.as_bytes()).hex()
+        mcf_core::digest::sha256(
+            format!(
+                "{key}\u{1f}{}",
+                mcf_core::build_identity::BuildIdentity::current()
+            )
+            .as_bytes()
+        )
+        .hex()
     ));
     if !fresh
         && let Ok(text) = std::fs::read_to_string(&at)

@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 279 | [F279 — The change was made and the screen did not change: hub answers are kept on disk by what was asked, so a new build served an old build's shape from a cache neither would invalidate (B-598, A1, C5)](#279-f279-the-change-was-made-and-the-screen-did-not-change-hub-answers-are-kept-on-disk-by-what-was-asked-so-a-new-build-served-an-old-builds-shape-from-a-cache-neither-would-invalidate-b-598-a1-c5) |
 | 278 | [F278 — A model published in parts was four rows and four buttons, none of them a model, and the fitment plan said an eight-part 304 GB model fitted on a 125 GB machine eight times over (B-597, B-590, A6)](#278-f278-a-model-published-in-parts-was-four-rows-and-four-buttons-none-of-them-a-model-and-the-fitment-plan-said-an-eight-part-304-gb-model-fitted-on-a-125-gb-machine-eight-times-over-b-597-b-590-a6) |
 | 277 | [F277 — Sampling power only when asked measured nothing for the case it was wanted for, and the sensor called *card* is the whole processor package: sixteen threads of processor load with no graphics work moved it ten watts (B-596, A8, F275)](#277-f277-sampling-power-only-when-asked-measured-nothing-for-the-case-it-was-wanted-for-and-the-sensor-called-card-is-the-whole-processor-package-sixteen-threads-of-processor-load-with-no-graphics-work-moved-it-ten-watts-b-596-a8-f275) |
 | 276 | [F276 — A version cannot answer *is this the latest* and a window cannot answer it alone: every build between releases says `0.1.0-m0`, and the daemon behind the window was four commits older with nothing on screen saying so (B-595, A7, C8)](#276-f276-a-version-cannot-answer-is-this-the-latest-and-a-window-cannot-answer-it-alone-every-build-between-releases-says-010-m0-and-the-daemon-behind-the-window-was-four-commits-older-with-nothing-on-screen-saying-so-b-595-a7-c8) |
@@ -15842,7 +15843,40 @@ them something a person can actually take. And the Kimi variant now
 reads: *needs 283.5 GiB, which is 267.5 GiB more than this machine has
 free*.
 
+## 279 · F279 — The change was made and the screen did not change: hub answers are kept on disk by what was asked, so a new build served an old build's shape from a cache neither would invalidate (B-598, A1, C5)
+
+**How it was found.** B-597's variant listing was built, tested, and
+checked against a daemon in a scratch data home, where it answered
+thirty-eight rows, one a quantization. Installed and restarted on the
+operator's own machine, the same request answered sixty-three rows in
+the old shape, with no name and no part count. The build was right and
+the answer was old.
+
+**Why.** A repository's listing is expensive to fetch, so the daemon
+keeps the *answer* on disk for a day, under a digest of what was asked
+— the reference and the hub. Nothing in that key says which build
+wrote it. So an answer written this morning by a build that listed
+files was read this evening by a build that lists variants, and served
+unchanged. A day of that, on a machine that had already asked about
+the repository the operator was looking at.
+
+**What was done.** The build's own identity goes into the key. A new
+build finds none of an older build's kept answers and writes none an
+older build would find; each simply asks the hub once more. The
+identity includes the binary's digest, so two builds of one commit are
+also told apart — which is the point F93 made about instruments and
+applies exactly as well to what an answer means.
+
+**The general shape of it.** A cache keyed by the question is only
+sound while the answer's shape is fixed. Every other kept thing in MCF
+is keyed by what it is *of* — a model's digest, a source revision, a
+tier's source digest — and this one was keyed by what it was *about*.
+
 ## Changelog
+
+### Version 201 — a kept answer belongs to the build that wrote it
+
+F279: the build's identity is part of the cache key (B-598).
 
 ### Version 200 — a quantization is one thing to choose
 
