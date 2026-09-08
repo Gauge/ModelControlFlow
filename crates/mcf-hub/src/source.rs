@@ -33,6 +33,63 @@ use mcf_core::failure::Result;
 use crate::credentials::Identity;
 use crate::reference::Reference;
 
+/// Whether MCF reads this format at all.
+///
+/// Case-insensitively, because a repository's file names are its own:
+/// `.GGUF` is the same format and leaving it out would drop a variant from
+/// the list without saying so (A1).
+fn is_read_here(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+}
+
+/// A published path with its `-00001-of-00004` taken off, so that the
+/// parts of one quantization read as the one thing they are (B-597).
+#[must_use]
+pub fn without_the_part(path: &str) -> String {
+    let Some(stem) = path.strip_suffix(".gguf") else {
+        return path.to_owned();
+    };
+    let Some((before, of)) = stem.rsplit_once("-of-") else {
+        return path.to_owned();
+    };
+    let Some((prefix, at)) = before.rsplit_once('-') else {
+        return path.to_owned();
+    };
+    if at.is_empty()
+        || of.is_empty()
+        || !at.chars().all(|c| c.is_ascii_digit())
+        || !of.chars().all(|c| c.is_ascii_digit())
+    {
+        return path.to_owned();
+    }
+    format!("{prefix}.gguf")
+}
+
+/// One thing a repository publishes that a person chooses between: a
+/// quantization, whether it is one file or several (B-597).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Variant {
+    /// The file to ask for. Where the variant is a set this is its first
+    /// part, and asking for it fetches the whole (B-590).
+    pub first: String,
+    /// What to call it: the path with the part suffix taken off.
+    pub name: String,
+    /// What the whole variant weighs, in bytes.
+    pub bytes: u64,
+    /// How many files it is published as; one for an ordinary file.
+    pub parts: u32,
+    /// Whether every part the names declare is published. A variant that
+    /// is not whole is one no engine can load, and a surface says so
+    /// rather than offering it (A7).
+    pub whole: bool,
+    /// Whether the hub declares a digest for every file of it. A part
+    /// nobody can check makes the whole variant unverifiable, and that is
+    /// a condition of every measurement taken on it (A21).
+    pub digested: bool,
+}
+
 /// The parts of a model published in several files (B-590).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Set<'a> {
@@ -214,6 +271,58 @@ impl Listing {
             parts: parts.into_iter().map(|(_, entry)| entry).collect(),
             of,
         })
+    }
+
+    /// What a person choosing from this repository is choosing between:
+    /// one entry a quantization, however many files it is published as
+    /// (B-597).
+    ///
+    /// **A model in four files is one thing to choose, not four.** A
+    /// repository that publishes a 160-gigabyte variant as four parts
+    /// listed four rows of forty gigabytes each, every one of them with
+    /// its own button, none of them a model: an engine loads the set or
+    /// nothing (B-590), so the set is what there is to want. Each variant
+    /// names the file to ask for — the first part, which fetches the whole
+    /// — and carries what the whole weighs.
+    ///
+    /// Only what MCF reads: a repository's `.gguf` files, in the order it
+    /// lists them, a set appearing where its first part does.
+    #[must_use]
+    pub fn variants(&self) -> Vec<Variant> {
+        let mut found: Vec<Variant> = Vec::new();
+        for entry in self
+            .entries
+            .iter()
+            .filter(|entry| is_read_here(&entry.path))
+        {
+            let Some(set) = self.parts_of(&entry.path) else {
+                found.push(Variant {
+                    first: entry.path.clone(),
+                    name: entry.path.clone(),
+                    bytes: entry.size,
+                    parts: 1,
+                    whole: true,
+                    digested: entry.digest.is_some(),
+                });
+                continue;
+            };
+            let first = set
+                .parts
+                .first()
+                .map_or_else(|| entry.path.clone(), |part| part.path.clone());
+            if found.iter().any(|held| held.first == first) {
+                continue;
+            }
+            found.push(Variant {
+                name: without_the_part(&first),
+                bytes: set.bytes().unwrap_or(0),
+                parts: u32::try_from(set.parts.len()).unwrap_or(u32::MAX),
+                whole: set.is_whole(),
+                digested: set.parts.iter().all(|part| part.digest.is_some()),
+                first,
+            });
+        }
+        found
     }
 
     /// What the whole repository would cost to hold.

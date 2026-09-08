@@ -4929,7 +4929,83 @@ fn searched(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Opt
     act
 }
 
-/// The files a repository publishes, one row each.
+/// One variant a repository publishes, as a row: what it is called, how
+/// many files it comes in where it is more than one, what the whole
+/// weighs, and the button that takes it (B-597).
+///
+/// The button asks for the first part, which fetches the whole set
+/// (B-590); the row itself picks the variant as the page's subject.
+fn offered_row(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    row: Box,
+    file: &Value,
+    repository: &str,
+    at: usize,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let (y, wide) = (row.y, row.w);
+    let area = row;
+    let asked_for = file
+        .get("file")
+        .and_then(Value::as_text)
+        .unwrap_or("?")
+        .to_owned();
+    let name = file
+        .get("name")
+        .and_then(Value::as_text)
+        .unwrap_or(&asked_for)
+        .to_owned();
+    let parts = file
+        .get("parts")
+        .and_then(Value::as_integer)
+        .unwrap_or(1)
+        .max(1);
+    let bytes = file
+        .get("bytes")
+        .and_then(Value::as_integer)
+        .and_then(|bytes| u64::try_from(bytes).ok());
+    let where_ = Box::new(area.x - 6.0, y - 5.0, wide, 30.0);
+    if mouse.over(where_) {
+        paint.panel(where_, 6.0, ink.line, 110);
+    }
+    let shown = paint.elide(&name, Weight::Regular, size::BODY, wide - 230.0);
+    paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.ink);
+    if parts > 1 {
+        let after = paint.measure(&shown, Weight::Regular, size::BODY);
+        paint.say_at(
+            area.x + after + 10.0,
+            y + 2.0,
+            &format!("in {parts} files"),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    paint.say_right(
+        area.x + wide - 110.0,
+        y,
+        &bytes.map_or_else(
+            || UNKNOWN.to_owned(),
+            |held| format!("{:.2} GB", held as f64 / 1e9),
+        ),
+        Weight::Bold,
+        size::SMALL,
+        ink.quiet,
+    );
+    let get = Box::new(area.x + wide - 90.0, y - 3.0, 76.0, 26.0);
+    if ui::button(paint, mouse, get, "Get", Kind::Ordinary) {
+        return Some(Act::Download {
+            reference: repository.to_owned(),
+            file: asked_for,
+        });
+    }
+    // The row itself picks the variant as the page's subject, not
+    // downloaded, with the button that downloads and starts it (B-487).
+    mouse.clicked(where_).then_some(Act::PickOffered(at))
+}
+
+/// The variants a repository publishes, one row each.
 fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Option<Act> {
     let ink = paint.ink;
     let repository = found
@@ -4995,44 +5071,8 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
     }
     let mut act = None;
     for (at, file) in files.iter().enumerate().take(12) {
-        let name = file
-            .get("file")
-            .and_then(Value::as_text)
-            .unwrap_or("?")
-            .to_owned();
-        let bytes = file
-            .get("bytes")
-            .and_then(Value::as_integer)
-            .and_then(|bytes| u64::try_from(bytes).ok());
-        let where_ = Box::new(area.x - 6.0, y - 5.0, wide, 30.0);
-        if mouse.over(where_) {
-            paint.panel(where_, 6.0, ink.line, 110);
-        }
-        let shown = paint.elide(&name, Weight::Regular, size::BODY, wide - 230.0);
-        paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.ink);
-        paint.say_right(
-            area.x + wide - 110.0,
-            y,
-            &bytes.map_or_else(
-                || UNKNOWN.to_owned(),
-                |held| format!("{:.2} GB", held as f64 / 1e9),
-            ),
-            Weight::Bold,
-            size::SMALL,
-            ink.quiet,
-        );
-        let get = Box::new(area.x + wide - 90.0, y - 3.0, 76.0, 26.0);
-        if ui::button(paint, mouse, get, "Get", Kind::Ordinary) {
-            act = Some(Act::Download {
-                reference: repository.clone(),
-                file: name.clone(),
-            });
-        } else if mouse.clicked(where_) {
-            // The row itself picks the file as the page's subject, not
-            // downloaded, with the button that downloads and starts it
-            // (B-487).
-            act = Some(Act::PickOffered(at));
-        }
+        let row = Box::new(area.x, y, wide, 30.0);
+        act = offered_row(paint, mouse, row, file, &repository, at).or(act);
         y += 32.0;
         if y > area.bottom() - 20.0 {
             break;

@@ -75,3 +75,51 @@ fn a_set_missing_a_part_is_not_whole() {
     assert!(listing.parts_of("model-00004-of-00003.gguf").is_none());
     assert!(listing.parts_of("model-00000-of-00003.gguf").is_none());
 }
+
+/// A repository's variants are what a person chooses between: a
+/// quantization published in four files is one of them, named without its
+/// part suffix and weighing the whole (B-597).
+#[test]
+fn a_repositorys_variants_are_one_a_quantization_however_many_files() {
+    let listing = listing(&[
+        ("BF16/model-BF16-00001-of-00003.gguf", 49_000_000_000),
+        ("BF16/model-BF16-00002-of-00003.gguf", 49_000_000_000),
+        ("BF16/model-BF16-00003-of-00003.gguf", 11_000_000_000),
+        ("model-Q4_K_M.gguf", 7_300_000_000),
+        ("mmproj-F16.gguf", 800_000_000),
+        ("README.md", 1_000),
+    ]);
+    let variants = listing.variants();
+    assert_eq!(
+        variants
+            .iter()
+            .map(|held| (held.name.as_str(), held.bytes, held.parts))
+            .collect::<Vec<_>>(),
+        [
+            ("BF16/model-BF16.gguf", 109_000_000_000, 3),
+            ("model-Q4_K_M.gguf", 7_300_000_000, 1),
+            ("mmproj-F16.gguf", 800_000_000, 1),
+        ]
+    );
+    // The file to ask for is the set's first part, which fetches the whole.
+    assert_eq!(variants[0].first, "BF16/model-BF16-00001-of-00003.gguf");
+    assert!(variants.iter().all(|held| held.whole));
+}
+
+/// A part suffix comes off the name and nothing else does (B-597).
+#[test]
+fn the_part_suffix_comes_off_the_name_and_nothing_else_does() {
+    use super::without_the_part;
+    assert_eq!(
+        without_the_part("BF16/model-BF16-00001-of-00004.gguf"),
+        "BF16/model-BF16.gguf"
+    );
+    assert_eq!(without_the_part("model-Q4_K_M.gguf"), "model-Q4_K_M.gguf");
+    assert_eq!(without_the_part("model-1-of-2.gguf"), "model.gguf");
+    // Not a part: a name that only looks like one.
+    assert_eq!(
+        without_the_part("model-best-of-breed.gguf"),
+        "model-best-of-breed.gguf"
+    );
+    assert_eq!(without_the_part("notes.md"), "notes.md");
+}

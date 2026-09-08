@@ -462,15 +462,28 @@ fn offer(listing: &Listing, planned: &std::result::Result<Plan, String>) -> Stri
             .and_then(mcf_hub::licence::recognize)
             .as_ref(),
     ));
-    for entry in &listing.entries {
+    // One line a variant, not one a file: a quantization published in
+    // parts is one thing to take, and taking it takes all of them (B-597,
+    // B-590).
+    for variant in listing.variants() {
+        let parts = match variant.parts {
+            0 | 1 => String::new(),
+            parts if variant.whole => format!(", in {parts} files"),
+            parts => format!(
+                ", in {parts} files — and the repository publishes fewer than its names declare, \
+                 so an engine could load none of it"
+            ),
+        };
+        let digest = if variant.digested {
+            ""
+        } else if variant.parts > 1 {
+            " (the hub declares no digest for one of these)"
+        } else {
+            " (the hub declares no digest for this one)"
+        };
         lines.push(format!(
-            "  {} — {} bytes{}",
-            entry.path,
-            entry.size,
-            match entry.digest {
-                Some(_) => "",
-                None => " (the hub declares no digest for this one)",
-            }
+            "  {} — {} bytes{parts}{digest}",
+            variant.name, variant.bytes
         ));
     }
     match planned {

@@ -108,20 +108,17 @@ pub fn shape_from_configuration(hub: &Hub, listing: &Listing) -> Result<Shape, S
 ///
 /// As [`plan_for`], for the arithmetic.
 pub fn plan_with(listing: &Listing, shape: Shape, available: Bytes) -> Result<Plan, String> {
+    // **A variant a piece, not a file a piece** (B-597). A model published
+    // in eight parts of fifty gigabytes was planned as eight fifty-gigabyte
+    // models, and every one of them was reported as fitting on a machine
+    // that could not hold the set at all — which is the arithmetic done
+    // over the wrong thing, and confidently (A6, F278).
     let requirements: Vec<Requirement> = listing
-        .entries
-        .iter()
-        // Case-insensitively, because a repository's file names are its own:
-        // `.GGUF` is the same format and a plan that skipped it would leave a
-        // variant out of the list without saying so (A1).
-        .filter(|entry| {
-            std::path::Path::new(&entry.path)
-                .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
-        })
-        .map(|entry| Requirement {
-            name: entry.path.clone(),
-            weights: Bytes(entry.size),
+        .variants()
+        .into_iter()
+        .map(|variant| Requirement {
+            name: variant.first,
+            weights: Bytes(variant.bytes),
             shape,
         })
         .collect();

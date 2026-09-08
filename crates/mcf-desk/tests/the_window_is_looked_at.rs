@@ -2742,14 +2742,20 @@ fn review_small_windows() {
 /// A repository's files as the daemon lists them, for the hub page.
 fn a_files_answer() -> mcf_desk::Doing {
     use mcf_record::json::Value;
-    let file = |name: &str, bytes: i64, fits: bool| {
+    // One row a variant, with the parts under it where there are several
+    // (B-597).
+    let variant = |name: &str, first: &str, bytes: i64, parts: i64, fits: bool| {
         Value::map([
-            ("file", Value::text(name)),
+            ("file", Value::text(first)),
+            ("name", Value::text(name)),
+            ("parts", Value::Integer(parts)),
+            ("whole", Value::Bool(true)),
             ("bytes", Value::Integer(bytes)),
             ("fits", Value::Bool(fits)),
             ("why", Value::Null),
         ])
     };
+    let file = |name: &str, bytes: i64, fits: bool| variant(name, name, bytes, 1, fits);
     mcf_desk::Doing::Listing(mcf_desk::job::Job::already(
         "looking up someone/gemma-4-12B-it-qat-GGUF".to_owned(),
         vec![Value::map([
@@ -2760,7 +2766,15 @@ fn a_files_answer() -> mcf_desk::Doing {
                 Value::List(vec![
                     file("gemma-4-12B-it-qat-Q4_K_M.gguf", 7_300_000_000, true),
                     file("gemma-4-12B-it-qat-Q8_0.gguf", 12_500_000_000, true),
-                    file("gemma-4-12B-it-qat-BF16.gguf", 24_000_000_000, false),
+                    // A quantization published in four files is one row
+                    // that says so, and its size is the whole (B-597).
+                    variant(
+                        "BF16/gemma-4-12B-it-qat-BF16.gguf",
+                        "BF16/gemma-4-12B-it-qat-BF16-00001-of-00004.gguf",
+                        159_460_000_000,
+                        4,
+                        false,
+                    ),
                 ]),
             ),
             ("terms", Value::text("gemma (terms present)")),

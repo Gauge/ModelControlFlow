@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 278 | [F278 — A model published in parts was four rows and four buttons, none of them a model, and the fitment plan said an eight-part 304 GB model fitted on a 125 GB machine eight times over (B-597, B-590, A6)](#278-f278-a-model-published-in-parts-was-four-rows-and-four-buttons-none-of-them-a-model-and-the-fitment-plan-said-an-eight-part-304-gb-model-fitted-on-a-125-gb-machine-eight-times-over-b-597-b-590-a6) |
 | 277 | [F277 — Sampling power only when asked measured nothing for the case it was wanted for, and the sensor called *card* is the whole processor package: sixteen threads of processor load with no graphics work moved it ten watts (B-596, A8, F275)](#277-f277-sampling-power-only-when-asked-measured-nothing-for-the-case-it-was-wanted-for-and-the-sensor-called-card-is-the-whole-processor-package-sixteen-threads-of-processor-load-with-no-graphics-work-moved-it-ten-watts-b-596-a8-f275) |
 | 276 | [F276 — A version cannot answer *is this the latest* and a window cannot answer it alone: every build between releases says `0.1.0-m0`, and the daemon behind the window was four commits older with nothing on screen saying so (B-595, A7, C8)](#276-f276-a-version-cannot-answer-is-this-the-latest-and-a-window-cannot-answer-it-alone-every-build-between-releases-says-010-m0-and-the-daemon-behind-the-window-was-four-commits-older-with-nothing-on-screen-saying-so-b-595-a7-c8) |
 | 275 | [F275 — Power was measured inside diagnostics and nowhere else: a served model drew 90 W with nothing recording it, and the window's run energy was a watts reading multiplied by a second nobody timed (B-593, A8, A6)](#275-f275-power-was-measured-inside-diagnostics-and-nowhere-else-a-served-model-drew-90-w-with-nothing-recording-it-and-the-windows-run-energy-was-a-watts-reading-multiplied-by-a-second-nobody-timed-b-593-a8-a6) |
@@ -15798,7 +15799,55 @@ root-only here, so on a machine with a discrete card MCF would report
 the card alone and say so, and the processor's share would stay
 unmeasured rather than guessed.
 
+## 278 · F278 — A model published in parts was four rows and four buttons, none of them a model, and the fitment plan said an eight-part 304 GB model fitted on a 125 GB machine eight times over (B-597, B-590, A6)
+
+**What the operator saw.** Looking for Qwen3-Coder-Next in the window,
+a list of files: four rows for BF16 at forty-nine gigabytes each,
+three for Q4_1, three for Q5_K_M, and so on down. Each with its own
+*Get*. None of them a model — an engine loads the set or nothing
+(B-590) — so every button on that page was an invitation to download a
+fragment.
+
+**And the arithmetic was over the wrong thing.** The fitment plan made
+one requirement per published file, so a model in eight parts was
+planned as eight models of one part each. Asked about
+`unsloth/Kimi-K2.7-Code-GGUF`, MCF reported all eight parts of the
+IQ1_M variant as **fitting** on this machine. The variant is 304 GB.
+The machine has 125 GB. Being wrong is one thing; being wrong eight
+times in a row with a verdict attached to each is what A6 is about.
+
+**What was built.** A listing now says what its *variants* are: a
+quantization, whether it is stored as one file or eight, named without
+its part suffix, weighing the whole, carrying how many files it comes
+in and whether every part the names declare is published. The plan
+makes one requirement a variant. The window draws one row a variant
+with the whole size and *in 4 files* beside the name, and its button
+asks for the first part, which fetches them all. `mcf offered` and
+`mcf pull` print the same list. A variant missing a part says so rather
+than being offered as though it were whole (A7), and a variant one of
+whose parts has no declared digest still says so, because a file
+nobody can check is a condition of everything measured on it (A21).
+
+**What it does now.** The repository the operator was looking at, as
+the window is given it:
+
+| | | |
+|---|---|---|
+| BF16/Qwen3-Coder-Next-BF16.gguf | 159.46 GB | in 4 files |
+| Q8_0/Qwen3-Coder-Next-Q8_0.gguf | 84.81 GB | in 3 files |
+| Qwen3-Coder-Next-IQ4_XS.gguf | 42.68 GB | one file |
+
+Thirty-eight rows where there had been many more, and every one of
+them something a person can actually take. And the Kimi variant now
+reads: *needs 283.5 GiB, which is 267.5 GiB more than this machine has
+free*.
+
 ## Changelog
+
+### Version 200 — a quantization is one thing to choose
+
+F278: variants rather than files, in the window, on the command line
+and in the plan (B-597).
 
 ### Version 199 — the energy of a hold nobody is watching
 

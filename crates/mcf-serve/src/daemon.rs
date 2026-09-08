@@ -7073,21 +7073,22 @@ impl Daemon {
             })
             .unwrap_or_default();
 
+        // **One row a variant, not one a file** (B-597): a quantization
+        // published in four parts is one thing to choose, and the file
+        // named is its first part, which fetches the whole (B-590).
         let files: Vec<Value> = listing
-            .entries
-            .iter()
-            .filter(|entry| {
-                std::path::Path::new(&entry.path)
-                    .extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
-            })
-            .map(|entry| {
-                let verdict = verdicts.get(&entry.path);
+            .variants()
+            .into_iter()
+            .map(|variant| {
+                let verdict = verdicts.get(&variant.first);
                 Value::map([
-                    ("file", Value::text(entry.path.clone())),
+                    ("file", Value::text(variant.first.clone())),
+                    ("name", Value::text(variant.name.clone())),
+                    ("parts", Value::Integer(i64::from(variant.parts))),
+                    ("whole", Value::Bool(variant.whole)),
                     (
                         "bytes",
-                        Value::Integer(i64::try_from(entry.size).unwrap_or(i64::MAX)),
+                        Value::Integer(i64::try_from(variant.bytes).unwrap_or(i64::MAX)),
                     ),
                     (
                         "fits",
