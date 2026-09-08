@@ -64,24 +64,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
-name = "mcf-bench"
-version = "0.1.0-m0"
-dependencies = [
- "mcf-core",
- "mcf-record",
- "mcf-serve",
-]
-
-[[package]]
 name = "mcf-checks"
 version = "0.1.0-m0"
 dependencies = [
- "mcf-bench",
  "mcf-core",
  "mcf-helper",
  "mcf-hub",
- "mcf-lab",
  "mcf-record",
+ "mcf-serve",
  "mcf-standin",
 ]
 
@@ -89,11 +79,9 @@ dependencies = [
 name = "mcf-cli"
 version = "0.1.0-m0"
 dependencies = [
- "mcf-bench",
  "mcf-core",
  "mcf-desk",
  "mcf-hub",
- "mcf-lab",
  "mcf-record",
  "mcf-serve",
  "mcf-standin",
@@ -133,18 +121,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mcf-lab"
-version = "0.1.0-m0"
-dependencies = [
- "mcf-core",
- "mcf-helper",
- "mcf-hub",
- "mcf-record",
- "mcf-serve",
- "mcf-standin",
-]
-
-[[package]]
 name = "mcf-prototype-adversarial"
 version = "0.1.0-m0"
 dependencies = [
@@ -164,14 +140,6 @@ version = "0.1.0-m0"
 dependencies = [
  "mcf-core",
  "mcf-standin",
-]
-
-[[package]]
-name = "mcf-prototype-timing-noise"
-version = "0.1.0-m0"
-dependencies = [
- "mcf-bench",
- "mcf-core",
 ]
 
 [[package]]

@@ -4,6 +4,7 @@ pub mod bert;
 pub mod bpe;
 pub mod codebook;
 pub mod dequantize;
+pub mod fixture;
 pub mod gguf;
 pub mod languages;
 pub mod llama;

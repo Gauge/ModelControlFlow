@@ -56,11 +56,7 @@ pub const TIERS: &[Tier] = &[
         covers: "behaviour at the API surface, and the rules the workspace enforces about itself",
         cadence: Cadence::Gating,
         command: "cargo test --workspace --locked --offline",
-        holds: &[
-            "checks/tests",
-            "crates/mcf-record/tests",
-            "crates/mcf-lab/tests",
-        ],
+        holds: &["checks/tests", "crates/mcf-record/tests"],
     },
     Tier {
         id: "whole-system",
@@ -74,12 +70,13 @@ pub const TIERS: &[Tier] = &[
     },
     Tier {
         id: "fault-injection",
-        covers: "every failure MCF claims to handle, reproduced from the laboratory's catalogue",
+        covers: "a failure introduced deliberately at each stage, and what MCF does with it",
         cadence: Cadence::Gating,
         command: "cargo test --workspace --locked --offline",
         holds: &[
-            "crates/mcf-lab/tests/scenarios_reproduce.rs",
-            "checks/tests/fault_catalogue.rs",
+            "checks/tests/the_record_recovers_from_every_stage.rs",
+            "checks/tests/an_environment_failure_is_not_the_models.rs",
+            "checks/tests/degradation_is_marked.rs",
         ],
     },
     Tier {

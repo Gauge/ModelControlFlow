@@ -108,9 +108,9 @@ scripts/ci.sh --all          # all of them; minutes, not seconds
 Beyond the ten disciplines there are checks that need something the gating tier
 refuses itself — a real network, a real accelerator, a container. They are run
 the same way: `--with-online` acquires a real model over TLS, `--with-corpus`
-runs the conformance corpus through the engine, `--with-instruments` compares
-each sensor against an independent source, `--with-from-scratch` runs the
-static artifact in a container holding it and nothing else, and
+runs the conformance corpus through the engine, `--with-oracle` compares MCF
+against a reference implementation, `--with-from-scratch` runs the static
+artifact in a container holding it and nothing else, and
 `--with-reproducibility` builds twice and compares the bytes.
 
 None of them is optional. All of them are scheduled rather than gating.

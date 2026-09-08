@@ -37,16 +37,6 @@ impl On {
 pub enum Request {
     Status,
     Holding,
-    PromptReport {
-        model: String,
-        prompt: String,
-        by: Option<crate::prompt::Unit>,
-        most: Option<usize>,
-        extras: crate::prompt::Extras,
-        turn: Option<crate::turn::Turn>,
-        temperature: Option<mcf_core::configuration::Thousandths>,
-        seed: u64,
-    },
     Components,
     Failures {
         last: usize,
@@ -76,22 +66,6 @@ pub enum Request {
         from: Option<String>,
         fresh: bool,
     },
-    Probe {
-        model: String,
-        engine: Option<String>,
-        apply: bool,
-        up_to: Option<usize>,
-        only: Vec<String>,
-    },
-    Examine {
-        model: String,
-        engine: Option<String>,
-        only: Vec<String>,
-    },
-    Readings {
-        model: String,
-        method: Option<String>,
-    },
     Search {
         query: String,
         from: Option<String>,
@@ -101,16 +75,6 @@ pub enum Request {
         reference: String,
         file: String,
         from: Option<String>,
-    },
-    Measure {
-        model: String,
-        engine: Option<String>,
-        on: Option<On>,
-        deepest: u64,
-        started: crate::declared::Started,
-    },
-    CrossCheck {
-        model: String,
     },
     Settings {
         model: String,
@@ -123,12 +87,6 @@ pub enum Request {
     Unhost,
     Anatomy {
         model: String,
-    },
-    Tokenize {
-        model: String,
-        text: String,
-        engine: Option<String>,
-        beginning: bool,
     },
 }
 
@@ -235,122 +193,6 @@ fn search_line(query: &str, from: Option<&str>, fresh: bool) -> Value {
     ])
 }
 
-fn measure_line(request: &Request) -> Value {
-    let Request::Measure {
-        model,
-        engine,
-        on,
-        deepest,
-        started,
-    } = request
-    else {
-        return Value::Null;
-    };
-    Value::map([
-        ("ask", Value::text("measure")),
-        ("model", Value::text(model.clone())),
-        ("engine", maybe(engine.as_deref())),
-        ("on", maybe(on.map(On::as_str))),
-        (
-            "deepest",
-            Value::Integer(i64::try_from(*deepest).unwrap_or(i64::MAX)),
-        ),
-        ("started_with", started.to_value()),
-    ])
-}
-
-fn probe_line(request: &Request) -> Value {
-    let Request::Probe {
-        model,
-        engine,
-        apply,
-        up_to,
-        only,
-    } = request
-    else {
-        return Value::Null;
-    };
-    let mut fields = vec![
-        ("ask", Value::text("probe")),
-        ("model", Value::text(model.clone())),
-        ("apply", Value::Bool(*apply)),
-        (
-            "only",
-            Value::List(only.iter().cloned().map(Value::text).collect()),
-        ),
-    ];
-    if let Some(engine) = engine {
-        fields.push(("engine", Value::text(engine.clone())));
-    }
-    if let Some(up_to) = up_to {
-        fields.push((
-            "up_to",
-            Value::Integer(i64::try_from(*up_to).unwrap_or(i64::MAX)),
-        ));
-    }
-    Value::map(fields)
-}
-
-fn examine_line(model: &str, engine: Option<&str>, only: &[String]) -> Value {
-    let mut fields = vec![
-        ("ask", Value::text("examine")),
-        ("model", Value::text(model.to_owned())),
-        (
-            "only",
-            Value::List(only.iter().cloned().map(Value::text).collect()),
-        ),
-    ];
-    if let Some(engine) = engine {
-        fields.push(("engine", Value::text(engine.to_owned())));
-    }
-    Value::map(fields)
-}
-
-fn prompt_report_line(request: &Request) -> Value {
-    let Request::PromptReport {
-        model,
-        prompt,
-        by,
-        most,
-        extras,
-        turn,
-        temperature,
-        seed,
-    } = request
-    else {
-        return Value::Null;
-    };
-    let mut fields = vec![
-        ("ask", Value::text("prompt-report")),
-        ("model", Value::text(model.clone())),
-        ("prompt", Value::text(prompt.clone())),
-        ("seed", Value::Integer(i64::try_from(*seed).unwrap_or(0))),
-    ];
-    if let Some(by) = by {
-        fields.push(("by", Value::text(by.name().to_owned())));
-    }
-    if let Some(most) = most {
-        fields.push(("most", Value::Integer(i64::try_from(*most).unwrap_or(0))));
-    }
-    let asked: Vec<Value> = extras
-        .asked()
-        .map(|extra| Value::text(extra.name()))
-        .collect();
-    if !asked.is_empty() {
-        fields.push(("extras", Value::List(asked)));
-    }
-    if let Some(turn) = turn {
-        fields.push(("turn", turn.to_value()));
-    }
-    if let Some(temperature) = temperature {
-        fields.push((
-            "temperature_thousandths",
-            Value::Integer(i64::from(temperature.0)),
-        ));
-    }
-    Value::map(fields)
-}
-
 impl Request {
     #[must_use]
     #[allow(
@@ -376,7 +218,6 @@ impl Request {
                 }
                 Value::map(fields)
             }
-            Self::PromptReport { .. } => prompt_report_line(self),
             Self::Stop { reason } => Value::map([
                 ("ask", Value::text("stop")),
                 ("reason", Value::text(reason.clone())),
@@ -414,12 +255,6 @@ impl Request {
                 fresh,
             } => offered_line(reference, from.as_deref(), *fresh),
             Self::Search { query, from, fresh } => search_line(query, from.as_deref(), *fresh),
-            Self::Probe { .. } => probe_line(self),
-            Self::Examine {
-                model,
-                engine,
-                only,
-            } => examine_line(model, engine.as_deref(), only),
             Self::Acquire {
                 reference,
                 file,
@@ -434,31 +269,9 @@ impl Request {
                 ("ask", Value::text("settings")),
                 ("model", Value::text(model.clone())),
             ]),
-            Self::Readings { model, method } => {
-                let mut fields = vec![
-                    ("ask", Value::text("readings")),
-                    ("model", Value::text(model.clone())),
-                ];
-                if let Some(method) = method {
-                    fields.push(("method", Value::text(method.clone())));
-                }
-                Value::map(fields)
-            }
             Self::Anatomy { model } => Value::map([
                 ("ask", Value::text("anatomy")),
                 ("model", Value::text(model.clone())),
-            ]),
-            Self::Tokenize {
-                model,
-                text,
-                engine,
-                beginning,
-            } => Value::map([
-                ("ask", Value::text("tokenize")),
-                ("model", Value::text(model.clone())),
-                ("text", Value::text(text.clone())),
-                ("engine", maybe(engine.as_deref())),
-                ("beginning", Value::Bool(*beginning)),
             ]),
             Self::Host { model, settings } => Value::map([
                 ("ask", Value::text("host")),
@@ -467,11 +280,6 @@ impl Request {
             ]),
             Self::Hosted => Value::map([("ask", Value::text("hosted"))]),
             Self::Unhost => Value::map([("ask", Value::text("unhost"))]),
-            Self::CrossCheck { model } => Value::map([
-                ("ask", Value::text("cross_check")),
-                ("model", Value::text(model.clone())),
-            ]),
-            Self::Measure { .. } => measure_line(self),
         };
         let Value::Map(mut fields) = body else {
             return String::new();
@@ -524,43 +332,6 @@ impl Request {
                 from: optional("from"),
                 fresh: matches!(value.get("fresh"), Some(Value::Bool(true))),
             }),
-            Some("probe") => Ok(Self::Probe {
-                model: value
-                    .get("model")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a probe naming no model", line))?
-                    .to_owned(),
-                engine: optional("engine"),
-                apply: matches!(value.get("apply"), Some(Value::Bool(true))),
-                up_to: value
-                    .get("up_to")
-                    .and_then(Value::as_integer)
-                    .and_then(|held| usize::try_from(held).ok()),
-                only: value
-                    .get("only")
-                    .and_then(Value::as_list)
-                    .unwrap_or(&[])
-                    .iter()
-                    .filter_map(Value::as_text)
-                    .map(str::to_owned)
-                    .collect(),
-            }),
-            Some("examine") => Ok(Self::Examine {
-                model: value
-                    .get("model")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("an examination naming no model", line))?
-                    .to_owned(),
-                engine: optional("engine"),
-                only: value
-                    .get("only")
-                    .and_then(Value::as_list)
-                    .unwrap_or(&[])
-                    .iter()
-                    .filter_map(Value::as_text)
-                    .map(str::to_owned)
-                    .collect(),
-            }),
             Some("search") => Ok(Self::Search {
                 query: value
                     .get("query")
@@ -592,40 +363,12 @@ impl Request {
                     .ok_or_else(|| refused("a settings request naming no model", line))?
                     .to_owned(),
             }),
-            Some("readings") => Ok(Self::Readings {
-                model: value
-                    .get("model")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a readings request naming no model", line))?
-                    .to_owned(),
-                method: optional("method"),
-            }),
             Some("anatomy") => Ok(Self::Anatomy {
                 model: value
                     .get("model")
                     .and_then(Value::as_text)
                     .ok_or_else(|| refused("an anatomy request naming no model", line))?
                     .to_owned(),
-            }),
-            Some("tokenize") => Ok(Self::Tokenize {
-                model: value
-                    .get("model")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a tokenize request naming no model", line))?
-                    .to_owned(),
-                text: value
-                    .get("text")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a tokenize request with no text to count", line))?
-                    .to_owned(),
-                engine: value
-                    .get("engine")
-                    .and_then(Value::as_text)
-                    .map(str::to_owned),
-                beginning: value
-                    .get("beginning")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
             }),
             Some("host") => Ok(Self::Host {
                 model: value
@@ -634,36 +377,6 @@ impl Request {
                     .ok_or_else(|| refused("a hosting request naming no model", line))?
                     .to_owned(),
                 settings: value.get("settings").cloned().unwrap_or(Value::Null),
-            }),
-            Some("cross_check") => Ok(Self::CrossCheck {
-                model: value
-                    .get("model")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a cross-check naming no model", line))?
-                    .to_owned(),
-            }),
-            Some("measure") => Ok(Self::Measure {
-                model: value
-                    .get("model")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a measurement naming no model", line))?
-                    .to_owned(),
-                engine: optional("engine"),
-                on: match value.get("on").and_then(Value::as_text) {
-                    None => None,
-                    Some(word) => Some(On::parse(word).ok_or_else(|| {
-                        refused("a measurement naming a device MCF does not place on", word)
-                    })?),
-                },
-                deepest: value
-                    .get("deepest")
-                    .and_then(Value::as_integer)
-                    .and_then(|deepest| u64::try_from(deepest).ok())
-                    .ok_or_else(|| refused("a measurement naming no depth", line))?,
-                started: value
-                    .get("started_with")
-                    .map(crate::declared::Started::from_value)
-                    .unwrap_or_default(),
             }),
             Some("holding") => Ok(Self::Holding),
             Some("components") => Ok(Self::Components),
@@ -676,69 +389,6 @@ impl Request {
             }),
             Some("provision") => Ok(Self::Provision {
                 component: optional("component"),
-            }),
-            Some("prompt-report") => Ok(Self::PromptReport {
-                model: value
-                    .get("model")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a prompt report naming no model", line))?
-                    .to_owned(),
-                prompt: value
-                    .get("prompt")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| refused("a prompt report with no prompt", line))?
-                    .to_owned(),
-                by: match value.get("by").and_then(Value::as_text) {
-                    None => None,
-                    Some(word) => Some(crate::prompt::Unit::named(word).ok_or_else(|| {
-                        refused(
-                            "a prompt report taking the text apart by something that is \
-                             none of word, phrase, sentence or paragraph",
-                            line,
-                        )
-                    })?),
-                },
-                most: match value.get("most") {
-                    None => None,
-                    Some(most) => Some(
-                        most.as_integer()
-                            .and_then(|most| usize::try_from(most).ok())
-                            .filter(|most| *most > 0)
-                            .ok_or_else(|| {
-                                refused("a prompt report removing no parts at most", line)
-                            })?,
-                    ),
-                },
-                turn: value.get("turn").and_then(crate::turn::Turn::from_value),
-                extras: crate::prompt::Extras::named(
-                    value
-                        .get("extras")
-                        .and_then(Value::as_list)
-                        .unwrap_or(&[])
-                        .iter()
-                        .filter_map(Value::as_text),
-                ),
-                temperature: match value.get("temperature_thousandths") {
-                    None => None,
-                    Some(held) => Some(
-                        held.as_integer()
-                            .and_then(|held| u32::try_from(held).ok())
-                            .filter(|held| *held > 0)
-                            .map(mcf_core::configuration::Thousandths)
-                            .ok_or_else(|| {
-                                refused(
-                                    "a prompt report settling at a temperature that is not \
-                                     above nought",
-                                    line,
-                                )
-                            })?,
-                    ),
-                },
-                seed: value
-                    .get("seed")
-                    .and_then(Value::as_integer)
-                    .and_then(|held| u64::try_from(held).ok())
-                    .unwrap_or(0),
             }),
             Some("stop") => Ok(Self::Stop {
                 reason: value

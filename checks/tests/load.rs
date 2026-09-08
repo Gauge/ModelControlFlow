@@ -8,84 +8,16 @@ use mcf_checks::scratch::Scratch;
 
 use mcf_core::attested::Attested;
 use mcf_core::time::Timestamp;
-use mcf_lab::{CATALOGUE, Outcome, run};
 use mcf_record::export;
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
+use mcf_serve::engines::{Choice, Device, Engine, Kind, resolve};
+use mcf_serve::hosting::Hosting;
 
 fn workers() -> usize {
     thread::available_parallelism()
         .map_or(8, |count| count.get() * 2)
         .min(64)
-}
-
-#[test]
-#[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
-fn every_scenario_produces_its_category_on_every_worker_at_once() {
-    let workers = workers();
-    let rounds = 40;
-    let mismatches = Arc::new(AtomicUsize::new(0));
-    let ran = Arc::new(AtomicUsize::new(0));
-
-    thread::scope(|scope| {
-        for _ in 0..workers {
-            let mismatches = Arc::clone(&mismatches);
-            let ran = Arc::clone(&ran);
-            let _worker = scope.spawn(move || {
-                for _ in 0..rounds {
-                    for scenario in CATALOGUE {
-                        let outcome = run(scenario);
-                        ran.fetch_add(1, Ordering::Relaxed);
-                        if !outcome.matches(scenario.produces) {
-                            mismatches.fetch_add(1, Ordering::Relaxed);
-                            println!("  {} produced {outcome} under load", scenario.id);
-                        }
-                    }
-                }
-            });
-        }
-    });
-
-    let ran = ran.load(Ordering::Relaxed);
-    println!(
-        "  {ran} scenario runs across {workers} workers ({} scenarios × {rounds} rounds)",
-        CATALOGUE.len()
-    );
-    assert_eq!(ran, workers * rounds * CATALOGUE.len());
-    assert_eq!(
-        mismatches.load(Ordering::Relaxed),
-        0,
-        "a scenario stopped producing its category under load"
-    );
-}
-
-#[test]
-#[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
-fn a_concurrent_reproduction_is_identical_to_a_solitary_one() {
-    let workers = workers();
-    for scenario in CATALOGUE {
-        let alone = run(scenario);
-        let divergences = Arc::new(AtomicUsize::new(0));
-        thread::scope(|scope| {
-            for _ in 0..workers {
-                let divergences = Arc::clone(&divergences);
-                let alone = alone.clone();
-                let _worker = scope.spawn(move || {
-                    for _ in 0..16 {
-                        if run(scenario) != alone {
-                            divergences.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                });
-            }
-        });
-        assert_eq!(
-            divergences.load(Ordering::Relaxed),
-            0,
-            "{} diverged under load from what it produces alone: {alone}",
-            scenario.id
-        );
-    }
 }
 
 #[test]
@@ -186,40 +118,6 @@ fn every_concurrent_export_reads_back() {
 
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
-fn the_harness_survives_everything_it_runs() {
-    let workers = workers();
-    let unexpected = Arc::new(AtomicUsize::new(0));
-    thread::scope(|scope| {
-        for _ in 0..workers {
-            let unexpected = Arc::clone(&unexpected);
-            let _worker = scope.spawn(move || {
-                for scenario in CATALOGUE {
-                    match run(scenario) {
-                        Outcome::Produced(failure) => {
-                            assert!(
-                                !failure.detail().is_empty(),
-                                "{} produced a failure with no detail",
-                                scenario.id
-                            );
-                        }
-                        Outcome::Unexpected(what) => {
-                            println!("  {} reported: {what}", scenario.id);
-                            unexpected.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                }
-            });
-        }
-    });
-    assert_eq!(
-        unexpected.load(Ordering::Relaxed),
-        0,
-        "a scenario stopped reproducing its failure under load"
-    );
-}
-
-#[test]
-#[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn two_processes_writing_one_record_leave_it_readable() {
     let scratch = Scratch::new("load-two-writers");
     let journal = scratch.journal();
@@ -281,4 +179,148 @@ fn two_processes_writing_one_record_leave_it_readable() {
             "an entry arrived with its body cut short"
         );
     }
+}
+
+fn a_card(name: &str, free: u64) -> Device {
+    Device {
+        kind: Kind::Gpu,
+        name: name.to_owned(),
+        free: Some(free),
+    }
+}
+
+fn engines_here() -> Vec<(Engine, Vec<Device>)> {
+    let engine = Engine {
+        name: "an engine".to_owned(),
+        prefix: std::path::PathBuf::from("/nowhere"),
+        commit: "abc".to_owned(),
+    };
+    vec![(
+        engine,
+        vec![
+            Device {
+                kind: Kind::Cpu,
+                name: "CPU".to_owned(),
+                free: Some(64_000_000_000),
+            },
+            a_card("Card A", 116_000_000_000),
+            a_card("Card B", 101_000_000_000),
+        ],
+    )]
+}
+
+const WEIGHTS: [u64; 4] = [
+    1_000_000_000,
+    30_000_000_000,
+    135_000_000_000,
+    400_000_000_000,
+];
+
+fn planned(weights: u64) -> Result<Choice, String> {
+    resolve(&engines_here(), weights, Some(114_688), 40_960).map_err(|refused| refused.says())
+}
+
+#[test]
+#[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
+fn the_placement_decided_under_load_is_the_one_decided_alone() {
+    let workers = workers();
+    let rounds = 40;
+    for weights in WEIGHTS {
+        let alone = planned(weights);
+        let divergences = Arc::new(AtomicUsize::new(0));
+        let ran = Arc::new(AtomicUsize::new(0));
+        thread::scope(|scope| {
+            for _ in 0..workers {
+                let divergences = Arc::clone(&divergences);
+                let ran = Arc::clone(&ran);
+                let alone = alone.clone();
+                let _worker = scope.spawn(move || {
+                    for _ in 0..rounds {
+                        ran.fetch_add(1, Ordering::Relaxed);
+                        if planned(weights) != alone {
+                            divergences.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                });
+            }
+        });
+        println!(
+            "  {} decisions for {weights} bytes across {workers} workers",
+            ran.load(Ordering::Relaxed)
+        );
+        assert_eq!(ran.load(Ordering::Relaxed), workers * rounds);
+        assert_eq!(
+            divergences.load(Ordering::Relaxed),
+            0,
+            "a model of {weights} bytes was placed differently under load than alone"
+        );
+    }
+}
+
+#[test]
+#[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
+fn a_model_no_single_card_holds_is_spread_the_same_way_every_time() {
+    let workers = workers();
+    let alone = planned(135_000_000_000).expect("two cards together hold it");
+    assert!(alone.is_spread(), "the fixture stopped being a spread");
+    let divergences = Arc::new(AtomicUsize::new(0));
+    thread::scope(|scope| {
+        for _ in 0..workers {
+            let divergences = Arc::clone(&divergences);
+            let alone = alone.clone();
+            let _worker = scope.spawn(move || {
+                for _ in 0..32 {
+                    match planned(135_000_000_000) {
+                        Ok(held) if held == alone => {}
+                        _ => {
+                            divergences.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+            });
+        }
+    });
+    assert_eq!(
+        divergences.load(Ordering::Relaxed),
+        0,
+        "the split across cards was not decided the same way under load"
+    );
+}
+
+#[test]
+#[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
+fn every_setting_reads_back_under_load() {
+    let workers = workers();
+    let choice = planned(30_000_000_000).expect("one card holds it");
+    let hosting = Hosting::recommended(
+        &choice.engine,
+        &choice.device.name,
+        true,
+        choice.context,
+        Some(8),
+        true,
+        None,
+    )
+    .spread_over(choice.split());
+    let empty = Arc::new(AtomicUsize::new(0));
+    thread::scope(|scope| {
+        for _ in 0..workers {
+            let empty = Arc::clone(&empty);
+            let hosting = hosting.clone();
+            let _worker = scope.spawn(move || {
+                for _ in 0..64 {
+                    for setting in hosting.listed(&hosting) {
+                        if setting.value.is_empty() || setting.because.is_empty() {
+                            empty.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+            });
+        }
+    });
+    assert_eq!(
+        empty.load(Ordering::Relaxed),
+        0,
+        "a setting rendered empty under load, so a reader would be shown a blank"
+    );
 }

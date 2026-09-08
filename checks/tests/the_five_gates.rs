@@ -95,8 +95,8 @@ fn nothing_listens_where_another_machine_could_reach_it() {
 
     let declared: &[(&str, &str)] = &[
         (
-            "crates/mcf-lab/src/serving.rs",
-            "the laboratory's hub on a socket: a port the kernel chooses on 127.0.0.1, so that \
+            "crates/mcf-cli/tests/serving/mod.rs",
+            "a stand-in hub on a socket: a port the kernel chooses on 127.0.0.1, so that \
              code which talks to an operating system can be tested against something that \
              answers",
         ),
@@ -228,8 +228,8 @@ const DECLARED: &[(&str, &str)] = &[
      the act as a large irrecoverable use (B-021, B-322)",
     ),
     (
-        "crates/mcf-lab/src/serving.rs",
-        "the laboratory waking its own accept loop on the loopback address so it can stop: a \
+        "crates/mcf-cli/tests/serving/mod.rs",
+        "the stand-in hub waking its own accept loop on the loopback address so it can stop: a \
      connection to this process from this process, which reaches no other machine and \
      carries nothing (B-028, D26)",
     ),

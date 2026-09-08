@@ -317,3 +317,58 @@ fn resolve(root: &Path, name: &str) -> PathBuf {
         .find(|candidate| candidate.exists())
         .unwrap_or_else(|| root.join(given))
 }
+
+pub(crate) fn read_prefix(path: &std::path::Path) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+
+    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    for cap in [16_u64 << 20, 256 << 20, u64::MAX] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        std::fs::File::open(path)
+            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
+            .ok()?;
+        if mcf_standin::gguf::parse(&prefix).is_ok() {
+            return Some(prefix);
+        }
+        if take >= held {
+            return None;
+        }
+    }
+    None
+}
+
+pub(crate) fn resolve_named(named: &str) -> Result<Option<PathBuf>, Vec<PathBuf>> {
+    let given = Path::new(named);
+    if given.is_file() {
+        return Ok(Some(given.to_path_buf()));
+    }
+    let relative = named.replace(':', "/");
+    let found: Vec<PathBuf> = stores()
+        .into_iter()
+        .map(|root| root.join(&relative))
+        .filter(|candidate| candidate.is_file())
+        .collect();
+    match found.len() {
+        0 => Ok(None),
+        1 => Ok(found.into_iter().next()),
+        _ => Err(found),
+    }
+}
+
+pub(crate) fn ambiguous(named: &str, found: &[PathBuf]) -> String {
+    let mut lines = vec![format!(
+        "mcf: {named} names {} files, in different stores:",
+        found.len()
+    )];
+    for path in found {
+        lines.push(format!("  {}", path.display()));
+    }
+    lines.push(
+        "  name one of those paths. MCF will not choose: they are two artifacts with two \
+         provenances, and holding whichever one MCF reached first would be a hold nobody \
+         could account for"
+            .to_owned(),
+    );
+    lines.join("\n")
+}

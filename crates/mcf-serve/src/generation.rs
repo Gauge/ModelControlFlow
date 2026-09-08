@@ -407,7 +407,6 @@ pub(crate) fn serve_generation(
         runtime,
         named,
         gpu_layers,
-        context,
         server,
         started,
         held,
@@ -629,7 +628,6 @@ struct Place<'a> {
     runtime: &'a Path,
     named: &'a str,
     gpu_layers: u32,
-    context: u64,
     server: &'a std::sync::Mutex<Option<Served>>,
     started: crate::declared::Started,
     held: Option<&'a Served>,
@@ -644,7 +642,6 @@ impl<'a> Place<'a> {
                 runtime: self.runtime,
                 named: self.named,
                 gpu_layers: self.gpu_layers,
-                context: self.context,
                 started: self.started,
                 held: self.held,
             },
@@ -747,35 +744,6 @@ impl Tokenizer<'_> {
             .with_context("path", path.display().to_string())
         })?;
         Vocabulary::read(&file).map(Self::Own)
-    }
-
-    pub(crate) fn named(&self) -> String {
-        match self {
-            Self::Own(_) => "MCF's own tokenizer, which its engine generates with".to_owned(),
-            Self::Engine { .. } => format!("{}, which generated", self.who()),
-        }
-    }
-
-    pub(crate) fn reader(&self) -> String {
-        match self {
-            Self::Own(_) => "MCF's own tokenizer, which its engine generates with".to_owned(),
-            Self::Engine { .. } => format!("{}, which generates for this model", self.who()),
-        }
-    }
-
-    fn who(&self) -> String {
-        match self {
-            Self::Own(_) => "MCF's own tokenizer".to_owned(),
-            Self::Engine { where_it_lives, .. } => format!(
-                "provisioned {} server @{}",
-                where_it_lives.llama.component,
-                where_it_lives
-                    .llama
-                    .commit
-                    .get(..12)
-                    .unwrap_or(&where_it_lives.llama.commit)
-            ),
-        }
     }
 
     pub(crate) fn encode(&self, text: &str, with_beginning: bool) -> Result<Vec<Read>, Failure> {
@@ -919,78 +887,7 @@ pub(crate) fn framed_as(
     Ok(read.into_iter().map(|held| held.id).collect())
 }
 
-pub(crate) struct Received {
-    pub(crate) read: Vec<Read>,
-    pub(crate) before: usize,
-    pub(crate) under: String,
-}
-
-impl Received {
-    pub(crate) fn tokens(&self) -> Vec<usize> {
-        self.read.iter().map(|held| held.id).collect()
-    }
-}
-
-pub(crate) fn received(
-    tokenizer: &Tokenizer<'_>,
-    mcf_home: &Path,
-    path: &Path,
-    prompt: &str,
-    with_after: bool,
-) -> Result<Received, Failure> {
-    let derived = crate::configured::read_derived(mcf_home, path).addressing;
-    let not_within = |what: &str| {
-        Failure::new(
-            mcf_core::failure::Category::EngineProtocolMalformed,
-            mcf_core::failure::Attribution::Machine,
-            mcf_core::failure::Disposition::Aborted,
-            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-            what,
-        )
-    };
-    let Some(addressing) = derived else {
-        let read = tokenizer.encode(prompt, true)?;
-        let own = tokenizer.encode(prompt, false)?;
-        let before = offset_of(&read, &own)
-            .ok_or_else(|| not_within("the prompt's own tokens are not within its reading"))?;
-        return Ok(Received {
-            read,
-            before,
-            under: BARE_PROMPT.to_owned(),
-        });
-    };
-    let opening = tokenizer.addressed(&addressing.before)?;
-    let mut pieces = addressing.before.clone();
-    pieces.push(mcf_standin::tokenizer::Piece::Text(prompt.to_owned()));
-    if with_after {
-        pieces.extend(addressing.after.iter().cloned());
-    }
-    let read = tokenizer.addressed(&pieces)?;
-    if !read.starts_with(&opening) {
-        return Err(not_within(
-            "the addressing's opening is not a prefix of the addressed turn",
-        ));
-    }
-    Ok(Received {
-        read,
-        before: opening.len(),
-        under: addressing.provenance(),
-    })
-}
-
-fn offset_of(read: &[Read], held: &[Read]) -> Option<usize> {
-    if held.is_empty() {
-        return Some(read.len());
-    }
-    let ids = |tokens: &[Read]| tokens.iter().map(|token| token.id).collect::<Vec<_>>();
-    let within = ids(read);
-    let wanted = ids(held);
-    within.windows(wanted.len()).position(|run| run == wanted)
-}
-
 const SMALLEST_WINDOW: u64 = 4096;
-
-pub(crate) type Ranked = (Option<usize>, Option<String>);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Where<'a> {
@@ -999,7 +896,6 @@ pub(crate) struct Where<'a> {
     pub runtime: &'a Path,
     pub named: &'a str,
     pub gpu_layers: u32,
-    pub context: u64,
     pub started: crate::declared::Started,
     pub held: Option<&'a Served>,
 }
@@ -1034,34 +930,6 @@ impl<'a> Slot<'a> {
     }
 }
 
-pub(crate) const MOST_RANKED: usize = 120;
-
-pub(crate) const HOW_DEEP: usize = 60;
-
-pub(crate) fn ranks_over(
-    where_it_lives: &Where<'_>,
-    server: &std::sync::Mutex<Option<Served>>,
-    tokens: &[usize],
-    from: usize,
-    most: usize,
-) -> Result<Vec<Ranked>, Failure> {
-    let mut slot = Slot::for_request(server, where_it_lives.held)?;
-    let (engine, _reused) = slot.engine(
-        where_it_lives,
-        window_for(tokens.len(), 0, where_it_lives.context),
-    )?;
-
-    let mut ranked = Vec::new();
-    let from = from.max(1);
-    for at in from..tokens.len().min(from.saturating_add(most)) {
-        let (Some(prefix), Some(wanted)) = (tokens.get(..at), tokens.get(at).copied()) else {
-            break;
-        };
-        ranked.push(engine.ranked_next(prefix, wanted, HOW_DEEP)?);
-    }
-    Ok(ranked)
-}
-
 fn serving<'slot>(
     slot: &'slot mut Option<Served>,
     where_it_lives: &Where<'_>,
@@ -1073,7 +941,6 @@ fn serving<'slot>(
         runtime,
         named,
         gpu_layers,
-        context: _,
         started,
         held: _,
     } = *where_it_lives;
@@ -1167,7 +1034,6 @@ fn through_served(
         runtime,
         named,
         gpu_layers,
-        context,
         started,
         held,
     };
@@ -2143,7 +2009,7 @@ mod marker_tests {
 mod tokenizer_tests {
     #![allow(clippy::panic, clippy::expect_used, clippy::indexing_slicing)]
 
-    use super::{Received, Tokenizer, addressed_as, received};
+    use super::Tokenizer;
     use mcf_standin::tokenizer::Piece;
     use std::path::PathBuf;
 
@@ -2162,9 +2028,95 @@ mod tokenizer_tests {
             let _fresh = std::fs::remove_dir_all(&root);
             std::fs::create_dir_all(&root).expect("a scratch directory");
             let model = root.join("chatml.gguf");
-            std::fs::write(&model, crate::probes::tests::chatml()).expect("a model file");
+            std::fs::write(&model, chatml_bytes()).expect("a model file");
             Self { root, model }
         }
+    }
+
+    fn a_file(tokens: &[String], template: Option<&str>, ending: Option<u32>) -> Vec<u8> {
+        fn length(value: usize) -> [u8; 8] {
+            (value as u64).to_le_bytes()
+        }
+        let mut pairs: Vec<(&str, u32, Vec<u8>)> = Vec::new();
+
+        let mut model = length("llama".len()).to_vec();
+        model.extend_from_slice(b"llama");
+        pairs.push(("general.architecture", 8, model));
+
+        let mut kind = length("llama".len()).to_vec();
+        kind.extend_from_slice(b"llama");
+        pairs.push(("tokenizer.ggml.model", 8, kind));
+
+        let mut list = 8_u32.to_le_bytes().to_vec();
+        list.extend_from_slice(&length(tokens.len()));
+        for token in tokens {
+            list.extend_from_slice(&length(token.len()));
+            list.extend_from_slice(token.as_bytes());
+        }
+        pairs.push(("tokenizer.ggml.tokens", 9, list));
+
+        let mut scores = 6_u32.to_le_bytes().to_vec();
+        scores.extend_from_slice(&length(tokens.len()));
+        for _ in tokens {
+            scores.extend_from_slice(&0.0_f32.to_le_bytes());
+        }
+        pairs.push(("tokenizer.ggml.scores", 9, scores));
+
+        let mut types = 5_u32.to_le_bytes().to_vec();
+        types.extend_from_slice(&length(tokens.len()));
+        for token in tokens {
+            let kind: i32 = if token.starts_with("<|") || token.starts_with("<s") {
+                4
+            } else {
+                1
+            };
+            types.extend_from_slice(&kind.to_le_bytes());
+        }
+        pairs.push(("tokenizer.ggml.token_type", 9, types));
+
+        if let Some(template) = template {
+            let mut value = length(template.len()).to_vec();
+            value.extend_from_slice(template.as_bytes());
+            pairs.push(("tokenizer.chat_template", 8, value));
+        }
+        if let Some(ending) = ending {
+            pairs.push((
+                "tokenizer.ggml.eos_token_id",
+                4,
+                ending.to_le_bytes().to_vec(),
+            ));
+        }
+
+        let mut out = b"GGUF".to_vec();
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(&length(0));
+        out.extend_from_slice(&length(pairs.len()));
+        for (key, kind, value) in &pairs {
+            out.extend_from_slice(&length(key.len()));
+            out.extend_from_slice(key.as_bytes());
+            out.extend_from_slice(&kind.to_le_bytes());
+            out.extend_from_slice(value);
+        }
+        out
+    }
+
+    fn a_vocabulary(tokens: &[String], with_template: bool) -> Vec<u8> {
+        a_file(tokens, with_template.then_some("{{ messages }}"), None)
+    }
+
+    fn with_bytes(tokens: &[&str]) -> Vec<String> {
+        let mut all: Vec<String> = tokens.iter().map(|token| (*token).to_owned()).collect();
+        for byte in 0..=u8::MAX {
+            all.push(format!("<0x{byte:02X}>"));
+        }
+        all
+    }
+
+    fn chatml_bytes() -> Vec<u8> {
+        a_vocabulary(
+            &with_bytes(&["<s>", "\u{2581}a", "a", "<|im_start|>", "<|im_end|>"]),
+            true,
+        )
     }
 
     impl Drop for OnDisk {
@@ -2269,62 +2221,6 @@ mod tokenizer_tests {
             refused.context_value("marker"),
             Some("<|start_header_id|>"),
             "the refusal names the marker: {refused}"
-        );
-    }
-
-    #[test]
-    fn a_bare_prompt_has_nothing_before_it_but_the_beginning() {
-        let disk = OnDisk::chatml("bare");
-        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
-        let Received {
-            read,
-            before,
-            under,
-        } = received(&tokenizer, &disk.root, &disk.model, "a", false).expect("a reading");
-        assert!(under.contains("no addressing is on file"), "{under}");
-        assert_eq!(read.len() - before, 1, "{read:?} before {before}");
-        let own: Vec<&str> = read[before..]
-            .iter()
-            .map(|held| held.piece.as_str())
-            .collect();
-        assert_eq!(own, vec![" a"]);
-        assert_eq!(before, 0, "{read:?}");
-    }
-
-    #[test]
-    fn an_addressed_prompt_begins_after_its_opening() {
-        let disk = OnDisk::chatml("opening");
-        let _wrote = crate::configured::write(&disk.root, &disk.model, &chatml_addressing())
-            .expect("an addressing on file");
-        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
-        let opened = received(&tokenizer, &disk.root, &disk.model, "a", false).expect("a reading");
-        assert!(opened.under.contains("im_start"), "{}", opened.under);
-        assert_eq!(opened.read[0].piece, "<|im_start|>", "{:?}", opened.read);
-        let own: Vec<&str> = opened.read[opened.before..]
-            .iter()
-            .map(|held| held.piece.as_str())
-            .collect();
-        assert_eq!(
-            own,
-            vec![" a"],
-            "{:?} before {}",
-            opened.read,
-            opened.before
-        );
-
-        let closed = received(&tokenizer, &disk.root, &disk.model, "a", true).expect("a reading");
-        assert_eq!(closed.before, opened.before);
-        assert!(closed.read.len() > opened.read.len());
-        assert_eq!(
-            closed.read.last().map(|held| held.piece.as_str()),
-            Some("\n"),
-            "{:?}",
-            closed.read
-        );
-        assert_eq!(
-            addressed_as(&tokenizer, "a", &chatml_addressing()).expect("the turn"),
-            closed.tokens(),
-            "the generation's turn is the reading's turn"
         );
     }
 

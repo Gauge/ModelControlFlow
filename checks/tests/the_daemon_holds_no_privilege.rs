@@ -62,10 +62,9 @@ fn nothing_links_the_helper_but_the_laboratory() {
     }
     assert_eq!(
         linked,
-        vec!["mcf-lab", "mcf-checks"],
-        "the privileged helper is linked by something other than the laboratory (§6.32). \
-         The laboratory links it because A13 requires a scenario for every category MCF's \
-         code constructs, and a scenario about a mock is not one (D26)"
+        vec!["mcf-checks"],
+        "the privileged helper is linked by something other than the checks (§6.32). The \
+         checks link it to exercise the three things it exists for; nothing that ships may"
     );
 }
 

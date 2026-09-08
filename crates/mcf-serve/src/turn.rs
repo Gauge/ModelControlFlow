@@ -266,12 +266,12 @@ struct Pair {
 fn pairs_of(engine: &Served, template: &str) -> Vec<Pair> {
     let mut pairs = Vec::new();
     let mut seen = Vec::new();
-    for marker in crate::probes::markers_in(template) {
+    for marker in markers_in(template) {
         if seen.contains(&marker) {
             continue;
         }
         seen.push(marker.clone());
-        let Some(closing) = crate::probes::thinking::closing_form(&marker) else {
+        let Some(closing) = closing_form(&marker) else {
             continue;
         };
         let one = |text: &str| match engine.tokenize(text, false, true) {
@@ -342,7 +342,7 @@ fn answer_opener(engine: &Served) -> Option<String> {
         .ok()?;
     let before = rendered.split(ANSWER_PLACE).next()?;
     let mut at: Vec<usize> = Vec::new();
-    for marker in crate::probes::markers_in(before) {
+    for marker in markers_in(before) {
         at.extend(before.match_indices(&marker).map(|(found, _)| found));
     }
     at.sort_unstable();
@@ -408,3 +408,55 @@ fn last_run(held: &[usize], run: &[usize]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn markers_in(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let characters: Vec<char> = text.chars().collect();
+    let mut at = 0;
+    while at < characters.len() {
+        let opener = characters.get(at).copied();
+        let closer = match opener {
+            Some('<') => '>',
+            Some('[') => ']',
+            _ => {
+                at = at.saturating_add(1);
+                continue;
+            }
+        };
+        let mut end = at.saturating_add(1);
+        while end < characters.len() && characters.get(end).copied() != Some(closer) {
+            end = end.saturating_add(1);
+        }
+        if end < characters.len() {
+            found.push(
+                characters
+                    .get(at..=end)
+                    .unwrap_or_default()
+                    .iter()
+                    .collect(),
+            );
+            at = end.saturating_add(1);
+        } else {
+            at = at.saturating_add(1);
+        }
+    }
+    found
+}
+
+fn closing_form(marker: &str) -> Option<String> {
+    let mut characters = marker.chars();
+    let opener = characters.next()?;
+    let closer = match opener {
+        '<' => '>',
+        '[' => ']',
+        _ => return None,
+    };
+    if !marker.ends_with(closer) {
+        return None;
+    }
+    let inner = marker.get(opener.len_utf8()..marker.len() - closer.len_utf8())?;
+    if inner.is_empty() || inner.starts_with('/') {
+        return None;
+    }
+    Some(format!("{opener}/{inner}{closer}"))
+}

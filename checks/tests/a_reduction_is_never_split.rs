@@ -131,24 +131,14 @@ fn the_serial_path_and_the_partitioned_path_share_their_arithmetic() {
 
 #[test]
 fn the_property_itself_is_asserted_on_bits() {
-    for (path, what) in [
-        (
-            "crates/mcf-standin/tests/threads_do_not_change_the_answer.rs",
-            "the product",
-        ),
-        (
-            "crates/mcf-lab/tests/threads_do_not_change_the_answer.rs",
-            "a whole forward pass",
-        ),
-    ] {
-        let source = std::fs::read_to_string(mcf_checks::workspace::root().join(path))
-            .unwrap_or_else(|_| panic!("the property test for {what} is in the tree: {path}"));
-        assert!(
-            source.contains("to_bits()"),
-            "the property test for {what} no longer compares bits, and a comparison with a \
-             tolerance would pass on exactly the divergence this exists to catch (B-366)"
-        );
-    }
+    let path = "crates/mcf-standin/tests/threads_do_not_change_the_answer.rs";
+    let source = std::fs::read_to_string(mcf_checks::workspace::root().join(path))
+        .unwrap_or_else(|_| panic!("the property test for the product is in the tree: {path}"));
+    assert!(
+        source.contains("to_bits()"),
+        "the property test for the product no longer compares bits, and a comparison with a \
+         tolerance would pass on exactly the divergence this exists to catch (B-366)"
+    );
 }
 
 fn body<'a>(source: &'a str, signature: &str) -> &'a str {

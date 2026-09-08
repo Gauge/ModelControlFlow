@@ -1,41 +1,21 @@
 mod acquire;
-mod bench;
-mod bundle;
-mod catalogue;
-mod challenges;
+mod ask;
 mod check;
-mod crosscheck;
-mod data;
 mod desk;
 mod doctor;
-mod edits;
-mod embed;
-mod eval;
-mod examine;
 mod explain;
 mod failures;
-mod history;
 mod hosting;
-mod languages;
 mod licence;
 mod log;
-mod measure;
 mod models;
-mod probe;
-mod prompt;
 mod provision;
 mod pull;
-mod queries;
-mod run;
 mod say;
-mod segment;
 mod serve;
 mod share;
-mod show;
 mod support;
-mod testing;
 mod tui;
-mod verify;
 
 use std::process::ExitCode;
 
@@ -82,6 +62,13 @@ enum Request<'a> {
     Serve,
     Desk,
     Tui,
+    Ask {
+        model: Option<&'a str>,
+        prompt: &'a str,
+        limit: Option<usize>,
+        seed: u64,
+        engine: Option<&'a str>,
+    },
     Failures {
         last: Option<usize>,
     },
@@ -94,44 +81,8 @@ enum Request<'a> {
         model: &'a str,
         json: bool,
     },
-    Run {
-        model: &'a str,
-        prompt: &'a str,
-        limit: Option<usize>,
-        seed: u64,
-        engine: Option<&'a str>,
-        turn: Box<mcf_serve::turn::Turn>,
-        image: Option<&'a str>,
-        started: mcf_serve::declared::Started,
-    },
-    Verify {
-        bundle: &'a str,
-    },
-    Bundle {
-        id: &'a str,
-        into: Option<&'a str>,
-    },
-    Show {
-        id: &'a str,
-    },
-    Bench {
-        left: &'a str,
-        right: &'a str,
-        prompt: &'a str,
-        limit: Option<usize>,
-        seed: u64,
-        engine: Option<&'a str>,
-        resolving: Option<u64>,
-        cold: bool,
-        within: Option<u64>,
-        started: mcf_serve::declared::Started,
-    },
     Support {
         into: Option<&'a str>,
-    },
-    Segment {
-        model: &'a str,
-        prompt: &'a str,
     },
     Provision {
         name: Option<&'a str>,
@@ -144,9 +95,6 @@ enum Request<'a> {
         name: &'a str,
         because: Option<&'a str>,
         into: Option<&'a str>,
-    },
-    CrossCheck {
-        model: &'a str,
     },
     Offered {
         reference: &'a str,
@@ -165,54 +113,6 @@ enum Request<'a> {
     },
     Hosted,
     Unhost,
-    Measure {
-        model: &'a str,
-        deepest: u64,
-        engine: Option<&'a str>,
-        on: Option<mcf_serve::control::On>,
-        started: mcf_serve::declared::Started,
-    },
-    PromptReport {
-        model: &'a str,
-        prompt: Option<&'a str>,
-        file: Option<&'a str>,
-        by: Option<mcf_serve::prompt::Unit>,
-        most: Option<usize>,
-        temperature: Option<mcf_core::configuration::Thousandths>,
-        extras: mcf_serve::prompt::Extras,
-        turn: Box<mcf_serve::turn::Turn>,
-        as_json: bool,
-    },
-    Eval {
-        model: &'a str,
-        only: Option<&'a str>,
-        retries: Option<usize>,
-        languages: Option<&'a str>,
-        tier: Option<&'a str>,
-        window: Option<u64>,
-        resume: bool,
-    },
-    Data {
-        model: &'a str,
-        method: Option<&'a str>,
-        as_json: bool,
-    },
-    Examine {
-        model: &'a str,
-        engine: Option<&'a str>,
-        only: Option<&'a str>,
-    },
-    Probe {
-        model: &'a str,
-        engine: Option<&'a str>,
-        apply: bool,
-        up_to: Option<usize>,
-        only: Option<&'a str>,
-    },
-    Embed {
-        model: &'a str,
-        text: &'a str,
-    },
     Status,
     Stop {
         because: Option<&'a str>,
@@ -281,6 +181,7 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["licence" | "license" | "--licence" | "--license", "--full"] => {
             Request::Licence { full: true }
         }
+        [] if on_a_terminal() => Request::Tui,
         [] | ["--help" | "-h"] => Request::Usage,
         ["export", "--to", to] => Request::Export { to },
         ["export", rest @ ..] => match rest.first() {
@@ -351,11 +252,6 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "explain",
             argument,
         },
-        ["cross-check", model] => Request::CrossCheck { model },
-        ["cross-check"] => Request::MissingArgument {
-            command: "cross-check",
-            needs: "<model>",
-        },
         ["settings", model] => Request::Settings { model, at: None },
         ["settings", model, "--context", at] => match at.parse::<u64>() {
             Ok(at) => Request::Settings {
@@ -370,6 +266,13 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["settings"] => Request::MissingArgument {
             command: "settings",
             needs: "<model>",
+        },
+        ["ask", rest @ ..] => match ask_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "ask",
+                argument,
+            },
         },
         ["hosted"] => Request::Hosted,
         ["unhost"] => Request::Unhost,
@@ -393,72 +296,6 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["acquire"] | ["acquire", _] => Request::MissingArgument {
             command: "acquire",
             needs: "<owner/name> <file>",
-        },
-        ["measure"] => Request::MissingArgument {
-            command: "measure",
-            needs: "<model>",
-        },
-        ["measure", model, rest @ ..] => match measure_options(model, rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "measure",
-                argument,
-            },
-        },
-        ["prompt"] => Request::MissingArgument {
-            command: "prompt",
-            needs: "<model> --prompt <text> or --file <path>",
-        },
-        ["prompt", model, rest @ ..] => match prompt_options(model, rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "prompt",
-                argument,
-            },
-        },
-        ["eval", model, rest @ ..] => match eval_options(model, rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "eval",
-                argument,
-            },
-        },
-        ["eval"] => Request::MissingArgument {
-            command: "eval",
-            needs: "<model>",
-        },
-        ["data"] => Request::MissingArgument {
-            command: "data",
-            needs: "<model>",
-        },
-        ["data", model, rest @ ..] => match data_options(model, rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "data",
-                argument,
-            },
-        },
-        ["examine"] => Request::MissingArgument {
-            command: "examine",
-            needs: "<model>",
-        },
-        ["examine", model, rest @ ..] => match examine_options(model, rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "examine",
-                argument,
-            },
-        },
-        ["probe"] => Request::MissingArgument {
-            command: "probe",
-            needs: "<model>",
-        },
-        ["probe", model, rest @ ..] => match probe_options(model, rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "probe",
-                argument,
-            },
         },
         ["provision", "--list"] => Request::ProvisionList { into: None },
         ["provision", "--list", "--into", into] => Request::ProvisionList { into: Some(into) },
@@ -505,68 +342,6 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "provision",
             argument,
         },
-        ["embed", model, "--text", text] => Request::Embed { model, text },
-        ["embed", _model, "--text"] => Request::MissingArgument {
-            command: "embed",
-            needs: "--text <text>",
-        },
-        ["embed", _model] => Request::MissingArgument {
-            command: "embed",
-            needs: "--text <text>",
-        },
-        ["embed"] => Request::MissingArgument {
-            command: "embed",
-            needs: "<model> --text <text>",
-        },
-        ["embed", _, argument, ..] => Request::UnexpectedArgument {
-            command: "embed",
-            argument,
-        },
-        ["run", rest @ ..] => match run_options(rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "run",
-                argument,
-            },
-        },
-        ["bench", rest @ ..] => match bench_options(rest) {
-            Ok(request) => request,
-            Err(argument) => Request::UnexpectedArgument {
-                command: "bench",
-                argument,
-            },
-        },
-        ["verify", bundle] => Request::Verify { bundle },
-        ["verify"] => Request::MissingArgument {
-            command: "verify",
-            needs: "<bundle>, which `mcf bundle` writes",
-        },
-        ["verify", _, argument, ..] => Request::UnexpectedArgument {
-            command: "verify",
-            argument,
-        },
-        ["bundle", id] => Request::Bundle { id, into: None },
-        ["bundle", id, "--into", path] => Request::Bundle {
-            id,
-            into: Some(path),
-        },
-        ["bundle"] => Request::MissingArgument {
-            command: "bundle",
-            needs: "<entry-id>, which `mcf log --kind comparison` prints first on each line",
-        },
-        ["bundle", _, argument, ..] => Request::UnexpectedArgument {
-            command: "bundle",
-            argument,
-        },
-        ["show", id] => Request::Show { id },
-        ["show"] => Request::MissingArgument {
-            command: "show",
-            needs: "<entry-id>, which `mcf log` prints first on each line",
-        },
-        ["show", _, argument, ..] => Request::UnexpectedArgument {
-            command: "show",
-            argument,
-        },
         ["share"] => Request::Share { into: None },
         ["share", "--into", into] => Request::Share { into: Some(into) },
         ["share", argument, ..] => Request::UnexpectedArgument {
@@ -594,19 +369,6 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["support", "--into", path] => Request::Support { into: Some(path) },
         ["support", argument, ..] => Request::UnexpectedArgument {
             command: "support",
-            argument,
-        },
-        ["segment", model, "--prompt", prompt] => Request::Segment { model, prompt },
-        ["segment", _model] | ["segment", _model, "--prompt"] => Request::MissingArgument {
-            command: "segment",
-            needs: "--prompt <text>",
-        },
-        ["segment"] => Request::MissingArgument {
-            command: "segment",
-            needs: "<model> --prompt <text>",
-        },
-        ["segment", _, argument, ..] => Request::UnexpectedArgument {
-            command: "segment",
             argument,
         },
         ["list"] => Request::List,
@@ -639,376 +401,6 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         }
         [first, ..] => Request::Unrecognized(first),
     }
-}
-
-fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let mut deepest = 8192;
-    let mut engine = None;
-    let mut on = None;
-    let mut started = mcf_serve::declared::Started::default();
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        match *argument {
-            "--deepest" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "measure --deepest",
-                        needs: "a power of two, 512 or larger",
-                    });
-                };
-                deepest = match value.parse::<u64>() {
-                    Ok(deepest) if deepest.is_power_of_two() && deepest >= 512 => deepest,
-                    _ => {
-                        return Ok(Request::UnexpectedArgument {
-                            command: "measure --deepest (wants a power of two, 512 or larger)",
-                            argument: value,
-                        });
-                    }
-                };
-            }
-            "--engine" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "measure --engine",
-                        needs: "an engine's name",
-                    });
-                };
-                engine = Some(*value);
-            }
-            "--on" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "measure --on",
-                        needs: "cpu or gpu",
-                    });
-                };
-                on = match mcf_serve::control::On::parse(value) {
-                    Some(on) => Some(on),
-                    None => {
-                        return Ok(Request::UnexpectedArgument {
-                            command: "measure --on (wants cpu or gpu)",
-                            argument: value,
-                        });
-                    }
-                };
-            }
-            "--draft-head" => started.draft_head = true,
-            "--rope-scaling" | "--rope-scale" => {
-                if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
-                    return Ok(Request::MissingArgument {
-                        command: "measure",
-                        needs,
-                    });
-                }
-            }
-            other => return Err(other),
-        }
-    }
-    Ok(Request::Measure {
-        model,
-        deepest,
-        engine,
-        on,
-        started,
-    })
-}
-
-fn eval_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let (mut only, mut retries, mut languages, mut tier, mut window) =
-        (None, None, None, None, None);
-    let mut resume = false;
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        match *argument {
-            "--only" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "eval --only",
-                        needs: "a suite's name: challenges, editing, tests or queries",
-                    });
-                };
-                only = Some(*value);
-            }
-            "--retries" => {
-                let Some(value) = rest.next().and_then(|held| held.parse::<usize>().ok()) else {
-                    return Ok(Request::MissingArgument {
-                        command: "eval --retries",
-                        needs: "a whole number of attempts",
-                    });
-                };
-                retries = Some(value);
-            }
-            "--languages" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "eval --languages",
-                        needs: "language names separated by commas: python, javascript, rust, go",
-                    });
-                };
-                languages = Some(*value);
-            }
-            "--tier" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "eval --tier",
-                        needs: "easy, medium, hard or expert",
-                    });
-                };
-                tier = Some(*value);
-            }
-            "--window" => {
-                let Some(value) = rest.next().and_then(|held| held.parse::<u64>().ok()) else {
-                    return Ok(Request::MissingArgument {
-                        command: "eval --window",
-                        needs: "a whole number of tokens",
-                    });
-                };
-                window = Some(value);
-            }
-            "--resume" => resume = true,
-            other => return Err(other),
-        }
-    }
-    Ok(Request::Eval {
-        model,
-        only,
-        retries,
-        languages,
-        tier,
-        window,
-        resume,
-    })
-}
-
-fn data_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let mut method = None;
-    let mut as_json = false;
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        match *argument {
-            "--json" => as_json = true,
-            "--method" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "data --method",
-                        needs: "a method's name",
-                    });
-                };
-                method = Some(*value);
-            }
-            other => return Err(other),
-        }
-    }
-    Ok(Request::Data {
-        model,
-        method,
-        as_json,
-    })
-}
-
-fn examine_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let mut engine = None;
-    let mut only = None;
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        match *argument {
-            "--only" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "examine --only",
-                        needs: "measurement names, separated by commas",
-                    });
-                };
-                only = Some(*value);
-            }
-            "--engine" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "examine --engine",
-                        needs: "an engine's name",
-                    });
-                };
-                engine = Some(*value);
-            }
-            other => return Err(other),
-        }
-    }
-    Ok(Request::Examine {
-        model,
-        engine,
-        only,
-    })
-}
-
-fn probe_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let mut engine = None;
-    let mut apply = false;
-    let mut up_to = None;
-    let mut only = None;
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        match *argument {
-            "--apply" => apply = true,
-            "--only" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "probe --only",
-                        needs: "probe names, separated by commas",
-                    });
-                };
-                only = Some(*value);
-            }
-            "--engine" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "probe --engine",
-                        needs: "an engine's name",
-                    });
-                };
-                engine = Some(*value);
-            }
-            "--up-to" => {
-                let Some(value) = rest.next() else {
-                    return Ok(Request::MissingArgument {
-                        command: "probe --up-to",
-                        needs: "a number of identifiers, 2 or more",
-                    });
-                };
-                up_to = match value.parse::<usize>() {
-                    Ok(tokens) if tokens >= 2 => Some(tokens),
-                    _ => {
-                        return Ok(Request::UnexpectedArgument {
-                            command: "probe --up-to (wants a number of identifiers, 2 or more)",
-                            argument: value,
-                        });
-                    }
-                };
-            }
-            other => return Err(other),
-        }
-    }
-    Ok(Request::Probe {
-        model,
-        engine,
-        apply,
-        up_to,
-        only,
-    })
-}
-
-fn one_document<'a>(prompt: Option<&'a str>, file: Option<&'a str>) -> Option<Request<'a>> {
-    match (prompt, file) {
-        (None, None) => Some(Request::MissingArgument {
-            command: "prompt",
-            needs: "--prompt <text> or --file <path>",
-        }),
-        (Some(_), Some(_)) => Some(Request::UnexpectedArgument {
-            command: "prompt (takes --prompt or --file, not both)",
-            argument: "--file",
-        }),
-        _ => None,
-    }
-}
-
-const fn needs_for<'a>(command: &'static str, needs: &'static str) -> Request<'a> {
-    Request::MissingArgument { command, needs }
-}
-
-fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let mut prompt = None;
-    let mut file = None;
-    let mut by = None;
-    let mut most = None;
-    let mut temperature = None;
-    let mut extras = mcf_serve::prompt::Extras::NONE;
-    let mut turn = mcf_serve::turn::Turn::default();
-    let mut as_json = false;
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        let value = |needs: &'static str, rest: &mut std::slice::Iter<'_, &'a str>| {
-            rest.next().copied().ok_or(needs)
-        };
-        match *argument {
-            "--prompt" => match value("--prompt <text>", &mut rest) {
-                Ok(text) => prompt = Some(text),
-                Err(needs) => return Ok(needs_for("prompt", needs)),
-            },
-            "--thinking" | "--effort" | "--system" => {
-                if let Some(needs) = turn_switch(&mut turn, argument, rest.next().copied()) {
-                    return Ok(Request::MissingArgument {
-                        command: "prompt",
-                        needs,
-                    });
-                }
-            }
-            "--file" => match value("--file <path>, or - for the standard input", &mut rest) {
-                Ok(path) => file = Some(path),
-                Err(needs) => return Ok(needs_for("prompt", needs)),
-            },
-            "--by" => match value("--by word, phrase, sentence or paragraph", &mut rest) {
-                Ok(word) => match mcf_serve::prompt::Unit::named(word) {
-                    Some(unit) => by = Some(unit),
-                    None => {
-                        return Ok(Request::UnexpectedArgument {
-                            command: "prompt --by (wants word, phrase, sentence or paragraph)",
-                            argument: word,
-                        });
-                    }
-                },
-                Err(needs) => return Ok(needs_for("prompt", needs)),
-            },
-            "--most" => match value("--most <n>, how many parts to remove at most", &mut rest) {
-                Ok(count) => match count.parse::<usize>() {
-                    Ok(count) if count > 0 => most = Some(count),
-                    _ => {
-                        return Ok(Request::UnexpectedArgument {
-                            command: "prompt --most (wants a number, 1 or more)",
-                            argument: count,
-                        });
-                    }
-                },
-                Err(needs) => return Ok(needs_for("prompt", needs)),
-            },
-            "--temperature" => match value(
-                "--temperature <decimal>, to draw the seeds at, above 0",
-                &mut rest,
-            ) {
-                Ok(written) => match written.parse::<mcf_core::configuration::Thousandths>() {
-                    Ok(held) if held.0 > 0 => temperature = Some(held),
-                    _ => {
-                        return Ok(Request::UnexpectedArgument {
-                            command: "prompt --temperature (wants a decimal above 0, to three \
-                                      places)",
-                            argument: written,
-                        });
-                    }
-                },
-                Err(needs) => return Ok(needs_for("prompt", needs)),
-            },
-            "--json" => as_json = true,
-            other => match other
-                .strip_prefix("--")
-                .and_then(mcf_serve::prompt::Extra::named)
-            {
-                Some(extra) => extras = extras.with(extra, true),
-                None => return Err(other),
-            },
-        }
-    }
-    if let Some(wrong) = one_document(prompt, file) {
-        return Ok(wrong);
-    }
-    Ok(Request::PromptReport {
-        model,
-        prompt,
-        file,
-        by,
-        most,
-        temperature,
-        extras,
-        turn: Box::new(turn),
-        as_json,
-    })
 }
 
 fn usage_of(command: &str) -> Option<&'static str> {
@@ -1156,6 +548,80 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
     Ok(changes)
 }
 
+fn on_a_terminal() -> bool {
+    // SAFETY: isatty reads a descriptor number and returns a flag; it touches nothing here.
+    #[allow(
+        unsafe_code,
+        reason = "asking the C library whether stdout is a terminal"
+    )]
+    unsafe {
+        unsafe extern "C" {
+            fn isatty(fd: i32) -> i32;
+        }
+        isatty(1) == 1
+    }
+}
+
+fn ask_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut model = None;
+    let mut prompt = None;
+    let mut engine = None;
+    let mut limit = None;
+    let mut seed = 0;
+    let mut rest = arguments;
+    while let Some((flag, after)) = rest.split_first() {
+        match *flag {
+            "--prompt" => match after.split_first() {
+                Some((text, tail)) => {
+                    prompt = Some(*text);
+                    rest = tail;
+                }
+                None => return Err("--prompt"),
+            },
+            "--limit" => match after.split_first() {
+                Some((held, tail)) => {
+                    limit = Some(held.parse::<usize>().map_err(|_| *held)?);
+                    rest = tail;
+                }
+                None => return Err("--limit"),
+            },
+            "--engine" => match after.split_first() {
+                Some((named, tail)) => {
+                    engine = Some(*named);
+                    rest = tail;
+                }
+                None => return Err("--engine"),
+            },
+            "--seed" => match after.split_first() {
+                Some((held, tail)) => {
+                    seed = held.parse::<u64>().map_err(|_| *held)?;
+                    rest = tail;
+                }
+                None => return Err("--seed"),
+            },
+            other if other.starts_with('-') => return Err(other),
+            named if model.is_none() => {
+                model = Some(named);
+                rest = after;
+            }
+            other => return Err(other),
+        }
+    }
+    match prompt {
+        Some(prompt) => Ok(Request::Ask {
+            model,
+            prompt,
+            limit,
+            seed,
+            engine,
+        }),
+        None => Ok(Request::MissingArgument {
+            command: "ask",
+            needs: "--prompt <text>",
+        }),
+    }
+}
+
 fn log_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut kind = None;
     let mut last = None;
@@ -1186,327 +652,6 @@ fn log_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
         }
     }
     Ok(Request::Log { kind, last, full })
-}
-
-fn started_switch(
-    started: &mut mcf_serve::declared::Started,
-    switch: &str,
-    value: Option<&str>,
-) -> Option<&'static str> {
-    if switch == "--rope-scaling" {
-        match value.and_then(mcf_serve::declared::Scaling::from_word) {
-            Some(scaling) => started.rope = Some(scaling),
-            None => return Some("--rope-scaling <none|linear|yarn>"),
-        }
-        return None;
-    }
-    match value.and_then(|value| value.parse().ok()) {
-        Some(factor) => started.factor = Some(factor),
-        None => return Some("--rope-scale <n>, a whole number"),
-    }
-    None
-}
-
-fn turn_switch(
-    turn: &mut mcf_serve::turn::Turn,
-    switch: &str,
-    value: Option<&str>,
-) -> Option<&'static str> {
-    match (switch, value) {
-        ("--thinking", Some("on")) => turn.thinking = Some(true),
-        ("--thinking", Some("off")) => turn.thinking = Some(false),
-        ("--thinking", _) => return Some("--thinking <on|off>"),
-        ("--effort", Some(effort)) => turn.effort = Some(effort.to_owned()),
-        ("--effort", None) => {
-            return Some("--effort <word>, in the model's own vocabulary (low, medium, high…)");
-        }
-        ("--system", Some(system)) => turn.system = Some(system.to_owned()),
-        (_, None) => return Some("--system <text>"),
-        (_, Some(_)) => {}
-    }
-    None
-}
-
-fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let mut model = None;
-    let mut prompt = None;
-    let mut limit = None;
-    let mut seed = 0_u64;
-    let mut engine = None;
-    let mut turn = mcf_serve::turn::Turn::default();
-    let mut image = None;
-    let mut started = mcf_serve::declared::Started::default();
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        match *argument {
-            "--prompt" => match rest.next() {
-                Some(asked) => prompt = Some(*asked),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs: "--prompt <text>",
-                    });
-                }
-            },
-            "--image" => match rest.next() {
-                Some(file) => image = Some(*file),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs: "--image <file>",
-                    });
-                }
-            },
-            "--draft-head" => started.draft_head = true,
-            "--rope-scaling" | "--rope-scale" => {
-                if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs,
-                    });
-                }
-            }
-            "--thinking" | "--effort" | "--system" => {
-                if let Some(needs) = turn_switch(&mut turn, argument, rest.next().copied()) {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs,
-                    });
-                }
-            }
-            "--limit" => match rest.next().and_then(|value| value.parse().ok()) {
-                Some(tokens) => limit = Some(tokens),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs: "--limit <tokens>, a number",
-                    });
-                }
-            },
-            "--engine" => match rest.next() {
-                Some(named) => engine = Some(*named),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs: "--engine <stand-in|provisioned>",
-                    });
-                }
-            },
-            "--seed" => match rest.next().and_then(|value| value.parse().ok()) {
-                Some(chosen) => seed = chosen,
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs: "--seed <number>",
-                    });
-                }
-            },
-            other if other.starts_with("--") => return Err(other),
-            other if model.is_none() => model = Some(other),
-            other => return Err(other),
-        }
-    }
-
-    match (model, prompt) {
-        (Some(model), Some(prompt)) => Ok(Request::Run {
-            model,
-            prompt,
-            limit,
-            seed,
-            engine,
-            turn: Box::new(turn),
-            image,
-            started,
-        }),
-        (None, _) => Ok(Request::MissingArgument {
-            command: "run",
-            needs: "<model>",
-        }),
-        (Some(_), None) => Ok(Request::MissingArgument {
-            command: "run",
-            needs: "--prompt <text>",
-        }),
-    }
-}
-
-fn bench_budget(
-    switch: &str,
-    value: Option<&str>,
-) -> Result<(Option<u64>, Option<u64>), &'static str> {
-    if switch == "--within" {
-        let seconds = value
-            .and_then(|value| value.parse().ok())
-            .ok_or("--within <seconds>, a number")?;
-        return Ok((Some(seconds), None));
-    }
-    let held = value
-        .and_then(per_cent)
-        .ok_or("--resolving <per-cent>, such as 5 or 2.5")?;
-    Ok((None, Some(held)))
-}
-
-fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
-    let mut left = None;
-    let mut right = None;
-    let mut prompt = None;
-    let mut limit = None;
-    let mut seed = 0_u64;
-    let mut engine = None;
-    let mut resolving = None;
-    let mut cold = false;
-    let mut within = None;
-    let mut started = mcf_serve::declared::Started::default();
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        match *argument {
-            "--against" => match rest.next() {
-                Some(other) => right = Some(*other),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs: "--against <model>",
-                    });
-                }
-            },
-            "--prompt" => match rest.next() {
-                Some(asked) => prompt = Some(*asked),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs: "--prompt <text>",
-                    });
-                }
-            },
-            "--limit" => match rest.next().and_then(|value| value.parse().ok()) {
-                Some(tokens) => limit = Some(tokens),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs: "--limit <tokens>, a number",
-                    });
-                }
-            },
-            "--draft-head" => started.draft_head = true,
-            "--rope-scaling" | "--rope-scale" => {
-                if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs,
-                    });
-                }
-            }
-            "--engine" => match rest.next() {
-                Some(named) => engine = Some(*named),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs: "--engine <stand-in|provisioned>",
-                    });
-                }
-            },
-            "--seed" => match rest.next().and_then(|value| value.parse().ok()) {
-                Some(chosen) => seed = chosen,
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs: "--seed <number>",
-                    });
-                }
-            },
-            "--cold" => cold = true,
-            "--within" | "--resolving" => match bench_budget(argument, rest.next().copied()) {
-                Ok((seconds, held)) => {
-                    within = seconds.or(within);
-                    resolving = held.or(resolving);
-                }
-                Err(needs) => return Ok(needs_for("bench", needs)),
-            },
-            other if other.starts_with("--") => return Err(other),
-            other if left.is_none() => left = Some(other),
-            other => return Err(other),
-        }
-    }
-
-    Ok(assembled(&Asked {
-        left,
-        right,
-        prompt,
-        limit,
-        seed,
-        engine,
-        resolving,
-        cold,
-        within,
-        started,
-    }))
-}
-
-struct Asked<'a> {
-    left: Option<&'a str>,
-    right: Option<&'a str>,
-    prompt: Option<&'a str>,
-    limit: Option<usize>,
-    seed: u64,
-    engine: Option<&'a str>,
-    resolving: Option<u64>,
-    cold: bool,
-    within: Option<u64>,
-    started: mcf_serve::declared::Started,
-}
-
-fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
-    let &Asked {
-        left,
-        right,
-        prompt,
-        limit,
-        seed,
-        engine,
-        resolving,
-        cold,
-        within,
-        started,
-    } = asked;
-    match (left, right) {
-        (Some(left), Some(right)) => Request::Bench {
-            left,
-            right,
-            prompt: prompt.unwrap_or(mcf_bench::STANDARD_QUESTION),
-            limit,
-            seed,
-            engine,
-            resolving,
-            cold,
-            within,
-            started,
-        },
-        (None, _) => Request::MissingArgument {
-            command: "bench",
-            needs: "<model>",
-        },
-        (Some(_), None) => Request::MissingArgument {
-            command: "bench",
-            needs: "--against <model>",
-        },
-    }
-}
-
-pub(crate) fn per_cent(written: &str) -> Option<u64> {
-    let (whole, tenths) = match written.split_once('.') {
-        Some((whole, rest)) => {
-            let mut digits = rest.chars();
-            let tenth = digits.next()?.to_digit(10)?;
-            if digits.next().is_some() {
-                return None;
-            }
-            (whole.parse::<u64>().ok()?, u64::from(tenth))
-        }
-        None => (written.parse::<u64>().ok()?, 0),
-    };
-    let held = whole
-        .checked_mul(10_000)?
-        .checked_add(tenths.checked_mul(1_000)?)?;
-    (held > 0).then_some(held)
 }
 
 fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
@@ -1677,7 +822,10 @@ const COMMANDS: &str = "\
     \x20                                     SDL3 provisioned before MCF is\n\
     \x20                                     built, and says so if it is not\n\
     \x20 mcf tui                             the same screens with no display\n\
-    \x20                                     attached\n\
+    \x20                                     attached; `mcf` with no arguments\n\
+    \x20                                     opens it where there is a terminal\n\
+    \x20 mcf ask --prompt <text>             ask whatever is being held, through\n\
+    \x20         [--limit <n>] [--seed <n>]  the endpoint it is served on\n\
     \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
     \x20                                     costs here, and what it promises\n\
     \x20 mcf pull <owner/name[:file]>        bring a model here, with its\n\
@@ -1692,93 +840,10 @@ const COMMANDS: &str = "\
     \x20 mcf serve                           start the daemon: it stays up,\n\
     \x20                                     recovers what is on the disk and\n\
     \x20                                     costs nothing while idle\n\
-    \x20 mcf run <model> --prompt <text>     ask a model something — a\n\
-    \x20         [--limit <n>] [--seed <n>]  behaviour answer, never a speed\n\
-    \x20         [--thinking on|off]         (D31, B65). The switches go to\n\
-    \x20         [--effort <word>]           the model's own template, which\n\
-    \x20         [--system <text>]           the engine renders; a picture\n\
-    \x20         [--image <file>]            goes through the model's own\n\
-    \x20         [--draft-head]              projector, where it has one.\n\
-    \x20         [--rope-scaling <kind>]     A draft head and a scaling are\n\
-    \x20         [--rope-scale <n>]          the engine's to start, never\n\
-    \x20                                     on unless they are asked for\n\
-    \x20 mcf bench <model> --against <model> compare two models on an engine\n\
-    \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
-    \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
-    \x20       [--engine <name>] [--cold]     something the machine said (A18).\n\
-    \x20       [--draft-head]                 A draft head or a scaling is\n\
-    \x20       [--rope-scaling <kind>]        held the same across both arms\n\
-    \x20       [--rope-scale <n>]             and named in the report\n\
-    \x20 mcf eval <model>                    ask a model to do the work and\n\
-    \x20       [--only <suite>]              check what it did: each answer run\n\
-    \x20       [--retries <n>]               in a container, no total; a suite\n\
-    \x20       [--languages <a,b>]           is challenges, editing, tests or\n\
-    \x20       [--tier <tier>]               queries; a challenge gets ten\n\
-    \x20       [--window <tokens>]           attempts unless --retries says,\n\
-    \x20       [--resume]                    in a window sized to each turn\n\
-    \x20                                     unless --window says; --resume\n\
-    \x20                                     goes on from a run that stopped\n\
-    \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
-    \x20             or --file <path>         receives each word, and how much\n\
-    \x20       [--by word|phrase|sentence|   the answer moves without each\n\
-    \x20             paragraph] [--most <n>]  part. An ordering, never\n\
-    \x20       [--json]                      relevance. A\n\
-    \x20       [--temperature <t>] [--floors] persona goes in --file, whole;\n\
-    \x20       [--alone] [--prefixes]        --temperature draws three seeds\n\
-    \x20       [--swaps] [--forms]           at t to see whether it settles;\n\
-    \x20       [--system <text>]             --system, --thinking and --effort\n\
-    \x20       [--thinking on|off]           read the prompt inside the turn\n\
-    \x20       [--effort <word>]             it will be used in;\n\
-    \x20                                     --floors puts the control at\n\
-    \x20                                     every position, one each;\n\
-    \x20                                     --alone asks each part as the\n\
-    \x20                                     whole prompt in turn; --prefixes\n\
-    \x20                                     grows the prompt a part at a time;\n\
-    \x20                                     --swaps changes each pair of\n\
-    \x20                                     neighbours' places; --forms asks\n\
-    \x20                                     the same parts as one line,\n\
-    \x20                                     bullets, a numbered list, under\n\
-    \x20                                     headings, in tags and in capitals\n\
-    \x20 mcf cross-check <model>              read one engine's tokens with the\n\
-    \x20                                       other, and say whether they agree\n\
-    \x20 mcf probe <model> [--engine <name>] [--apply]\n\
-    \x20           [--up-to <tokens>]        ask a model to do the thing, and\n\
-    \x20           [--only <names>]          report what it did — configuring\n\
-    \x20                                     nothing (§X, D42); the context\n\
-    \x20                                     trial is projected before it is\n\
-    \x20                                     spent, --up-to asks for less, and\n\
-    \x20                                     --only names the probes to run\n\
-    \x20 mcf data <model> [--method <name>]  a model's readings as a table:\n\
-    \x20           [--json]                  every figure a diagnostic read,\n\
-    \x20                                     one row each with its dimensions\n\
-    \x20                                     and unit, comma-separated by\n\
-    \x20                                     default, JSON lines with --json\n\
-    \x20 mcf examine <model> [--engine <name>]\n\
-    \x20           [--only <names>]          measure a model's parts by count\n\
-    \x20                                     and clock — the offload curve,\n\
-    \x20                                     prefill, prefix reuse, memory,\n\
-    \x20                                     concurrency, cold start, fidelity\n\
-    \x20                                     to a reference file, bits a byte,\n\
-    \x20                                     determinism, tokenizer round trip,\n\
-    \x20                                     retrieval, degeneration, grammar\n\
-    \x20                                     and image cost (D52); --only names\n\
-    \x20                                     the measurements to take\n\
     \x20 mcf provision [<component>]         build a pinned component in a\n\
     \x20     [--list] [--remove <c>          container, everything recorded,\n\
     \x20      --because <why>] [--into <dir>] removable without residue; unnamed,\n\
     \x20                                     the engine a model here needs (B-367)\n\
-    \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
-    \x20                                     vector: JSON first, conditions\n\
-    \x20                                     after (DEC-055)\n\
-    \x20 mcf verify <bundle>                 does this machine agree, and if\n\
-    \x20                                     not, which conditions differ — MCF\n\
-    \x20                                     will not say which caused it (A8)\n\
-    \x20 mcf bundle <entry-id>               one file that reproduces one\n\
-    \x20        [--into <path>]              claim: the method, the conditions,\n\
-    \x20                                     every trial and the provenance (PR2)\n\
-    \x20 mcf show <entry-id>                 one recorded entry, expanded into\n\
-    \x20                                     the measurements and conditions it\n\
-    \x20                                     rests on (B55)\n\
     \x20 mcf failures [--last <n>]          what went wrong, classified: the\n\
     \x20                                     record's newest failures, each\n\
     \x20                                     with its context\n\
@@ -1792,10 +857,6 @@ const COMMANDS: &str = "\
     \x20 mcf support [--into <path>]         what a maintainer would need to\n\
     \x20                                     read this machine's sensors, as a\n\
     \x20                                     file you read before you send it\n\
-    \x20 mcf segment <model>                 the prompt as the model actually\n\
-    \x20             --prompt <text>         receives it, fragment by fragment:\n\
-    \x20                                     where text breaks, and where this\n\
-    \x20                                     vocabulary has no word for it\n\
     \x20 mcf status                          ask a running daemon what it is\n\
     \x20                                     and what it is holding\n\
     \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
@@ -1809,13 +870,6 @@ const COMMANDS: &str = "\
     \x20      [--rope-scaling <kind>]        in it unless it is asked for;\n\
     \x20      [--rope-scale <n>]             --on puts it where you say\n\
     \x20 mcf hosted                          what is being held, and where\n\
-    \x20 mcf measure <model>                 time it at doubling context\n\
-    \x20         [--deepest <n>]             depths, so the cost of a longer\n\
-    \x20         [--engine <name>]           conversation is measured rather\n\
-    \x20         [--on cpu|gpu]              than assumed — where MCF puts\n\
-    \x20         [--draft-head]              it, unless --on says. A draft\n\
-    \x20         [--rope-scaling <kind>]     head or a scaling is timed by\n\
-    \x20         [--rope-scale <n>]          running it: each run says which\n\
     \x20 mcf settings <model>                every setting a model would run\n\
     \x20              [--context <n>]        under, and where each came from;\n\
     \x20                                     with a context, what that window\n\
@@ -1843,18 +897,14 @@ const COMMANDS: &str = "\
 
 const NOTES: &str = "\
     Acquisition reaches an encrypted hub over MCF's own HTTP and a vendored\n\
-    TLS stack, or a plain one where you name it — a mirror, or the\n\
-    laboratory's own (B-322).\n\
+    TLS stack, or a plain one where you name it — a mirror of your own.\n\
     \n\
-    `mcf run` answers with MCF's own stand-in and marks every answer as\n\
-    one, because a timing taken from it would measure the stand-in rather\n\
-    than the model (D31, B65). A model served where another program can\n\
-    reach it is `mcf host`, which runs a provisioned engine and can be\n\
-    timed; `mcf bench` and `mcf measure` are what time one.\n\
+    MCF holds one model at a time. `mcf host` puts it on a port where\n\
+    another program can reach it, and `mcf unhost` gives the memory back.\n\
     \n\
     `mcf-helper` is beside this binary and does three things that need\n\
     rights this one does not have: the processor governor, a device's\n\
-    exclusive mode, and the processor's energy counter (D35)";
+    exclusive mode, and the processor's energy counter";
 
 #[allow(
     clippy::too_many_lines,
@@ -1920,126 +970,19 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         } => check::run(*only, *reach, *from, *offered),
         Request::Explain { model, json: false } => explain::run(model),
         Request::Explain { model, json: true } => explain::json(model),
-        Request::Run {
-            model,
-            prompt,
-            limit,
-            seed,
-            engine,
-            turn,
-            image,
-            started,
-        } => run::run(
-            model,
-            prompt,
-            *limit,
-            *seed,
-            *engine,
-            turn,
-            image.map(std::path::Path::new),
-            *started,
-        ),
-        Request::Bench {
-            left,
-            right,
-            prompt,
-            limit,
-            seed,
-            engine,
-            resolving,
-            cold,
-            within,
-            started,
-        } => bench::bench(
-            left,
-            right,
-            prompt,
-            *limit,
-            *seed,
-            *engine,
-            resolving.map(mcf_core::measurement::PartsPerMillion),
-            *cold,
-            within.map(|seconds| {
-                mcf_core::time::Duration::from_nanos(seconds.saturating_mul(1_000_000_000))
-            }),
-            *started,
-        ),
-        Request::Verify { bundle } => verify::run(bundle),
-        Request::Bundle { id, into } => bundle::run(id, *into),
-        Request::Show { id } => show::run(id),
-        Request::CrossCheck { model } => crosscheck::run(model),
         Request::Settings { model, at } => hosting::settings(model, *at),
         Request::Host { model, changes } => hosting::host(model, changes),
+        Request::Ask {
+            model,
+            prompt,
+            limit,
+            seed,
+            engine,
+        } => ask::ask(*model, prompt, *limit, *seed, *engine),
         Request::Hosted => hosting::held(),
         Request::Unhost => hosting::unhost(),
         Request::Offered { reference } => acquire::offered(reference, None, false),
         Request::Acquire { reference, file } => acquire::acquire(reference, file, None),
-        Request::Measure {
-            model,
-            deepest,
-            engine,
-            on,
-            started,
-        } => measure::run(model, *deepest, *engine, *on, *started),
-        Request::PromptReport {
-            model,
-            prompt,
-            file,
-            by,
-            most,
-            temperature,
-            extras,
-            turn,
-            as_json,
-        } => prompt::report(
-            model,
-            &prompt::Asked {
-                prompt: *prompt,
-                file: *file,
-                by: *by,
-                most: *most,
-                temperature: *temperature,
-                extras: *extras,
-                turn: (**turn).clone(),
-            },
-            *as_json,
-        ),
-        Request::Eval {
-            model,
-            only,
-            retries,
-            languages,
-            tier,
-            window,
-            resume,
-        } => eval::eval(
-            model,
-            &eval::Asked {
-                only: *only,
-                retries: *retries,
-                languages: *languages,
-                tier: *tier,
-                window: *window,
-                resume: *resume,
-            },
-        ),
-        Request::Probe {
-            model,
-            engine,
-            apply,
-            up_to,
-            only,
-        } => probe::run(model, *engine, *apply, *up_to, *only),
-        Request::Examine {
-            model,
-            engine,
-            only,
-        } => examine::run(model, *engine, *only),
-        Request::Data {
-            model,
-            method,
-            as_json,
-        } => data::run(model, *method, *as_json),
         Request::Provision { name, into } => provision::run(*name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {
@@ -2047,12 +990,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             because,
             into,
         } => provision::remove(name, *because, *into),
-        Request::Embed { model, text } => embed::run(model, text),
         Request::Share { into } => share::run(*into),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
         Request::Support { into } => support::run(*into),
-        Request::Segment { model, prompt } => segment::run(model, prompt),
         Request::List => models::list(),
         Request::Remove {
             names,
@@ -2084,7 +1025,7 @@ mod tests {
     use mcf_core::build_identity::BuildIdentity;
 
     #[test]
-    fn no_arguments_is_usage() {
+    fn no_arguments_is_usage_when_nothing_is_watching() {
         assert_eq!(parse(&[]), Request::Usage);
     }
 
@@ -2127,18 +1068,13 @@ mod tests {
         assert!(text.contains("mcf serve"), "{text}");
         assert!(text.contains("mcf stop"), "{text}");
         assert!(text.contains("mcf status"), "{text}");
-        assert!(text.contains("mcf run"), "{text}");
+        assert!(text.contains("mcf ask"), "{text}");
         assert!(text.contains("mcf explain"), "{text}");
         assert!(text.contains("mcf log"), "{text}");
         assert!(text.contains("mcf failures"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         assert!(text.contains("mcf check"), "{text}");
-        assert!(text.contains("mcf probe"), "{text}");
-        assert!(text.contains("mcf examine"), "{text}");
-        assert!(text.contains("mcf data"), "{text}");
         assert!(text.contains("mcf provision"), "{text}");
-        assert!(text.contains("mcf bench"), "{text}");
-        assert!(text.contains("mcf segment"), "{text}");
         assert!(text.contains("mcf support"), "{text}");
         for unbuilt in ["mcf lab", "mcf recommend"] {
             assert!(
@@ -2309,51 +1245,6 @@ mod tests {
     }
 
     #[test]
-    fn a_flag_where_a_name_goes_is_refused_by_name() {
-        let mut wanting = 0;
-        for command in commands() {
-            let Some(needs) = super::name_wanted_first(command) else {
-                continue;
-            };
-            wanting += 1;
-            for flag in ["--deepest", "--json", "--x", "-"] {
-                let request = parse(&[command, flag]);
-                assert_eq!(
-                    request,
-                    Request::NameExpected {
-                        command,
-                        argument: flag,
-                        needs,
-                    },
-                    "mcf {command} {flag}"
-                );
-                let Response { text, served } = respond(&request, BuildIdentity::current());
-                assert!(!served);
-                assert!(
-                    text.contains(command) && text.contains(flag) && text.contains(needs),
-                    "mcf {command} {flag}: {text}"
-                );
-            }
-        }
-        assert!(
-            wanting >= 10,
-            "the table names {wanting} commands wanting a name first"
-        );
-        assert_eq!(super::name_wanted_first("measure"), Some("<model>"));
-        assert_eq!(
-            super::name_wanted_first("pull"),
-            Some("<owner/name[:file]>")
-        );
-        assert_eq!(super::name_wanted_first("doctor"), None);
-        assert_eq!(
-            super::name_wanted_first("check"),
-            None,
-            "an optional name is not wanted"
-        );
-        assert_eq!(super::name_wanted_first("--version"), None);
-    }
-
-    #[test]
     fn a_command_the_table_has_is_never_denied() {
         for command in commands() {
             let Response { text, .. } = respond(
@@ -2372,250 +1263,6 @@ mod tests {
                 argument: "--bogus",
             }
         );
-    }
-
-    #[test]
-    fn eval_reads_its_flags_in_any_order() {
-        assert_eq!(
-            parse(&[
-                "eval",
-                "m",
-                "--window",
-                "8192",
-                "--retries",
-                "3",
-                "--only",
-                "challenges"
-            ]),
-            Request::Eval {
-                model: "m",
-                only: Some("challenges"),
-                retries: Some(3),
-                languages: None,
-                tier: None,
-                window: Some(8192),
-                resume: false,
-            }
-        );
-        assert_eq!(
-            parse(&["eval", "m"]),
-            Request::Eval {
-                model: "m",
-                only: None,
-                retries: None,
-                languages: None,
-                tier: None,
-                window: None,
-                resume: false,
-            },
-            "nothing said is nothing set: the suite's own defaults"
-        );
-        assert!(
-            matches!(
-                parse(&["eval", "m", "--retries", "lots"]),
-                Request::MissingArgument {
-                    command: "eval --retries",
-                    ..
-                }
-            ),
-            "a word is not a count"
-        );
-        assert!(matches!(
-            parse(&[
-                "eval",
-                "m",
-                "--tier",
-                "hard",
-                "--languages",
-                "go,rust",
-                "--resume"
-            ]),
-            Request::Eval {
-                tier: Some("hard"),
-                languages: Some("go,rust"),
-                resume: true,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn measure_reads_its_flags_in_any_order() {
-        let both = Request::Measure {
-            model: "m",
-            deepest: 1024,
-            engine: Some("e"),
-            on: None,
-            started: mcf_serve::declared::Started::default(),
-        };
-        assert_eq!(
-            parse(&["measure", "m", "--engine", "e", "--deepest", "1024"]),
-            both
-        );
-        assert!(
-            matches!(
-                parse(&["measure", "m", "--on", "gpu"]),
-                Request::Measure {
-                    on: Some(mcf_serve::control::On::Card),
-                    ..
-                }
-            ),
-            "--on gpu puts the whole model on the card"
-        );
-        assert!(
-            matches!(
-                parse(&["measure", "m", "--on", "elsewhere"]),
-                Request::UnexpectedArgument { .. }
-            ),
-            "a place MCF does not put a model is not a run"
-        );
-        assert_eq!(
-            parse(&["measure", "m", "--deepest", "1024", "--engine", "e"]),
-            both
-        );
-        assert!(matches!(
-            parse(&["measure", "m", "--deepest"]),
-            Request::MissingArgument { .. }
-        ));
-        assert!(matches!(
-            parse(&["measure", "m", "--engine"]),
-            Request::MissingArgument { .. }
-        ));
-        assert!(matches!(
-            parse(&["measure", "m", "--deepest", "100"]),
-            Request::UnexpectedArgument {
-                argument: "100",
-                ..
-            }
-        ));
-        assert!(matches!(
-            parse(&["measure", "m", "--deepest", "1024", "--bogus"]),
-            Request::UnexpectedArgument {
-                command: "measure",
-                argument: "--bogus"
-            }
-        ));
-    }
-
-    #[test]
-    fn prompt_reads_its_flags_in_any_order() {
-        let whole = Request::PromptReport {
-            model: "m",
-            prompt: None,
-            file: Some("persona.md"),
-            by: Some(mcf_serve::prompt::Unit::Paragraph),
-            most: Some(40),
-            temperature: Some(mcf_core::configuration::Thousandths(700)),
-            extras: mcf_serve::prompt::Extras::NONE
-                .with(mcf_serve::prompt::Extra::Floors, true)
-                .with(mcf_serve::prompt::Extra::Alone, true)
-                .with(mcf_serve::prompt::Extra::Prefixes, true)
-                .with(mcf_serve::prompt::Extra::Swaps, true)
-                .with(mcf_serve::prompt::Extra::Forms, true),
-            turn: Box::new(mcf_serve::turn::Turn::default()),
-            as_json: true,
-        };
-        assert_eq!(
-            parse(&[
-                "prompt",
-                "m",
-                "--file",
-                "persona.md",
-                "--by",
-                "paragraph",
-                "--most",
-                "40",
-                "--temperature",
-                "0.7",
-                "--floors",
-                "--alone",
-                "--prefixes",
-                "--swaps",
-                "--forms",
-                "--json"
-            ]),
-            whole
-        );
-        assert_eq!(
-            parse(&[
-                "prompt",
-                "m",
-                "--json",
-                "--forms",
-                "--swaps",
-                "--prefixes",
-                "--alone",
-                "--floors",
-                "--temperature",
-                "0.700",
-                "--most",
-                "40",
-                "--by",
-                "paragraphs",
-                "--file",
-                "persona.md",
-            ]),
-            whole
-        );
-        assert_eq!(
-            parse(&["prompt", "m", "--prompt", "A. B."]),
-            Request::PromptReport {
-                model: "m",
-                prompt: Some("A. B."),
-                file: None,
-                by: None,
-                most: None,
-                temperature: None,
-                extras: mcf_serve::prompt::Extras::NONE,
-                turn: Box::new(mcf_serve::turn::Turn::default()),
-                as_json: false,
-            }
-        );
-    }
-
-    #[test]
-    fn prompt_refuses_what_is_not_an_argument() {
-        assert!(matches!(
-            parse(&["prompt", "m"]),
-            Request::MissingArgument { .. }
-        ));
-        assert!(matches!(
-            parse(&["prompt", "m", "--file"]),
-            Request::MissingArgument { .. }
-        ));
-        assert!(matches!(
-            parse(&["prompt", "m", "--file", "a", "--by", "letter"]),
-            Request::UnexpectedArgument {
-                argument: "letter",
-                ..
-            }
-        ));
-        assert!(matches!(
-            parse(&["prompt", "m", "--file", "a", "--most", "0"]),
-            Request::UnexpectedArgument { argument: "0", .. }
-        ));
-        assert!(matches!(
-            parse(&["prompt", "m", "--file", "a", "--temperature", "0"]),
-            Request::UnexpectedArgument { argument: "0", .. }
-        ));
-        assert!(matches!(
-            parse(&["prompt", "m", "--file", "a", "--temperature", "0.7001"]),
-            Request::UnexpectedArgument {
-                argument: "0.7001",
-                ..
-            }
-        ));
-        assert!(matches!(
-            parse(&["prompt", "m", "--file", "a", "--prompt", "b"]),
-            Request::UnexpectedArgument { .. }
-        ));
-        assert!(matches!(
-            parse(&["prompt", "m", "--prompt", "a", "--bogus"]),
-            Request::UnexpectedArgument {
-                command: "prompt",
-                argument: "--bogus"
-            }
-        ));
     }
 
     fn commands() -> Vec<&'static str> {

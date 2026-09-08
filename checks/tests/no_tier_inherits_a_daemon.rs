@@ -13,24 +13,8 @@ const REACHES: &[Reaches] = &[
         subcommand: None,
     },
     Reaches {
-        module: "crates/mcf-cli/src/run.rs",
-        subcommand: Some("run"),
-    },
-    Reaches {
-        module: "crates/mcf-cli/src/bench.rs",
-        subcommand: Some("bench"),
-    },
-    Reaches {
-        module: "crates/mcf-cli/src/probe.rs",
-        subcommand: Some("probe"),
-    },
-    Reaches {
-        module: "crates/mcf-cli/src/examine.rs",
-        subcommand: Some("examine"),
-    },
-    Reaches {
-        module: "crates/mcf-cli/src/measure.rs",
-        subcommand: Some("measure"),
+        module: "crates/mcf-cli/src/ask.rs",
+        subcommand: Some("ask"),
     },
     Reaches {
         module: "crates/mcf-cli/src/acquire.rs",
@@ -59,18 +43,6 @@ const REACHES: &[Reaches] = &[
     Reaches {
         module: "crates/mcf-cli/src/acquire.rs",
         subcommand: Some("acquire"),
-    },
-    Reaches {
-        module: "crates/mcf-cli/src/crosscheck.rs",
-        subcommand: Some("cross-check"),
-    },
-    Reaches {
-        module: "crates/mcf-cli/src/eval.rs",
-        subcommand: Some("eval"),
-    },
-    Reaches {
-        module: "crates/mcf-cli/src/prompt.rs",
-        subcommand: Some("prompt"),
     },
     Reaches {
         module: "crates/mcf-cli/src/provision.rs",

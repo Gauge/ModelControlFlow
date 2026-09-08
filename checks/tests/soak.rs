@@ -6,9 +6,9 @@ use mcf_core::attested::Attested;
 use mcf_core::measurement::Bytes;
 use mcf_core::self_cost::resident_bytes;
 use mcf_core::time::{Clock as _, SimulatedClock};
-use mcf_lab::{CATALOGUE, run};
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
+use mcf_serve::engines::{Device, Engine, Kind, resolve};
 
 const TOLERATED_GROWTH: u64 = 8 * 1024 * 1024;
 
@@ -173,50 +173,62 @@ fn entry(sequence: u64) -> Entry {
 
 #[test]
 #[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
-fn twenty_thousand_scenario_runs_leave_nothing_behind() {
+fn twenty_thousand_placements_leave_nothing_behind() {
     const ROUNDS: usize = 20_000;
 
-    let before = laboratory_directories();
+    let engine = Engine {
+        name: "an engine".to_owned(),
+        prefix: std::path::PathBuf::from("/nowhere"),
+        commit: "abc".to_owned(),
+    };
+    let engines = vec![(
+        engine,
+        vec![
+            Device {
+                kind: Kind::Cpu,
+                name: "CPU".to_owned(),
+                free: Some(64_000_000_000),
+            },
+            Device {
+                kind: Kind::Gpu,
+                name: "Card A".to_owned(),
+                free: Some(116_000_000_000),
+            },
+            Device {
+                kind: Kind::Gpu,
+                name: "Card B".to_owned(),
+                free: Some(101_000_000_000),
+            },
+        ],
+    )];
+    let weights = [1_000_000_000_u64, 30_000_000_000, 135_000_000_000];
+
     let descriptors_before = open_descriptors();
     let resident_before = resident();
+    let first = resolve(&engines, weights[0], Some(114_688), 40_960);
 
-    let mut produced = 0usize;
+    let mut decided = 0usize;
     for round in 0..ROUNDS {
-        let scenario = &CATALOGUE[round % CATALOGUE.len()];
-        if run(scenario).matches(scenario.produces) {
-            produced += 1;
+        let asked = weights[round % weights.len()];
+        let held = resolve(&engines, asked, Some(114_688), 40_960);
+        let same_as_the_first = round % weights.len() != 0 || held == first;
+        if held.is_ok() && same_as_the_first {
+            decided += 1;
         }
     }
     assert_eq!(
-        produced, ROUNDS,
-        "a scenario stopped producing its category"
+        decided, ROUNDS,
+        "a placement stopped being decided the same way part way through the soak"
     );
 
-    let after = laboratory_directories();
-    println!("  {ROUNDS} scenario runs: {before} laboratory directories → {after}");
-    assert!(
-        after <= before,
-        "the laboratory left {} directories behind",
-        after.saturating_sub(before)
-    );
     if let (Some(before), Some(after)) = (descriptors_before, open_descriptors()) {
         assert!(
             after <= before,
-            "the laboratory leaked {} descriptors",
+            "deciding placements leaked {} descriptors",
             after - before
         );
     }
-    report_growth("twenty thousand scenario runs", resident_before, resident());
-}
-
-fn laboratory_directories() -> usize {
-    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
-        return 0;
-    };
-    entries
-        .flatten()
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with("mcf-lab-"))
-        .count()
+    report_growth("twenty thousand placements", resident_before, resident());
 }
 
 #[test]
@@ -338,7 +350,7 @@ fn an_idle_daemon_with_a_model_resident_costs_nothing_for_a_minute() {
     std::fs::create_dir_all(&store).expect("a store");
     std::fs::write(
         store.join("a-model-that-runs.gguf"),
-        mcf_lab::fixture::a_model_that_runs(),
+        mcf_standin::fixture::a_model_that_runs(),
     )
     .expect("the fixture written");
     let journal = scratch.path().join("mcf").join("record.jsonl");

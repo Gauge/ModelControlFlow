@@ -13,20 +13,17 @@ resolver = "3"
 members = [
     "crates/mcf-core",
     "crates/mcf-record",
-    "crates/mcf-lab",
     "crates/mcf-standin",
     "crates/mcf-helper",
     "crates/mcf-hub",
     "crates/mcf-serve",
     "crates/mcf-desk",
     "crates/mcf-tui",
-    "crates/mcf-bench",
     "crates/mcf-cli",
     "checks",
     "prototypes/adversarial",
     "prototypes/kernel-slope",
     "prototypes/thread-scaling",
-    "prototypes/timing-noise",
 ]
 
 [workspace.package]

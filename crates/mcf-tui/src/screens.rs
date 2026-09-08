@@ -1,4 +1,3 @@
-pub mod diagnostics;
 pub mod host;
 pub mod monitor;
 
@@ -7,31 +6,21 @@ use crate::screen::{Ink, Screen};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Where {
     Monitor,
-    Diagnostics,
     Models,
     Components,
-    Prompt,
     Settings,
     Exit,
 }
 
 impl Where {
-    pub const ALL: [Self; 5] = [
-        Self::Monitor,
-        Self::Models,
-        Self::Diagnostics,
-        Self::Components,
-        Self::Exit,
-    ];
+    pub const ALL: [Self; 4] = [Self::Monitor, Self::Models, Self::Components, Self::Exit];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::Monitor => "System",
-            Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
             Self::Components => "Engines",
-            Self::Prompt => "Prompt",
             Self::Settings => "Settings",
             Self::Exit => "Exit",
         }
@@ -41,10 +30,8 @@ impl Where {
     pub const fn title(self) -> &'static str {
         match self {
             Self::Monitor => "This system",
-            Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
             Self::Components => "Engines: what MCF has built and can build",
-            Self::Prompt => "What a prompt does",
             Self::Settings => "Settings",
             Self::Exit => "Exit",
         }

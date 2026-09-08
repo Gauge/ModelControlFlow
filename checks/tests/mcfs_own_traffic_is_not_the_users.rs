@@ -46,10 +46,8 @@ fn nothing_reads_the_category_from_configuration() {
 #[test]
 fn each_surface_files_its_traffic_where_it_belongs() {
     for (file, expected) in [
-        ("crates/mcf-cli/src/run.rs", "Whose::User"),
-        ("crates/mcf-cli/src/bench.rs", "Whose::User"),
-        ("crates/mcf-serve/src/daemon.rs", "Whose::Fixture"),
-        ("crates/mcf-serve/src/probes.rs", "Whose::Fixture"),
+        ("crates/mcf-cli/src/ask.rs", "Whose::User"),
+        ("crates/mcf-desk/src/lib.rs", "Whose::User"),
         ("crates/mcf-serve/src/cost.rs", "Whose::Fixture"),
     ] {
         let source = read(file);

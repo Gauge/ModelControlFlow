@@ -13,49 +13,12 @@ use mcf_record::journal::{Entry, EntryKind, Journal, default_path};
 use mcf_record::json::Value;
 
 #[derive(Debug)]
-pub(crate) struct Laboratory {
-    pub(crate) scenarios: usize,
-    pub(crate) reproduced: usize,
-    pub(crate) divergences: Vec<String>,
-    pub(crate) categories: usize,
-}
-
-impl Laboratory {
-    fn run() -> Self {
-        let mut reproduced = 0;
-        let mut divergences = Vec::new();
-        for scenario in mcf_lab::CATALOGUE {
-            let outcome = mcf_lab::run(scenario);
-            if outcome.matches(scenario.produces) {
-                reproduced += 1;
-            } else {
-                divergences.push(format!("{} → {outcome}", scenario.id));
-            }
-        }
-        let mut codes: Vec<&str> = mcf_lab::CATALOGUE
-            .iter()
-            .map(|scenario| scenario.produces.code())
-            .collect();
-        codes.sort_unstable();
-        codes.dedup();
-
-        Self {
-            scenarios: mcf_lab::CATALOGUE.len(),
-            reproduced,
-            divergences,
-            categories: codes.len(),
-        }
-    }
-}
-
-#[derive(Debug)]
 pub(crate) struct Report {
     pub(crate) mcf: BuildIdentity,
     pub(crate) at: Timestamp,
     pub(crate) machine: Machine,
     pub(crate) cost: Cost,
     pub(crate) recorded: Recorded,
-    pub(crate) laboratory: Laboratory,
 }
 
 #[derive(Debug)]
@@ -86,8 +49,7 @@ pub(crate) fn run(record: bool) -> Report {
     let at = Timestamp::now();
     let machine = Machine::read();
     let cost = measure_cost(&machine, record);
-    let laboratory = Laboratory::run();
-    let body = body(&machine, &cost, &laboratory);
+    let body = body(&machine, &cost);
     let recorded = if record {
         write(&body, at)
     } else {
@@ -99,7 +61,6 @@ pub(crate) fn run(record: bool) -> Report {
         machine,
         cost,
         recorded,
-        laboratory,
     }
 }
 
@@ -151,7 +112,7 @@ fn measure_cost(machine: &Machine, recording: bool) -> Cost {
     }
 }
 
-fn body(machine: &Machine, cost: &Cost, laboratory: &Laboratory) -> Value {
+fn body(machine: &Machine, cost: &Cost) -> Value {
     Value::map([
         ("mcf", encode::build_identity(BuildIdentity::current())),
         ("machine", encode::machine(machine)),
@@ -202,33 +163,6 @@ fn body(machine: &Machine, cost: &Cost, laboratory: &Laboratory) -> Value {
                         Value::text("memory growth over 30 simulated days — needs a daemon"),
                         Value::text("added request-to-first-token latency — needs a serving path"),
                     ]),
-                ),
-            ]),
-        ),
-        (
-            "laboratory",
-            Value::map([
-                (
-                    "scenarios",
-                    Value::Integer(i64::try_from(laboratory.scenarios).unwrap_or(i64::MAX)),
-                ),
-                (
-                    "reproduced",
-                    Value::Integer(i64::try_from(laboratory.reproduced).unwrap_or(i64::MAX)),
-                ),
-                (
-                    "categories",
-                    Value::Integer(i64::try_from(laboratory.categories).unwrap_or(i64::MAX)),
-                ),
-                (
-                    "divergences",
-                    Value::List(
-                        laboratory
-                            .divergences
-                            .iter()
-                            .map(|what| Value::text(what.clone()))
-                            .collect(),
-                    ),
                 ),
             ]),
         ),
@@ -359,21 +293,6 @@ impl core::fmt::Display for Report {
 
         writeln!(f, "\n  Taken under: {}", self.cost.conditions)?;
 
-        writeln!(
-            f,
-            "\nTHE LABORATORY, RUN HERE JUST NOW\n  {} scenarios · {} taxonomy categories · {} reproduced",
-            self.laboratory.scenarios, self.laboratory.categories, self.laboratory.reproduced,
-        )?;
-        for divergence in &self.laboratory.divergences {
-            writeln!(f, "  ⚠ {divergence}")?;
-        }
-        writeln!(
-            f,
-            "  Every category MCF's own code can produce has a scenario here, and no\n\
-             \x20 more: the taxonomy's remaining codes are classifications waiting for the\n\
-             \x20 code that will use them (A13, D26)."
-        )?;
-
         write!(f, "{}", where_models_go())?;
 
         writeln!(f, "\nWHAT MCF PROMISES HERE")?;
@@ -483,28 +402,12 @@ impl Report {
             "Nothing about model quality, speed or fitness — that is work for later milestones"
                 .to_owned(),
         ));
-        let laboratory = &self.laboratory;
-        promises.push((
-            laboratory.divergences.is_empty() && laboratory.scenarios > 0,
-            if laboratory.divergences.is_empty() && laboratory.scenarios > 0 {
-                format!(
-                    "Every failure MCF claims to handle was reproduced on this machine \
-                     just now — {} scenarios, {} categories (A13, §VIII)",
-                    laboratory.scenarios, laboratory.categories,
-                )
-            } else {
-                format!(
-                    "The laboratory did not reproduce what it claims here: {:?}",
-                    laboratory.divergences
-                )
-            },
-        ));
         promises
     }
 
     #[must_use]
     pub(crate) fn to_value(&self) -> Value {
-        body(&self.machine, &self.cost, &self.laboratory)
+        body(&self.machine, &self.cost)
     }
 }
 
@@ -542,20 +445,7 @@ fn where_models_go() -> String {
         ));
     }
     lines.push(String::new());
-    lines.push(scored_projection());
-    lines.push(String::new());
     lines.join("\n")
-}
-
-fn scored_projection() -> String {
-    let held = crate::history::read();
-    let scored = mcf_bench::project::score(&held.points);
-    format!(
-        "PROJECTION, SCORED AGAINST WHAT WAS LATER MEASURED  (B-215, §6.16)\n  {scored}\n  \
-         Recomputed from this machine's record every time it is asked, so it moves as the\n  \
-         history does. A projection nobody scores is a claim MCF makes for ever without\n  \
-         ever finding out whether it was any good."
-    )
 }
 
 fn room_for(store: &std::path::Path) -> mcf_core::attested::Attested<mcf_core::hardware::Space> {
@@ -607,23 +497,6 @@ mod tests {
             "the report still says MCF has no daemon: {rendered}"
         );
         assert!(rendered.contains("mcf serve"), "{rendered}");
-    }
-
-    #[test]
-    fn the_laboratory_runs_and_reports_what_it_demonstrated() {
-        let report = run(false);
-        assert!(report.laboratory.scenarios > 0, "no scenario ran");
-        assert_eq!(
-            report.laboratory.reproduced, report.laboratory.scenarios,
-            "the laboratory did not reproduce what it claims: {:?}",
-            report.laboratory.divergences
-        );
-        let rendered = report.render();
-        assert!(
-            rendered.contains("THE LABORATORY, RUN HERE JUST NOW"),
-            "{rendered}"
-        );
-        assert!(rendered.contains("taxonomy categories"), "{rendered}");
     }
 
     #[test]

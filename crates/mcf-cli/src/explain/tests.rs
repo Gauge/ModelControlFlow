@@ -5,7 +5,7 @@ fn an_explanation_separates_declared_read_and_chosen() {
     let scratch = std::env::temp_dir().join(format!("mcf-explain-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).expect("a scratch directory");
     let model = scratch.join("model.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let response = run(model.to_str().unwrap_or_default());
     assert!(response.served, "{}", response.text);
@@ -32,7 +32,7 @@ fn the_columns_do_not_collide_and_the_lines_do_not_run_off() {
     let scratch = std::env::temp_dir().join(format!("mcf-explain-columns-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).expect("a scratch directory");
     let model = scratch.join("model.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let said = run(model.to_str().unwrap_or_default()).text;
     for line in said.lines() {
@@ -42,7 +42,6 @@ fn the_columns_do_not_collide_and_the_lines_do_not_run_off() {
             line.chars().count()
         );
     }
-    assert!(said.contains("says tokens rather than seconds"), "{said}");
 
     let _cleared = std::fs::remove_dir_all(&scratch);
 }
@@ -52,7 +51,7 @@ fn the_terms_are_shown_and_an_unaccounted_model_says_they_are_unknown() {
     let scratch = std::env::temp_dir().join(format!("mcf-explain-terms-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).expect("a scratch directory");
     let model = scratch.join("model.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let bare = run(model.to_str().unwrap_or_default()).text;
     assert!(bare.contains("terms"), "{bare}");
@@ -80,13 +79,11 @@ fn what_mcf_cannot_say_is_said_with_the_reason() {
     let scratch = std::env::temp_dir().join(format!("mcf-explain-why-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).expect("a scratch directory");
     let model = scratch.join("model.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let said = run(model.to_str().unwrap_or_default()).text;
     assert!(said.contains("Which quantization should I run?"), "{said}");
     assert!(said.contains("DEC-002"), "{said}");
-    assert!(said.contains("How fast is it on this machine?"), "{said}");
-    assert!(said.contains("B65"), "{said}");
 
     let _cleared = std::fs::remove_dir_all(&scratch);
 }
@@ -225,7 +222,7 @@ fn an_explanation_counts_compares_and_costs_the_model() {
     let scratch = std::env::temp_dir().join(format!("mcf-explain-anatomy-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).expect("a scratch directory");
     let model = scratch.join("model.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let said = run(model.to_str().unwrap_or_default()).text;
 

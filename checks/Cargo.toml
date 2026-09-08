@@ -14,15 +14,16 @@ workspace = true
 
 # A13 makes the taxonomy and the code one list. Reading it needs the types, so
 # the checks take mcf-core as a development dependency only — nothing this
-# crate builds is shipped, and no MCF crate depends on it. `mcf-lab` is the
-# fault catalogue, and `mcf-record` is what the property, fuzz, load and soak
-# tiers examine: the codec and the journal are where generated and untrusted
-# bytes meet MCF (B-191, D10).
+# crate builds is shipped, and no MCF crate depends on it. `mcf-record` is what
+# the property, fuzz, load and soak tiers examine: the codec and the journal
+# are where generated and untrusted bytes meet MCF (B-191, D10).
 [dev-dependencies]
 mcf-core = { path = "../crates/mcf-core" }
-mcf-lab = { path = "../crates/mcf-lab" }
 mcf-helper = { path = "../crates/mcf-helper" }
 mcf-record = { path = "../crates/mcf-record" }
+# The load and soak tiers drive the thing MCF exists to do: work out how a
+# model is held on this machine, over and over and all at once.
+mcf-serve = { path = "../crates/mcf-serve" }
 # The model-file reader is the fifth place untrusted bytes enter (B-360, §3.7),
 # and the fuzz tier examines it for the same reason it examines the others.
 mcf-standin = { path = "../crates/mcf-standin" }
@@ -32,4 +33,3 @@ mcf-hub = { path = "../crates/mcf-hub" }
 # The seed-set validation tier compares two distributions, and the arithmetic
 # that decides whether two distributions differ lives with the measurements
 # (B-291, D19).
-mcf-bench = { path = "../crates/mcf-bench" }

@@ -15,7 +15,6 @@ use mcf_serve::control::{Answer, Request};
 use keys::Key;
 use screen::{Ink, Screen};
 use screens::Where;
-use screens::diagnostics::{QUICK_DEPTH, Run};
 use screens::host::{Held, Resolved};
 
 #[derive(Debug, Clone, Copy)]
@@ -52,16 +51,6 @@ pub const ACTIONS: &[Action] = &[
         reaches: None,
     },
     Action {
-        key: "⏎ Quick Run",
-        does: "climb the ladder",
-        reaches: Some("Measure"),
-    },
-    Action {
-        key: "⏎ Run Selected",
-        does: "the cross-check",
-        reaches: Some("CrossCheck"),
-    },
-    Action {
         key: "S",
         does: "stop the daemon",
         reaches: Some("Stop"),
@@ -85,9 +74,6 @@ struct Console {
     status: Option<Result<Value, String>>,
     models: Vec<Held>,
     card_unused: Option<String>,
-    on: Option<mcf_serve::control::On>,
-    tests: Vec<screens::diagnostics::Test>,
-    running: Option<Running>,
     components: Vec<(String, String, bool, bool, bool)>,
     said: Option<(String, Ink)>,
     sampler: machine::Sampler,
@@ -160,13 +146,6 @@ fn name_of(model: &Value) -> String {
         .to_owned()
 }
 
-#[derive(Debug)]
-struct Running {
-    run: Run,
-    job: job::Job,
-    kept: bool,
-}
-
 impl Console {
     fn new(socket: std::path::PathBuf) -> Self {
         Self {
@@ -180,9 +159,6 @@ impl Console {
             status: None,
             models: Vec::new(),
             card_unused: None,
-            on: None,
-            tests: screens::diagnostics::tests(),
-            running: None,
             components: Vec::new(),
             said: None,
             sampler: machine::Sampler::new(),
@@ -326,120 +302,8 @@ impl Console {
     fn buttons(&self) -> usize {
         match self.at {
             Where::Models => screens::host::BUTTONS.len(),
-            Where::Diagnostics => screens::diagnostics::BUTTONS.len(),
             _ => 0,
         }
-    }
-
-    fn busy(&self) -> bool {
-        self.running.as_ref().is_some_and(|held| !held.job.finished)
-    }
-
-    fn deepest(&self) -> Option<u64> {
-        let resolved = self.models.get(self.model)?.engine.as_ref().ok()?;
-        #[expect(clippy::integer_division, reason = "half a window, exactly")]
-        let deepest = resolved.context / 2;
-        (deepest >= 512).then_some(deepest)
-    }
-
-    fn measure(&mut self, deepest: Option<u64>) {
-        let Some(held) = self.models.get(self.model) else {
-            self.said = Some(("no model is chosen".to_owned(), Ink::Refusal));
-            return;
-        };
-        let Some(deepest) = deepest else {
-            self.said = Some((
-                "MCF has not said what window this model runs in, so there is no ladder \
-                 to climb"
-                    .to_owned(),
-                Ink::Refusal,
-            ));
-            return;
-        };
-        self.said = None;
-        self.running = Some(Running {
-            run: Run::Ladder,
-            job: job::Job::start(
-                &self.socket,
-                Request::Measure {
-                    started: mcf_serve::declared::Started::default(),
-                    model: held.path.clone(),
-                    engine: None,
-                    on: self.on,
-                    deepest,
-                },
-                format!("measuring {}", held.name),
-            ),
-            kept: false,
-        });
-    }
-
-    fn cross_check(&mut self) {
-        let Some(held) = self.models.get(self.model) else {
-            self.said = Some(("no model is chosen".to_owned(), Ink::Refusal));
-            return;
-        };
-        self.said = None;
-        self.running = Some(Running {
-            run: Run::CrossCheck,
-            job: job::Job::start(
-                &self.socket,
-                Request::CrossCheck {
-                    model: held.path.clone(),
-                },
-                format!("cross-checking {}", held.name),
-            ),
-            kept: false,
-        });
-    }
-
-    fn probes(&mut self) {
-        let Some(held) = self.models.get(self.model) else {
-            self.said = Some(("no model is chosen".to_owned(), Ink::Refusal));
-            return;
-        };
-        self.said = None;
-        self.running = Some(Running {
-            run: Run::Probes,
-            job: job::Job::start(
-                &self.socket,
-                Request::Probe {
-                    model: held.path.clone(),
-                    engine: None,
-                    apply: false,
-                    up_to: None,
-                    only: Vec::new(),
-                },
-                format!("probing {}", held.name),
-            ),
-            kept: false,
-        });
-    }
-
-    fn hear(&mut self) {
-        let Some(running) = self.running.as_mut() else {
-            return;
-        };
-        if running.kept {
-            return;
-        }
-        let _anything = running.job.drain();
-        if !running.job.finished {
-            return;
-        }
-        let Some(mut finished) = self.running.take() else {
-            return;
-        };
-        finished.kept = true;
-        match finished.run {
-            Run::Ladder => screens::diagnostics::keep_the_ladder(&mut self.tests, &finished.job),
-            Run::CrossCheck => {
-                screens::diagnostics::keep_the_cross_check(&mut self.tests, &finished.job);
-            }
-            Run::Probes => screens::diagnostics::keep_the_probes(&mut self.tests, &finished.job),
-        }
-        self.refresh();
-        self.running = Some(finished);
     }
 
     fn press(&mut self) {
@@ -452,16 +316,7 @@ impl Console {
                     Ink::Refusal,
                 ));
             }
-            (Where::Models, 1) => self.open(Where::Diagnostics),
             (Where::Models, _) => self.open(Where::Monitor),
-            (Where::Diagnostics, 0..=3) if self.busy() => {
-                self.said = Some(("a run is already going".to_owned(), Ink::Refusal));
-            }
-            (Where::Diagnostics, 0) => self.measure(Some(QUICK_DEPTH)),
-            (Where::Diagnostics, 1) => self.measure(self.deepest()),
-            (Where::Diagnostics, 2) => self.cross_check(),
-            (Where::Diagnostics, 3) => self.probes(),
-            (Where::Diagnostics, _) => self.open(Where::Models),
             _ => {}
         }
     }
@@ -480,40 +335,10 @@ impl Console {
         } else {
             0
         };
-        if matches!(screen, Where::Models | Where::Diagnostics) {
+        if matches!(screen, Where::Models) {
             self.refresh();
         }
     }
-}
-
-fn draw_diagnostics(console: &Console, into: &mut Screen, from: usize) {
-    let model = console
-        .models
-        .get(console.model)
-        .map_or("nothing selected", |held| held.name.as_str());
-    let resolved = console
-        .models
-        .get(console.model)
-        .and_then(|held| held.engine.as_ref().ok());
-    screens::diagnostics::draw(
-        into,
-        from,
-        screens::diagnostics::Setup {
-            model,
-            window: resolved.map(|held| held.context),
-            engine: resolved.map(|held| held.engine.as_str()),
-            device: resolved.map(|held| held.device.as_str()),
-            on: console.on,
-            card_unused: console.card_unused.as_deref(),
-        },
-        &console.tests,
-        screens::diagnostics::Cursor {
-            row: console.row,
-            button: console.button,
-            on_buttons: console.on_buttons,
-        },
-        console.running.as_ref().map(|held| &held.job),
-    );
 }
 
 fn draw(console: &Console, into: &mut Screen) {
@@ -524,18 +349,9 @@ fn draw(console: &Console, into: &mut Screen) {
         .and_then(|status| status.get("resident"))
         .and_then(Value::as_text)
         .is_some();
-    let running = console.running.as_ref().filter(|held| !held.job.finished);
-    let state = match (&console.status, serving, running) {
-        (Some(Err(_)), _, _) => Some(("not running", Ink::Refusal)),
-        (_, _, Some(held)) => Some((
-            match held.run {
-                Run::Ladder => "Measuring",
-                Run::CrossCheck => "Cross-checking",
-                Run::Probes => "Probing",
-            },
-            Ink::Held,
-        )),
-        (_, true, None) => Some(("Serving", Ink::Held)),
+    let state = match (&console.status, serving) {
+        (Some(Err(_)), _) => Some(("not running", Ink::Refusal)),
+        (_, true) => Some(("Serving", Ink::Held)),
         _ => Some(("Idle", Ink::Quiet)),
     };
     let from = screens::frame(into, console.at, console.cursor, state);
@@ -560,7 +376,6 @@ fn draw(console: &Console, into: &mut Screen) {
             console.button,
             console.on_buttons,
         ),
-        Where::Diagnostics => draw_diagnostics(console, into, from),
         Where::Components => {
             into.put(2, from + 1, "COMPONENTS", Ink::Heading);
             if console.components.is_empty() {
@@ -593,7 +408,6 @@ fn draw(console: &Console, into: &mut Screen) {
                 into.put(2, row, "`mcf provision <component>` builds one", Ink::Quiet);
             }
         }
-        Where::Prompt => prompt_screen(into, from),
         Where::Settings => {
             into.put(2, from + 1, "SETTINGS", Ink::Heading);
             into.put(2, from + 3, "nothing to set yet", Ink::Quiet);
@@ -617,28 +431,6 @@ fn draw(console: &Console, into: &mut Screen) {
     screens::close(into, from);
 }
 
-fn prompt_screen(into: &mut Screen, from: usize) {
-    into.put(2, from + 1, "WHAT A PROMPT DOES", Ink::Heading);
-    into.put(
-        2,
-        from + 3,
-        "`mcf prompt <model> --prompt \"...\"` takes one apart, sentence by sentence",
-        Ink::Quiet,
-    );
-    into.put(
-        2,
-        from + 5,
-        "one generation for the prompt, one for each sentence left out, one per seed",
-        Ink::Quiet,
-    );
-    into.put(
-        2,
-        from + 7,
-        "the reading is an ordering, not relevance: removing anything shifts what follows",
-        Ink::Quiet,
-    );
-}
-
 pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut restored = terminal::take()?;
     let mut console = Console::new(socket);
@@ -650,12 +442,11 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut buffer = [0_u8; 64];
 
     loop {
-        let waiting = console.at != Where::Monitor && !console.busy();
+        let waiting = console.at != Where::Monitor;
         terminal::wait_for_a_key(waiting);
         if console.at == Where::Monitor {
             console.reading = console.sampler.read();
         }
-        console.hear();
 
         let (width, height) = terminal::size();
         let mut screen = Screen::new(width, height);
@@ -764,18 +555,6 @@ fn act(console: &mut Console, key: Key) -> Leaving {
                 console.refresh();
             }
             Key::Character('S') => console.confirming = true,
-            Key::Character('d') if console.at == Where::Diagnostics => {
-                console.on = match console.on {
-                    None => Some(mcf_serve::control::On::Processor),
-                    Some(mcf_serve::control::On::Processor) => Some(mcf_serve::control::On::Card),
-                    Some(mcf_serve::control::On::Card) => None,
-                };
-            }
-            Key::Character('x') if console.at == Where::Diagnostics => {
-                if let Some(running) = console.running.as_mut() {
-                    running.job.stop();
-                }
-            }
             _ => {}
         }
     }

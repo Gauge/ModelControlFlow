@@ -86,7 +86,7 @@ fn every_control_operation_has_a_command() {
 #[test]
 fn the_operations_a_person_can_ask_for_are_commands() {
     let main = read("crates/mcf-cli/src/main.rs");
-    for (operation, command) in [("Status", "status"), ("Stop", "stop"), ("Generate", "run")] {
+    for (operation, command) in [("Status", "status"), ("Stop", "stop"), ("Generate", "ask")] {
         assert!(
             main.contains(&format!("[\"{command}\"")),
             "`{operation}` is answered by the daemon and `mcf {command}` is not a command a \

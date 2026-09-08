@@ -287,7 +287,7 @@ fn the_latency_to_a_first_token_is_within_its_ceiling() {
         .join("fixture");
     std::fs::create_dir_all(&store).expect("a store for the fixture");
     let model = store.join("a-model-that-runs.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("the fixture written");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("the fixture written");
 
     let Some(mut daemon) = quarters.serve() else {
         judge(&ADDED_LATENCY, Verdict::NotMeasured, "no daemon started");

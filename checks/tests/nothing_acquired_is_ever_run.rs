@@ -21,56 +21,12 @@ const DECLARED: &[Spawns] = &[
                toolchain that built the rest of this program (B-409, D39)",
     },
     Spawns {
-        file: "crates/mcf-cli/src/eval.rs",
-        sites: 1,
-        what: "podman, running the function a model just wrote against the cases a task \
-               states, inside a container with no network and nothing mounted but its own \
-               scratch. This is the only place MCF runs code it did not compile, and the \
-               container is the whole of why it may",
-    },
-    Spawns {
-        file: "crates/mcf-desk/src/lib.rs",
-        sites: 1,
-        what: "the command the window hands the console's job to run a coding suite from the \
-               Diagnostics list: MCF's own binary, found by asking the system where it is, \
-               with `eval` and the model's path. It is built here and started in the job; \
-               nothing acquired is named in it (B-519, B-025)",
-    },
-    Spawns {
         file: "crates/mcf-tui/src/job.rs",
         sites: 1,
         what: "MCF's own binary with arguments, so that the window can run a command-line \
                suite — `mcf eval <model>` — as a job it reads line by line and can stop. What \
                starts is the program MCF is, never a model or anything acquired: what a model \
                wrote runs inside that command's container, declared beside it (B-519, B-025)",
-    },
-    Spawns {
-        file: "crates/mcf-cli/src/languages.rs",
-        sites: 2,
-        what: "podman again, for the catalogue's languages beyond Python: once to ask a \
-               language's pinned image whether it can be run at all, and once to run the \
-               harness around the function a model wrote, with no network, nothing mounted \
-               but its own scratch, a writable /tmp for a compiler's output, a memory \
-               ceiling and a process limit (B-523, B-563, B-025)",
-    },
-    Spawns {
-        file: "crates/mcf-serve/src/probes/run.rs",
-        sites: 1,
-        what: "the provisioned engine's own tool that takes an image, so that the vision probe \
-               can put a picture to a model at all. What is started is a binary MCF built \
-               itself, from a pinned commit, in a container it controlled — the same prefix \
-               every other provisioned tool is reached through. The model is an argument to it \
-               and is never executed: what MCF acquired is read as weights by a program MCF \
-               built, which is the whole of the distinction B-025 draws (B-320, D39)",
-    },
-    Spawns {
-        file: "crates/mcf-lab/src/catalogue/engine.rs",
-        sites: 5,
-        what: "the laboratory's stand-ins for an engine that dies: a shell told to exit, a \
-               shell told to kill itself, a program that is not there, a directory where a \
-               program should be, and a shell told to sleep — a server that starts and never \
-               becomes ready. What is simulated is the death or the silence, never a model \
-               (D26, B-033)",
     },
     Spawns {
         file: "crates/mcf-serve/src/adapters.rs",

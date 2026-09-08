@@ -13,12 +13,6 @@ struct Unweighed {
 
 const ALLOWED: &[Unweighed] = &[
     Unweighed {
-        file: "crates/mcf-lab/src/catalogue/artifact.rs",
-        because: "the artifact laboratory feeds MCF deliberately malformed files to record what \
-                  it does with them; the files are fixtures measured in kilobytes, and a memory \
-                  refusal computed first would pre-empt the reading being observed",
-    },
-    Unweighed {
         file: "crates/mcf-standin/examples/load.rs",
         because: "an example, not a shipped path: it exists to show the loader being called and \
                   is run by hand on a file the operator names",
@@ -112,19 +106,15 @@ fn every_declared_exception_still_exists() {
 }
 
 #[test]
-fn the_serving_path_and_the_console_agree() {
-    let root = root();
-    let daemon_side = std::fs::read_to_string(root.join("crates/mcf-serve/src/generation.rs"))
+fn the_serving_path_weighs_before_it_loads() {
+    let daemon_side = std::fs::read_to_string(root().join("crates/mcf-serve/src/generation.rs"))
         .expect("the serving path is readable");
-    let console_side =
-        std::fs::read_to_string(root.join("crates/mcf-cli/src/run.rs")).expect("run is readable");
-    for (which, text) in [("the daemon", &daemon_side), ("the console", &console_side)] {
-        assert!(
-            WEIGHS.iter().any(|held| text.contains(held)),
-            "{which} loads a model into memory without weighing it; both serve `mcf run` and \
-             they have to refuse the same models (A22, B-072, F136)"
-        );
-    }
+    assert!(
+        WEIGHS.iter().any(|held| daemon_side.contains(held)),
+        "the daemon loads a model into memory without weighing it first, so a model too large \
+         for this machine is discovered by running out of memory rather than by being refused \
+         (A22, B-072, F136)"
+    );
 }
 
 #[test]

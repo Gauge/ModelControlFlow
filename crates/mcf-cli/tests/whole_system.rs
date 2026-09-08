@@ -1,5 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
+mod serving;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -179,7 +181,7 @@ fn the_json_surface_parses_as_a_record_value() {
     assert!(output.status.success(), "{}", error_text(&output));
 
     let value = json::parse(text(&output).trim()).expect("the surface is readable JSON");
-    for question in ["mcf", "machine", "self_cost", "laboratory"] {
+    for question in ["mcf", "machine", "self_cost"] {
         assert!(
             value.get(question).is_some(),
             "the JSON surface has no {question}: {value:?}"
@@ -468,10 +470,10 @@ fn removing_something_that_is_not_there_says_so() {
     assert!(model.exists(), "the model that was there is gone");
 }
 
-fn a_hub_serving(weights: &str, digest: &str) -> mcf_lab::serving::Serving {
-    use mcf_lab::serving::answer;
+fn a_hub_serving(weights: &str, digest: &str) -> serving::Serving {
+    use serving::answer;
     let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
-    mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+    serving::Serving::answering(std::collections::BTreeMap::from([
         (
             "/api/models/owner/model".to_owned(),
             answer(&format!(
@@ -734,14 +736,14 @@ fn a_model_held_in_two_stores_is_ambiguous_rather_than_first_wins() {
         std::fs::create_dir_all(store.join("owner/model")).expect("a store");
         std::fs::write(
             store.join("owner/model/model.gguf"),
-            mcf_lab::fixture::a_model_that_runs(),
+            mcf_standin::fixture::a_model_that_runs(),
         )
         .expect("a model");
     }
     let listed = format!("{}:{}", first.display(), second.display());
 
     let refused = machine
-        .command(&["run", "owner/model:model.gguf", "--prompt", "yes"])
+        .command(&["ask", "owner/model:model.gguf", "--prompt", "yes"])
         .env("MCF_MODELS", &listed)
         .output()
         .expect("the binary runs");
@@ -776,10 +778,10 @@ fn a_hub_that_cannot_be_reached_is_not_reported_as_unchanged() {
     );
 }
 
-fn a_hub_declaring(weights: &str, digest: &str, licence: &str) -> mcf_lab::serving::Serving {
-    use mcf_lab::serving::answer;
+fn a_hub_declaring(weights: &str, digest: &str, licence: &str) -> serving::Serving {
+    use serving::answer;
     let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
-    mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+    serving::Serving::answering(std::collections::BTreeMap::from([
         (
             "/api/models/owner/model".to_owned(),
             answer(&format!(
@@ -831,11 +833,11 @@ fn acquiring_something_already_held_does_not_fetch_it_again() {
 
 #[test]
 fn a_repository_of_variants_is_planned_before_anything_is_downloaded() {
-    use mcf_lab::serving::answer;
+    use serving::answer;
     let machine = Machine::new("pull-plan");
     let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
     let configuration = r#"{"num_hidden_layers":28,"num_key_value_heads":8,"head_dim":128}"#;
-    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+    let serving = serving::Serving::answering(std::collections::BTreeMap::from([
         (
             "/api/models/owner/model".to_owned(),
             answer(&format!(
@@ -884,12 +886,12 @@ fn a_repository_of_variants_is_planned_before_anything_is_downloaded() {
 
 #[test]
 fn a_requantization_records_the_weights_it_was_made_from() {
-    use mcf_lab::serving::answer;
+    use serving::answer;
     let machine = Machine::new("pull-chain");
     let weights = "GGUF a requantization";
     let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
     let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
-    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+    let serving = serving::Serving::answering(std::collections::BTreeMap::from([
         (
             "/api/models/somebody/model-GGUF".to_owned(),
             answer(&format!(
@@ -954,13 +956,13 @@ fn a_requantization_records_the_weights_it_was_made_from() {
 
 #[test]
 fn what_arrived_is_planned_again_now_that_it_is_here() {
-    use mcf_lab::serving::answer;
+    use serving::answer;
     let machine = Machine::new("pull-replan");
     let weights = "GGUF the weights";
     let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
     let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
     let configuration = r#"{"num_hidden_layers":4,"num_key_value_heads":2,"head_dim":64}"#;
-    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+    let serving = serving::Serving::answering(std::collections::BTreeMap::from([
         (
             "/api/models/owner/model".to_owned(),
             answer(&format!(r#"{{"sha":"{revision}"}}"#)),
@@ -1015,14 +1017,14 @@ fn an_artifact_nobody_could_check_is_reported_as_held() {
     let machine = Machine::new("pull-unverified");
     let weights = "GGUF the weights";
     let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
-    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+    let serving = serving::Serving::answering(std::collections::BTreeMap::from([
         (
             "/api/models/owner/model".to_owned(),
-            mcf_lab::serving::answer(&format!(r#"{{"sha":"{revision}"}}"#)),
+            serving::answer(&format!(r#"{{"sha":"{revision}"}}"#)),
         ),
         (
             format!("/api/models/owner/model/tree/{revision}?recursive=true"),
-            mcf_lab::serving::answer(&format!(
+            serving::answer(&format!(
                 r#"[{{"type":"file","size":{},"path":"model.gguf"}}]"#,
                 weights.len()
             )),
@@ -1051,9 +1053,9 @@ fn an_artifact_nobody_could_check_is_reported_as_held() {
 #[test]
 fn a_private_repository_says_what_is_missing_and_what_was_not_used() {
     let machine = Machine::new("pull-private");
-    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([(
+    let serving = serving::Serving::answering(std::collections::BTreeMap::from([(
         "/api/models/owner/model".to_owned(),
-        mcf_lab::serving::status(401, "Unauthorized"),
+        serving::status(401, "Unauthorized"),
     )]))
     .expect("a loopback port");
 
@@ -1076,9 +1078,9 @@ fn a_private_repository_says_what_is_missing_and_what_was_not_used() {
 #[test]
 fn a_credential_is_read_where_it_is_named_and_not_sent_in_the_clear() {
     let machine = Machine::new("pull-credential");
-    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([(
+    let serving = serving::Serving::answering(std::collections::BTreeMap::from([(
         "/api/models/owner/model".to_owned(),
-        mcf_lab::serving::status(401, "Unauthorized"),
+        serving::status(401, "Unauthorized"),
     )]))
     .expect("a loopback port");
 
@@ -1111,7 +1113,7 @@ fn a_credential_is_read_where_it_is_named_and_not_sent_in_the_clear() {
 fn a_generation_puts_its_text_in_the_content_store_and_not_in_the_record() {
     let machine = Machine::new("content-separation");
     let model = machine.0.join("fixture.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("the fixture writes");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("the fixture writes");
 
     let mut serving = machine
         .command(&["serve"])
@@ -1128,7 +1130,7 @@ fn a_generation_puts_its_text_in_the_content_store_and_not_in_the_record() {
     }
 
     let ran = machine.run(&[
-        "run",
+        "ask",
         model.to_str().expect("a fixture path is text"),
         "--prompt",
         "a",
@@ -1399,13 +1401,13 @@ fn stopping_nothing_says_so_and_says_what_would_start_one() {
 
 #[test]
 fn a_model_on_this_machine_answers_something_and_the_answer_is_marked() {
-    let machine = Machine::new("run");
+    let machine = Machine::new("ask");
     let model = machine.0.join("mcf/models/owner/model/model.gguf");
     std::fs::create_dir_all(model.parent().expect("a parent")).expect("a directory");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let answered = machine.run(&[
-        "run",
+        "ask",
         "owner/model:model.gguf",
         "--prompt",
         "yes",
@@ -1420,13 +1422,8 @@ fn a_model_on_this_machine_answers_something_and_the_answer_is_marked() {
     assert!(said.contains("what produced it"), "{said}");
     assert!(said.contains("greedy, seed 0"), "{said}");
     assert!(said.contains("3 token(s)"), "{said}");
-    assert!(said.contains("MARKED"), "{said}");
-    assert!(
-        said.contains("can never be a speed"),
-        "the answer does not say what it cannot be (B65): {said}"
-    );
 
-    let by_path = machine.run(&["run", &model.display().to_string(), "--prompt", "no"]);
+    let by_path = machine.run(&["ask", &model.display().to_string(), "--prompt", "no"]);
     assert!(by_path.status.success(), "{}", error_text(&by_path));
     assert!(text(&by_path).contains("no"), "{}", text(&by_path));
 }
@@ -1482,7 +1479,7 @@ fn a_models_defaults_are_visible_with_their_sources() {
     let machine = Machine::new("explain");
     let model = machine.0.join("mcf/models/owner/model/model.gguf");
     std::fs::create_dir_all(model.parent().expect("a parent")).expect("a directory");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let explained = machine.run(&["explain", "owner/model:model.gguf"]);
     assert!(explained.status.success(), "{}", error_text(&explained));
@@ -1503,7 +1500,7 @@ fn running_something_that_is_not_a_model_is_refused_legibly() {
     std::fs::write(&not_a_model, b"ONNX or something").expect("a file");
 
     let refused = machine.run(&[
-        "run",
+        "ask",
         &not_a_model.display().to_string(),
         "--prompt",
         "anything",
@@ -1661,7 +1658,7 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
         .join("fixture");
     std::fs::create_dir_all(&models).expect("a store");
     let model = models.join("a-model-that-runs.gguf");
-    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+    std::fs::write(&model, mcf_standin::fixture::a_model_that_runs()).expect("a model file");
 
     let mut serving = Reaped(
         machine
@@ -1681,7 +1678,7 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
     }
 
     let ran = machine.run(&[
-        "run",
+        "ask",
         "lab/fixture:a-model-that-runs.gguf",
         "--prompt",
         "yes",
@@ -1701,7 +1698,7 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
     );
 
     let again = text(&machine.run(&[
-        "run",
+        "ask",
         "lab/fixture:a-model-that-runs.gguf",
         "--prompt",
         "yes",
@@ -1719,7 +1716,7 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
     assert!(log.contains("generated"), "{log}");
     assert!(log.contains("MARKED degraded"), "{log}");
 
-    let missing = machine.run(&["run", "lab/fixture:no-such.gguf", "--prompt", "x"]);
+    let missing = machine.run(&["ask", "lab/fixture:no-such.gguf", "--prompt", "x"]);
     assert!(!missing.status.success());
 
     let stopped = machine.run(&["stop", "--because", "the whole-system test is done"]);
@@ -1741,7 +1738,7 @@ fn a_daemon_killed_mid_generation_leaves_a_client_that_says_so_and_a_record_that
     std::fs::create_dir_all(&models).expect("a store");
     std::fs::write(
         models.join("a-model-that-runs.gguf"),
-        mcf_lab::fixture::a_model_that_runs(),
+        mcf_standin::fixture::a_model_that_runs(),
     )
     .expect("a model file");
 
@@ -1761,7 +1758,7 @@ fn a_daemon_killed_mid_generation_leaves_a_client_that_says_so_and_a_record_that
 
     let mut client = machine
         .command(&[
-            "run",
+            "ask",
             "lab/fixture:a-model-that-runs.gguf",
             "--prompt",
             "yes",
@@ -1997,7 +1994,7 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
     std::fs::create_dir_all(&models).expect("a store");
     std::fs::write(
         models.join("a-model-that-runs.gguf"),
-        mcf_lab::fixture::a_model_that_runs(),
+        mcf_standin::fixture::a_model_that_runs(),
     )
     .expect("a file");
     fake_provisioned_engine(&machine, "answers");
@@ -2018,7 +2015,7 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
     }
 
     let ran = machine.run(&[
-        "run",
+        "ask",
         "lab/fixture:a-model-that-runs.gguf",
         "--prompt",
         "yes",
@@ -2037,7 +2034,7 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
     );
 
     let own = machine.run(&[
-        "run",
+        "ask",
         "lab/fixture:a-model-that-runs.gguf",
         "--prompt",
         "yes",
@@ -2069,7 +2066,11 @@ fn what_the_engine_wrote_before_it_died_is_on_the_page() {
         .join("lab")
         .join("fixture");
     std::fs::create_dir_all(&models).expect("a store");
-    std::fs::write(models.join("m.gguf"), mcf_lab::fixture::a_model_that_runs()).expect("a file");
+    std::fs::write(
+        models.join("m.gguf"),
+        mcf_standin::fixture::a_model_that_runs(),
+    )
+    .expect("a file");
     fake_provisioned_engine(&machine, "dies_part_way");
 
     let mut serving = Reaped(
@@ -2087,7 +2088,7 @@ fn what_the_engine_wrote_before_it_died_is_on_the_page() {
         assert!(line.contains("mcf is up on"), "{line}");
     }
 
-    let ran = machine.run(&["run", "lab/fixture:m.gguf", "--prompt", "yes"]);
+    let ran = machine.run(&["ask", "lab/fixture:m.gguf", "--prompt", "yes"]);
     assert!(!ran.status.success());
     let said = text(&ran);
     assert!(said.starts_with("Paris is "), "what arrived: {said:?}");
@@ -2122,7 +2123,11 @@ fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemo
         .join("lab")
         .join("fixture");
     std::fs::create_dir_all(&models).expect("a store");
-    std::fs::write(models.join("m.gguf"), mcf_lab::fixture::a_model_that_runs()).expect("a file");
+    std::fs::write(
+        models.join("m.gguf"),
+        mcf_standin::fixture::a_model_that_runs(),
+    )
+    .expect("a file");
     fake_provisioned_engine(&machine, "dies");
 
     let mut serving = Reaped(
@@ -2140,7 +2145,7 @@ fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemo
         assert!(line.contains("mcf is up on"), "{line}");
     }
 
-    let ran = machine.run(&["run", "lab/fixture:m.gguf", "--prompt", "yes"]);
+    let ran = machine.run(&["ask", "lab/fixture:m.gguf", "--prompt", "yes"]);
     assert!(!ran.status.success());
     let out = format!("{}{}", text(&ran), error_text(&ran));
     assert!(out.contains("engine.exit.midstream"), "{out}");

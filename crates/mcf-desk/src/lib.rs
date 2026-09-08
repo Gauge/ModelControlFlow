@@ -514,18 +514,37 @@ pub enum Caret {
     Picture,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tab {
+    #[default]
+    Configure,
+    Statistics,
+    Contents,
+}
+
+impl Tab {
+    pub const ALL: [Self; 3] = [Self::Configure, Self::Statistics, Self::Contents];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Configure => "Configure",
+            Self::Statistics => "Statistics",
+            Self::Contents => "Contents",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Monitor,
     Host,
-    Diagnostics,
     Models,
     Components,
     Settings,
     Exit,
     Adding,
     Hosting,
-    Prompt,
     Anatomy,
     Vocabulary,
 }
@@ -535,7 +554,6 @@ impl Page {
         (Self::Monitor, "System"),
         (Self::Models, "Models"),
         (Self::Hosting, "Server"),
-        (Self::Diagnostics, "Diagnostics"),
         (Self::Exit, "Exit"),
     ];
 
@@ -546,7 +564,6 @@ impl Page {
                 Self::Models
             }
             Self::Hosting => Self::Hosting,
-            Self::Diagnostics | Self::Prompt => Self::Diagnostics,
             Self::Monitor | Self::Components | Self::Settings => Self::Monitor,
             Self::Exit => Self::Exit,
         }
@@ -573,34 +590,10 @@ pub struct Model {
     pub engine: Option<String>,
     pub device: Option<String>,
     pub device_free: Option<u64>,
-    pub measured_body: Option<Value>,
-    pub measured_at: Option<String>,
-    pub cross_checked: Vec<String>,
-    pub cross_checked_at: Option<String>,
-    pub prompt_reported: bool,
-    pub prompt_reported_at: Option<String>,
-    pub applied_addressing: Option<String>,
-    pub applied_budget: Option<String>,
-    pub probed: Vec<Finding>,
-    pub readings_at: std::collections::BTreeMap<String, String>,
     pub repository: Option<String>,
     pub file: String,
     pub on_a_card: bool,
     pub refused: Option<String>,
-    pub speed: Option<f64>,
-    pub start_up: Option<String>,
-    pub fastest: Option<f64>,
-    pub slowest: Option<f64>,
-    pub ladder: Vec<crate::chart::Reading>,
-}
-
-pub use mcf_tui::screens::diagnostics::Test;
-
-pub use mcf_tui::screens::diagnostics::Run;
-
-#[must_use]
-pub fn tests() -> Vec<Test> {
-    mcf_tui::screens::diagnostics::tests()
 }
 
 impl Model {
@@ -633,10 +626,7 @@ impl Model {
         } else {
             "your processor"
         };
-        match words::speed_in_words(self.speed) {
-            Some(speed) => format!("Runs on {place} at about {speed}."),
-            None => format!("Will run on {place}. MCF has not timed it on this computer yet."),
-        }
+        format!("Will run on {place}.")
     }
 
     #[must_use]
@@ -645,94 +635,6 @@ impl Model {
             || words::UNMEASURED.to_owned(),
             |size| format!("Uses {size}"),
         )
-    }
-
-    #[must_use]
-    pub fn speed_at_512(&self) -> String {
-        self.fastest.map_or_else(
-            || crate::view::UNKNOWN.to_owned(),
-            |ms| format!("{ms:.2} ms/token"),
-        )
-    }
-
-    #[must_use]
-    pub fn speed_at_window(&self) -> String {
-        self.slowest.map_or_else(
-            || crate::view::UNKNOWN.to_owned(),
-            |ms| format!("{ms:.2} ms/token"),
-        )
-    }
-
-    #[must_use]
-    pub fn speed_rows(&self) -> [(String, String); 2] {
-        let at = |reading: Option<&crate::chart::Reading>, or: &str| {
-            reading.map_or_else(
-                || or.to_owned(),
-                |held| format!("at {} tokens", words::grouped(held.depth)),
-            )
-        };
-        [
-            (
-                at(self.ladder.first(), "at 512 tokens"),
-                self.speed_at_512(),
-            ),
-            (
-                at(self.ladder.last(), "at the deepest rung"),
-                self.speed_at_window(),
-            ),
-        ]
-    }
-
-    #[must_use]
-    pub fn start_up(&self) -> String {
-        self.start_up
-            .as_ref()
-            .map_or_else(|| crate::view::UNKNOWN.to_owned(), |ms| format!("{ms} ms"))
-    }
-
-    #[must_use]
-    pub fn measured(&self) -> bool {
-        self.fastest.is_some() || self.slowest.is_some() || self.start_up.is_some()
-    }
-
-    #[must_use]
-    pub fn technical(&self) -> Vec<(String, String)> {
-        let mut rows = Vec::new();
-        let unknown = || words::UNMEASURED.to_owned();
-        rows.push((
-            "Architecture".to_owned(),
-            self.architecture.clone().unwrap_or_else(unknown),
-        ));
-        rows.push((
-            "File".to_owned(),
-            self.bytes
-                .map_or_else(unknown, |bytes| format!("{} bytes", words::grouped(bytes))),
-        ));
-        rows.push((
-            "Trained context".to_owned(),
-            self.trained
-                .map_or_else(unknown, |held| format!("{} tokens", words::grouped(held))),
-        ));
-        rows.push((
-            "Largest window here".to_owned(),
-            self.context
-                .map_or_else(unknown, |held| format!("{} tokens", words::grouped(held))),
-        ));
-        rows.push((
-            "Engine".to_owned(),
-            match (&self.engine, &self.device) {
-                (Some(engine), Some(device)) => format!("{engine} · {device}"),
-                (Some(engine), None) => engine.clone(),
-                _ => unknown(),
-            },
-        ));
-        rows.push((
-            "Speed".to_owned(),
-            self.speed
-                .map_or_else(unknown, |rate| format!("{rate:.1} tokens a second")),
-        ));
-        rows.push(("Path".to_owned(), self.path.clone()));
-        rows
     }
 }
 
@@ -743,33 +645,6 @@ fn repository_of(held: &Value) -> Option<String> {
         .and_then(|origin| origin.get("repository"))
         .and_then(Value::as_text)
         .map(str::to_owned)
-}
-
-fn readings_at_of(held: &Value) -> std::collections::BTreeMap<String, String> {
-    match held.get("readings_at") {
-        Some(Value::Map(entries)) => entries
-            .iter()
-            .filter_map(|(method, at)| Some((method.clone(), at.as_text()?.to_owned())))
-            .collect(),
-        _ => std::collections::BTreeMap::new(),
-    }
-}
-
-fn probed_of(held: &Value) -> Vec<Finding> {
-    held.get("probed")
-        .and_then(Value::as_list)
-        .unwrap_or(&[])
-        .iter()
-        .filter_map(|found| {
-            let text = |key: &str| found.get(key).and_then(Value::as_text).map(str::to_owned);
-            Some(Finding {
-                name: text("method")?,
-                at: text("at"),
-                engine: text("engine"),
-                lines: vec![text("said")?],
-            })
-        })
-        .collect()
 }
 
 fn model_from(held: &Value) -> Model {
@@ -804,11 +679,7 @@ fn model_from(held: &Value) -> Model {
             .and_then(Value::as_integer)
             .and_then(|number| u64::try_from(number).ok())
     };
-    let measured = runs
-        .as_ref()
-        .and_then(|runs| runs.get("measured"))
-        .map(measured_ends);
-    let results = results_of(runs);
+    let _results = results_of(runs);
     let resolved = runs.as_ref().and_then(|runs| runs.get("resolved"));
     let known = matches!(
         resolved.as_ref().and_then(|resolved| resolved.get("known")),
@@ -840,38 +711,12 @@ fn model_from(held: &Value) -> Model {
             .and_then(|resolved| resolved.get("device_free_bytes"))
             .and_then(Value::as_integer)
             .and_then(|number| u64::try_from(number).ok()),
-        measured_at: at_in(results.0.as_ref()),
-        measured_body: results.0,
-        cross_checked: results.1,
-        cross_checked_at: results.3,
-        prompt_reported: results.2,
-        prompt_reported_at: results.4,
         // **What the daemon says of a model's runs is under `runs`.** The
-        applied_addressing: runs
-            .and_then(|runs| runs.get("configured"))
-            .and_then(|applied| applied.get("addressing"))
-            .and_then(Value::as_text)
-            .map(str::to_owned),
-        applied_budget: runs
-            .and_then(|runs| runs.get("configured"))
-            .and_then(|applied| applied.get("budget"))
-            .and_then(Value::as_text)
-            .map(str::to_owned),
         repository: repository_of(held),
         file,
-        probed: runs.map_or_else(Vec::new, probed_of),
-        readings_at: runs.map_or_else(std::collections::BTreeMap::new, readings_at_of),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
-        speed: measured
-            .as_ref()
-            .and_then(|held| held.fastest)
-            .map(per_second),
-        start_up: measured.as_ref().and_then(|held| held.start_up.clone()),
-        fastest: measured.as_ref().and_then(|held| held.fastest),
-        slowest: measured.as_ref().and_then(|held| held.slowest),
-        ladder: measured.map(|held| held.ladder).unwrap_or_default(),
     }
 }
 
@@ -972,57 +817,6 @@ pub fn expected_mark(grouped: Option<&Value>, at: usize) -> Option<String> {
     let first = part.get("first_choice").and_then(Value::as_integer)?;
     let tokens = part.get("tokens").and_then(Value::as_integer)?;
     Some(format!("{first}/{tokens}"))
-}
-
-fn per_second(ms: f64) -> f64 {
-    if ms > 0.0 { 1000.0 / ms } else { 0.0 }
-}
-
-#[derive(Debug, Default)]
-struct Measured {
-    fastest: Option<f64>,
-    slowest: Option<f64>,
-    ladder: Vec<crate::chart::Reading>,
-    start_up: Option<String>,
-}
-
-fn measured_ends(held: &Value) -> Measured {
-    let mut ends = Measured {
-        start_up: held
-            .get("first_token")
-            .filter(|figure| matches!(figure.get("measured"), Some(Value::Bool(true))))
-            .and_then(|figure| figure.get("ms"))
-            .and_then(Value::as_text)
-            .map(str::to_owned),
-        ..Measured::default()
-    };
-    let Some(readings) = held.get("readings").and_then(Value::as_list) else {
-        return ends;
-    };
-    for reading in readings {
-        if !matches!(reading.get("measured"), Some(Value::Bool(true))) {
-            continue;
-        }
-        let Some(ms) = reading
-            .get("ms_per_token")
-            .and_then(Value::as_text)
-            .and_then(|held| held.parse::<f64>().ok())
-        else {
-            continue;
-        };
-        if ends.fastest.is_none() {
-            ends.fastest = Some(ms);
-        }
-        ends.slowest = Some(ms);
-        if let Some(depth) = reading
-            .get("depth")
-            .and_then(Value::as_integer)
-            .and_then(|held| u64::try_from(held).ok())
-        {
-            ends.ladder.push(crate::chart::Reading { depth, ms });
-        }
-    }
-    ends
 }
 
 fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
@@ -1264,19 +1058,6 @@ impl Card {
     ];
 
     #[must_use]
-    pub fn measures(self) -> &'static [&'static str] {
-        let family = match self {
-            Self::Performance => 0,
-            Self::Fidelity => 1,
-            Self::Behaviour => 2,
-            _ => return &[],
-        };
-        mcf_serve::examine::FAMILIES
-            .get(family)
-            .map_or(&[][..], |(_, members)| members)
-    }
-
-    #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Throughput => "Throughput",
@@ -1334,17 +1115,6 @@ impl Card {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Diagnostic {
-    Throughput,
-    CrossCheck,
-    Prompt,
-    Comparison,
-    Probe(usize),
-    Measure(usize),
-    Eval(usize),
-}
-
 pub const SUITES: [(&str, &str, &str); 7] = [
     ("challenges-easy", "Challenges: easy", "challenges-easy"),
     (
@@ -1369,228 +1139,6 @@ pub const SMALLEST_WINDOW: u64 = 4096;
 
 pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 
-const SUITE_ANSWERS: [&str; 7] = [
-    "The catalogue's fourteen easy challenges in Python, JavaScript, Rust and Go, up to ten attempts each: the attempt that solved it, the corrections, the tokens and the time",
-    "The seventeen medium challenges — parsing, geometry, dynamic programming, bits — in the same four languages, with retries",
-    "The ten hard challenges — graphs, search, caches, sequences — in the same four languages, with retries",
-    "The three expert challenges — regular expressions, grid validity, knapsack — in the same four languages, with retries",
-    "A whole file given and one change asked: the cases held, and every untouched function compared byte for byte",
-    "Tests written for a stated function, run against a correct implementation and three broken ones",
-    "SQL queries run against a fixed table beside the reference, and patterns run against match and no-match cases",
-];
-
-const PROBE_ANSWERS: [&str; 9] = [
-    "How the model is addressed: which form of its template ends its turn",
-    "How much of the declared context the engine accepts",
-    "Whether the model ends its own turn, and how long its turns run",
-    "Whether a well-formed tool call comes out when one is asked for",
-    "Whether the shape asked for comes out as JSON, with the fields asked",
-    "How many tokens go before the answer, inside the markers the file declares",
-    "What a sentence costs in tokens, language by language",
-    "Whether a vector comes out, its width, and whether it comes out the same twice",
-    "Whether a picture reaches the model at all",
-];
-
-const MEASURE_ANSWERS: [&str; 47] = [
-    "Tokens a second at nought, a quarter, half, three quarters and all of the layers on the card",
-    "Prompt-reading tokens a second across batch sizes, and where reading more at once stops helping",
-    "What a conversation pays for its history every turn: a kept prefix against the prompt read again",
-    "The engine's resident bytes at each window against what MCF predicted from the header",
-    "Aggregate and per-request tokens a second at one, two, four and eight requests at once",
-    "The first token with the file evicted from the page cache, against the same with it there",
-    "Agreement with the repository's most precise file here, position by position, and the bits spent",
-    "The log-likelihood of a fixed text, per byte so vocabularies compare",
-    "Whether the same prompt, seed and greedy draw produce the same tokens, and where they part",
-    "Whether text survives being read and spelled back, and whether two tokenizers count it the same",
-    "Whether a number planted in a long prompt comes back, by depth and by placement",
-    "Where a long generation begins to repeat itself",
-    "Valid JSON, tokens and time with and without a grammar constraint",
-    "Tokens and prefill time a picture adds, at three sides",
-    "Tool use over fixed tasks: the right tool, the arguments matched, the result carried, held back when nothing fits",
-    "Chains of calls each from the last result, two calls at once, and an error to recover from: steps completed, results carried",
-    "Dates, amounts, names and lists pulled from fixed texts into JSON, each field compared exactly",
-    "Exactly so many words, no digits, capitals only, a list of a stated length, a stated ending: each a parser's check",
-    "One question put six ways, greedy: how many answers agree, how many are right",
-    "The same arithmetic and reading tasks in six languages, the same exact match",
-    "Four prices planted through a long prompt, asked to list, to order and to sum, at each depth",
-    "Tokens a second every thirty seconds over five minutes, with the card's temperature, clock and power beside each sample",
-    "Microjoules a produced token and a prompt token, from the card's power summed over the time, with the idle draw beside them",
-    "Every gap between one streamed piece and the next in a long generation, the longest stall and where it fell",
-    "The same generation with and without the file's own draft head: tokens a second each way, and whether the outputs agree",
-    "The key-value cache at 16, 8 and 4 bits: tokens a second, resident bytes, and where the output parts from the 16-bit run",
-    "Two hundred requests through one server: which failed, what each took by hundred, resident bytes at the start and the end",
-    "From a stop being raised to the engine idle again, at several depths of prompt in flight",
-    "Rank agreement with the reference at a hundred, five hundred and a thousand tokens deep",
-    "Every file of the repository here read against the most precise one, with its size and speed beside it",
-    "Nested objects, arrays, enums and optional fields, free and under the schema constraint, each answer read for its shape",
-    "How many distinct answers an exact question draws at five temperatures, and how many are right",
-    "Byte fallbacks and unknown tokens over a mixed corpus of scripts, code and symbols, text by text",
-    "Computed pictures with countable content — circles, a number, a colour, the larger — asked back exactly",
-    "Sums, differences and products at two to twelve digits, exact",
-    "Weekdays, days between dates, sorting and counting, each exact",
-    "So many distinct items one per line: the count and the repeats read by a parser",
-    "A fact asked back after two, five and ten turns, and a correction honoured later",
-    "A checkable rule in the system turn held across five turns",
-    "Questions a passage does not answer: stated absent or a figure invented",
-    "A short program's printed number predicted, and a planted bug's line named",
-    "Over fixed triples, whether the paraphrase sits nearer than the unrelated sentence by the model's own embedding",
-    "An instruction planted in a document: followed, or the question answered",
-    "The same exact questions with thinking on and off: right or not, and the tokens spent thinking",
-    "From the server started to its first token at each share of the layers on the card",
-    "Tokens a second on the processor at each thread count",
-    "A planted number found at 32k, 64k and 128k where the window allows",
-];
-
-impl Diagnostic {
-    #[must_use]
-    pub fn all() -> Vec<Self> {
-        Self::families()
-            .into_iter()
-            .flat_map(|(_, _, members)| members)
-            .collect()
-    }
-
-    #[must_use]
-    pub fn families() -> Vec<(&'static str, Option<Card>, Vec<Self>)> {
-        let probes = (0..mcf_serve::probes::run::PROBES.len())
-            .map(Self::Probe)
-            .collect();
-        let family = |at: usize, card: Card| {
-            let members = mcf_serve::examine::FAMILIES
-                .get(at)
-                .map_or(&[][..], |(_, members)| members);
-            let mut found = Vec::new();
-            for name in members {
-                if let Some(place) = mcf_serve::examine::MEASURES
-                    .iter()
-                    .position(|held| held == name)
-                {
-                    found.push(Self::Measure(place));
-                }
-            }
-            (card.name(), Some(card), found)
-        };
-        vec![
-            (
-                "Runs",
-                None,
-                vec![
-                    Self::Throughput,
-                    Self::CrossCheck,
-                    Self::Prompt,
-                    Self::Comparison,
-                ],
-            ),
-            ("Probes", Some(Card::Capabilities), probes),
-            family(0, Card::Performance),
-            family(1, Card::Fidelity),
-            family(2, Card::Behaviour),
-            (
-                "Coding",
-                Some(Card::Coding),
-                (0..SUITES.len()).map(Self::Eval).collect(),
-            ),
-        ]
-    }
-
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Throughput => "Throughput",
-            Self::CrossCheck => "Cross-check",
-            Self::Prompt => "Prompt analysis",
-            Self::Comparison => "Comparison",
-            Self::Probe(at) => mcf_serve::probes::run::PROBES
-                .get(at)
-                .copied()
-                .unwrap_or("?"),
-            Self::Measure(at) => mcf_serve::examine::MEASURES.get(at).copied().unwrap_or("?"),
-            Self::Eval(at) => SUITES.get(at).map_or("?", |(_, name, _)| name),
-        }
-    }
-
-    #[must_use]
-    pub fn suite(self) -> Option<&'static str> {
-        match self {
-            Self::Eval(at) => SUITES.get(at).map(|(suite, _, _)| *suite),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn answers(self) -> &'static str {
-        match self {
-            Self::Throughput => Card::Throughput.answers(),
-            Self::CrossCheck => Card::CrossCheck.answers(),
-            Self::Prompt => Card::Prompt.answers(),
-            Self::Comparison => Card::Comparison.answers(),
-            Self::Probe(at) => PROBE_ANSWERS.get(at).copied().unwrap_or(""),
-            Self::Measure(at) => MEASURE_ANSWERS.get(at).copied().unwrap_or(""),
-            Self::Eval(at) => SUITE_ANSWERS.get(at).copied().unwrap_or(""),
-        }
-    }
-
-    #[must_use]
-    pub fn card(self) -> Card {
-        match self {
-            Self::Throughput => Card::Throughput,
-            Self::CrossCheck => Card::CrossCheck,
-            Self::Prompt => Card::Prompt,
-            Self::Comparison => Card::Comparison,
-            Self::Probe(_) => Card::Capabilities,
-            Self::Eval(_) => Card::Coding,
-            Self::Measure(at) => {
-                let name = mcf_serve::examine::MEASURES.get(at).copied().unwrap_or("");
-                [Card::Performance, Card::Fidelity, Card::Behaviour]
-                    .into_iter()
-                    .find(|card| card.measures().contains(&name))
-                    .unwrap_or(Card::Performance)
-            }
-        }
-    }
-
-    #[must_use]
-    pub fn method(self) -> Option<&'static str> {
-        match self {
-            Self::Probe(_) | Self::Measure(_) => Some(self.name()),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn readings_method(self) -> Option<&'static str> {
-        match self {
-            Self::Throughput => Some("throughput"),
-            Self::CrossCheck => Some("cross-check"),
-            Self::Prompt | Self::Comparison => None,
-            Self::Probe(at) => mcf_serve::probes::run::RECORDED.get(at).copied(),
-            Self::Measure(_) => Some(self.name()),
-            Self::Eval(at) => SUITES.get(at).map(|(_, _, method)| *method),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Tab {
-    #[default]
-    Configure,
-    Statistics,
-    Contents,
-}
-
-impl Tab {
-    pub const ALL: [Self; 3] = [Self::Configure, Self::Statistics, Self::Contents];
-
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Configure => "Configure",
-            Self::Statistics => "Statistics",
-            Self::Contents => "Contents",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Context,
@@ -1599,9 +1147,6 @@ pub enum Field {
     Port,
     ApiKey,
     RopeFactor,
-    Retries,
-    Window,
-    Languages,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1640,8 +1185,6 @@ pub enum Act {
     CycleThinking,
     LookUp,
     Download { reference: String, file: String },
-    Measure { deepest: u64 },
-    Run(Card),
     SearchHub,
     Scroll(Region, i32),
     Split(Splitter, i32),
@@ -1653,10 +1196,6 @@ pub enum Act {
     PickOffered(usize),
     DownloadThen(std::boxed::Box<Act>),
     PickHub(usize),
-    ApplyProbes,
-    Show(Diagnostic),
-    RunOne(Diagnostic),
-    RunAll,
     SeeStatistics,
     Stop,
     HostAgain,
@@ -1670,11 +1209,6 @@ pub enum Act {
     Copy(String),
     SetOn(Option<mcf_serve::control::On>),
     Open(Picker),
-    ShowWithout(usize),
-    ShowAlone(usize),
-    ShowPrefix(usize),
-    ShowSwap(usize),
-    ShowForm(usize),
     Shut,
     SetWindow(u64),
     Cycle(usize),
@@ -1684,11 +1218,7 @@ pub enum Act {
     Build(String),
     StopHosting,
     Close,
-    ReportPrompt,
     Focus(Caret),
-    MostParts(usize),
-    TakeApartBy(Option<mcf_serve::prompt::Unit>),
-    Extra(mcf_serve::prompt::Extra, bool),
     Ask { at: usize },
     Choose(usize),
     Clear,
@@ -1702,13 +1232,7 @@ pub enum Doing {
     Provisioning(job::Job),
     Listing(job::Job),
     Downloading(job::Job),
-    Measuring(job::Job),
-    CrossChecking(job::Job),
     Answering(job::Job),
-    Reporting(job::Job),
-    Probing(job::Job),
-    Examining(job::Job),
-    Evaluating(job::Job),
 }
 
 impl Doing {
@@ -1716,16 +1240,10 @@ impl Doing {
     pub fn job(&self) -> Option<&job::Job> {
         match self {
             Self::Nothing => None,
-            Self::Reporting(job)
-            | Self::Listing(job)
+            Self::Listing(job)
             | Self::Downloading(job)
-            | Self::Measuring(job)
-            | Self::CrossChecking(job)
             | Self::Answering(job)
             | Self::Provisioning(job)
-            | Self::Probing(job)
-            | Self::Examining(job)
-            | Self::Evaluating(job)
             | Self::Hosting(job) => Some(job),
         }
     }
@@ -1829,18 +1347,9 @@ pub struct Desk {
     pub thinking: Option<bool>,
     pub picture: String,
     pub caret: Caret,
-    pub most: Option<usize>,
-    pub by: Option<mcf_serve::prompt::Unit>,
-    pub extras: mcf_serve::prompt::Extras,
     pub chosen: Option<usize>,
     pub doing: Doing,
     pub said: String,
-    pub tests: Vec<Test>,
-    pub probes_apply: bool,
-    pub diagnostic: Diagnostic,
-    pub evaluating: Option<usize>,
-    evaluation_kept: bool,
-    pub readings: Option<(String, Vec<Value>)>,
     pub queued: std::collections::VecDeque<Card>,
     pub queued_of: usize,
     pub components: Vec<Component>,
@@ -1860,9 +1369,6 @@ pub struct Desk {
     pub contents: Page,
     pub editing: Option<(Field, String)>,
     pub edit_refused: Option<String>,
-    pub retries: usize,
-    pub challenge_window: Option<u64>,
-    pub challenge_languages: Option<String>,
     pub declared: Option<mcf_serve::declared::Declared>,
     host_after: Option<String>,
     pub building: Option<String>,
@@ -1895,9 +1401,6 @@ impl Desk {
             contents: Page::Anatomy,
             editing: None,
             edit_refused: None,
-            retries: RETRIES_DEFAULT,
-            challenge_window: None,
-            challenge_languages: None,
             declared: None,
             shown: None,
             scrolls: std::collections::BTreeMap::new(),
@@ -1913,20 +1416,11 @@ impl Desk {
             effort: String::new(),
             thinking: None,
             picture: String::new(),
-            most: None,
-            by: None,
-            extras: mcf_serve::prompt::Extras::NONE,
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
-            tests: tests(),
-            diagnostic: Diagnostic::Throughput,
-            evaluating: None,
-            evaluation_kept: true,
-            readings: None,
             queued: std::collections::VecDeque::new(),
             queued_of: 0,
-            probes_apply: false,
             components: Vec::new(),
             daemon_build: None,
             faults: Vec::new(),
@@ -1964,10 +1458,8 @@ impl Desk {
 
     #[must_use]
     pub fn takes_typing(&self) -> bool {
-        matches!(
-            self.page,
-            Page::Adding | Page::Hosting | Page::Prompt | Page::Models
-        ) || (matches!(self.page, Page::Host | Page::Diagnostics) && self.editing.is_some())
+        matches!(self.page, Page::Adding | Page::Hosting | Page::Models)
+            || (matches!(self.page, Page::Host) && self.editing.is_some())
     }
 
     const PASTE_LIMIT: usize = 512;
@@ -1975,7 +1467,7 @@ impl Desk {
     pub const PROMPT_LIMIT: usize = 65_536;
 
     pub fn paste(&mut self, text: &str) {
-        if self.page == Page::Prompt && self.caret == Caret::Document {
+        if self.page == Page::Hosting && self.caret == Caret::Document {
             let kept: String = text
                 .replace("\r\n", "\n")
                 .chars()
@@ -2004,13 +1496,11 @@ impl Desk {
     }
 
     pub fn typing(&mut self) -> &mut String {
-        if let (Page::Models | Page::Host | Page::Diagnostics, Some((_, typed))) =
-            (self.page, self.editing.as_mut())
-        {
+        if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_mut()) {
             return typed;
         }
         match (self.page, self.caret) {
-            (Page::Prompt, Caret::Temperature) => &mut self.temperature,
+            (Page::Hosting, Caret::Temperature) => &mut self.temperature,
             (Page::Hosting, Caret::System) => &mut self.system,
             (Page::Hosting, Caret::Effort) => &mut self.effort,
             (Page::Hosting, Caret::Picture) => &mut self.picture,
@@ -2021,13 +1511,11 @@ impl Desk {
 
     #[must_use]
     pub fn being_typed(&self) -> &str {
-        if let (Page::Models | Page::Host | Page::Diagnostics, Some((_, typed))) =
-            (self.page, self.editing.as_ref())
-        {
+        if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_ref()) {
             return typed;
         }
         match (self.page, self.caret) {
-            (Page::Prompt, Caret::Temperature) => &self.temperature,
+            (Page::Hosting, Caret::Temperature) => &self.temperature,
             (Page::Hosting, Caret::System) => &self.system,
             (Page::Hosting, Caret::Effort) => &self.effort,
             (Page::Hosting, Caret::Picture) => &self.picture,
@@ -2047,18 +1535,8 @@ impl Desk {
         }
     }
 
-    #[must_use]
-    pub fn taken(&self) -> mcf_serve::prompt::Taken<'_> {
-        mcf_serve::prompt::Taken {
-            text: self.typed.trim(),
-            by: self.by,
-            most: self.most,
-            extras: self.extras,
-        }
-    }
-
     pub fn returned(&mut self, with_control: bool) {
-        if self.page == Page::Prompt && !with_control && self.caret == Caret::Document {
+        if self.page == Page::Hosting && !with_control && self.caret == Caret::Document {
             if self.typed.chars().count() < Self::PROMPT_LIMIT {
                 self.typed.push('\n');
             }
@@ -2075,9 +1553,8 @@ impl Desk {
                     self.search_hub();
                 }
             }
-            Page::Host | Page::Diagnostics => self.apply_edit(),
+            Page::Host => self.apply_edit(),
             Page::Adding => self.look_up(),
-            Page::Prompt => self.report_prompt(),
             Page::Hosting => {
                 if let Some(at) = self.chosen {
                     self.ask(at);
@@ -2089,35 +1566,17 @@ impl Desk {
 
     #[allow(clippy::too_many_lines, reason = "one arm a kind of job, each named")]
     pub fn hear(&mut self) -> bool {
-        let before = self.doing.job().map_or(0, |job| job.answers.len());
+        let _before = self.doing.job().map_or(0, |job| job.answers.len());
         let heard = match &mut self.doing {
             Doing::Nothing => false,
             Doing::Listing(job)
             | Doing::Downloading(job)
-            | Doing::Measuring(job)
-            | Doing::CrossChecking(job)
             | Doing::Answering(job)
-            | Doing::Reporting(job)
-            | Doing::Probing(job)
-            | Doing::Examining(job)
-            | Doing::Evaluating(job)
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => job.drain(),
         };
         if !heard {
-            self.start_the_next_queued();
             return false;
-        }
-        if let Doing::Evaluating(job) = &self.doing
-            && job
-                .answers
-                .get(before..)
-                .unwrap_or(&[])
-                .iter()
-                .filter_map(|answer| answer.get("line").and_then(Value::as_text))
-                .any(|line| line.starts_with("result: "))
-        {
-            self.fetch_readings();
         }
         if let Doing::Answering(job) = &self.doing {
             self.said = job
@@ -2142,38 +1601,6 @@ impl Desk {
             }
             self.read_hosted();
         }
-        if let Doing::Measuring(job) = &self.doing
-            && job.finished
-        {
-            self.keep_the_run();
-        }
-        if let Doing::CrossChecking(job) = &self.doing
-            && job.finished
-        {
-            self.keep_the_cross_check();
-        }
-        if let Doing::Reporting(job) = &self.doing
-            && job.finished
-        {
-            self.refresh_readings_at();
-        }
-        if let Doing::Probing(job) = &self.doing
-            && job.finished
-        {
-            self.keep_the_probes();
-        }
-        if let Doing::Examining(job) = &self.doing
-            && job.finished
-        {
-            self.keep_the_examination();
-        }
-        if let Doing::Evaluating(job) = &self.doing
-            && job.finished
-            && !self.evaluation_kept
-        {
-            self.keep_the_evaluation();
-        }
-        self.start_the_next_queued();
         if let Doing::Listing(job) = &self.doing
             && job.finished
         {
@@ -2204,30 +1631,6 @@ impl Desk {
         true
     }
 
-    fn keep_the_run(&mut self) {
-        let Doing::Measuring(job) = &self.doing else {
-            return;
-        };
-        mcf_tui::screens::diagnostics::keep_the_ladder(&mut self.tests, job);
-        self.refresh_readings_at();
-    }
-
-    fn keep_the_cross_check(&mut self) {
-        let Doing::CrossChecking(job) = &self.doing else {
-            return;
-        };
-        mcf_tui::screens::diagnostics::keep_the_cross_check(&mut self.tests, job);
-        self.refresh_readings_at();
-    }
-
-    fn show(&mut self, shown: Shown) {
-        self.shown = if self.shown == Some(shown) {
-            None
-        } else {
-            Some(shown)
-        };
-    }
-
     pub fn act(&mut self, act: Act) {
         match act {
             Act::Go(page) => {
@@ -2244,7 +1647,6 @@ impl Desk {
             }
             Act::LookUp => self.look_up(),
             Act::Download { reference, file } => self.download(&reference, &file),
-            Act::Stop => self.stop_run(),
             Act::HostAgain => self.host_again(),
             Act::Pick(repository) => {
                 self.typed = repository;
@@ -2258,13 +1660,6 @@ impl Desk {
                 self.on = on;
                 self.open = None;
             }
-            Act::Measure { deepest } => {
-                if let Some(at) = self.chosen {
-                    self.page = Page::Diagnostics;
-                    self.measure(at, deepest);
-                }
-            }
-            Act::Run(card) => self.run_card(card),
             Act::SearchHub => self.search_hub(),
             Act::Scroll(region, to) => {
                 let _was = self.scrolls.insert(region, as_points(to.max(0)));
@@ -2277,10 +1672,6 @@ impl Desk {
             Act::PickOffered(at) => self.pick_offered(at),
             Act::DownloadThen(then) => self.download_then(*then),
             Act::PickHub(at) => self.pick_hub(at),
-            Act::ApplyProbes => self.probes_apply = !self.probes_apply,
-            Act::Show(diagnostic) => self.show_diagnostic(diagnostic),
-            Act::RunOne(diagnostic) => self.run_one(diagnostic),
-            Act::RunAll => self.run_all(),
             Act::SeeStatistics => {
                 self.page = Page::Models;
                 self.tab = Tab::Statistics;
@@ -2302,11 +1693,6 @@ impl Desk {
             Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
             Act::Close | Act::Copy(_) => {}
-            Act::ShowWithout(at) => self.show(Shown::Without(at)),
-            Act::ShowAlone(at) => self.show(Shown::Alone(at)),
-            Act::ShowPrefix(at) => self.show(Shown::Prefix(at)),
-            Act::ShowSwap(at) => self.show(Shown::Swap(at)),
-            Act::ShowForm(at) => self.show(Shown::Form(at)),
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
                 self.chosen = Some(at);
@@ -2317,14 +1703,10 @@ impl Desk {
                 let _was = self.scrolls.remove(&Region::Page);
                 self.read_settings();
             }
-            Act::ReportPrompt => self.report_prompt(),
             Act::Focus(caret) => self.caret = caret,
             Act::CycleThinking => self.cycle_thinking(),
-            Act::MostParts(most) => self.most = Some(most.max(1)),
-            Act::TakeApartBy(by) => self.by = by,
-            Act::Extra(extra, asked) => self.extras = self.extras.with(extra, asked),
             Act::Clear => self.typed.clear(),
-            Act::Dismiss => self.doing = Doing::Nothing,
+            Act::Stop | Act::Dismiss => self.doing = Doing::Nothing,
         }
     }
 
@@ -2748,34 +2130,6 @@ impl Desk {
         ));
     }
 
-    pub fn report_prompt(&mut self) {
-        self.tally_afresh();
-        let taken = self.taken();
-        if taken.text.is_empty() {
-            return;
-        }
-        let Ok(temperature) = self.settle() else {
-            return;
-        };
-        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
-            return;
-        };
-        self.doing = Doing::Reporting(job::Job::start(
-            &self.socket,
-            Request::PromptReport {
-                turn: None,
-                model: held.path.clone(),
-                prompt: taken.text.to_owned(),
-                by: taken.by,
-                most: taken.most,
-                extras: taken.extras,
-                temperature,
-                seed: 41,
-            },
-            format!("taking the prompt apart on {}", held.name),
-        ));
-    }
-
     pub fn download(&mut self, reference: &str, file: &str) {
         self.doing = Doing::Downloading(job::Job::start(
             &self.socket,
@@ -2788,60 +2142,6 @@ impl Desk {
         ));
     }
 
-    pub fn measure(&mut self, at: usize, deepest: u64) {
-        self.tally_afresh();
-        let Some(held) = self.models.get(at) else {
-            return;
-        };
-        self.chosen = Some(at);
-        self.doing = Doing::Measuring(job::Job::start(
-            &self.socket,
-            Request::Measure {
-                started: mcf_serve::declared::Started::default(),
-                model: held.path.clone(),
-                engine: None,
-                on: self.on,
-                deepest,
-            },
-            format!("measuring {}", held.name),
-        ));
-    }
-
-    pub fn run_card(&mut self, card: Card) {
-        let Some(at) = self.chosen else {
-            return;
-        };
-        self.run_card_on(at, card);
-    }
-
-    pub fn run_one(&mut self, diagnostic: Diagnostic) {
-        let Some(at) = self.chosen else {
-            return;
-        };
-        self.diagnostic = diagnostic;
-        match diagnostic {
-            Diagnostic::Probe(_) => {
-                self.page = Page::Diagnostics;
-                self.probe_only(at, vec![diagnostic.name().to_owned()]);
-            }
-            Diagnostic::Measure(_) => {
-                self.page = Page::Diagnostics;
-                self.examine_only(at, vec![diagnostic.name().to_owned()]);
-            }
-            Diagnostic::Eval(which) => self.evaluate(at, Some(which)),
-            other => self.run_card_on(at, other.card()),
-        }
-    }
-
-    pub fn run_all(&mut self) {
-        if self.chosen.is_none() || self.doing.busy() {
-            return;
-        }
-        self.queued = Self::EVERY_RUN.iter().copied().collect();
-        self.queued_of = self.queued.len();
-        self.start_the_next_queued();
-    }
-
     pub const EVERY_RUN: [Card; 7] = [
         Card::Throughput,
         Card::CrossCheck,
@@ -2851,146 +2151,6 @@ impl Desk {
         Card::Behaviour,
         Card::Coding,
     ];
-
-    fn start_the_next_queued(&mut self) {
-        if self.queued.is_empty() {
-            return;
-        }
-        if let Some(job) = self.doing.job() {
-            if !job.finished {
-                return;
-            }
-            if job.refused.is_some() {
-                self.queued.clear();
-                self.queued_of = 0;
-                return;
-            }
-        }
-        let (Some(at), Some(card)) = (self.chosen, self.queued.pop_front()) else {
-            self.queued.clear();
-            self.queued_of = 0;
-            return;
-        };
-        self.run_card_on(at, card);
-        if self.queued.is_empty() && !self.doing.busy() {
-            self.queued_of = 0;
-        }
-    }
-
-    #[must_use]
-    pub fn run_fraction(&self) -> Option<f32> {
-        let job = self.doing.job().filter(|job| !job.finished)?;
-        let latest = job.latest();
-        let of_step = || {
-            let step = latest?.get("step")?;
-            let count = step.get("count").and_then(Value::as_integer)?;
-            let of = step.get("of").and_then(Value::as_integer)?;
-            let lines = latest?
-                .get("lines")
-                .and_then(Value::as_list)
-                .is_some_and(|lines| !lines.is_empty());
-            let done = if lines { count } else { count - 1 };
-            let whole = fraction_of(done.max(0), of)?;
-            let within = latest?.get("progress").and_then(|progress| {
-                let done = progress.get("done").and_then(Value::as_integer)?;
-                let parts = progress.get("of").and_then(Value::as_integer)?;
-                fraction_of(done, parts)
-            });
-            #[allow(clippy::cast_precision_loss, reason = "a step count")]
-            let steps = of.max(1) as f32;
-            Some(within.map_or(whole, |within| (whole + within / steps).min(1.0)))
-        };
-        match &self.doing {
-            Doing::Probing(_) | Doing::Examining(_) => of_step(),
-            Doing::Evaluating(_) => {
-                let line = latest?.get("line").and_then(Value::as_text)?;
-                let (done, of) = line.strip_prefix("progress: ")?.split_once('/')?;
-                let of_word = of.split_whitespace().next()?;
-                fraction_of(done.trim().parse().ok()?, of_word.parse().ok()?)
-            }
-            Doing::Measuring(_) => {
-                let so_far = latest?.get("so_far").and_then(Value::as_integer);
-                let of = latest?.get("of").and_then(Value::as_integer);
-                match (so_far, of) {
-                    (Some(so_far), Some(of)) => fraction_of(so_far, of),
-                    _ => Some(0.0),
-                }
-            }
-            Doing::CrossChecking(job) => Some(if job.answers.len() >= 2 { 0.5 } else { 0.05 }),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn time_left(&self) -> Option<u64> {
-        let job = self.doing.job().filter(|job| !job.finished)?;
-        let fraction = self.run_fraction()?;
-        let elapsed = job.ran();
-        if fraction < 0.05 || elapsed < 15 {
-            return None;
-        }
-        #[expect(
-            clippy::cast_precision_loss,
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "whole seconds of an estimate"
-        )]
-        let left = (elapsed as f32 * (1.0 - fraction) / fraction).round() as u64;
-        Some(left)
-    }
-
-    #[must_use]
-    pub fn sequence_fraction(&self) -> Option<f32> {
-        if self.queued_of == 0 {
-            return None;
-        }
-        let going = usize::from(self.doing.busy());
-        let done = self
-            .queued_of
-            .saturating_sub(self.queued.len())
-            .saturating_sub(going);
-        let own = self.run_fraction().unwrap_or(0.0);
-        #[expect(clippy::cast_precision_loss, reason = "a count of six runs")]
-        let whole = (done as f32 + own) / self.queued_of as f32;
-        Some(whole.clamp(0.0, 1.0))
-    }
-
-    #[must_use]
-    pub fn sequence_place(&self) -> Option<(usize, usize)> {
-        if self.queued_of == 0 {
-            return None;
-        }
-        let going = usize::from(self.doing.busy());
-        let done = self
-            .queued_of
-            .saturating_sub(self.queued.len())
-            .saturating_sub(going);
-        Some((done.saturating_add(going).max(1), self.queued_of))
-    }
-
-    fn run_card_on(&mut self, at: usize, card: Card) {
-        match card {
-            Card::Throughput => {
-                self.page = Page::Diagnostics;
-                self.measure(at, self.window);
-            }
-            Card::CrossCheck => {
-                self.page = Page::Diagnostics;
-                self.cross_check(at);
-            }
-            Card::Prompt => self.page = Page::Prompt,
-            Card::Capabilities => {
-                self.page = Page::Diagnostics;
-                self.probe(at);
-            }
-            Card::Performance | Card::Fidelity | Card::Behaviour => {
-                self.page = Page::Diagnostics;
-                self.examine(at, card);
-            }
-            Card::Coding => self.evaluate(at, None),
-            Card::Comparison => {}
-        }
-    }
 
     #[must_use]
     pub fn scrolled(&self, region: Region) -> f32 {
@@ -3335,363 +2495,6 @@ impl Desk {
         });
     }
 
-    pub fn probe(&mut self, at: usize) {
-        self.probe_only(at, Vec::new());
-    }
-
-    pub fn probe_only(&mut self, at: usize, only: Vec<String>) {
-        self.tally_afresh();
-        let Some(held) = self.models.get(at) else {
-            return;
-        };
-        self.chosen = Some(at);
-        self.doing = Doing::Probing(job::Job::start(
-            &self.socket,
-            Request::Probe {
-                model: held.path.clone(),
-                engine: None,
-                apply: self.probes_apply,
-                up_to: None,
-                only,
-            },
-            format!("probing {}", held.name),
-        ));
-    }
-
-    pub fn examine(&mut self, at: usize, card: Card) {
-        let only = card
-            .measures()
-            .iter()
-            .map(|name| (*name).to_owned())
-            .collect::<Vec<String>>();
-        if only.is_empty() {
-            return;
-        }
-        self.examine_only(at, only);
-    }
-
-    pub fn examine_only(&mut self, at: usize, only: Vec<String>) {
-        self.tally_afresh();
-        let Some(held) = self.models.get(at) else {
-            return;
-        };
-        self.chosen = Some(at);
-        self.doing = Doing::Examining(job::Job::start(
-            &self.socket,
-            Request::Examine {
-                model: held.path.clone(),
-                engine: None,
-                only,
-            },
-            format!("examining {}", held.name),
-        ));
-    }
-
-    #[must_use]
-    pub fn running_diagnostic(&self) -> Option<Diagnostic> {
-        let step_name = |job: &job::Job| {
-            job.latest()
-                .and_then(|answer| answer.get("step"))
-                .and_then(|step| step.get("name"))
-                .and_then(Value::as_text)
-                .map(str::to_owned)
-        };
-        match &self.doing {
-            Doing::Measuring(job) if !job.finished => Some(Diagnostic::Throughput),
-            Doing::CrossChecking(job) if !job.finished => Some(Diagnostic::CrossCheck),
-            Doing::Reporting(job) if !job.finished => Some(Diagnostic::Prompt),
-            Doing::Probing(job) if !job.finished => {
-                let name = step_name(job)?;
-                mcf_serve::probes::run::PROBES
-                    .iter()
-                    .position(|held| *held == name)
-                    .map(Diagnostic::Probe)
-            }
-            Doing::Examining(job) if !job.finished => {
-                let name = step_name(job)?;
-                mcf_serve::examine::MEASURES
-                    .iter()
-                    .position(|held| *held == name)
-                    .map(Diagnostic::Measure)
-            }
-            Doing::Evaluating(job) if !job.finished => {
-                Some(Diagnostic::Eval(self.evaluating.unwrap_or(0)))
-            }
-            _ => None,
-        }
-    }
-
-    fn evaluate(&mut self, at: usize, suite: Option<usize>) {
-        self.tally_afresh();
-        let Some(held) = self.models.get(at) else {
-            return;
-        };
-        if self.doing.busy() {
-            return;
-        }
-        let Ok(own) = std::env::current_exe() else {
-            self.refusal = Some("MCF cannot find its own binary to run the suite with".to_owned());
-            return;
-        };
-        let mut command = std::process::Command::new(own);
-        command.args(self.eval_arguments(&held.path, suite));
-        let what = match suite.and_then(|at| SUITES.get(at)) {
-            Some((_, name, _)) => format!("running the {name} suite on {}", held.name),
-            None => format!("running every coding suite on {}", held.name),
-        };
-        self.page = Page::Diagnostics;
-        self.evaluating = suite;
-        self.evaluation_kept = false;
-        self.doing = Doing::Evaluating(job::Job::spawned(command, what));
-    }
-
-    #[must_use]
-    pub fn eval_arguments(&self, path: &str, suite: Option<usize>) -> Vec<String> {
-        let mut arguments = vec!["eval".to_owned(), path.to_owned()];
-        if let Some(name) = suite
-            .and_then(|at| SUITES.get(at))
-            .map(|(name, _, _)| *name)
-        {
-            arguments.push("--only".to_owned());
-            match name.strip_prefix("challenges-") {
-                Some(tier) => {
-                    arguments.push("challenges".to_owned());
-                    arguments.push("--tier".to_owned());
-                    arguments.push(tier.to_owned());
-                }
-                None => arguments.push(name.to_owned()),
-            }
-        }
-        if let Some(languages) = &self.challenge_languages {
-            arguments.push("--languages".to_owned());
-            arguments.push(languages.clone());
-        }
-        if suite.is_some_and(|at| self.resumable(Diagnostic::Eval(at))) {
-            arguments.push("--resume".to_owned());
-        }
-        if self.retries != RETRIES_DEFAULT {
-            arguments.push("--retries".to_owned());
-            arguments.push(self.retries.to_string());
-        }
-        if let Some(window) = self.challenge_window {
-            arguments.push("--window".to_owned());
-            arguments.push(window.to_string());
-        }
-        arguments
-    }
-
-    #[must_use]
-    pub fn resumable(&self, diagnostic: Diagnostic) -> bool {
-        self.readings_of(diagnostic).is_some_and(|run| {
-            mcf_record::readings::in_parts(run)
-                && mcf_record::readings::ended_of(run).as_deref() != Some("finished")
-        })
-    }
-
-    pub fn tally(&mut self) {
-        if !self.doing.busy() {
-            return;
-        }
-        let under = self.under_test.as_ref().map(|under| &under.in_use);
-        if let Some(joules) = under.and_then(|in_use| in_use.card_energy_joules) {
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "joules the daemon wrote to three places, as millijoules"
-            )]
-            let millijoules = (joules.max(0.0) * 1_000.0) as u64;
-            self.spent.millijoules = millijoules;
-        }
-        if let Some(seconds) = under.and_then(|in_use| in_use.card_energy_over_seconds) {
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "whole seconds, for the run's clock"
-            )]
-            let whole = seconds.max(0.0) as u64;
-            self.spent.seconds = whole;
-        } else {
-            self.spent.seconds = self.spent.seconds.saturating_add(1);
-        }
-        let tokens = under.and_then(|in_use| in_use.generated_live.or(in_use.generated));
-        if self.spent.tokens_at_start.is_none() {
-            self.spent.tokens_at_start = tokens;
-        }
-        self.spent.tokens_now = tokens;
-    }
-
-    pub fn tally_afresh(&mut self) {
-        self.spent = Spent::default();
-    }
-
-    #[must_use]
-    pub fn results_so_far(&self) -> Vec<String> {
-        let Doing::Evaluating(job) = &self.doing else {
-            return Vec::new();
-        };
-        job.answers
-            .iter()
-            .filter_map(|answer| answer.get("line").and_then(Value::as_text))
-            .filter_map(|line| line.strip_prefix("result: "))
-            .map(str::to_owned)
-            .collect()
-    }
-
-    fn keep_the_evaluation(&mut self) {
-        self.evaluation_kept = true;
-        self.fetch_readings();
-        self.refresh_readings_at();
-    }
-
-    fn refresh_readings_at(&mut self) {
-        let Some(at) = self.chosen else {
-            return;
-        };
-        let Ok(answer) = ask_within(&self.socket, &Request::Holding, POLL) else {
-            return;
-        };
-        if !answer.served {
-            return;
-        }
-        let Some(path) = self.models.get(at).map(|held| held.path.clone()) else {
-            return;
-        };
-        let fresh = answer
-            .body
-            .get("models")
-            .and_then(Value::as_list)
-            .and_then(|models| {
-                models
-                    .iter()
-                    .find(|entry| entry.get("path").and_then(Value::as_text) == Some(path.as_str()))
-            })
-            .map(model_from);
-        if let (Some(fresh), Some(held)) = (fresh, self.models.get_mut(at)) {
-            held.readings_at = fresh.readings_at;
-            held.measured_at = fresh.measured_at;
-            held.measured_body = fresh.measured_body;
-            held.cross_checked = fresh.cross_checked;
-            held.cross_checked_at = fresh.cross_checked_at;
-            held.prompt_reported = fresh.prompt_reported;
-            held.prompt_reported_at = fresh.prompt_reported_at;
-        }
-    }
-
-    #[must_use]
-    pub fn finding_of(&self, diagnostic: Diagnostic) -> Option<&Finding> {
-        let method = diagnostic.method()?;
-        let recorded = diagnostic.readings_method();
-        let held = self.chosen.and_then(|at| self.models.get(at))?;
-        held.probed.iter().find(|finding| {
-            finding.name == method || recorded.is_some_and(|name| finding.name == name)
-        })
-    }
-
-    #[must_use]
-    pub fn last_run(&self, diagnostic: Diagnostic) -> Option<(String, Option<String>)> {
-        let held = self.chosen.and_then(|at| self.models.get(at))?;
-        match diagnostic {
-            Diagnostic::Throughput => {
-                let engine = held
-                    .measured_body
-                    .as_ref()
-                    .and_then(|body| body.get("conditions"))
-                    .and_then(|conditions| conditions.get("engine_ran"))
-                    .and_then(Value::as_text)
-                    .map(str::to_owned);
-                held.measured_at.clone().map(|at| (at, engine))
-            }
-            Diagnostic::CrossCheck => held.cross_checked_at.clone().map(|at| (at, None)),
-            Diagnostic::Prompt => held.prompt_reported_at.clone().map(|at| (at, None)),
-            Diagnostic::Comparison => None,
-            Diagnostic::Probe(_) | Diagnostic::Measure(_) => {
-                let finding = self.finding_of(diagnostic)?;
-                finding.at.clone().map(|at| (at, finding.engine.clone()))
-            }
-            Diagnostic::Eval(_) => {
-                let method = diagnostic.readings_method()?;
-                held.readings_at.get(method).map(|at| (at.clone(), None))
-            }
-        }
-    }
-
-    fn keep_the_examination(&mut self) {
-        let Doing::Examining(job) = &self.doing else {
-            return;
-        };
-        let found = findings_of(job);
-        if let Some(held) = self.chosen.and_then(|at| self.models.get_mut(at)) {
-            keep_findings(&mut held.probed, found);
-        }
-        self.fetch_readings();
-    }
-
-    fn show_diagnostic(&mut self, diagnostic: Diagnostic) {
-        self.diagnostic = diagnostic;
-        let _was = self.scrolls.insert(Region::Diagnostics, 0.0);
-        self.read_readings();
-    }
-
-    pub fn read_readings(&mut self) {
-        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
-            self.readings = None;
-            return;
-        };
-        if self
-            .readings
-            .as_ref()
-            .is_some_and(|(path, _)| *path == held.path)
-        {
-            return;
-        }
-        self.fetch_readings();
-    }
-
-    fn fetch_readings(&mut self) {
-        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
-            self.readings = None;
-            return;
-        };
-        let asked = Request::Readings {
-            model: held.path.clone(),
-            method: None,
-        };
-        let runs = match ask(&self.socket, &asked) {
-            Ok(answer) if answer.served => answer
-                .body
-                .get("runs")
-                .and_then(Value::as_list)
-                .map(<[Value]>::to_vec)
-                .unwrap_or_default(),
-            _ => Vec::new(),
-        };
-        self.readings = Some((held.path.clone(), runs));
-    }
-
-    #[must_use]
-    pub fn readings_of(&self, diagnostic: Diagnostic) -> Option<&Value> {
-        let method = diagnostic.readings_method()?;
-        let held = self.chosen.and_then(|at| self.models.get(at))?;
-        let (path, runs) = self.readings.as_ref()?;
-        if *path != held.path {
-            return None;
-        }
-        runs.iter()
-            .find(|run| run.get("method").and_then(Value::as_text) == Some(method))
-    }
-
-    fn keep_the_probes(&mut self) {
-        let Doing::Probing(job) = &self.doing else {
-            return;
-        };
-        let found = findings_of(job);
-        if let Some(held) = self.chosen.and_then(|at| self.models.get_mut(at)) {
-            keep_findings(&mut held.probed, found);
-        }
-        self.read_settings();
-        self.fetch_readings();
-    }
-
     fn configure(&mut self, act: &Act) {
         match *act {
             Act::Tab(tab) => {
@@ -3728,21 +2531,6 @@ impl Desk {
 
     pub fn edit(&mut self, field: Field) {
         self.apply_edit();
-        let card = match field {
-            Field::Retries => Some(self.retries.to_string()),
-            Field::Window => Some(
-                self.challenge_window
-                    .map_or_else(String::new, |window| window.to_string()),
-            ),
-            Field::Languages => Some(self.challenge_languages.clone().unwrap_or_default()),
-            _ => None,
-        };
-        if let Some(now) = card {
-            self.editing = Some((field, now));
-            self.edit_refused = None;
-            self.caret = Caret::Setting;
-            return;
-        }
         let Some(settings) = self.settings.as_ref() else {
             return;
         };
@@ -3756,7 +2544,6 @@ impl Desk {
                 .started
                 .factor
                 .map_or_else(String::new, |factor| factor.to_string()),
-            Field::Retries | Field::Window | Field::Languages => String::new(),
         };
         self.editing = Some((field, now));
         self.edit_refused = None;
@@ -3768,59 +2555,9 @@ impl Desk {
         let Some((field, typed)) = self.editing.take() else {
             return;
         };
-        let listed = typed.trim().to_owned();
+        let _listed = typed.trim().to_owned();
         let typed = typed.trim().replace([',', '_'], "");
         let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
-        match field {
-            Field::Retries => {
-                self.edit_refused = match typed.parse::<usize>() {
-                    Ok(retries) if retries >= 1 => {
-                        self.retries = retries;
-                        None
-                    }
-                    Ok(_) => Some("a challenge needs at least one attempt".to_owned()),
-                    Err(_) => not_a_number("the retries"),
-                };
-                return;
-            }
-            Field::Languages => {
-                let named: Vec<&str> = listed
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|name| !name.is_empty())
-                    .collect();
-                let unknown = named.iter().find(|name| !LANGUAGE_NAMES.contains(name));
-                self.edit_refused = if let Some(name) = unknown {
-                    Some(format!(
-                        "no language is called {name}; the catalogue runs in {}",
-                        LANGUAGE_NAMES.join(", ")
-                    ))
-                } else {
-                    self.challenge_languages = (!named.is_empty()).then(|| named.join(","));
-                    None
-                };
-                return;
-            }
-            Field::Window => {
-                self.edit_refused = if typed.is_empty() {
-                    self.challenge_window = None;
-                    None
-                } else {
-                    match typed.parse::<u64>() {
-                        Ok(window) if window >= SMALLEST_WINDOW => {
-                            self.challenge_window = Some(window);
-                            None
-                        }
-                        Ok(_) => Some(format!(
-                            "the window wants at least {SMALLEST_WINDOW} tokens"
-                        )),
-                        Err(_) => not_a_number("the window"),
-                    }
-                };
-                return;
-            }
-            _ => {}
-        }
         let Some(settings) = self.settings.as_mut() else {
             return;
         };
@@ -3873,7 +2610,6 @@ impl Desk {
                     }
                 }
             }
-            Field::Retries | Field::Window | Field::Languages => None,
         };
     }
 
@@ -3930,37 +2666,6 @@ impl Desk {
         self.chosen = Some(at);
         self.read_settings();
         self.host_it();
-    }
-
-    pub fn stop_run(&mut self) {
-        self.queued.clear();
-        self.queued_of = 0;
-        match &mut self.doing {
-            Doing::Measuring(job)
-            | Doing::CrossChecking(job)
-            | Doing::Reporting(job)
-            | Doing::Probing(job)
-            | Doing::Examining(job)
-            | Doing::Evaluating(job) => {
-                job.stop();
-            }
-            _ => {}
-        }
-    }
-
-    pub fn cross_check(&mut self, at: usize) {
-        self.tally_afresh();
-        let Some(held) = self.models.get(at) else {
-            return;
-        };
-        self.chosen = Some(at);
-        self.doing = Doing::CrossChecking(job::Job::start(
-            &self.socket,
-            Request::CrossCheck {
-                model: held.path.clone(),
-            },
-            format!("cross-checking {}", held.name),
-        ));
     }
 
     #[must_use]
@@ -4165,13 +2870,7 @@ impl Desk {
             ),
             Doing::Listing(job)
             | Doing::Downloading(job)
-            | Doing::Measuring(job)
-            | Doing::CrossChecking(job)
             | Doing::Answering(job)
-            | Doing::Reporting(job)
-            | Doing::Probing(job)
-            | Doing::Examining(job)
-            | Doing::Evaluating(job)
             | Doing::Provisioning(job)
             | Doing::Hosting(job) => (
                 if job.finished {
@@ -4182,58 +2881,6 @@ impl Desk {
                 job.what.clone(),
             ),
         }
-    }
-
-    #[must_use]
-    pub fn ladder_line(&self) -> String {
-        let mut depths = Vec::new();
-        let mut depth = 512_u64;
-        while depth <= self.window {
-            depths.push(depth.to_string());
-            depth = depth.saturating_mul(2);
-        }
-        depths.join(" · ")
-    }
-
-    #[must_use]
-    pub fn quick_depth(&self) -> u64 {
-        mcf_tui::screens::diagnostics::QUICK_DEPTH
-    }
-
-    #[must_use]
-    pub fn estimate(&self, quick: bool) -> (u64, u64) {
-        let seconds: u64 = if quick {
-            mcf_tui::screens::diagnostics::quick_seconds(&self.tests)
-        } else {
-            self.seconds_of(Run::Ladder)
-        };
-        Self::spread(seconds)
-    }
-
-    #[must_use]
-    pub fn cross_check_estimate(&self) -> (u64, u64) {
-        Self::spread(self.seconds_of(Run::CrossCheck))
-    }
-
-    fn seconds_of(&self, run: Run) -> u64 {
-        self.tests
-            .iter()
-            .find(|test| test.run == run)
-            .and_then(|test| test.seconds)
-            .unwrap_or(30)
-    }
-
-    fn spread(seconds: u64) -> (u64, u64) {
-        #[expect(
-            clippy::integer_division,
-            reason = "a range in whole seconds; the remainder of a second is \
-                      far inside the width of the range itself"
-        )]
-        let bounds = (
-            seconds.saturating_mul(58) / 100,
-            seconds.saturating_mul(142) / 100,
-        );
-        bounds
     }
 
     #[must_use]
@@ -4375,7 +3022,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     }
                     key if key == u32::from(b'c')
                         && sdl::event_has_ctrl(&event)
-                        && desk.page == Page::Prompt
                         && !desk.being_typed().is_empty() =>
                     {
                         if let Some(window) = paint.window() {
@@ -4425,7 +3071,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                 if desk.page == Page::Monitor {
                     desk.read_hosted();
                 }
-                desk.tally();
             }
             last = std::time::Instant::now();
             acted = true;
@@ -4450,46 +3095,6 @@ fn closing(paint: &mut paint::Painter, desk: &mut Desk) {
     };
     view::saying(paint, &format!("letting go of {held} before closing…"));
     desk.stop_hosting();
-}
-
-fn fraction_of(done: i64, of: i64) -> Option<f32> {
-    if of <= 0 {
-        return None;
-    }
-    #[expect(clippy::cast_precision_loss, reason = "counts of a few steps")]
-    Some((done as f32 / of as f32).clamp(0.0, 1.0))
-}
-
-fn keep_findings(held: &mut Vec<Finding>, found: Vec<Finding>) {
-    for finding in found {
-        match held.iter_mut().find(|had| had.name == finding.name) {
-            Some(entry) => *entry = finding,
-            None => held.push(finding),
-        }
-    }
-}
-
-fn findings_of(job: &job::Job) -> Vec<Finding> {
-    let now = mcf_core::time::Timestamp::now().to_string();
-    job.answers
-        .iter()
-        .filter_map(|answer| {
-            let name = answer.get("step")?.get("name")?.as_text()?.to_owned();
-            let lines: Vec<String> = answer
-                .get("lines")?
-                .as_list()?
-                .iter()
-                .filter_map(Value::as_text)
-                .map(str::to_owned)
-                .collect();
-            (!lines.is_empty()).then_some(Finding {
-                name,
-                at: Some(now.clone()),
-                engine: None,
-                lines,
-            })
-        })
-        .collect()
 }
 
 #[must_use]

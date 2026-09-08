@@ -70,7 +70,7 @@ fn exempt(path: &Path) -> bool {
     }) {
         return true;
     }
-    relative(path) == "crates/mcf-lab/src/fixture.rs"
+    relative(path) == "crates/mcf-standin/src/fixture.rs"
 }
 
 #[test]

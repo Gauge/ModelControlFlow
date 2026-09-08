@@ -1,15 +1,14 @@
 use std::path::Path;
 
-use mcf_core::time::{Duration, Monotonic};
 use mcf_hub::store;
 use mcf_standin::gguf::{self, Model, TensorKind};
 use mcf_standin::recommended::Recommendation;
 
 use crate::Response;
-use crate::run;
+use crate::models;
 
 pub(crate) fn run(model: &str) -> Response {
-    let path = match run::resolve(model) {
+    let path = match models::resolve_named(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
             return Response {
@@ -22,13 +21,13 @@ pub(crate) fn run(model: &str) -> Response {
         }
         Err(found) => {
             return Response {
-                text: run::ambiguous(model, &found),
+                text: models::ambiguous(model, &found),
                 served: false,
             };
         }
     };
 
-    let Some(bytes) = crate::bench::read_prefix(&path) else {
+    let Some(bytes) = crate::models::read_prefix(&path) else {
         return Response {
             text: format!(
                 "mcf: {} could not be read as a model\n  MCF grew its read to the whole file                  and still could not find a GGUF directory in it",
@@ -62,7 +61,7 @@ pub(crate) fn run(model: &str) -> Response {
 }
 
 pub(crate) fn json(model: &str) -> Response {
-    let path = match run::resolve(model) {
+    let path = match models::resolve_named(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
             return Response {
@@ -75,7 +74,7 @@ pub(crate) fn json(model: &str) -> Response {
         }
         Err(found) => {
             return Response {
-                text: run::ambiguous(model, &found),
+                text: models::ambiguous(model, &found),
                 served: false,
             };
         }
@@ -216,44 +215,8 @@ pub(crate) fn wrapped(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-fn how_fast(path: &Path) -> String {
-    let held = crate::history::read();
-    let bytes = mcf_hub::store::bytes_of_the_whole(path).unwrap_or(0);
-    let budget = run::TOKENS;
-    let projected = mcf_bench::project::band(
-        &held.points,
-        bytes,
-        u32::try_from(budget).unwrap_or(u32::MAX),
-    );
-    let unmeasured = "Unmeasured. Through MCF's own stand-in it is unanswerable in principle — \
-                      B65 forbids a speed from it (D31). Through a provisioned engine it is \
-                      answerable: `mcf bench <a> --against <b>` takes it, under conditions and \
-                      with its uncertainty.";
-    match projected {
-        Ok(band) => format!(
-            "Unmeasured *for this file*. From {} comparison arm(s) this machine has measured at \
-             {budget} tokens, a request here would probably take {} — which is an ESTIMATE \
-             read between two measured sizes, and A20 forbids it standing beside a measurement \
-             or being promoted into one. It was {}, which is a condition of the estimate and \
-             not a footnote (B-385, §3.4). `mcf bench` measures it.{}",
-            held.points.len(),
-            millisecond_band(band.band()),
-            band.rested_on(),
-            if held.unreadable == 0 {
-                String::new()
-            } else {
-                format!(
-                    " ({} earlier arm(s) could not be used: their files are not here now.)",
-                    held.unreadable
-                )
-            }
-        ),
-        Err(why) => format!("{unmeasured} There is no projection either: {why}."),
-    }
-}
-
 fn language_cost(path: &Path) -> String {
-    let Some(vocabulary) = crate::bench::read_prefix(path)
+    let Some(vocabulary) = crate::models::read_prefix(path)
         .and_then(|bytes| mcf_standin::gguf::parse(&bytes).ok())
         .and_then(|file| mcf_standin::tokenizer::Vocabulary::read(&file).ok())
     else {
@@ -312,18 +275,6 @@ fn language_cost(path: &Path) -> String {
     lines.join("\n")
 }
 
-fn millisecond_band(held: &mcf_core::measurement::Estimate<Duration<Monotonic>>) -> String {
-    let tenths = |at: Duration<Monotonic>| {
-        let held = at.as_nanos().wrapping_div(100_000);
-        format!("{}.{}", held.wrapping_div(10), held.wrapping_rem(10))
-    };
-    format!(
-        "between {} and {} ms",
-        tenths(held.low()),
-        tenths(held.high())
-    )
-}
-
 fn sampler(file: &Model) -> (String, String) {
     match mcf_standin::recommended::read(file) {
         Recommendation::Declared { sampling, keys } => (
@@ -368,13 +319,6 @@ pub(crate) fn quantizations(file: &Model) -> String {
         .map(|(kind, count)| format!("{count}×{kind}"))
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-pub(crate) fn choice_for(path: &Path) -> core::result::Result<mcf_serve::engines::Choice, String> {
-    let bytes = crate::bench::read_prefix(path)
-        .ok_or_else(|| "the file could not be read as a model".to_owned())?;
-    let file = gguf::parse(&bytes).map_err(|failure| failure.to_string())?;
-    resolved_here(path, &file)
 }
 
 fn resolved_here(
@@ -523,28 +467,6 @@ fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
             "0 unless --seed says".to_owned(),
             "a condition of the answer".to_owned(),
         ),
-        derived_all(path).budget.map_or_else(
-            || {
-                (
-                    "token budget",
-                    format!("{} unless --limit says", run::TOKENS),
-                    "tokens rather than seconds, because a stand-in is slow by design (B49); \
-                     nothing has been applied here, and `mcf probe` measures how long this \
-                     model's turns actually run (B-056)"
-                        .to_owned(),
-                )
-            },
-            |budget| {
-                (
-                    "token budget",
-                    format!("{} unless --limit says", budget.tokens),
-                    "the longest turn this model was seen to finish, applied by somebody on a \
-                     probe's evidence — MCF's own default would have cut its answers off \
-                     (§3.8, D43)"
-                        .to_owned(),
-                )
-            },
-        ),
         (
             "context for planning",
             format!("{} tokens", mcf_hub::offer::PLANNING_CONTEXT),
@@ -579,7 +501,6 @@ fn unanswered(path: &Path) -> Vec<(&'static str, String)> {
              and the measurements are M5–M7 (§6.5)."
                 .to_owned(),
         ),
-        ("How fast is it on this machine?", how_fast(path)),
         ("What does each language cost here?", language_cost(path)),
         (
             "What is it good at?",

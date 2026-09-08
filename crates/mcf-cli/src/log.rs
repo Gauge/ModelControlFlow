@@ -215,8 +215,8 @@ fn prompt_reported(body: &Value) -> String {
     let spread = match body.get("floor_spread") {
         Some(spread @ Value::Map(_)) => format!(
             " (drawn at every position: {} to {})",
-            crate::prompt::percent(integer(spread, "least_parts_per_million")),
-            crate::prompt::percent(integer(spread, "most_parts_per_million"))
+            crate::log::percent(integer(spread, "least_parts_per_million")),
+            crate::log::percent(integer(spread, "most_parts_per_million"))
         ),
         _ => String::new(),
     };
@@ -233,7 +233,7 @@ fn prompt_reported(body: &Value) -> String {
             .and_then(|held| held.get("model"))
             .and_then(Value::as_text)
             .unwrap_or("a model MCF did not name"),
-        crate::prompt::percent(floor),
+        crate::log::percent(floor),
         past_the_floor,
         clauses.len(),
     )
@@ -344,25 +344,6 @@ fn errata_for(at: mcf_core::time::Timestamp) -> Vec<String> {
         .collect()
 }
 
-fn recomputed_spread(body: &Value) -> Option<mcf_bench::enough::Spread> {
-    let pairs = body.get("pairs").and_then(Value::as_list)?;
-    let differences: Vec<i64> = pairs
-        .iter()
-        .filter_map(|pair| {
-            let left = pair.get("left_ns").and_then(Value::as_integer)?;
-            let right = pair.get("right_ns").and_then(Value::as_integer)?;
-            let smaller = left.min(right);
-            (smaller > 0).then(|| {
-                right
-                    .saturating_sub(left)
-                    .saturating_mul(1_000_000)
-                    .wrapping_div(smaller)
-            })
-        })
-        .collect();
-    mcf_bench::enough::spread_of(&differences)
-}
-
 fn comparison(body: &Value) -> String {
     let arm = |side: &str| {
         body.get(side)
@@ -387,8 +368,7 @@ fn comparison(body: &Value) -> String {
         .and_then(Value::as_text);
     let said = match kind {
         "differ" | "ordered" | "apart" => {
-            let sized = recomputed_spread(body)
-                .map_or_else(|| per_cent(of("difference")), |held| format!("{held}"));
+            let sized = per_cent(of("difference"));
             let unsettled = if kind == "ordered" {
                 format!(
                     " — which does not settle the size at the {} asked about",
@@ -510,3 +490,16 @@ fn integer(body: &Value, key: &str) -> i64 {
 
 #[cfg(test)]
 mod tests;
+
+#[expect(
+    clippy::integer_division,
+    reason = "parts per million rendered to one decimal place, floored"
+)]
+const fn as_percent(parts_per_million: i64) -> (i64, i64) {
+    (parts_per_million / 10_000, (parts_per_million / 1_000) % 10)
+}
+
+pub(crate) fn percent(parts_per_million: i64) -> String {
+    let (whole, tenth) = as_percent(parts_per_million);
+    format!("{whole}.{tenth}%")
+}

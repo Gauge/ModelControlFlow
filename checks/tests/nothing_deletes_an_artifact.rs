@@ -10,23 +10,6 @@ struct Deletes {
 
 const DECLARED: &[Deletes] = &[
     Deletes {
-        file: "crates/mcf-cli/src/eval.rs",
-        calls: 1,
-        what: "the scratch directory the laboratory wrote a model's answer into, once every \
-               task has been checked. What is removed is text a model emitted seconds earlier \
-               and the program MCF wrapped around it — never an artifact MCF acquired, and \
-               never the record, which keeps what the answers did (B-027)",
-    },
-    Deletes {
-        file: "crates/mcf-serve/src/probes/run.rs",
-        calls: 1,
-        what: "the picture the vision probe just drew, once the turn that was shown it is \
-               over. MCF computes those bytes itself — the shapes are drawn by \
-               `probes::vision`, not read from anywhere — so what is removed is a temporary \
-               MCF made, never a file it acquired, and the record keeps what the model said \
-               about it rather than the file (B-027)",
-    },
-    Deletes {
         file: "crates/mcf-cli/src/provision.rs",
         calls: 1,
         what: "a provisioned component's prefix, in `remove`, which carries a reason and is \
@@ -96,20 +79,6 @@ const DECLARED: &[Deletes] = &[
         what: "the daemon's own control socket — one left behind by a process that died, \
                and its own on the way out. A socket is a name the kernel gave this process, \
                not something anybody's model is in (A27, B-030)",
-    },
-    Deletes {
-        file: "crates/mcf-lab/src/world.rs",
-        calls: 3,
-        what: "a laboratory scratch directory this process made, and the leavings of \
-               laboratory processes that died (A27)",
-    },
-    Deletes {
-        file: "crates/mcf-lab/src/catalogue/record.rs",
-        calls: 1,
-        what: "a file the laboratory itself just filed in a scratch content store, removed so \
-               that a directory can take its place — which is how *there and unreadable* is \
-               constructed, and which must not come back as the same answer as *never kept* \
-               (F105, D26, A27)",
     },
     Deletes {
         file: "crates/mcf-record/src/overhead.rs",
