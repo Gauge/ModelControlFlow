@@ -35,7 +35,7 @@ fn the_window_is_a_power_of_two_within_both_limits() {
         );
         let needed = weights + OVERHEAD + context * per_token;
         #[allow(clippy::integer_division, reason = "the same arithmetic the code does")]
-        let allowed = free * HEADROOM_NUMERATOR / HEADROOM_DENOMINATOR;
+        let allowed = free * headroom_percent() / HEADROOM_DENOMINATOR;
         assert!(
             needed <= allowed,
             "{context} needs {needed} of {allowed} allowed"
@@ -106,7 +106,7 @@ fn the_larger_window_beats_the_card() {
             vec![Device {
                 kind: Kind::Gpu,
                 name: "A Small Card".to_owned(),
-                free: Some(6_000_000_000),
+                free: Some(4_500_000_000),
             }],
         ),
     ];
@@ -141,7 +141,7 @@ fn a_model_that_does_not_fit_says_by_how_much() {
     assert!(said.contains("30.0"), "{said}");
     assert!(said.contains("2.00 GB"), "{said}");
     assert!(
-        said.contains("85%"),
+        said.contains(&format!("{}%", headroom_percent())),
         "the refusal names two numbers that do not entail it without the fraction: {said}"
     );
 }

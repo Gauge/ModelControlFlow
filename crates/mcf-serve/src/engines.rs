@@ -16,8 +16,19 @@ pub(crate) fn overhead_for(weights: u64) -> u64 {
     OVERHEAD.max(weights / 2)
 }
 
-const HEADROOM_NUMERATOR: u64 = 85;
+pub const HEADROOM_VARIABLE: &str = "MCF_MEMORY_HEADROOM";
+
+const HEADROOM_DEFAULT: u64 = 100;
 const HEADROOM_DENOMINATOR: u64 = 100;
+
+#[must_use]
+pub fn headroom_percent() -> u64 {
+    std::env::var(HEADROOM_VARIABLE)
+        .ok()
+        .and_then(|set| set.trim().parse::<u64>().ok())
+        .filter(|percent| (1..=HEADROOM_DENOMINATOR).contains(percent))
+        .unwrap_or(HEADROOM_DEFAULT)
+}
 
 const SMALLEST_CONTEXT: u64 = 512;
 
@@ -206,7 +217,7 @@ pub fn cache_bytes_per_token(model: &mcf_standin::gguf::Model) -> Option<u64> {
 #[must_use]
 pub fn largest_context(weights: u64, cache_per_token: u64, free: u64, trained: u64) -> u64 {
     let ceiling = free
-        .saturating_mul(HEADROOM_NUMERATOR)
+        .saturating_mul(headroom_percent())
         .checked_div(HEADROOM_DENOMINATOR)
         .unwrap_or(0);
     let Some(budget) = ceiling.checked_sub(overhead_for(weights).saturating_add(weights)) else {
@@ -251,17 +262,20 @@ impl Refused {
                 largest_device,
                 needs,
             } => format!(
-                "this model needs about {}, and MCF plans to at most {}% of what a device has \
-                 free — {} of the {} here — so it does not fit",
+                "this model needs about {}, and the largest single device here has {} free \
+                 ({}% of it, {}, is what MCF plans to). MCF does not yet spread one model \
+                 across devices, so it does not fit on any one of them. Raise or lower the \
+                 share with {}",
                 gigabytes(*needs),
-                HEADROOM_NUMERATOR,
+                gigabytes(*largest_device),
+                headroom_percent(),
                 gigabytes(
                     largest_device
-                        .saturating_mul(HEADROOM_NUMERATOR)
+                        .saturating_mul(headroom_percent())
                         .checked_div(HEADROOM_DENOMINATOR)
                         .unwrap_or(0)
                 ),
-                gigabytes(*largest_device)
+                HEADROOM_VARIABLE
             ),
             Self::HeaderIncomplete => {
                 "this model's file does not say how it is shaped, so MCF cannot tell whether \

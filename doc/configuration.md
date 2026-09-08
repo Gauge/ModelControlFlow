@@ -51,6 +51,7 @@ variables and command-line arguments.
 | Variable | Read by | Meaning |
 |---|---|---|
 | `MCF_MODELS` | `pull`, `list`, `host`, `rm`, … | An ordered list of absolute paths, colon-separated. The first is where a new acquisition goes; all are searched for what is held. A relative path is dropped and named rather than resolved against the working directory. |
+| `MCF_MEMORY_HEADROOM` | `host`, `explain`, `settings` | The share of a device's free memory MCF will plan to use, as a whole percentage from 1 to 100. Defaults to **100** — MCF does not hold back capacity you have. Lower it if you want room left for other work on the same device. A value outside the range is ignored rather than clamped silently. |
 | `XDG_DATA_HOME` | the record, the model store fallback, engines | `$XDG_DATA_HOME/mcf/record.jsonl` for the record, `$XDG_DATA_HOME/mcf/provisioned` for engines. Falls back to `$HOME/.local/share/mcf`. |
 | `XDG_RUNTIME_DIR` | `serve`, `status`, `stop` | Where the daemon's control socket lives. |
 | `MCF_BUILD_COMMIT` | build time | The source revision stamped into the binary and into every recorded row's conditions. |
