@@ -1270,17 +1270,6 @@ struct Counted {
     generated: u64,
     /// Tokens of prompt read by then.
     prompted: u64,
-    /// What the card was drawing then, in microwatts, where it says.
-    power_uw: Option<i64>,
-    /// The card's energy since MCF began watching this engine, in
-    /// microjoules: each interval's mean draw over its length, summed.
-    microjoules: u64,
-    /// How much of this engine's life those intervals cover, in
-    /// nanoseconds. Less than the whole where nobody was asking: MCF reads
-    /// the card when somebody asks and never on a timer (B-031, B-071), so
-    /// the energy is over the time it could see and says how long that was
-    /// (A6).
-    covered_ns: u64,
 }
 
 /// Where an engine answers, as one line, to tell two of them apart.
@@ -1305,11 +1294,28 @@ const RATE_OVER_AT_MOST_NS: u64 = 30 * 1_000_000_000;
 /// life that covers: microjoules and nanoseconds, taken from the store so
 /// that a stopped engine's figures do not go on ageing there.
 fn energy_of(reach: &crate::served::Reach) -> Option<(u64, u64)> {
-    let held = COUNTED
+    let _forgotten = COUNTED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .remove(&where_it_answers(reach))?;
-    (held.covered_ns > 0).then_some((held.microjoules, held.covered_ns))
+        .remove(&where_it_answers(reach));
+    let spent = energy_since_start(reach)?;
+    (spent.covered_ns > 0).then_some((spent.microjoules, spent.covered_ns))
+}
+
+/// What the machine has spent since this engine started, where it is one
+/// MCF started and still holds (B-596).
+///
+/// **From the engine's start, not from the first time somebody asked.**
+/// The meter runs while MCF holds an engine, so the difference between its
+/// reading now and its reading when this engine registered covers the
+/// whole of that engine's life — including the hours nobody had a window
+/// open on it, which is the case the figure was wanted for (F277).
+fn energy_since_start(reach: &crate::served::Reach) -> Option<crate::power::Spent> {
+    let started = crate::served::live()
+        .into_iter()
+        .find(|live| live.reach == *reach)?
+        .spent_at_start;
+    Some(crate::power::spent().since(started))
 }
 
 /// One engine's counters, and the rates MCF measures over them.
@@ -1331,16 +1337,20 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
     if let Some(metrics) = crate::served::metrics_via(reach) {
         fields.extend(counters(&metrics));
     }
-    // **The card's draw, which is a fact about the card and not about the
-    // model** (B-593). What it publishes is the whole card's power, and
-    // anything else drawing on it is in the figure; MCF says what it read
-    // and where, and attributes nothing (A8).
-    let power_uw = crate::engines::card_sensors().power_uw;
-    if let Some(power) = power_uw {
+    // **The draw, which is a fact about the chip and not about the model**
+    // (B-593). What the driver publishes is one figure for the device it
+    // is on, and anything else drawing on that device is inside it; MCF
+    // says what it read and whose it is, and attributes nothing (A8).
+    // On a processor whose graphics are part of it the label is `PPT` and
+    // the figure is the whole package, which the words say (F277).
+    let sensors = crate::engines::card_sensors();
+    if let Some(power) = sensors.power_uw {
         fields.push((
             "card_power_watts",
             thousandths_of(u64::try_from(power.max(0)).unwrap_or(0), 1_000),
         ));
+        fields.push(("power_named", Value::text(sensors.power_named())));
+        fields.push(("power_is", Value::text(sensors.power_is())));
     }
     let whole = |key: &str| -> Option<u64> {
         fields
@@ -1373,32 +1383,17 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
         now.saturating_duration_since(before.at).as_nanos()
     });
     let usable = over > 0 && over <= RATE_OVER_AT_MOST_NS;
-    // **The energy between two readings, by the trapezoid rule**: the mean
-    // of the draw then and the draw now, over the time between. Microwatts
-    // times nanoseconds over a thousand million is microjoules.
-    let (mut microjoules, mut covered_ns) =
-        before.map_or((0, 0), |before| (before.microjoules, before.covered_ns));
-    if usable
-        && let (Some(then), Some(held)) = (before.and_then(|before| before.power_uw), power_uw)
-    {
-        let mean = then.saturating_add(held).max(0);
-        #[expect(
-            clippy::integer_division,
-            reason = "the mean of two draws, and then microjoules; what is discarded is under a microjoule"
-        )]
-        let spent = u64::try_from(mean).unwrap_or(0).saturating_mul(over) / 2_000_000_000;
-        microjoules = microjoules.saturating_add(spent);
-        covered_ns = covered_ns.saturating_add(over);
-    }
+    // **What the machine has spent since this engine started** (B-596).
+    // The meter runs while MCF holds an engine, so this covers the whole
+    // of it rather than the moments a window happened to be open; the
+    // coverage goes out beside the figure either way (A6).
+    let spent = energy_since_start(reach).unwrap_or_default();
     let before = counted.insert(
         key,
         Counted {
             at: now,
             generated: generated.unwrap_or(0),
             prompted: prompted.unwrap_or(0),
-            power_uw,
-            microjoules,
-            covered_ns,
         },
     );
     // Only what is being watched is kept: an engine nobody has asked after
@@ -1406,11 +1401,14 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
     counted
         .retain(|_, held| now.saturating_duration_since(held.at).as_nanos() < RATE_OVER_AT_MOST_NS);
     drop(counted);
-    if covered_ns > 0 {
-        fields.push(("card_energy_joules", thousandths_of(microjoules, 1_000)));
+    if spent.covered_ns > 0 {
+        fields.push((
+            "card_energy_joules",
+            thousandths_of(spent.microjoules, 1_000),
+        ));
         fields.push((
             "card_energy_over_seconds",
-            thousandths_of(covered_ns, 1_000_000),
+            thousandths_of(spent.covered_ns, 1_000_000),
         ));
     }
     let (Some(generated), Some(prompted)) = (generated, prompted) else {

@@ -5282,11 +5282,23 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
         ),
         ("KV tokens", count(in_use.cache_tokens)),
         ("Decodes", count(in_use.decodes)),
-        // The card's draw and what it has spent while MCF watched, which
-        // is the card's and not this model's alone (B-593).
-        ("Card watts", rate(in_use.card_power_watts)),
+        // The draw and what it has spent while MCF held this, which is the
+        // chip's and not this model's alone — and on a processor whose
+        // graphics are part of it, the whole package (B-593, B-596).
         (
-            "Card energy",
+            if in_use.power_named.as_deref() == Some("package") {
+                "Package watts"
+            } else {
+                "Card watts"
+            },
+            rate(in_use.card_power_watts),
+        ),
+        (
+            if in_use.power_named.as_deref() == Some("package") {
+                "Package energy"
+            } else {
+                "Card energy"
+            },
             in_use.card_energy_joules.map(|joules| {
                 if joules >= 1_000.0 {
                     format!("{:.1} kJ", joules / 1_000.0)

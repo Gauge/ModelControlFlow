@@ -2461,6 +2461,10 @@ pub struct Live {
     pub window: u64,
     /// Where it answers.
     pub reach: Reach,
+    /// What the machine's energy meter read when this engine started, so
+    /// that what it has cost is a difference and covers the whole of its
+    /// life rather than the part somebody watched (B-596).
+    pub spent_at_start: crate::power::Spent,
 }
 
 /// Every server alive now, oldest first: registered as one starts
@@ -2489,12 +2493,16 @@ impl Served {
             commit: self.commit.clone(),
             window: self.window,
             reach: self.reach.clone(),
+            spent_at_start: crate::power::spent(),
         };
         let mut held = live_list()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         held.retain(|live| live.child != entry.child);
         held.push(entry);
+        // While MCF holds an engine it measures what the machine is
+        // drawing, and while it holds none it measures nothing (B-596).
+        crate::power::watch();
     }
 
     /// Strikes this server from the list of the live.
@@ -2503,7 +2511,11 @@ impl Served {
         let mut held = live_list()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let was = held.len();
         held.retain(|live| live.child != child);
+        if held.len() < was {
+            crate::power::release();
+        }
     }
 }
 

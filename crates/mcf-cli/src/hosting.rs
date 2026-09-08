@@ -507,15 +507,15 @@ fn in_use_lines(body: &Value) -> Vec<String> {
     // card's, and over the time MCF could see rather than the whole hold
     // (B-593, A8, A6).
     if let Some(watts) = figure("card_power_watts") {
-        lines.push(format!("  card           {watts} W now"));
+        let whose = figure("power_is").unwrap_or_else(|| "the graphics device".to_owned());
+        lines.push(format!("  power          {watts} W now, drawn by {whose}"));
     }
     if let (Some(joules), Some(over)) = (
         figure("card_energy_joules"),
         figure("card_energy_over_seconds"),
     ) {
         lines.push(format!(
-            "                 {joules} J drawn by the card over {over} s of watching — the \
-             card's draw, not this model's alone"
+            "                 {joules} J over {over} s of holding it — not this model's alone"
         ));
     }
     if let (Some(processing), Some(queued)) =

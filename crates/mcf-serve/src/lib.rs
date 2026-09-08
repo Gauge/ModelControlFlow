@@ -28,6 +28,7 @@ mod generation;
 pub mod hosting;
 pub mod ladder;
 pub mod orphans;
+pub mod power;
 pub mod probes;
 pub mod projector;
 pub mod prompt;

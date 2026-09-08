@@ -151,9 +151,16 @@ pub struct Use {
     pub generated_per_second: Option<f32>,
     /// How long the rates above were measured over, in seconds.
     pub rate_over_seconds: Option<f32>,
-    /// What the card is drawing now, in watts, where it says (B-593).
-    /// The card's, not this model's: whatever else draws on it is in it.
+    /// What the chip is drawing now, in watts, where it says (B-593).
+    /// Not this model's alone: whatever else draws on the same chip is in
+    /// it, and on a processor whose graphics are part of it that includes
+    /// the processor (B-596).
     pub card_power_watts: Option<f32>,
+    /// The short word for whose draw that is — `card` or `package` — as
+    /// the driver's own label says (B-596).
+    pub power_named: Option<String>,
+    /// The same in a sentence, for a surface with room for one.
+    pub power_is: Option<String>,
     /// The card's energy while MCF has been watching this engine, in
     /// joules.
     pub card_energy_joules: Option<f32>,
@@ -215,6 +222,14 @@ impl Use {
             generated_per_second: rate("generated_tokens_per_second"),
             rate_over_seconds: rate("rate_over_seconds"),
             card_power_watts: rate("card_power_watts"),
+            power_named: value
+                .get("power_named")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
+            power_is: value
+                .get("power_is")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
             card_energy_joules: rate("card_energy_joules"),
             card_energy_over_seconds: rate("card_energy_over_seconds"),
             prompted_per_second: rate("prompt_tokens_per_second"),

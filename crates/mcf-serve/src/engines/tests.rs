@@ -658,6 +658,7 @@ fn a_cards_sensors_are_read_from_its_hardware_monitor() {
     assert_eq!(
         sensors,
         CardSensors {
+            power_label: None,
             temperature_millic: Some(50_000),
             clock_hz: Some(625_000_000),
             power_uw: Some(68_011_000),
@@ -719,4 +720,54 @@ fn a_hold_defaults_to_the_window_whose_cache_stays_within_the_weights() {
     assert_eq!(held_at(2_048, 10_000_000, 112 * 1024), 2_048);
     // No growing cache: the largest is the answer.
     assert_eq!(held_at(262_144, 1_500_000_000, 0), 262_144);
+}
+
+/// Whose draw the power figure is comes from the driver's own label, not
+/// from what MCF would like it to be: `PPT` is the whole processor
+/// package on a chip whose graphics are part of it, and anything else is
+/// the graphics device (B-596, F277, A8).
+#[test]
+fn whose_draw_it_is_comes_from_the_drivers_own_label() {
+    let package = CardSensors {
+        power_uw: Some(90_000_000),
+        power_label: Some("PPT".to_owned()),
+        ..CardSensors::default()
+    };
+    assert_eq!(package.power_named(), "package");
+    assert!(package.power_is().contains("processor"));
+
+    let card = CardSensors {
+        power_uw: Some(90_000_000),
+        power_label: Some("GFX".to_owned()),
+        ..CardSensors::default()
+    };
+    assert_eq!(card.power_named(), "card");
+    assert_eq!(card.power_is(), "the graphics device");
+
+    // No label is no claim that it is a card's, but a card is what a
+    // discrete driver publishes and the honest default here.
+    let unlabelled = CardSensors {
+        power_uw: Some(90_000_000),
+        ..CardSensors::default()
+    };
+    assert_eq!(unlabelled.power_named(), "card");
+}
+
+/// The label is read from the file beside the reading (B-596).
+#[test]
+fn the_power_label_is_read_from_the_file_beside_the_reading() {
+    let root = std::env::temp_dir().join(format!("mcf-label-{}", std::process::id()));
+    let monitor = root
+        .join("card0")
+        .join("device")
+        .join("hwmon")
+        .join("hwmon3");
+    std::fs::create_dir_all(&monitor).expect("a fixture card");
+    std::fs::write(monitor.join("power1_average"), "132032000\n").expect("a draw");
+    std::fs::write(monitor.join("power1_label"), "PPT\n").expect("a label");
+    let sensors = card_sensors_under(&root);
+    assert_eq!(sensors.power_uw, Some(132_032_000));
+    assert_eq!(sensors.power_label.as_deref(), Some("PPT"));
+    assert_eq!(sensors.power_named(), "package");
+    let _gone = std::fs::remove_dir_all(&root);
 }

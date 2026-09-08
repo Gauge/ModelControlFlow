@@ -612,7 +612,7 @@ pub fn card_memory_used_under(drm: &Path) -> Option<u64> {
 /// What a card's sensors say at one moment: its temperature in
 /// thousandths of a degree, its clock in hertz and its power in
 /// microwatts, each where the driver publishes it (B-530, B-531).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CardSensors {
     /// Temperature, in millidegrees Celsius.
     pub temperature_millic: Option<i64>,
@@ -620,13 +620,43 @@ pub struct CardSensors {
     pub clock_hz: Option<i64>,
     /// Power draw, in microwatts.
     pub power_uw: Option<i64>,
+    /// What the driver calls that draw, from its own label file: `PPT` on
+    /// a processor whose graphics are part of it, where the figure is the
+    /// whole package rather than a card (B-596, F277). `None` where the
+    /// driver publishes no label, which is not a claim that it is a card's.
+    pub power_label: Option<String>,
 }
 
 impl CardSensors {
     /// Whether any sensor answered.
     #[must_use]
-    pub const fn any(self) -> bool {
+    pub fn any(&self) -> bool {
         self.temperature_millic.is_some() || self.clock_hz.is_some() || self.power_uw.is_some()
+    }
+
+    /// Whose draw the power figure is, in words a person reads.
+    ///
+    /// **`PPT` is Package Power Tracking, and on a processor whose
+    /// graphics are part of it that is the whole chip** — measured here by
+    /// putting sixteen processor threads under load with no graphics work
+    /// and watching the same sensor rise ten watts (F277). Calling that
+    /// *the card* would attribute to the graphics what the processor
+    /// spent, which A8 is about.
+    #[must_use]
+    pub fn power_is(&self) -> &'static str {
+        match self.power_label.as_deref() {
+            Some("PPT") => "the whole processor package, graphics and processor together",
+            Some(_) | None => "the graphics device",
+        }
+    }
+
+    /// The short word a tile is headed with.
+    #[must_use]
+    pub fn power_named(&self) -> &'static str {
+        match self.power_label.as_deref() {
+            Some("PPT") => "package",
+            Some(_) | None => "card",
+        }
     }
 }
 
@@ -665,10 +695,17 @@ pub fn card_sensors_under(drm: &Path) -> CardSensors {
                     .ok()
                     .and_then(|text| text.trim().parse::<i64>().ok())
             };
+            let label = |file: &str| {
+                std::fs::read_to_string(monitor.path().join(file))
+                    .ok()
+                    .map(|text| text.trim().to_owned())
+                    .filter(|text| !text.is_empty())
+            };
             let sensors = CardSensors {
                 temperature_millic: read("temp1_input"),
                 clock_hz: read("freq1_input"),
                 power_uw: read("power1_average").or_else(|| read("power1_input")),
+                power_label: label("power1_label"),
             };
             if sensors.any() {
                 return sensors;

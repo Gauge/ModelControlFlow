@@ -212,6 +212,7 @@ forward as one.
 | 241 | [F241 — Retrieval past sixteen thousand plants a six-digit number at ten and ninety hundredths of 32k, 64k and 128k tokens of filler where the window allows, a depth past the window saying so; the 2B found it in all six placements, with the 128k reads taking most of the forty minutes the run took (B-558, D55, B-497, B-529)](#241-f241-retrieval-past-sixteen-thousand-plants-a-six-digit-number-at-ten-and-ninety-hundredths-of-32k-64k-and-128k-tokens-of-filler-where-the-window-allows-a-depth-past-the-window-saying-so-the-2b-found-it-in-all-six-placements-with-the-128k-reads-taking-most-of-the-forty-minutes-the-run-took-b-558-d55-b-497-b-529) |
 | 242 | [F242 — Thread scaling generates sixty-four tokens on the processor at one, two, four, eight, sixteen and all thirty-two threads, in thousandths of a token a second as well as whole ones; the 2B ran at 20, 26, 38, 43 and 74 tokens a second and fell to 53 at thirty-two, and in the first run to a third of a token a second there, which whole tokens wrote as nought (B-556, D55, D11)](#242-f242-thread-scaling-generates-sixty-four-tokens-on-the-processor-at-one-two-four-eight-sixteen-and-all-thirty-two-threads-in-thousandths-of-a-token-a-second-as-well-as-whole-ones-the-2b-ran-at-20-26-38-43-and-74-tokens-a-second-and-fell-to-53-at-thirty-two-and-in-the-first-run-to-a-third-of-a-token-a-second-there-which-whole-tokens-wrote-as-nought-b-556-d55-d11) |
 | 243 | [F243 — The desktop was killed by the kernel's out-of-memory killer while a fifty-gigabyte model hosted through the window was measured: the hosted server, the daemon's own from the ladder and the draft-head measurement's were three copies on a hundred-and-twenty-five-gigabyte machine whose card's memory is the host's; a server that would not fit beside what is resident is now refused before it starts, and the daemon stops its own idle copy before a measurement starts one (B-560, D41, DEC-018)](#243-f243-the-desktop-was-killed-by-the-kernels-out-of-memory-killer-while-a-fifty-gigabyte-model-hosted-through-the-window-was-measured-the-hosted-server-the-daemons-own-from-the-ladder-and-the-draft-head-measurements-were-three-copies-on-a-hundred-and-twenty-five-gigabyte-machine-whose-cards-memory-is-the-hosts-a-server-that-would-not-fit-beside-what-is-resident-is-now-refused-before-it-starts-and-the-daemon-stops-its-own-idle-copy-before-a-measurement-starts-one-b-560-d41-dec-018) |
+| 277 | [F277 — Sampling power only when asked measured nothing for the case it was wanted for, and the sensor called *card* is the whole processor package: sixteen threads of processor load with no graphics work moved it ten watts (B-596, A8, F275)](#277-f277-sampling-power-only-when-asked-measured-nothing-for-the-case-it-was-wanted-for-and-the-sensor-called-card-is-the-whole-processor-package-sixteen-threads-of-processor-load-with-no-graphics-work-moved-it-ten-watts-b-596-a8-f275) |
 | 276 | [F276 — A version cannot answer *is this the latest* and a window cannot answer it alone: every build between releases says `0.1.0-m0`, and the daemon behind the window was four commits older with nothing on screen saying so (B-595, A7, C8)](#276-f276-a-version-cannot-answer-is-this-the-latest-and-a-window-cannot-answer-it-alone-every-build-between-releases-says-010-m0-and-the-daemon-behind-the-window-was-four-commits-older-with-nothing-on-screen-saying-so-b-595-a7-c8) |
 | 275 | [F275 — Power was measured inside diagnostics and nowhere else: a served model drew 90 W with nothing recording it, and the window's run energy was a watts reading multiplied by a second nobody timed (B-593, A8, A6)](#275-f275-power-was-measured-inside-diagnostics-and-nowhere-else-a-served-model-drew-90-w-with-nothing-recording-it-and-the-windows-run-energy-was-a-watts-reading-multiplied-by-a-second-nobody-timed-b-593-a8-a6) |
 | 274 | [F274 — Closing the window let a model keep the card: the hold outlived the window by design, and now the window lets go on its way out, freeing 3.6 GB on the 2B and recording it (B-592, A27, F267)](#274-f274-closing-the-window-let-a-model-keep-the-card-the-hold-outlived-the-window-by-design-and-now-the-window-lets-go-on-its-way-out-freeing-36-gb-on-the-2b-and-recording-it-b-592-a27-f267) |
@@ -15743,7 +15744,66 @@ status` names the daemon's revision, which it had been dropping:
 **What it costs.** One more ask of the daemon when the window opens and
 on a refresh, which is the ask `mcf status` makes.
 
+## 277 · F277 — Sampling power only when asked measured nothing for the case it was wanted for, and the sensor called *card* is the whole processor package: sixteen threads of processor load with no graphics work moved it ten watts (B-596, A8, F275)
+
+**What the operator saw.** Driving the held model from another
+machine, with the window open on the hosting page: *card watts*, *card
+energy* and *energy over* all reading **not measured yet**, and no
+idea whether *card power* meant the graphics or the processor.
+
+**The first half was a daemon of the wrong age**, which the window was
+already saying — F276 put the daemon's build under the name for
+exactly this, and it read four commits behind. But the design behind
+it was wrong too.
+
+**Sampling when asked cannot measure a hold nobody is asking after.**
+F275 read the draw at the moments something asked what the hold was
+doing, on the reasoning that a daemon must not poll (B-031, B-071).
+That measures a hold while a window is open on it and measures nothing
+otherwise — and the case a person most wants the figure for is the one
+where the model is being driven from somewhere else and there is no
+window at all. So a meter now runs while MCF holds an engine, twice a
+second, and stops when the last one goes; each engine's energy is the
+difference between the meter's reading now and its reading when that
+engine registered, which covers the engine's whole life. *It costs
+nothing while nobody is asking* still holds, and what it now means is
+that nothing is held:
+
+| the daemon | threads | sampler | processor time |
+|---|---|---|---|
+| holding nothing | 2 | none | 0 ticks in 10 s |
+| holding the 2B | 4 | one | — |
+| after letting go | 2 | none | 0 ticks in 10 s |
+
+Hosted and left alone for sixteen seconds with one generation in the
+middle and nothing asking at all, the first ask afterwards said **516
+J over 16.087 s of holding it**, a mean of 32 W across an idle model
+and a burst of generation. Under F275's design that would have read
+nothing.
+
+**The second half is whose watts they are.** The driver's own label
+file says `PPT` — Package Power Tracking — and this machine's graphics
+are part of its processor rather than a card in a slot. Sixteen
+processor threads under load with no graphics work moved the same
+sensor from 130 W to 140 W, which settles it: the figure is the whole
+package, processor and graphics together. MCF now reads the label and
+says so, on the tiles as *package watts* and in `mcf hosted` as *drawn
+by the whole processor package, graphics and processor together*.
+Calling that the card would have attributed to the graphics what the
+processor spent, which is the confound A8 is about, and it was on
+every screen that showed it.
+
+**What is still not measured.** The processor's own energy counter is
+root-only here, so on a machine with a discrete card MCF would report
+the card alone and say so, and the processor's share would stay
+unmeasured rather than guessed.
+
 ## Changelog
+
+### Version 199 — the energy of a hold nobody is watching
+
+F277: the meter runs while a model is held; the draw is named by the
+driver's own label (B-596).
 
 ### Version 198 — which MCF this is
 

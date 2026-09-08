@@ -1791,6 +1791,7 @@ fn the_model_under_test_is_read_and_its_cost_is_summed() {
                     ("prompted_tokens", Value::text("9000")),
                     ("requests_processing", Value::text("1")),
                     ("card_power_watts", Value::text("100.000")),
+                    ("power_named", Value::text("package")),
                     ("card_energy_joules", Value::text(joules)),
                     ("card_energy_over_seconds", Value::text(over)),
                 ]),
@@ -1803,6 +1804,7 @@ fn the_model_under_test_is_read_and_its_cost_is_summed() {
     assert_eq!(under.in_use.generated, Some(1500));
     assert_eq!(under.in_use.prompted, Some(9000));
     assert_eq!(under.in_use.card_power_watts, Some(100.0));
+    assert_eq!(under.in_use.power_named.as_deref(), Some("package"));
 
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
     desk.under_test = Some(under);

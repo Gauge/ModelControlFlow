@@ -2626,6 +2626,10 @@ fn every_page_is_drawn_for_review() {
             generated_live: Some(41_247),
             rate_over_seconds: Some(1.0),
             card_power_watts: Some(78.4),
+            power_named: Some("package".to_owned()),
+            power_is: Some(
+                "the whole processor package, graphics and processor together".to_owned(),
+            ),
             card_energy_joules: Some(9_140.0),
             card_energy_over_seconds: Some(184.0),
             generated_per_second: Some(74.2),
@@ -3256,6 +3260,10 @@ fn an_engine_in_use(path: &str) -> mcf_desk::Hosted {
             generated_live: Some(41_402),
             rate_over_seconds: Some(1.0),
             card_power_watts: Some(103.2),
+            power_named: Some("package".to_owned()),
+            power_is: Some(
+                "the whole processor package, graphics and processor together".to_owned(),
+            ),
             card_energy_joules: Some(21_600.0),
             card_energy_over_seconds: Some(212.0),
             generated_per_second: Some(151.7),
