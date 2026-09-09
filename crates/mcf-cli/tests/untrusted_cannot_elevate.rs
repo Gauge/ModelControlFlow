@@ -73,6 +73,9 @@ impl Watched {
 
 impl Drop for Watched {
     fn drop(&mut self) {
+        if self.root.join("mcf").join("control.sock").exists() {
+            let _asked = self.run(&["stop", "--because", "the test that started it finished"]);
+        }
         let _removed = std::fs::remove_dir_all(&self.root);
     }
 }

@@ -26,6 +26,7 @@ static PIPE: OnceLock<Option<UnixStream>> = OnceLock::new();
 unsafe extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
     fn write(fd: i32, buffer: *const u8, count: usize) -> isize;
+    fn raise(signum: i32) -> i32;
 }
 
 extern "C" fn on_signal(which: i32) {
@@ -94,8 +95,12 @@ fn open_pipe() -> Option<UnixStream> {
             let mut byte = [0_u8; 1];
             while reader.read(&mut byte).is_ok_and(|read| read == 1) {
                 let which = LAST.load(Ordering::Relaxed);
+                let mut asked = false;
                 for socket in watched() {
-                    ask_to_stop(&socket, which);
+                    asked |= ask_to_stop(&socket, which);
+                }
+                if !asked {
+                    stop_without_being_asked(which);
                 }
             }
         })
@@ -123,9 +128,9 @@ pub fn reason_for(which: i32) -> String {
     format!("the process received {name}")
 }
 
-fn ask_to_stop(socket: &Path, which: i32) {
+fn ask_to_stop(socket: &Path, which: i32) -> bool {
     let Ok(mut connection) = UnixStream::connect(socket) else {
-        return;
+        return false;
     };
     let _deadline = connection.set_read_timeout(Some(PATIENCE));
     let _writing = connection.set_write_timeout(Some(PATIENCE));
@@ -136,10 +141,18 @@ fn ask_to_stop(socket: &Path, which: i32) {
         .and_then(|()| connection.flush())
         .is_err()
     {
-        return;
+        return false;
     }
     let mut line = String::new();
     let _answered = BufReader::new(&connection).read_line(&mut line);
+    true
+}
+
+fn stop_without_being_asked(which: i32) {
+    for each in STOPPING {
+        install(each, DEFAULT);
+    }
+    let _raised = unsafe { raise(which) };
 }
 
 #[cfg(test)]

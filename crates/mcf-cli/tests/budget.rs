@@ -270,6 +270,7 @@ impl Quarters {
 
 impl Drop for Quarters {
     fn drop(&mut self) {
+        let _asked = self.stop();
         let _removed = std::fs::remove_dir_all(&self.0);
     }
 }

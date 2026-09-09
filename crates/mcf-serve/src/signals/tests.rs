@@ -44,15 +44,22 @@ fn a_signal_becomes_a_stop_request_on_the_daemons_socket() {
         "{{\"protocol\":1,\"served\":true,\"body\":{{}}}}"
     )
     .expect("answered");
-    asking.join().expect("the ask returns");
+    assert!(
+        asking.join().expect("the ask returns"),
+        "a socket that answered carried the stop request"
+    );
     let _gone = std::fs::remove_file(&socket);
 }
 
 #[test]
-fn a_daemon_already_gone_is_not_waited_for() {
+fn a_socket_that_is_gone_cannot_carry_a_stop_request() {
     let socket = std::env::temp_dir().join(format!("mcf-signals-gone-{}.sock", std::process::id()));
     let _gone = std::fs::remove_file(&socket);
-    ask_to_stop(&socket, TERMINATE);
+    assert!(
+        !ask_to_stop(&socket, TERMINATE),
+        "reporting that an unreachable socket carried the request is what left a daemon \
+         ignoring every SIGTERM"
+    );
 }
 
 #[test]

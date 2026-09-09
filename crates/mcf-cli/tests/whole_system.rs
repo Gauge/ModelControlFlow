@@ -48,6 +48,13 @@ impl Machine {
 
 impl Drop for Machine {
     fn drop(&mut self) {
+        if self.0.join("mcf").join("control.sock").exists() {
+            let _asked = self
+                .command(&["stop", "--because", "the test that started it finished"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
         let _removed = std::fs::remove_dir_all(&self.0);
     }
 }
@@ -1317,6 +1324,54 @@ fn a_daemon_sent_a_termination_signal_stops_and_says_why() {
 }
 
 #[test]
+fn a_daemon_whose_socket_is_gone_still_stops_when_signalled() {
+    let machine = Machine::new("daemon-socket-gone");
+    let mut daemon = Reaped(
+        machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("the daemon spawns"),
+    );
+
+    let mut answered = false;
+    for _ in 0..300 {
+        if machine.run(&["status"]).status.success() {
+            answered = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(answered, "the daemon never answered");
+
+    let socket = machine.0.join("mcf").join("control.sock");
+    assert!(socket.exists(), "no socket at {}", socket.display());
+    std::fs::remove_file(&socket).expect("the socket goes out from under the daemon");
+
+    let signalled = Command::new("kill")
+        .arg("-TERM")
+        .arg(daemon.0.id().to_string())
+        .status()
+        .expect("kill runs");
+    assert!(signalled.success(), "kill could not signal the daemon");
+
+    let mut exited = None;
+    for _ in 0..600 {
+        if let Ok(Some(status)) = daemon.0.try_wait() {
+            exited = Some(status);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        exited.is_some(),
+        "the daemon is asked to stop through its own socket, so a socket that is gone \
+         left it sitting in accept ignoring SIGTERM, and only SIGKILL could reach it"
+    );
+}
+
+#[test]
 fn a_daemon_killed_at_any_stage_comes_back() {
     let machine = Machine::new("daemon-killed");
 
@@ -1642,13 +1697,6 @@ fn an_already_provisioned_component_is_left_alone() {
 
 #[test]
 fn a_running_daemon_serves_a_generation_and_records_its_account() {
-    struct Reaped(std::process::Child);
-    impl Drop for Reaped {
-        fn drop(&mut self) {
-            let _killed = self.0.kill();
-            let _waited = self.0.wait();
-        }
-    }
     let machine = Machine::new("served");
     let models = machine
         .0
@@ -1993,7 +2041,7 @@ fn fake_provisioned_engine(machine: &Machine, does: &str) -> PathBuf {
     let me = std::env::current_exe().expect("this test binary has a path");
     let script = format!(
         "#!/bin/sh\nsock=\nport=\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --host ]; then \
-         sock=\"$2\"; fi; if [ \"$1\" = --port ]; then port=\"$2\"; fi; \
+         case \"$2\" in /*) sock=\"$2\";; esac; fi; if [ \"$1\" = --port ]; then port=\"$2\"; fi; \
          if [ \"$1\" = --list-devices ]; then echo 'Available devices:'; exit 0; fi; \
          shift; done\nMCF_FAKE_LLAMA_SERVER_SOCKET=\"$sock\" \
          MCF_FAKE_LLAMA_SERVER_PORT=\"$port\" MCF_FAKE_LLAMA_SERVER_DOES={does} \
@@ -2081,6 +2129,10 @@ fn fake_llama_server() {
             std::net::TcpListener::bind(("127.0.0.1", port)).expect("the port binds"),
         ),
         (None, false) => {
+            assert!(
+                socket.starts_with('/'),
+                "a stand-in binds a socket only at an absolute path, never in the source tree: {socket}"
+            );
             let _gone = std::fs::remove_file(&socket);
             Listening::Socket(
                 std::os::unix::net::UnixListener::bind(&socket).expect("the socket binds"),
@@ -2192,13 +2244,6 @@ fn stand_in_answer(path: &str, body: &str, does: &str) -> String {
 
 #[test]
 fn a_provisioned_engine_is_chosen_streamed_and_named() {
-    struct Reaped(std::process::Child);
-    impl Drop for Reaped {
-        fn drop(&mut self) {
-            let _killed = self.0.kill();
-            let _waited = self.0.wait();
-        }
-    }
     let machine = Machine::new("provisioned-engine");
     let models = machine
         .0
@@ -2266,13 +2311,6 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
 
 #[test]
 fn what_the_engine_wrote_before_it_died_is_on_the_page() {
-    struct Reaped(std::process::Child);
-    impl Drop for Reaped {
-        fn drop(&mut self) {
-            let _killed = self.0.kill();
-            let _waited = self.0.wait();
-        }
-    }
     let machine = Machine::new("provisioned-dies-part-way");
     let models = machine
         .0
@@ -2323,13 +2361,6 @@ fn what_the_engine_wrote_before_it_died_is_on_the_page() {
 
 #[test]
 fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemon() {
-    struct Reaped(std::process::Child);
-    impl Drop for Reaped {
-        fn drop(&mut self) {
-            let _killed = self.0.kill();
-            let _waited = self.0.wait();
-        }
-    }
     let machine = Machine::new("provisioned-dies");
     let models = machine
         .0
