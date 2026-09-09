@@ -177,7 +177,7 @@ fn a_model_that_will_not_run_says_so_on_its_own_page() {
 #[test]
 fn a_daemon_that_is_not_answering_looks_different() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    desk.page = Page::Monitor;
+    desk.page = Page::Hosting;
     let answering = drawn(&desk, NIGHT, "scratch");
     if answering.width == 1 {
         return;
@@ -808,28 +808,54 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
 }
 
 #[test]
-fn the_ask_screen_carries_the_turn_and_the_picture() {
-    let mut plain = four_models();
-    plain.chosen = Some(0);
-    plain.page = Page::Hosting;
-    let mut asked = four_models();
-    asked.chosen = Some(0);
-    asked.page = Page::Hosting;
-    asked.system = "You are careful.".to_owned();
-    asked.effort = "low".to_owned();
-    asked.thinking = Some(false);
-    asked.picture = "/home/a/pictures/circle.png".to_owned();
+fn the_server_screen_carries_the_system_details() {
+    let machine = || mcf_tui::machine::Reading {
+        processor: mcf_tui::machine::Processor {
+            load: Some(mcf_tui::machine::Tenths(13)),
+            temperature: Some(32),
+            clock: Some(4_650),
+            cores: Some(32),
+        },
+        memory: mcf_tui::machine::Memory {
+            total: Some(134_320_000_000),
+            available: Some(21_790_000_000),
+        },
+        cards: vec![mcf_tui::machine::Card {
+            name: "card0 (amdgpu)".to_owned(),
+            load: Some(mcf_tui::machine::Tenths(60)),
+            temperature: Some(29),
+            power: Some(15),
+            used: Some(440_000_000),
+            total: Some(540_000_000),
+        }],
+        disks: vec![mcf_tui::machine::Disk {
+            name: "nvme0n1".to_owned(),
+            read: Some(8_700_000),
+            written: Some(0),
+            temperature: Some(33),
+        }],
+    };
 
-    let bare = drawn(&plain, DAY, "ask-plain");
-    let full = drawn(&asked, DAY, "ask-asked");
-    assert!(
-        bare.inked(DAY.ground) > 0,
-        "the ask screen drew nothing at all"
-    );
-    assert!(
-        full.pixels != bare.pixels,
-        "the turn a question goes under is not on the screen that asks it"
-    );
+    for held in [None, Some(0)] {
+        let mut unread = four_models();
+        unread.page = Page::Hosting;
+        unread.chosen = held;
+        let mut sampled = four_models();
+        sampled.page = Page::Hosting;
+        sampled.chosen = held;
+        sampled.reading = machine();
+
+        let named = if held.is_some() { "held" } else { "none" };
+        let blank = drawn(&unread, DAY, &format!("server-unread-{named}"));
+        let full = drawn(&sampled, DAY, &format!("server-sampled-{named}"));
+        if blank.width < 2 || full.width < 2 {
+            return;
+        }
+        assert!(
+            full.inked(DAY.ground) > blank.inked(DAY.ground),
+            "the server screen does not show what the machine is doing (holding: {held:?})"
+        );
+    }
 }
 
 fn a_search_answer() -> mcf_desk::Doing {

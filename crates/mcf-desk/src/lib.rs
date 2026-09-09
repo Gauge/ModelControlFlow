@@ -355,8 +355,6 @@ fn said_of(version: &str, revision: &str) -> String {
     }
 }
 
-pub const FAULTS_SHOWN: usize = 12;
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Fault {
     pub at: String,
@@ -472,48 +470,11 @@ fn disposition_said(held: &str) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Component {
-    pub name: String,
-    pub commit: String,
-    pub role: String,
-    pub image: String,
-    pub provisioned: bool,
-    pub present: bool,
-    pub usable_engine: bool,
-    pub prefix: String,
-}
-
-#[must_use]
-pub fn component_from(held: &Value) -> Component {
-    let text = |key: &str| {
-        held.get(key)
-            .and_then(Value::as_text)
-            .unwrap_or_default()
-            .to_owned()
-    };
-    let flag = |key: &str| matches!(held.get(key), Some(Value::Bool(true)));
-    Component {
-        name: text("name"),
-        commit: text("commit").chars().take(12).collect(),
-        role: text("role"),
-        image: text("image"),
-        provisioned: flag("provisioned"),
-        present: flag("present"),
-        usable_engine: flag("usable_engine"),
-        prefix: text("prefix"),
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Caret {
     Setting,
     #[default]
     Document,
-    Temperature,
-    System,
-    Effort,
-    Picture,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -539,11 +500,8 @@ impl Tab {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
-    Monitor,
     Host,
     Models,
-    Components,
-    Settings,
     Exit,
     Adding,
     Hosting,
@@ -553,9 +511,8 @@ pub enum Page {
 
 impl Page {
     pub const MENU: &'static [(Self, &'static str)] = &[
-        (Self::Monitor, "System"),
-        (Self::Models, "Models"),
         (Self::Hosting, "Server"),
+        (Self::Models, "Models"),
         (Self::Exit, "Exit"),
     ];
 
@@ -566,7 +523,6 @@ impl Page {
                 Self::Models
             }
             Self::Hosting => Self::Hosting,
-            Self::Monitor | Self::Components | Self::Settings => Self::Monitor,
             Self::Exit => Self::Exit,
         }
     }
@@ -876,7 +832,6 @@ pub enum Region {
     Checks,
     Server,
     Prompt,
-    Monitor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1192,7 +1147,6 @@ pub enum Shown {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Act {
     Go(Page),
-    CycleThinking,
     LookUp,
     Download { reference: String, file: String },
     SearchHub,
@@ -1351,22 +1305,13 @@ pub struct Desk {
     pub pending: Option<Pending>,
     pub after_download: Option<Act>,
     pub filters: Filters,
-    pub temperature: String,
-    pub system: String,
-    pub effort: String,
-    pub thinking: Option<bool>,
-    pub picture: String,
     pub caret: Caret,
     pub chosen: Option<usize>,
     pub doing: Doing,
     pub said: String,
     pub queued: std::collections::VecDeque<Card>,
     pub queued_of: usize,
-    pub components: Vec<Component>,
     pub daemon_build: Option<String>,
-    pub faults: Vec<Fault>,
-    pub faults_in_record: usize,
-    faults_read: Option<std::time::Instant>,
     pub settings: Option<mcf_serve::hosting::Hosting>,
     pub recommended: Option<mcf_serve::hosting::Hosting>,
     pub no_settings: Option<String>,
@@ -1420,22 +1365,13 @@ impl Desk {
             refusal: None,
             busy: false,
             typed: String::new(),
-            temperature: String::new(),
             caret: Caret::Document,
-            system: String::new(),
-            effort: String::new(),
-            thinking: None,
-            picture: String::new(),
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
             queued: std::collections::VecDeque::new(),
             queued_of: 0,
-            components: Vec::new(),
             daemon_build: None,
-            faults: Vec::new(),
-            faults_in_record: 0,
-            faults_read: None,
             settings: None,
             recommended: None,
             no_settings: None,
@@ -1509,14 +1445,10 @@ impl Desk {
         if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_mut()) {
             return typed;
         }
-        match (self.page, self.caret) {
-            (Page::Hosting, Caret::Temperature) => &mut self.temperature,
-            (Page::Hosting, Caret::System) => &mut self.system,
-            (Page::Hosting, Caret::Effort) => &mut self.effort,
-            (Page::Hosting, Caret::Picture) => &mut self.picture,
-            (Page::Models, _) => &mut self.filter,
-            _ => &mut self.typed,
+        if self.page == Page::Models {
+            return &mut self.filter;
         }
+        &mut self.typed
     }
 
     #[must_use]
@@ -1524,25 +1456,10 @@ impl Desk {
         if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_ref()) {
             return typed;
         }
-        match (self.page, self.caret) {
-            (Page::Hosting, Caret::Temperature) => &self.temperature,
-            (Page::Hosting, Caret::System) => &self.system,
-            (Page::Hosting, Caret::Effort) => &self.effort,
-            (Page::Hosting, Caret::Picture) => &self.picture,
-            (Page::Models, _) => &self.filter,
-            _ => &self.typed,
+        if self.page == Page::Models {
+            return &self.filter;
         }
-    }
-
-    pub fn settle(&self) -> Result<Option<mcf_core::configuration::Thousandths>, &str> {
-        let typed = self.temperature.trim();
-        if typed.is_empty() {
-            return Ok(None);
-        }
-        match typed.parse::<mcf_core::configuration::Thousandths>() {
-            Ok(held) if held.0 > 0 => Ok(Some(held)),
-            _ => Err(typed),
-        }
+        &self.typed
     }
 
     pub fn returned(&mut self, with_control: bool) {
@@ -1623,7 +1540,6 @@ impl Desk {
             let refused = job.refused.clone();
             let wanted = self.host_after.take();
             let built = self.building.take();
-            self.read_components();
             self.read_settings();
             let still_chosen = self
                 .chosen
@@ -1646,7 +1562,7 @@ impl Desk {
             Act::Go(page) => {
                 if page != self.page {
                     self.scrolls.clear();
-                    if page.section() == Page::Monitor {
+                    if page.section() == Page::Hosting {
                         self.sample();
                     }
                     if matches!(page, Page::Anatomy | Page::Vocabulary) {
@@ -1714,7 +1630,6 @@ impl Desk {
                 self.read_settings();
             }
             Act::Focus(caret) => self.caret = caret,
-            Act::CycleThinking => self.cycle_thinking(),
             Act::Clear => self.typed.clear(),
             Act::Stop | Act::Dismiss => self.doing = Doing::Nothing,
         }
@@ -2678,29 +2593,6 @@ impl Desk {
         self.host_it();
     }
 
-    #[must_use]
-    pub fn asked_turn(&self) -> Option<mcf_serve::turn::Turn> {
-        let word = |held: &str| {
-            Some(held.trim())
-                .filter(|typed| !typed.is_empty())
-                .map(str::to_owned)
-        };
-        let turn = mcf_serve::turn::Turn {
-            thinking: self.thinking,
-            effort: word(&self.effort),
-            system: word(&self.system),
-        };
-        turn.asks_anything().then_some(turn)
-    }
-
-    pub fn cycle_thinking(&mut self) {
-        self.thinking = match self.thinking {
-            None => Some(true),
-            Some(true) => Some(false),
-            Some(false) => None,
-        };
-    }
-
     pub fn ask(&mut self, at: usize) {
         let Some(held) = self.models.get(at) else {
             return;
@@ -2710,10 +2602,6 @@ impl Desk {
             return;
         }
         self.said.clear();
-        let turn = self.asked_turn();
-        let picture = Some(self.picture.trim())
-            .filter(|typed| !typed.is_empty())
-            .map(str::to_owned);
         self.doing = Doing::Answering(job::Job::start(
             &self.socket,
             Request::Generate {
@@ -2726,21 +2614,12 @@ impl Desk {
                 engine: None,
                 whose: mcf_record::content::Whose::User,
                 pinned: false,
-                turn: turn.clone(),
-                image: picture,
+                turn: None,
+                image: None,
                 started: mcf_serve::declared::Started::default(),
             },
             format!("asking {}", held.name),
         ));
-    }
-
-    pub fn read_components(&mut self) {
-        if let Ok(answer) = ask_within(&self.socket, &Request::Components, POLL)
-            && answer.served
-            && let Some(listed) = answer.body.get("components").and_then(Value::as_list)
-        {
-            self.components = listed.iter().map(component_from).collect();
-        }
     }
 
     pub fn refresh(&mut self) {
@@ -2783,9 +2662,6 @@ impl Desk {
 
     pub fn sample(&mut self) {
         self.reading = self.sampler.read();
-        if self.faults_read.is_none_or(|read| read.elapsed() >= POLL) {
-            self.read_faults();
-        }
     }
 
     #[must_use]
@@ -2805,25 +2681,6 @@ impl Desk {
         {
             let text = |key: &str| build.get(key).and_then(Value::as_text).unwrap_or_default();
             self.daemon_build = Some(said_of(text("version"), text("revision")));
-        }
-    }
-
-    pub fn read_faults(&mut self) {
-        self.faults_read = Some(std::time::Instant::now());
-        if let Ok(answer) = ask_within(
-            &self.socket,
-            &Request::Failures { last: FAULTS_SHOWN },
-            POLL,
-        ) && answer.served
-            && let Some(listed) = answer.body.get("failures").and_then(Value::as_list)
-        {
-            self.faults = listed.iter().map(fault_from).collect();
-            self.faults_in_record = answer
-                .body
-                .get("in_record")
-                .and_then(Value::as_integer)
-                .and_then(|held| usize::try_from(held).ok())
-                .unwrap_or(self.faults.len());
         }
     }
 
@@ -2972,8 +2829,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     desk.refresh();
     desk.sample();
     desk.read_hosted();
-    desk.read_components();
-    desk.read_faults();
     desk.read_build();
 
     let mut mouse = ui::Mouse::default();
@@ -3052,8 +2907,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                         desk.refresh();
                         desk.sample();
                         desk.read_hosted();
-                        desk.read_components();
-                        desk.read_faults();
                         desk.read_build();
                     }
                     _ => {}
@@ -3067,21 +2920,11 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         }
 
         let a_run = desk.doing.busy();
-        let due = (matches!(desk.page, Page::Monitor | Page::Hosting) || a_run)
+        let due = (desk.page == Page::Hosting || a_run)
             && last.elapsed() >= std::time::Duration::from_secs(1);
         if due {
-            match desk.page {
-                Page::Monitor => desk.sample(),
-                _ => desk.read_hosted(),
-            }
-            if a_run {
-                if desk.page != Page::Monitor {
-                    desk.sample();
-                }
-                if desk.page == Page::Monitor {
-                    desk.read_hosted();
-                }
-            }
+            desk.sample();
+            desk.read_hosted();
             last = std::time::Instant::now();
             acted = true;
         }

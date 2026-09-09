@@ -42,14 +42,11 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         (height - PAD * 2.0).max(10.0),
     );
     let went = match desk.page {
-        Page::Monitor => monitor(paint, desk, mouse, main),
         Page::Host | Page::Models => host(paint, desk, mouse, main),
         Page::Adding => adding(paint, desk, mouse, main),
         Page::Hosting => hosting(paint, desk, mouse, main),
-        Page::Components => components(paint, desk, mouse, main),
         Page::Anatomy => anatomy(paint, desk, mouse, main),
         Page::Vocabulary => vocabulary(paint, desk, mouse, main),
-        Page::Settings => settings(paint, main),
         Page::Exit => leaving(paint, mouse, main),
     };
     act = match (went, act) {
@@ -308,126 +305,6 @@ fn takes_line(hosting: &crate::Hosted) -> String {
             )
         },
     )
-}
-
-fn monitor(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
-    scrolled(
-        paint,
-        mouse,
-        desk,
-        Region::Monitor,
-        area,
-        |paint, mouse, inner| monitor_body(paint, desk, mouse, inner),
-    )
-}
-
-fn monitor_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    let wide = area.w;
-
-    spaced(paint, area.x, area.y, "system", ink.faint);
-    let mut y = area.y + 20.0;
-    y = processors_table(paint, Box::new(area.x, y, wide, 0.0), desk);
-    y = memory_table(paint, Box::new(area.x, y + 14.0, wide, 0.0), desk);
-    y = storage_table(
-        paint,
-        Box::new(
-            area.x,
-            y + 14.0,
-            wide,
-            130.0_f32.min(area.bottom() - y - 260.0),
-        ),
-        desk,
-    );
-    y += 18.0;
-    spaced(paint, area.x, y, "engines", ink.faint);
-    y += 20.0;
-    let mut act = None;
-    for component in &desk.components {
-        let tall = 86.0;
-        if y + tall > area.bottom() - 70.0 {
-            break;
-        }
-        act = component_card(
-            paint,
-            desk,
-            mouse,
-            component,
-            Box::new(area.x, y, wide, tall),
-        )
-        .or(act);
-        y += tall + 10.0;
-    }
-
-    y += 18.0;
-    let heading = match desk.faults_in_record {
-        0 => "failures — none in the record".to_owned(),
-        n if n <= desk.faults.len() => format!("failures — {n} in the record, newest first"),
-        n => format!(
-            "failures — the newest {} of {n} in the record",
-            desk.faults.len()
-        ),
-    };
-    spaced(paint, area.x, y, &heading, ink.faint);
-    y += 20.0;
-    for fault in &desk.faults {
-        let lines = crate::fault_lines(fault);
-        let tall = 22.0 + 16.0 * lines.len() as f32;
-        if y + tall > area.bottom() - 70.0 {
-            break;
-        }
-        fault_card(paint, fault, &lines, Box::new(area.x, y, wide, tall));
-        y += tall + 8.0;
-    }
-
-    let divider = area.bottom() - 64.0;
-    paint.rule((area.x, divider), (area.x + wide, divider), ink.line, 255);
-    let (word, said) = desk.state_line();
-    paint.say_at(
-        area.x,
-        divider + 22.0,
-        &word,
-        Weight::Bold,
-        size::BODY,
-        ink.accent,
-    );
-    paint.say_at(
-        area.x + 82.0,
-        divider + 22.0,
-        &said,
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
-    act
-}
-
-fn fault_card(paint: &mut Painter, fault: &crate::Fault, lines: &[String], card: Box) {
-    let ink = paint.ink;
-    ui::card(paint, card, false);
-    let mut at = card.y + 12.0;
-    let mut first = true;
-    for line in lines {
-        let (weight, colour, size) = if first {
-            (Weight::Bold, ink.ink, size::BODY)
-        } else {
-            (Weight::Regular, ink.quiet, size::SMALL)
-        };
-        let said = if first && !fault.at.is_empty() {
-            format!("{}  {line}", fault.at)
-        } else {
-            line.clone()
-        };
-        for wrapped in paint
-            .wrap(&said, weight, size, card.w - 28.0)
-            .iter()
-            .take(2)
-        {
-            paint.say_at(card.x + 14.0, at, wrapped, weight, size, colour);
-            at += 16.0;
-        }
-        first = false;
-    }
 }
 
 fn processors_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
@@ -2731,82 +2608,6 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
     act
 }
 
-fn the_turn(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Option<Act>, f32) {
-    let ink = paint.ink;
-    let mut act = None;
-    let mut y = area.y;
-    let label_at = area.x;
-    let field_at = area.x + 74.0;
-    let width = (area.w - 74.0).max(120.0);
-
-    ui::label(paint, label_at, y + 9.0, "system");
-    let system = Box::new(field_at, y, width, 28.0);
-    if ui::field(
-        paint,
-        mouse,
-        system,
-        &desk.system,
-        "none — the template's own",
-        desk.caret == Caret::System,
-    ) {
-        act = Some(Act::Focus(Caret::System));
-    }
-    y += 36.0;
-
-    ui::label(paint, label_at, y + 9.0, "picture");
-    let picture = Box::new(field_at, y, width, 28.0);
-    if ui::field(
-        paint,
-        mouse,
-        picture,
-        &desk.picture,
-        "none — a path to a file the model can be shown",
-        desk.caret == Caret::Picture,
-    ) {
-        act = Some(Act::Focus(Caret::Picture));
-    }
-    y += 36.0;
-
-    ui::label(paint, label_at, y + 9.0, "thinking");
-    let said = match desk.thinking {
-        None => "unsaid",
-        Some(true) => "on",
-        Some(false) => "off",
-    };
-    let (pressed, switch) = ui::fitted(paint, mouse, (field_at, y - 2.0), said, Kind::Ordinary);
-    if pressed {
-        act = Some(Act::CycleThinking);
-    }
-    let effort_at = switch.right() + 16.0;
-    ui::label(paint, effort_at, y + 9.0, "effort");
-    let effort = Box::new(
-        effort_at + 52.0,
-        y,
-        (area.right() - effort_at - 52.0).max(90.0),
-        28.0,
-    );
-    if ui::field(
-        paint,
-        mouse,
-        effort,
-        &desk.effort,
-        "none — its own word",
-        desk.caret == Caret::Effort,
-    ) {
-        act = Some(Act::Focus(Caret::Effort));
-    }
-    y += 34.0;
-    paint.say_at(
-        area.x,
-        y,
-        "unsaid is not off: what is left alone is the template's own",
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    (act, y + 18.0)
-}
-
 fn downloading_line(job: &crate::job::Job) -> String {
     let Some(latest) = job.latest() else {
         return "starting".to_owned();
@@ -2876,13 +2677,7 @@ fn ask_box(
     {
         act = Some(Act::Ask { at: index });
     }
-    let (turn_act, after) = the_turn(
-        paint,
-        desk,
-        mouse,
-        Box::new(at.x, at.y + 42.0, field.w, 0.0),
-    );
-    (act.or(turn_act), after + 10.0)
+    (act, at.y + 42.0)
 }
 
 fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
@@ -2985,26 +2780,8 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
 }
 
 fn machine_and_run_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
-    let card = desk.reading.cards.first();
     let spent = desk.spent;
-    let mut tiles: Vec<(&str, Option<String>)> = vec![
-        (
-            "Card load",
-            card.and_then(|card| card.load.map(|load| format!("{}%", load.whole()))),
-        ),
-        (
-            "Card temp",
-            card.and_then(|card| card.temperature.map(|degrees| format!("{degrees} °C"))),
-        ),
-        (
-            "Card power",
-            card.and_then(|card| card.power.map(|watts| format!("{watts} W"))),
-        ),
-        (
-            "Card memory",
-            card.and_then(|card| card.used.map(gigabytes)),
-        ),
-    ];
+    let mut tiles: Vec<(&str, Option<String>)> = Vec::new();
     if spent.seconds > 0 {
         #[expect(
             clippy::integer_division,
@@ -3284,8 +3061,9 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 
 fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let top = under_test_block(paint, desk, Box::new(area.x, area.y, area.w, 0.0));
-    let area = Box::new(area.x, top, area.w, (area.h - (top - area.y)).max(0.0));
+    let top = system_block(paint, desk, Box::new(area.x, area.y, area.w, 0.0));
+    let top = under_test_block(paint, desk, Box::new(area.x, top, area.w, 0.0));
+    let area = Box::new(area.x, top, area.w, (area.bottom() - top).max(0.0));
     let held = desk
         .hosted_model()
         .or_else(|| desk.chosen.and_then(|at| desk.models.get(at)));
@@ -3368,6 +3146,16 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act
 }
 
+fn system_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, at.x, at.y, "system", ink.faint);
+    let mut y = at.y + 20.0;
+    y = processors_table(paint, Box::new(at.x, y, at.w, 0.0), desk);
+    y = memory_table(paint, Box::new(at.x, y + 14.0, at.w, 0.0), desk);
+    y = storage_table(paint, Box::new(at.x, y + 14.0, at.w, 130.0), desk);
+    y + 26.0
+}
+
 fn what_it_said(paint: &mut Painter, desk: &Desk, area: Box) {
     let ink = paint.ink;
     let mut y = area.y;
@@ -3439,213 +3227,6 @@ fn what_it_ran_under(desk: &Desk) -> Vec<String> {
         said.push(format!("shown {name} ({bytes} bytes), placed {placed}"));
     }
     said
-}
-
-fn components(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    spaced(paint, area.x, area.y, "components", ink.faint);
-    paint.say_at(
-        area.x,
-        area.y + 28.0,
-        "each built from pinned source in a pinned container, and removable without residue",
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
-
-    if desk.components.is_empty() {
-        paint.say_at(
-            area.x,
-            area.y + 58.0,
-            words::UNMEASURED,
-            Weight::Regular,
-            size::BODY,
-            ink.faint,
-        );
-        return None;
-    }
-
-    let mut act = None;
-    let mut y = area.y + 58.0;
-    let wide = area.w;
-    for component in &desk.components {
-        let tall = 86.0;
-        let card = Box::new(area.x, y, wide, tall);
-        if y + tall > area.bottom() {
-            break;
-        }
-        act = component_card(paint, desk, mouse, component, card).or(act);
-        y += tall + 10.0;
-    }
-    act
-}
-
-fn component_card(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    component: &crate::Component,
-    card: Box,
-) -> Option<Act> {
-    let ink = paint.ink;
-    ui::card(paint, card, component.provisioned);
-
-    paint.say_at(
-        card.x + 14.0,
-        card.y + 14.0,
-        &component.name,
-        Weight::Bold,
-        size::BODY,
-        ink.ink,
-    );
-    let after = paint.measure(&component.name, Weight::Bold, size::BODY);
-    paint.say_at(
-        card.x + 14.0 + after + 8.0,
-        card.y + 14.0,
-        &format!("@{}", component.commit),
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-
-    let mut at = card.y + 34.0;
-    for line in paint
-        .wrap(
-            &component.role,
-            Weight::Regular,
-            size::SMALL,
-            card.w - 190.0,
-        )
-        .iter()
-        .take(2)
-    {
-        paint.say_at(
-            card.x + 14.0,
-            at,
-            line,
-            Weight::Regular,
-            size::SMALL,
-            ink.quiet,
-        );
-        at += 16.0;
-    }
-
-    let running = match &desk.doing {
-        Doing::Provisioning(job)
-            if !job.finished && desk.building.as_deref() == Some(component.name.as_str()) =>
-        {
-            Some(job)
-        }
-        _ => None,
-    };
-
-    let (word, ground, colour) = if running.is_some() {
-        ("Building", ink.warn_soft, ink.warn)
-    } else if component.provisioned {
-        ("Provisioned", ink.accent_soft, ink.good)
-    } else if component.present {
-        ("Incomplete", ink.warn_soft, ink.warn)
-    } else {
-        ("Not provisioned", ink.sunk, ink.quiet)
-    };
-    let _wide = ui::tag(
-        paint,
-        (card.right() - 130.0, card.y + 13.0),
-        word,
-        ground,
-        colour,
-    );
-
-    let foot = card.bottom() - 24.0;
-    if let Some(job) = running {
-        let printed = job
-            .answers
-            .iter()
-            .rev()
-            .find_map(|answer| answer.get("doing").and_then(Value::as_text))
-            .unwrap_or("starting");
-        let said = format!("{}s so far — {printed}", job.ran());
-        let shown = paint.elide(&said, Weight::Regular, size::SMALL, card.w - 28.0);
-        paint.say_right(
-            card.right() - 14.0,
-            foot,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.quiet,
-        );
-        return None;
-    }
-    component_foot(paint, desk, mouse, component, card, foot)
-}
-
-fn component_foot(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    component: &crate::Component,
-    card: Box,
-    foot: f32,
-) -> Option<Act> {
-    let ink = paint.ink;
-    let failed = desk
-        .build_failed
-        .as_ref()
-        .filter(|(failed, _)| failed == &component.name)
-        .map(|(_, why)| format!("not built: {why}"));
-    if let Some(said) = failed {
-        let shown = paint.elide(&said, Weight::Regular, size::SMALL, card.w - 130.0);
-        paint.say_at(
-            card.x + 14.0,
-            foot,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.bad,
-        );
-    } else if component.provisioned {
-        paint.say_right(
-            card.right() - 14.0,
-            foot,
-            &if component.usable_engine {
-                format!("{} — MCF reaches this as an engine", component.prefix)
-            } else {
-                component.prefix.clone()
-            },
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-    } else if component.present {
-        let shown = paint.elide(
-            &component.prefix,
-            Weight::Regular,
-            size::SMALL,
-            card.w - 130.0,
-        );
-        paint.say_at(
-            card.x + 14.0,
-            foot,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-    }
-    let idle = desk.doing.job().is_none_or(|job| job.finished);
-    if !component.provisioned && idle {
-        let label = if component.present {
-            "Build again"
-        } else {
-            "Build"
-        };
-        let width = paint.measure(label, Weight::Bold, size::SMALL) + 28.0;
-        let button = Box::new(card.right() - 14.0 - width, foot - 6.0, width, 26.0);
-        if ui::button(paint, mouse, button, label, Kind::Ordinary) {
-            return Some(Act::Build(component.name.clone()));
-        }
-    }
-    None
 }
 
 fn anatomy(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
@@ -4412,20 +3993,6 @@ fn agreements(paint: &mut Painter, area: Box, held: &[mcf_serve::anatomy::SaidAg
         y += 22.0;
     }
     y
-}
-
-fn settings(paint: &mut Painter, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    spaced(paint, area.x, area.y, "settings", ink.faint);
-    paint.say_at(
-        area.x,
-        area.y + 28.0,
-        "nothing to set yet",
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
-    None
 }
 
 fn leaving(paint: &mut Painter, mouse: &Mouse, area: Box) -> Option<Act> {

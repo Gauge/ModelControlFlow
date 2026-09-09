@@ -1,4 +1,4 @@
-use super::{ACTIONS, Caret, Desk, Model, Page, component_from, model_from};
+use super::{ACTIONS, Desk, Model, Page, model_from};
 use mcf_record::json::Value;
 
 #[test]
@@ -115,8 +115,8 @@ fn every_menu_entry_reaches_something_built() {
     let named: Vec<&str> = Page::MENU.iter().map(|(_, label)| *label).collect();
     assert_eq!(
         named,
-        ["System", "Models", "Server", "Exit"],
-        "the window's places are the four D49 names, and Exit"
+        ["Server", "Models", "Exit"],
+        "the window's places are the server, the library, and Exit"
     );
     for (page, label) in Page::MENU {
         assert_eq!(page.section(), *page, "{label} is not a section of its own");
@@ -220,43 +220,6 @@ fn a_paste_is_bounded() {
     );
     desk.paste("bbbb");
     assert_eq!(desk.typed.chars().count(), 512);
-}
-
-#[test]
-fn a_half_built_component_is_not_a_provisioned_one() {
-    let read = |present: bool, provisioned: bool, engine: bool| {
-        component_from(&Value::map([
-            ("name", Value::text("a-component")),
-            ("commit", Value::text("0123456789abcdef")),
-            ("role", Value::text("what having it lets MCF claim")),
-            ("image", Value::text("an-image")),
-            ("present", Value::Bool(present)),
-            ("provisioned", Value::Bool(provisioned)),
-            ("usable_engine", Value::Bool(engine)),
-            ("prefix", Value::text("/somewhere/a-component@0123456789ab")),
-        ]))
-    };
-
-    let absent = read(false, false, false);
-    assert!(!absent.present && !absent.provisioned);
-
-    let partway = read(true, false, false);
-    assert!(
-        partway.present && !partway.provisioned,
-        "a prefix without its provenance is a run that stopped partway"
-    );
-
-    let library = read(true, true, false);
-    assert!(
-        library.provisioned,
-        "a component that is not an engine is still provisioned"
-    );
-    assert!(!library.usable_engine);
-
-    let engine = read(true, true, true);
-    assert!(engine.provisioned && engine.usable_engine);
-
-    assert_eq!(engine.commit, "0123456789ab");
 }
 
 #[test]
@@ -445,7 +408,7 @@ fn hosting_with_a_nameless_refusal_builds_nothing() {
 }
 
 #[test]
-fn build_on_the_components_screen_builds_that_component() {
+fn asking_for_a_component_to_be_built_builds_that_one() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.act(super::Act::Build("llama.cpp".to_owned()));
 
@@ -545,35 +508,6 @@ fn an_anatomy_answer_is_read_as_the_daemon_wrote_it() {
         Some("</s>")
     );
     assert!(said.vocabulary.template.is_err());
-}
-
-#[test]
-fn the_window_asks_the_turn_it_was_given() {
-    let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
-    assert_eq!(desk.asked_turn(), None, "nothing typed asks for nothing");
-    desk.page = Page::Hosting;
-    desk.caret = Caret::System;
-    desk.typing().push_str("Be terse.");
-    desk.caret = Caret::Effort;
-    desk.typing().push_str("low");
-    desk.cycle_thinking();
-    let asked = desk.asked_turn().expect("a turn was asked for");
-    assert_eq!(asked.system.as_deref(), Some("Be terse."));
-    assert_eq!(asked.effort.as_deref(), Some("low"));
-    assert_eq!(asked.thinking, Some(true));
-    assert!(desk.typed.is_empty(), "the question is still empty");
-}
-
-#[test]
-fn thinking_rounds_through_unsaid() {
-    let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
-    assert_eq!(desk.thinking, None);
-    desk.cycle_thinking();
-    assert_eq!(desk.thinking, Some(true));
-    desk.cycle_thinking();
-    assert_eq!(desk.thinking, Some(false));
-    desk.cycle_thinking();
-    assert_eq!(desk.thinking, None, "back to what the template does itself");
 }
 
 #[test]
