@@ -8,6 +8,97 @@ pub const DEFAULT_PORT: u16 = 17817;
 
 pub const ALL_LAYERS: u32 = 999;
 
+/// What the endpoint answers.
+///
+/// A hold has been a chat endpoint and nothing else. The same engine will serve
+/// embeddings or reranking from the same file, and a model published for either
+/// could not be held at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Answers {
+    #[default]
+    Chat,
+    Embeddings,
+    Reranking,
+}
+
+impl Answers {
+    pub const ALL: [Self; 3] = [Self::Chat, Self::Embeddings, Self::Reranking];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Embeddings => "embeddings",
+            Self::Reranking => "reranking",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(said: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|held| held.as_str() == said)
+    }
+
+    #[must_use]
+    pub const fn said(self) -> &'static str {
+        match self {
+            Self::Chat => "chat completions, and nothing else",
+            Self::Embeddings => "embeddings only, which is what an embedding model is for",
+            Self::Reranking => "reranking, scoring documents against a query",
+        }
+    }
+
+    /// Whether a hold of this shape grows a cache as a conversation goes on.
+    ///
+    /// An embedding model reads a passage and returns a vector. It keeps
+    /// nothing between requests, so the window is what one passage may be
+    /// rather than what a conversation may reach, and pricing it per token of
+    /// conversation would report a reserve for something that never happens.
+    #[must_use]
+    pub const fn keeps_a_conversation(self) -> bool {
+        matches!(self, Self::Chat)
+    }
+}
+
+/// How embeddings are reduced to one vector for a passage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Pooling {
+    #[default]
+    TheModels,
+    None,
+    Mean,
+    Cls,
+    Last,
+    Rank,
+}
+
+impl Pooling {
+    pub const ALL: [Self; 6] = [
+        Self::TheModels,
+        Self::None,
+        Self::Mean,
+        Self::Cls,
+        Self::Last,
+        Self::Rank,
+    ];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TheModels => "the model's own",
+            Self::None => "none",
+            Self::Mean => "mean",
+            Self::Cls => "cls",
+            Self::Last => "last",
+            Self::Rank => "rank",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(said: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|held| held.as_str() == said)
+    }
+}
+
 /// How the weights are read from disk and whether they stay in memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Loading {
@@ -359,6 +450,10 @@ pub struct Hosting {
     pub threads: u32,
     pub batch: u32,
     pub flash_attention: bool,
+    pub answers: Answers,
+    pub pooling: Pooling,
+    pub alias: Option<String>,
+    pub adapters: Vec<String>,
     pub loading: Loading,
     pub lazily: Lazily,
     pub ubatch: u32,
@@ -409,6 +504,19 @@ fn projector_named(projector: Option<&str>) -> String {
     )
 }
 
+// Two maps into one, the second winning where they name the same field.
+fn merged(one: Value, two: Value) -> Value {
+    match (one, two) {
+        (Value::Map(mut into), Value::Map(from)) => {
+            for (key, value) in from {
+                let _replaced = into.insert(key, value);
+            }
+            Value::Map(into)
+        }
+        (one, _) => one,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Setting {
     pub name: &'static str,
@@ -443,6 +551,10 @@ impl Hosting {
                 .max(1),
             batch: 2048,
             flash_attention: on_a_card && fits_on_the_card,
+            answers: Answers::default(),
+            pooling: Pooling::default(),
+            alias: None,
+            adapters: Vec::new(),
             loading: Loading::default(),
             lazily: Lazily::default(),
             // The engine reads a batch 512 at a time whatever the batch is set
@@ -538,6 +650,28 @@ impl Hosting {
         // out of that plan. The engine's own fitter would adjust what MCF left
         // unset, which would make the settings printed here and the settings
         // run under two different things.
+        match self.answers {
+            Answers::Chat => {}
+            Answers::Embeddings => out.push("--embeddings".to_owned()),
+            Answers::Reranking => out.push("--rerank".to_owned()),
+        }
+        if self.pooling != Pooling::TheModels {
+            out.push("--pooling".to_owned());
+            out.push(self.pooling.as_str().to_owned());
+        }
+        out.push("--alias".to_owned());
+        out.push(self.alias.clone().unwrap_or_else(|| {
+            model
+                .rsplit('/')
+                .next()
+                .unwrap_or(model)
+                .trim_end_matches(".gguf")
+                .to_owned()
+        }));
+        for adapter in &self.adapters {
+            out.push("--lora".to_owned());
+            out.push(adapter.clone());
+        }
         out.push("--fit".to_owned());
         out.push("off".to_owned());
         out.push("--load-mode".to_owned());
@@ -592,11 +726,17 @@ impl Hosting {
                 name: "context window",
                 value: format!("{} tokens", grouped(self.context)),
                 recommended: format!("{} tokens", grouped(against.context)),
-                because: "how long a conversation it can hold. Every token of it costs \
-                          memory on the device the model runs on, so MCF holds it at the \
-                          largest window whose cache stays within the model's own size; \
-                          --context sets it to anything that fits. Where more than one slot \
-                          is asked for they share it, and `per conversation` is what each gets",
+                because: if self.answers.keeps_a_conversation() {
+                    "how long a conversation it can hold. Every token of it costs \
+                     memory on the device the model runs on, so MCF holds it at the \
+                     largest window whose cache stays within the model's own size; \
+                     --context sets it to anything that fits. Where more than one slot \
+                     is asked for they share it, and `per conversation` is what each gets"
+                } else {
+                    "how long a passage it can read. This hold keeps nothing between \
+                     requests, so the window is the size of one passage rather than a \
+                     conversation that grows, and no cache is reserved against it"
+                },
             },
             Setting {
                 name: "put it on",
@@ -821,6 +961,48 @@ impl Hosting {
                           is left alone reads the file mapped and holds it",
             },
             Setting {
+                name: "answers",
+                value: self.answers.as_str().to_owned(),
+                recommended: against.answers.as_str().to_owned(),
+                because: "what the endpoint serves. The same engine and the same file will \
+                          answer chat, embeddings or reranking, and a model published for one \
+                          of the last two is held by saying so",
+            },
+            Setting {
+                name: "pooling",
+                value: self.pooling.as_str().to_owned(),
+                recommended: against.pooling.as_str().to_owned(),
+                because: "how the vectors for a passage are reduced to one, where the hold \
+                          answers embeddings",
+            },
+            Setting {
+                name: "named to callers as",
+                value: self
+                    .alias
+                    .clone()
+                    .unwrap_or_else(|| "its file, without the suffix".to_owned()),
+                recommended: against
+                    .alias
+                    .clone()
+                    .unwrap_or_else(|| "its file, without the suffix".to_owned()),
+                because: "the name a client asks for. Without one a caller sees the path on \
+                          this disk, which is not a name anybody chose",
+            },
+            Setting {
+                name: "adapters",
+                value: if self.adapters.is_empty() {
+                    "none".to_owned()
+                } else {
+                    self.adapters.join(", ")
+                },
+                recommended: if against.adapters.is_empty() {
+                    "none".to_owned()
+                } else {
+                    against.adapters.join(", ")
+                },
+                because: "low-rank adapters applied over the weights, each a file beside them",
+            },
+            Setting {
                 name: "who sizes the hold",
                 value: "MCF".to_owned(),
                 recommended: "MCF".to_owned(),
@@ -924,7 +1106,7 @@ impl Hosting {
 
     #[must_use]
     pub fn to_value(&self) -> Value {
-        Value::map([
+        let hold = Value::map([
             (
                 "context",
                 Value::Integer(i64::try_from(self.context).unwrap_or(i64::MAX)),
@@ -937,6 +1119,8 @@ impl Hosting {
             ("flash_attention", Value::Bool(self.flash_attention)),
             ("cache", Value::text(self.cache.as_str())),
             ("slots", Value::Integer(i64::from(self.slots))),
+        ]);
+        let grouped = Value::map([
             ("prompt_cache", Value::Bool(self.reuse.prompt_cache)),
             (
                 "prompt_cache_mib",
@@ -989,7 +1173,23 @@ impl Hosting {
                     .clone()
                     .map_or(Value::Null, Value::text),
             ),
+        ]);
+        merged(hold, merged(grouped, self.tail_of_to_value()))
+    }
+
+    // The settings that are neither the hold's own nor part of a group, kept
+    // apart so the writer stays short enough to read in one go.
+    #[must_use]
+    fn tail_of_to_value(&self) -> Value {
+        Value::map([
             ("keep_resident", Value::Bool(self.keep_resident)),
+            ("answers", Value::text(self.answers.as_str())),
+            ("pooling", Value::text(self.pooling.as_str())),
+            ("alias", self.alias.clone().map_or(Value::Null, Value::text)),
+            (
+                "adapters",
+                Value::List(self.adapters.iter().cloned().map(Value::text).collect()),
+            ),
             ("loading", Value::text(self.loading.as_str())),
             ("lazily", Value::text(self.lazily.as_str())),
             ("ubatch", Value::Integer(i64::from(self.ubatch))),
@@ -1065,6 +1265,29 @@ impl Hosting {
                 .and_then(CacheType::parse)
                 .unwrap_or(recommended.cache),
             keep_resident: flag("keep_resident", recommended.keep_resident),
+            answers: value
+                .get("answers")
+                .and_then(Value::as_text)
+                .and_then(Answers::parse)
+                .unwrap_or(recommended.answers),
+            pooling: value
+                .get("pooling")
+                .and_then(Value::as_text)
+                .and_then(Pooling::parse)
+                .unwrap_or(recommended.pooling),
+            alias: match value.get("alias") {
+                None => recommended.alias.clone(),
+                Some(Value::Text(named)) if !named.is_empty() => Some(named.clone()),
+                Some(_) => None,
+            },
+            adapters: match value.get("adapters").and_then(Value::as_list) {
+                Some(listed) => listed
+                    .iter()
+                    .filter_map(Value::as_text)
+                    .map(str::to_owned)
+                    .collect(),
+                None => recommended.adapters.clone(),
+            },
             loading: value
                 .get("loading")
                 .and_then(Value::as_text)

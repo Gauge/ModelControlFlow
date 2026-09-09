@@ -584,6 +584,30 @@ fn one_setting(
         "--threads" => number("threads")?,
         "--batch" => number("batch")?,
         "--ubatch" => number("ubatch")?,
+        "--answers" => (
+            "answers".to_owned(),
+            Value::text(
+                mcf_serve::hosting::Answers::parse(said.ok_or("--answers with no value")?)
+                    .ok_or("--answers wants chat, embeddings or reranking")?
+                    .as_str(),
+            ),
+        ),
+        "--pooling" => (
+            "pooling".to_owned(),
+            Value::text(
+                mcf_serve::hosting::Pooling::parse(said.ok_or("--pooling with no value")?)
+                    .ok_or("--pooling wants none, mean, cls, last or rank")?
+                    .as_str(),
+            ),
+        ),
+        "--alias" => (
+            "alias".to_owned(),
+            Value::text(said.ok_or("--alias with no value")?),
+        ),
+        "--adapter" => (
+            "adapters".to_owned(),
+            Value::List(vec![Value::text(said.ok_or("--adapter with no value")?)]),
+        ),
         "--threads-batch" => number("threads_batch")?,
         "--loading" => (
             "loading".to_owned(),
@@ -1020,7 +1044,11 @@ const COMMANDS: &str = "\
     \x20      [--ubatch <n>]                 --ubatch is what the compute\n\
     \x20      [--threads-batch <n>]          buffers are built for, so it\n\
     \x20      [--loading <mode>]             is what to lower when a hold\n\
-    \x20      [--large-tensors auto|on|off]  is a little short of fitting\n\
+    \x20      [--large-tensors auto|on|off]  is a little short of fitting;\n\
+    \x20      [--answers <kind>]             --answers holds an embedding or\n\
+    \x20      [--pooling <kind>]             reranking model as itself, and\n\
+    \x20      [--alias <name>]               --alias is the name callers ask\n\
+    \x20      [--adapter <file>]             for instead of a path\n\
     \x20                                     narrower, so the same memory\n\
     \x20                                     holds a longer conversation\n\
     \x20 mcf hosted                          what is being held, and where\n\

@@ -1241,6 +1241,16 @@ fn configure_tab(
         ),
         ("Experts", Picker::Experts, settings.spread.experts.said()),
         (
+            "Answers",
+            Picker::Answers,
+            settings.answers.as_str().to_owned(),
+        ),
+        (
+            "Pooling",
+            Picker::Pooling,
+            settings.pooling.as_str().to_owned(),
+        ),
+        (
             "Loading",
             Picker::Loading,
             settings.loading.as_str().to_owned(),
@@ -1273,6 +1283,12 @@ fn configure_tab(
     }
 
     for (name, field, now, empty) in [
+        (
+            "Named to callers as",
+            crate::Field::Alias,
+            settings.alias.clone().unwrap_or_default(),
+            "its file, without the suffix",
+        ),
         (
             "Devices",
             crate::Field::Devices,
@@ -1711,6 +1727,10 @@ fn rope_label(at: usize) -> &'static str {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one picker an arm, which is the readable shape for a list of them"
+)]
 fn configure_menu(
     paint: &mut Painter,
     desk: &Desk,
@@ -1725,6 +1745,30 @@ fn configure_menu(
                 return None;
             }
             ui::options(paint, mouse, at, &labels, desk.placed_at()).map(Act::Place)
+        }
+        Picker::Answers => {
+            let labels: Vec<String> = mcf_serve::hosting::Answers::ALL
+                .iter()
+                .map(|held| format!("{} — {}", held.as_str(), held.said()))
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                mcf_serve::hosting::Answers::ALL
+                    .iter()
+                    .position(|held| *held == settings.answers)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::Answers)
+        }
+        Picker::Pooling => {
+            let labels: Vec<String> = mcf_serve::hosting::Pooling::ALL
+                .iter()
+                .map(|held| held.as_str().to_owned())
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                mcf_serve::hosting::Pooling::ALL
+                    .iter()
+                    .position(|held| *held == settings.pooling)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::Pooling)
         }
         Picker::Loading => {
             let labels: Vec<String> = mcf_serve::hosting::Loading::ALL
@@ -2499,6 +2543,8 @@ fn open_menu(
         | Picker::Cache
         | Picker::SplitMode
         | Picker::Loading
+        | Picker::Answers
+        | Picker::Pooling
         | Picker::LargeTensors
         | Picker::Experts
         | Picker::Quantization => None,

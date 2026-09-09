@@ -23,7 +23,11 @@ engine is present, chooses settings for this machine, and starts holding it on
 a port. It prints the settings it chose and what they cost in memory before it
 commits to them.
 
-Anything that speaks OpenAI's chat completions API can then reach it. `mcf
+Anything that speaks OpenAI's chat completions API can then reach it. A hold can
+answer embeddings or reranking instead — the same engine and the same file serve
+all three, and `--answers` says which. An embedding hold keeps nothing between
+requests, so its window is the size of one passage rather than a conversation
+that grows, and no cache is reserved against it. `mcf
 hosted` says what is being held and where; `mcf unhost` stops holding it and
 gives the memory back.
 
@@ -50,6 +54,10 @@ Every setting can be given explicitly:
 | `--cache <type>` | How wide each cached token is held; a narrower one fits a longer conversation in the same memory |
 | `--draft-head on\|off` | Use the file's own draft head, where it carries one |
 | `--rope-scaling <kind>`, `--rope-scale <n>` | Rope scaling, left to the engine unless asked for |
+| `--answers chat\|embeddings\|reranking` | What the endpoint serves |
+| `--pooling <kind>` | How a passage's vectors are reduced to one |
+| `--alias <name>` | The name callers ask for, rather than a path on this disk |
+| `--adapter <file>` | A low-rank adapter over the weights |
 | `--api-key <key>` | Require a key on the endpoint; MCF writes it to a file only you can read rather than putting it on the engine's command line |
 
 | `--cache-on cpu\|gpu` | Hold the conversation in system memory, leaving the card to the weights |

@@ -45,6 +45,10 @@ setting a model would run under and where each came from.
 | Large tensors | Whether a very large tensor is read as it is needed |
 | Batch read at once | How much of a batch the engine computes in one pass |
 | Threads for reading a prompt | Counted separately from the threads that generate |
+| Answers | Chat, embeddings or reranking |
+| Pooling | How a passage's vectors are reduced to one, for embeddings |
+| Named to callers as | The name a client asks for, rather than a path |
+| Adapters | Low-rank adapters applied over the weights |
 | Draft head | Use the file's own, where it carries one |
 | Rope scaling | Kind and factor, left to the engine unless set |
 | Port | Where the endpoint listens |
