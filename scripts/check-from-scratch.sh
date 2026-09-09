@@ -60,9 +60,9 @@ done
 rustup target list --installed 2>/dev/null | grep -qx "$TARGET" ||
     fail_cannot_check "the $TARGET target is not installed (rustup target add $TARGET)"
 
-printf 'writing the laboratory'"'"'s smallest runnable model\n'
+printf 'writing the smallest runnable model\n'
 fixture_source=$(mktemp -d "${TMPDIR:-/tmp}/mcf-fixture-XXXXXX")
-cargo run --release --locked --offline -q -p mcf-lab --example write-fixture -- \
+cargo run --release --locked --offline -q -p mcf-standin --example write-fixture -- \
     "$fixture_source/model.gguf" >/dev/null ||
     fail_cannot_check "the fixture model could not be written"
 
