@@ -54,7 +54,7 @@ The full statement of what MCF does and does not try to do is in
 | **`podman`** | Needed to build engines, at `/usr/bin/podman` or `/usr/local/bin/podman`. Docker is not used. Without it, MCF reports a classified refusal rather than failing obscurely. |
 | **SDL3** | Needed for the window (`mcf desk`), and only for that. It must be provisioned before MCF is built. The terminal interface needs nothing. |
 | **Network** | Not needed to build. Needed to fetch models and engines. |
-| **Disk** | The binary is around 4.3 MiB. Models are not — point `MCF_MODELS` at a drive with room. |
+| **Disk** | The binary is around 8 MiB. Models are not — point `MCF_MODELS` at a drive with room. |
 | **An accelerator** | Optional. MCF reports what is present and says plainly when nothing is. |
 
 ## 3 · Getting started
