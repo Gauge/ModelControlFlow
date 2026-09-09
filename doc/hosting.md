@@ -36,6 +36,7 @@ Every setting can be given explicitly:
 | `--gpu-layers <n>` | How many layers to offload |
 | `--threads <n>` | Thread count |
 | `--batch <n>` | Batch size |
+| `--slots <n>` | How many conversations at once; they share the window |
 | `--flash-attention` | Enable flash attention |
 | `--cache <type>` | How wide each cached token is held; a narrower one fits a longer conversation in the same memory |
 | `--draft-head on\|off` | Use the file's own draft head, where it carries one |

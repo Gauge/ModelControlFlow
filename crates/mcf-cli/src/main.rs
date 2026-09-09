@@ -559,6 +559,7 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
             ),
             "--threads" => number("threads")?,
             "--batch" => number("batch")?,
+            "--slots" => number("slots")?,
             "--port" => number("port")?,
             "--engine" => (
                 "engine".to_owned(),
@@ -919,7 +920,7 @@ const COMMANDS: &str = "\
     \x20      [--draft-head on|off]          carry and the engine leaves\n\
     \x20      [--rope-scaling <kind>]        in it unless it is asked for;\n\
     \x20      [--rope-scale <n>]             --on puts it where you say;\n\
-    \x20      [--cache <type>]               --cache holds each cached token\n\
+    \x20      [--cache <type>] [--slots <n>] --cache holds each cached token\n\
     \x20                                     narrower, so the same memory\n\
     \x20                                     holds a longer conversation\n\
     \x20 mcf hosted                          what is being held, and where\n\

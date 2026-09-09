@@ -1244,6 +1244,7 @@ fn configure_tab(
             crate::Field::Batch,
             settings.batch.to_string(),
         ),
+        ("Slots", crate::Field::Slots, settings.slots.to_string()),
         ("Port", crate::Field::Port, settings.port.to_string()),
     ] {
         label(

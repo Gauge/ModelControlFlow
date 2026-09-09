@@ -18,6 +18,7 @@ pub struct Hosting {
     pub batch: u32,
     pub flash_attention: bool,
     pub cache: CacheType,
+    pub slots: u32,
     pub keep_resident: bool,
     pub port: u16,
     pub api_key: Option<String>,
@@ -95,6 +96,7 @@ impl Hosting {
             batch: 2048,
             flash_attention: on_a_card && fits_on_the_card,
             cache: CacheType::default(),
+            slots: 1,
             keep_resident: false,
             port: DEFAULT_PORT,
             api_key: None,
@@ -103,6 +105,14 @@ impl Hosting {
             started: crate::declared::Started::default(),
             tensor_split: Vec::new(),
         }
+    }
+
+    /// What one conversation gets of the window the slots share.
+    #[must_use]
+    pub fn per_conversation(&self) -> u64 {
+        self.context
+            .checked_div(u64::from(self.slots.max(1)))
+            .unwrap_or(self.context)
     }
 
     #[must_use]
@@ -146,6 +156,8 @@ impl Hosting {
             out.push("--tensor-split".to_owned());
             out.push(self.shares());
         }
+        out.push("--parallel".to_owned());
+        out.push(self.slots.max(1).to_string());
         out.push("--cache-type-k".to_owned());
         out.push(self.cache.as_str().to_owned());
         out.push("--cache-type-v".to_owned());
@@ -193,7 +205,8 @@ impl Hosting {
                 because: "how long a conversation it can hold. Every token of it costs \
                           memory on the device the model runs on, so MCF holds it at the \
                           largest window whose cache stays within the model's own size; \
-                          --context sets it to anything that fits",
+                          --context sets it to anything that fits. Where more than one slot \
+                          is asked for they share it, and `per conversation` is what each gets",
             },
             Setting {
                 name: "put it on",
@@ -240,6 +253,22 @@ impl Hosting {
                 value: yes_no(self.flash_attention),
                 recommended: yes_no(against.flash_attention),
                 because: "an attention kernel that reads less memory for the same answer",
+            },
+            Setting {
+                name: "per conversation",
+                value: format!("{} tokens", grouped(self.per_conversation())),
+                recommended: format!("{} tokens", grouped(against.per_conversation())),
+                because: "the window one conversation actually gets: the whole of it on one \
+                          slot, and its share where more were asked for",
+            },
+            Setting {
+                name: "slots",
+                value: self.slots.to_string(),
+                recommended: against.slots.to_string(),
+                because: "how many conversations the engine holds at once. The window is the \
+                          pool they share, so two slots give each of them half of it; MCF asks \
+                          for one so the window it reports is the window one conversation gets, \
+                          rather than leaving the number to the engine",
             },
             Setting {
                 name: "cache width",
@@ -332,6 +361,7 @@ impl Hosting {
             ("batch", Value::Integer(i64::from(self.batch))),
             ("flash_attention", Value::Bool(self.flash_attention)),
             ("cache", Value::text(self.cache.as_str())),
+            ("slots", Value::Integer(i64::from(self.slots))),
             ("keep_resident", Value::Bool(self.keep_resident)),
             ("open", Value::Bool(self.open)),
             ("port", Value::Integer(i64::from(self.port))),
@@ -389,6 +419,10 @@ impl Hosting {
                 .unwrap_or(recommended.batch)
                 .max(1),
             flash_attention: flag("flash_attention", recommended.flash_attention),
+            slots: number("slots")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.slots)
+                .max(1),
             cache: value
                 .get("cache")
                 .and_then(Value::as_text)

@@ -27,6 +27,7 @@ setting a model would run under and where each came from.
 | Batch size | Tokens per batch |
 | Flash attention | On or off |
 | Cache width | How wide each cached token is held |
+| Slots | How many conversations the engine holds at once |
 | Draft head | Use the file's own, where it carries one |
 | Rope scaling | Kind and factor, left to the engine unless set |
 | Port | Where the endpoint listens |
@@ -36,6 +37,12 @@ setting a model would run under and where each came from.
 reserve in memory, which is the number worth checking before committing to a
 context length. Add `--cache <type>` and it reports the same window at that
 width instead.
+
+**The window is a pool the slots share.** MCF asks the engine for one slot, so
+the window it reports is the window one conversation gets. Ask for more and each
+gets a share of it; the `per conversation` row says what that share is. Left to
+the engine the number is its own choice, which is why MCF states it rather than
+omitting it.
 
 **Cache width is the setting that moves the others.** Every token of the window
 costs the cache width, so holding it narrower fits a longer conversation in the

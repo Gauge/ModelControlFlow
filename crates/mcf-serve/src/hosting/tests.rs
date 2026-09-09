@@ -75,7 +75,7 @@ fn a_setting_that_was_moved_says_so() {
     chosen.gpu_layers = 0;
     chosen.context = 4_096;
     let moved = chosen.differs_from(&recommended);
-    assert_eq!(moved.len(), 2, "{moved:?}");
+    assert_eq!(moved.len(), 3, "{moved:?}");
     assert!(
         moved.iter().any(|said| said.contains("put it on")),
         "{moved:?}"
@@ -83,6 +83,23 @@ fn a_setting_that_was_moved_says_so() {
     assert!(
         moved.iter().any(|said| said.contains("context window")),
         "{moved:?}"
+    );
+    assert!(
+        moved.iter().any(|said| said.contains("per conversation")),
+        "what one conversation gets follows the window it is a share of: {moved:?}"
+    );
+
+    let mut shared = recommended.clone();
+    shared.slots = 4;
+    assert_eq!(
+        shared.per_conversation().saturating_mul(4),
+        recommended.context
+    );
+    let moved = shared.differs_from(&recommended);
+    assert!(
+        moved.iter().any(|said| said.contains("slots"))
+            && moved.iter().any(|said| said.contains("per conversation")),
+        "asking for more slots divides the window and says so: {moved:?}"
     );
 }
 

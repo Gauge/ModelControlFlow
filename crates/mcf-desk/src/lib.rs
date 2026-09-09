@@ -1110,6 +1110,7 @@ pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
+    Slots,
     Context,
     Threads,
     Batch,
@@ -2495,6 +2496,7 @@ impl Desk {
             Field::Context => settings.context.to_string(),
             Field::Threads => settings.threads.to_string(),
             Field::Batch => settings.batch.to_string(),
+            Field::Slots => settings.slots.to_string(),
             Field::Port => settings.port.to_string(),
             Field::ApiKey => settings.api_key.clone().unwrap_or_default(),
             Field::RopeFactor => settings
@@ -2540,6 +2542,13 @@ impl Desk {
                     None
                 }
                 _ => not_a_number("the batch size"),
+            },
+            Field::Slots => match typed.parse::<u32>() {
+                Ok(slots) if slots >= 1 => {
+                    settings.slots = slots;
+                    None
+                }
+                _ => not_a_number("the slot count"),
             },
             Field::Port => match typed.parse::<u16>() {
                 Ok(port) if port >= 1024 => {
