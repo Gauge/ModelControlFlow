@@ -35,7 +35,18 @@ pub fn a_model_that_ends_its_turn() -> Vec<u8> {
     runnable(Some(0))
 }
 
+/// A model whose header says enough for a placement to be planned: the
+/// key/value head count the others leave out, which is what sizes a cache.
+#[must_use]
+pub fn a_model_that_can_be_hosted() -> Vec<u8> {
+    built(Some(0), true)
+}
+
 fn runnable(ending: Option<usize>) -> Vec<u8> {
+    built(ending, false)
+}
+
+fn built(ending: Option<usize>, key_value_heads: bool) -> Vec<u8> {
     let mut metadata = vec![
         text("general.architecture", "llama"),
         text("tokenizer.ggml.model", "llama"),
@@ -48,6 +59,9 @@ fn runnable(ending: Option<usize>) -> Vec<u8> {
         token_list("tokenizer.ggml.tokens", &TOKENS),
         score_list("tokenizer.ggml.scores", &scores()),
     ];
+    if key_value_heads {
+        metadata.push(integer("llama.attention.head_count_kv", 1));
+    }
     if let Some(ending) = ending {
         metadata.push(integer("tokenizer.ggml.eos_token_id", ending));
     }

@@ -723,3 +723,18 @@ fn a_spread_names_a_share_for_each_card() {
     assert_eq!(arguments[at + 1], "110626,96321");
     assert_eq!(hosting.gpu_layers, crate::hosting::ALL_LAYERS);
 }
+
+#[test]
+fn a_model_trained_shorter_than_the_smallest_step_still_fits() {
+    let trained = 16;
+    let context = largest_context(1_000_000, 114_688, 64_000_000_000, trained);
+    assert_eq!(
+        context, trained,
+        "a short window read as no window, which is a memory refusal for a model that fits"
+    );
+}
+
+#[test]
+fn a_model_trained_for_nothing_asks_for_nothing() {
+    assert_eq!(largest_context(1_000_000, 114_688, 64_000_000_000, 0), 0);
+}

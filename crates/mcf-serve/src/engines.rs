@@ -226,7 +226,13 @@ pub fn largest_context(weights: u64, cache_per_token: u64, free: u64, trained: u
     if cache_per_token == 0 {
         return trained;
     }
-    let mut context = SMALLEST_CONTEXT;
+    if trained == 0 {
+        return 0;
+    }
+    // A model trained for fewer tokens than the smallest window MCF steps
+    // through would never enter the loop, and a window of zero reads as "does
+    // not fit" — a memory refusal for a model that fits with room to spare.
+    let mut context = SMALLEST_CONTEXT.min(trained);
     let mut best = 0;
     while context <= trained {
         if context.saturating_mul(cache_per_token) <= budget {
