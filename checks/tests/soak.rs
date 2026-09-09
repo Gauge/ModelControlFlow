@@ -376,7 +376,7 @@ fn an_idle_daemon_with_a_model_resident_costs_nothing_for_a_minute() {
 
     let ran = std::process::Command::new(&binary)
         .args([
-            "run",
+            "ask",
             "lab/fixture:a-model-that-runs.gguf",
             "--prompt",
             "yes",

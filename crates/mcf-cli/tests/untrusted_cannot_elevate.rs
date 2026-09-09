@@ -116,7 +116,7 @@ fn a_hostile_model_reaches_no_privileged_program() {
 
     let listed = watched.run(&["list"]);
     let explained = watched.run(&["explain", "owner/model:model.gguf"]);
-    let ran = watched.run(&["run", "owner/model:model.gguf", "what is this"]);
+    let ran = watched.run(&["ask", "owner/model:model.gguf", "--prompt", "what is this"]);
     let removed = watched.run(&[
         "rm",
         "owner/model/model.gguf",
