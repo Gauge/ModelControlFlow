@@ -47,7 +47,6 @@ fn held_model() -> Result<String, Response> {
         }
     };
     held.get("hosting")
-        .and_then(|hosting| hosting.get("model"))
         .and_then(Value::as_text)
         .map(str::to_owned)
         .ok_or_else(|| Response {

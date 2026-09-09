@@ -1821,6 +1821,161 @@ fn a_daemon_killed_mid_generation_leaves_a_client_that_says_so_and_a_record_that
     assert!(next.wait().expect("the daemon exits").success());
 }
 
+/// A port nothing is on, asked of the kernel rather than picked and hoped for:
+/// a test that fails and leaves an engine behind must not take the next run
+/// down with it.
+fn anything_answering_on(port: u16) -> bool {
+    use std::io::Write as _;
+    let Ok(mut connection) = std::net::TcpStream::connect(("127.0.0.1", port)) else {
+        return false;
+    };
+    write!(
+        connection,
+        "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    )
+    .is_ok()
+}
+
+fn a_free_port() -> u16 {
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("the kernel has a port")
+        .local_addr()
+        .expect("it has an address")
+        .port()
+}
+
+struct Reaped(std::process::Child);
+
+impl Drop for Reaped {
+    fn drop(&mut self) {
+        let _killed = self.0.kill();
+        let _waited = self.0.wait();
+    }
+}
+
+/// A machine with two models it can hold, an engine that answers, and a
+/// daemon up and waiting.
+fn a_machine_ready_to_host(named: &str) -> (Machine, Reaped) {
+    let machine = Machine::new(named);
+    let models = machine
+        .0
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&models).expect("a store");
+    for name in ["first.gguf", "second.gguf"] {
+        std::fs::write(
+            models.join(name),
+            mcf_standin::fixture::a_model_that_can_be_hosted(),
+        )
+        .expect("a model file");
+    }
+    let _engine = fake_provisioned_engine(&machine, "answers");
+    let mut serving = Reaped(
+        machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("the daemon starts"),
+    );
+    {
+        use std::io::BufRead as _;
+        let stdout = serving.0.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        let _read = std::io::BufReader::new(stdout).read_line(&mut line);
+        assert!(line.contains("mcf is up on"), "{line}");
+    }
+    (machine, serving)
+}
+
+/// `mcf host` end to end: a model held on a port, asked a question through
+/// the endpoint, and let go — with the record showing what it did.
+#[test]
+fn a_model_is_held_asked_and_let_go() {
+    let (machine, mut serving) = a_machine_ready_to_host("held-asked-let-go");
+
+    let first_port = a_free_port().to_string();
+    let held = machine.run(&["host", "lab/fixture:first.gguf", "--port", &first_port]);
+    assert!(held.status.success(), "{}", error_text(&held));
+    let said = text(&held);
+    assert!(said.contains("first"), "what it holds is not named: {said}");
+
+    let hosted = text(&machine.run(&["hosted"]));
+    assert!(hosted.contains("first"), "the model is not held: {hosted}");
+    assert!(
+        hosted.contains(&first_port),
+        "the port is not named: {hosted}"
+    );
+
+    // Asked through the hold rather than by naming a file: the point of
+    // hosting is that a question goes to whatever is up.
+    let answered = machine.run(&["ask", "--prompt", "where"]);
+    assert!(answered.status.success(), "{}", error_text(&answered));
+    let answer = text(&answered);
+    assert!(
+        answer.starts_with(STAND_IN_ANSWER),
+        "the held engine did not answer: {answer}"
+    );
+    assert!(
+        answer.contains("served   by the daemon at"),
+        "the answer does not say who served it: {answer}"
+    );
+
+    // One model at a time: holding the second lets the first go.
+    let second_port = a_free_port().to_string();
+    let second = machine.run(&["host", "lab/fixture:second.gguf", "--port", &second_port]);
+    assert!(second.status.success(), "{}", error_text(&second));
+    let hosted = text(&machine.run(&["hosted"]));
+    assert!(
+        hosted.contains("second"),
+        "the second is not held: {hosted}"
+    );
+    assert!(
+        !hosted.contains("first.gguf"),
+        "both are held, and one runs at a time: {hosted}"
+    );
+    // The daemon's own view saying one thing is held proves nothing on its
+    // own: what proves the first was let go is that its engine is gone from
+    // the port it was on.
+    let first_port: u16 = first_port.parse().expect("a port");
+    let mut freed = false;
+    for _ in 0..40 {
+        if !anything_answering_on(first_port) {
+            freed = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    assert!(
+        freed,
+        "the first model's engine is still answering on {first_port}, so hosting the second \
+         did not let it go"
+    );
+
+    let freed = machine.run(&["unhost"]);
+    assert!(freed.status.success(), "{}", error_text(&freed));
+    let hosted = text(&machine.run(&["hosted"]));
+    assert!(
+        hosted.contains("nothing is being hosted"),
+        "unhosting left it held: {hosted}"
+    );
+
+    let _stopped = machine.run(&["stop", "--because", "the hosting test is done"]);
+    let _waited = serving.0.wait();
+
+    // The record says what was held and what the hold did.
+    let log = text(&machine.run(&["log", "--full"]));
+    assert!(
+        log.contains("first.gguf"),
+        "the hold is not recorded: {log}"
+    );
+    assert!(
+        log.contains("tokens_predicted_total") || log.contains("generated_tokens"),
+        "what the hold produced is not recorded: {log}"
+    );
+}
+
 fn fake_provisioned_engine(machine: &Machine, does: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let prefix = machine
@@ -1837,9 +1992,11 @@ fn fake_provisioned_engine(machine: &Machine, does: &str) -> PathBuf {
     .expect("provenance");
     let me = std::env::current_exe().expect("this test binary has a path");
     let script = format!(
-        "#!/bin/sh\nsock=\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --host ]; then sock=\"$2\"; fi; \
+        "#!/bin/sh\nsock=\nport=\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --host ]; then \
+         sock=\"$2\"; fi; if [ \"$1\" = --port ]; then port=\"$2\"; fi; \
          if [ \"$1\" = --list-devices ]; then echo 'Available devices:'; exit 0; fi; \
-         shift; done\nMCF_FAKE_LLAMA_SERVER_SOCKET=\"$sock\" MCF_FAKE_LLAMA_SERVER_DOES={does} \
+         shift; done\nMCF_FAKE_LLAMA_SERVER_SOCKET=\"$sock\" \
+         MCF_FAKE_LLAMA_SERVER_PORT=\"$port\" MCF_FAKE_LLAMA_SERVER_DOES={does} \
          exec \"{}\" --exact fake_llama_server --nocapture --test-threads 1\n",
         me.display()
     );
@@ -1850,8 +2007,7 @@ fn fake_provisioned_engine(machine: &Machine, does: &str) -> PathBuf {
     prefix
 }
 
-fn dies_part_way(connection: &mut std::os::unix::net::UnixStream) -> ! {
-    use std::io::Write as _;
+fn dies_part_way(connection: &mut dyn std::io::Write) -> ! {
     let mut body = String::new();
     for piece in ["Paris is ", "the capital"] {
         let event = format!("data: {{\"content\":\"{piece}\",\"tokens\":[1]}}\n\n");
@@ -1874,21 +2030,67 @@ fn dies_part_way(connection: &mut std::os::unix::net::UnixStream) -> ! {
 
 const STAND_IN_ANSWER: &str = "Paris is the capital.";
 
+/// What the stand-in says it has done, in the shape llama.cpp publishes.
+const ENGINE_METRICS: &str = "\
+# HELP llamacpp:prompt_tokens_total Number of prompt tokens processed.
+# TYPE llamacpp:prompt_tokens_total counter
+llamacpp:prompt_tokens_total 12
+# HELP llamacpp:tokens_predicted_total Number of generation tokens processed.
+# TYPE llamacpp:tokens_predicted_total counter
+llamacpp:tokens_predicted_total 34
+# HELP llamacpp:requests_processing Number of requests processing.
+# TYPE llamacpp:requests_processing gauge
+llamacpp:requests_processing 0
+";
+
+/// Where the stand-in listens. `mcf host` puts an engine on a port and asks
+/// it for `/health`; everything else reaches it over a socket in the runtime
+/// directory. One server answers both, because what it answers is the same.
+enum Listening {
+    Socket(std::os::unix::net::UnixListener),
+    Port(std::net::TcpListener),
+}
+
+impl Listening {
+    fn accept(&self) -> Option<Box<dyn ReadWrite>> {
+        match self {
+            Self::Socket(held) => held.accept().ok().map(|(held, _)| {
+                let held: Box<dyn ReadWrite> = Box::new(held);
+                held
+            }),
+            Self::Port(held) => held.accept().ok().map(|(held, _)| {
+                let held: Box<dyn ReadWrite> = Box::new(held);
+                held
+            }),
+        }
+    }
+}
+
+trait ReadWrite: std::io::Read + std::io::Write {}
+impl<T: std::io::Read + std::io::Write> ReadWrite for T {}
+
 #[test]
 fn fake_llama_server() {
     use std::io::{Read as _, Write as _};
-    let Ok(socket) = std::env::var("MCF_FAKE_LLAMA_SERVER_SOCKET") else {
-        return;
+    let socket = std::env::var("MCF_FAKE_LLAMA_SERVER_SOCKET").unwrap_or_default();
+    let port: Option<u16> = std::env::var("MCF_FAKE_LLAMA_SERVER_PORT")
+        .ok()
+        .and_then(|held| held.trim().parse().ok());
+    let listening = match (port, socket.is_empty()) {
+        (Some(port), _) => Listening::Port(
+            std::net::TcpListener::bind(("127.0.0.1", port)).expect("the port binds"),
+        ),
+        (None, false) => {
+            let _gone = std::fs::remove_file(&socket);
+            Listening::Socket(
+                std::os::unix::net::UnixListener::bind(&socket).expect("the socket binds"),
+            )
+        }
+        (None, true) => return,
     };
-    assert!(
-        !socket.is_empty(),
-        "the stand-in was started without a socket"
-    );
     let does = std::env::var("MCF_FAKE_LLAMA_SERVER_DOES").unwrap_or_default();
-    let _gone = std::fs::remove_file(&socket);
-    let listener = std::os::unix::net::UnixListener::bind(&socket).expect("the socket binds");
-    for connection in listener.incoming() {
-        let Ok(mut connection) = connection else {
+    loop {
+        let Some(mut connection) = listening.accept() else {
             continue;
         };
         let mut raw = Vec::new();
@@ -1915,63 +2117,76 @@ fn fake_llama_server() {
         };
         let path = head.split_whitespace().nth(1).unwrap_or("");
         if path == "/completion" && does == "dies_part_way" {
-            dies_part_way(&mut connection);
+            dies_part_way(&mut *connection);
         }
-        let answer = match path {
-            "/health" => "{\"status\":\"ok\"}".to_owned(),
-            "/tokenize" => {
-                let content = body
-                    .split_once("\"content\":\"")
-                    .and_then(|(_, rest)| rest.split_once('"'))
-                    .map_or("", |(content, _)| content);
-                let tokens: Vec<String> = content
-                    .bytes()
-                    .map(|byte| format!("{{\"id\":{byte},\"piece\":\"{}\"}}", char::from(byte)))
-                    .collect();
-                format!("{{\"tokens\":[{}]}}", tokens.join(","))
-            }
-            "/completion" if does == "dies" => {
-                eprintln!("segmentation fault, or thereabouts");
-                #[allow(
-                    clippy::exit,
-                    reason = "the stand-in engine dies here, which is what it is for"
-                )]
-                std::process::exit(139);
-            }
-            "/completion" => {
-                let sent = body.matches(',').count();
-                let said: Vec<String> = STAND_IN_ANSWER
-                    .bytes()
-                    .map(|byte| byte.to_string())
-                    .chain(std::iter::once("0".to_owned()))
-                    .collect();
-                format!(
-                    "{{\"content\":\"{STAND_IN_ANSWER}\",\"tokens_predicted\":{},\
-                     \"tokens_evaluated\":{sent},\"stop_type\":\"eos\",\"tokens\":[{}]}}",
-                    said.len(),
-                    said.join(",")
-                )
-            }
-            "/detokenize" => {
-                let content: String = body
-                    .split_once("\"tokens\":[")
-                    .and_then(|(_, rest)| rest.split_once(']'))
-                    .map_or("", |(tokens, _)| tokens)
-                    .split(',')
-                    .filter_map(|token| token.trim().parse::<u8>().ok())
-                    .filter(|byte| *byte != 0)
-                    .map(char::from)
-                    .collect();
-                format!("{{\"content\":\"{content}\"}}")
-            }
-            _ => "{\"error\":{\"message\":\"the stand-in does not answer that\"}}".to_owned(),
-        };
+        if path == "/metrics" {
+            let _written = write!(
+                connection,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n{ENGINE_METRICS}",
+                ENGINE_METRICS.len()
+            );
+            continue;
+        }
+        let answer = stand_in_answer(path, &body, &does);
         let _written = write!(
             connection,
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
              Connection: close\r\n\r\n{answer}",
             answer.len()
         );
+    }
+}
+
+fn stand_in_answer(path: &str, body: &str, does: &str) -> String {
+    match path {
+        "/health" => "{\"status\":\"ok\"}".to_owned(),
+        "/tokenize" => {
+            let content = body
+                .split_once("\"content\":\"")
+                .and_then(|(_, rest)| rest.split_once('"'))
+                .map_or("", |(content, _)| content);
+            let tokens: Vec<String> = content
+                .bytes()
+                .map(|byte| format!("{{\"id\":{byte},\"piece\":\"{}\"}}", char::from(byte)))
+                .collect();
+            format!("{{\"tokens\":[{}]}}", tokens.join(","))
+        }
+        "/completion" if does == "dies" => {
+            eprintln!("segmentation fault, or thereabouts");
+            #[allow(
+                clippy::exit,
+                reason = "the stand-in engine dies here, which is what it is for"
+            )]
+            std::process::exit(139);
+        }
+        "/completion" => {
+            let sent = body.matches(',').count();
+            let said: Vec<String> = STAND_IN_ANSWER
+                .bytes()
+                .map(|byte| byte.to_string())
+                .chain(std::iter::once("0".to_owned()))
+                .collect();
+            format!(
+                "{{\"content\":\"{STAND_IN_ANSWER}\",\"tokens_predicted\":{},\
+                     \"tokens_evaluated\":{sent},\"stop_type\":\"eos\",\"tokens\":[{}]}}",
+                said.len(),
+                said.join(",")
+            )
+        }
+        "/detokenize" => {
+            let content: String = body
+                .split_once("\"tokens\":[")
+                .and_then(|(_, rest)| rest.split_once(']'))
+                .map_or("", |(tokens, _)| tokens)
+                .split(',')
+                .filter_map(|token| token.trim().parse::<u8>().ok())
+                .filter(|byte| *byte != 0)
+                .map(char::from)
+                .collect();
+            format!("{{\"content\":\"{content}\"}}")
+        }
+        _ => "{\"error\":{\"message\":\"the stand-in does not answer that\"}}".to_owned(),
     }
 }
 
