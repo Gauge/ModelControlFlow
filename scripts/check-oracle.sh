@@ -61,7 +61,7 @@ readonly EXIT_CANNOT_CHECK=2
 # The reference, pinned. A comparison against "whatever was on master that day"
 # is a comparison nobody can repeat (§3.4, §3.12).
 readonly REFERENCE_REPOSITORY=https://github.com/ggml-org/llama.cpp.git
-readonly REFERENCE_COMMIT=925e1179947ea0c0ebfb0032df18af3a729822be
+readonly REFERENCE_COMMIT=304665fe7ac957df95e3ff8c8c4ffdf92dd6ffa3
 
 # The texts to agree about. Chosen for where tokenizers differ rather than for
 # what they mean: digit runs, which the four expressions cut four different ways

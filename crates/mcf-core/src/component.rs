@@ -27,7 +27,7 @@ pub const COMPONENTS: &[Component] = &[
         image: "docker.io/library/debian:bookworm",
         image_digest: "sha256:2f65600e1252c5649d2213e1d1ea4d74253d26514dc6530102a875e429245929",
         source: "https://github.com/ggml-org/llama.cpp.git",
-        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
+        commit: "304665fe7ac957df95e3ff8c8c4ffdf92dd6ffa3",
         packages: &["build-essential", "cmake", "git", "ca-certificates"],
         packaging: Packaging::Apt,
         configure: &[
@@ -55,7 +55,7 @@ pub const COMPONENTS: &[Component] = &[
         image: "docker.io/library/debian:trixie",
         image_digest: "sha256:6788062a1b42ac281f053ac876170b79a3eaed5d61383b8ed7eaca6c6965f3b1",
         source: "https://github.com/ggml-org/llama.cpp.git",
-        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
+        commit: "304665fe7ac957df95e3ff8c8c4ffdf92dd6ffa3",
         packages: &[
             "build-essential",
             "cmake",
@@ -92,7 +92,7 @@ pub const COMPONENTS: &[Component] = &[
         image: "docker.io/nvidia/cuda:12.9.1-devel-ubuntu24.04",
         image_digest: "sha256:020bc241a628776338f4d4053fed4c38f6f7f3d7eb5919fecb8de313bb8ba47c",
         source: "https://github.com/ggml-org/llama.cpp.git",
-        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
+        commit: "304665fe7ac957df95e3ff8c8c4ffdf92dd6ffa3",
         packages: &["build-essential", "cmake", "git"],
         packaging: Packaging::Apt,
         configure: &[

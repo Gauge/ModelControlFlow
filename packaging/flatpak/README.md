@@ -58,7 +58,7 @@ makes the commands read as they do in the documents.
   finds the same daemon (the control socket is under the directory Flatpak
   shares between instances of one application), so `mcf stop` from another
   terminal ends both.
-- **Engines.** The one built in is llama.cpp at `925e1179947e`, processor
+- **Engines.** The one built in is llama.cpp at `304665fe7ac9`, processor
   only, portable code rather than tuned for the machine — the same as
   `mcf provision llama.cpp` produces, so figures from the two are under one
   condition (§3.4), and its provenance says the Flatpak SDK built it. No

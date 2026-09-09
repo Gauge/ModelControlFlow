@@ -1584,16 +1584,31 @@ fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
     }
 }
 
+fn pinned_llama() -> &'static mcf_core::component::Component {
+    mcf_core::component::COMPONENTS
+        .iter()
+        .find(|component| component.name == "llama.cpp")
+        .expect("llama.cpp is a component MCF knows how to provision")
+}
+
+fn pinned_llama_prefix() -> String {
+    let commit = pinned_llama().commit;
+    format!("llama.cpp@{}", commit.get(..12).unwrap_or(commit))
+}
+
 fn seed_provisioned(machine: &Machine) -> PathBuf {
     let prefix = machine
         .0
         .join("mcf")
         .join("provisioned")
-        .join("llama.cpp@925e1179947e");
+        .join(pinned_llama_prefix());
     std::fs::create_dir_all(prefix.join("build").join("bin")).expect("a prefix");
     std::fs::write(
         prefix.join("mcf-provenance.json"),
-        "{\"component\":\"llama.cpp\",\"commit\":\"925e1179947ea0c0ebfb0032df18af3a729822be\"}\n",
+        format!(
+            "{{\"component\":\"llama.cpp\",\"commit\":\"{}\"}}\n",
+            pinned_llama().commit
+        ),
     )
     .expect("provenance written");
     prefix
@@ -1605,7 +1620,7 @@ fn provisioning_lists_what_it_knows_and_what_is_present() {
     let before = machine.run(&["provision", "--list"]);
     assert!(before.status.success(), "{}", error_text(&before));
     let listed = text(&before);
-    assert!(listed.contains("llama.cpp@925e1179947e"), "{listed}");
+    assert!(listed.contains(&pinned_llama_prefix()), "{listed}");
     assert!(listed.contains("not provisioned"), "{listed}");
     assert!(
         listed.contains("sha256:"),
