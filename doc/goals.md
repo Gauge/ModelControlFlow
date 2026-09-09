@@ -63,14 +63,11 @@ combination delivered. See [statistics.md](statistics.md).
 
 This document describes the target. The diagnostics are gone — the
 laboratory and bench crates, the commands that drove them, and the daemon
-operations behind them — and what remains is the hosting tool. Two things it
-describes are still to build:
+operations behind them — and what remains is the hosting tool. One thing it
+describes is still to build: the record holds what a measurement produced, not
+what a hold did, so the row [statistics.md](statistics.md) describes is not
+written yet.
 
-- Engines are built through `mcf provision`. A model does not yet pull and
-  build the engine it needs without being asked.
-- The record holds what a measurement produced, not what a hold did. The row
-  [statistics.md](statistics.md) describes is not written yet.
-
-Each of these is work to be done, not a description of behaviour that exists.
-Where a document in this directory describes something not yet built, it says
-so in the same way.
+That is work to be done, not a description of behaviour that exists. Where a
+document in this directory describes something not yet built, it says so in the
+same way.

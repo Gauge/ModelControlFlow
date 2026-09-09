@@ -80,10 +80,11 @@ mcf provision --remove <component> --because <why>
 
 Built engines live in `~/.local/share/mcf/provisioned`.
 
-**On demand — not yet.** The intent is that `mcf host` obtains the engine a
-model needs without being asked: if it is absent, MCF fetches the pinned source
-and builds it as part of holding the model, reporting progress as it goes. Today
-`mcf provision` must generally be run first. Making this automatic is open work.
+**On demand.** `mcf host` builds the engine a model needs without being asked.
+Where no built engine runs the model, MCF says which component it is building,
+builds it, and then holds the model — one command rather than two. Running
+`mcf provision` yourself still works, and is how you build a component before
+you need it.
 
 ## Asking it something
 

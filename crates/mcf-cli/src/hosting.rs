@@ -72,10 +72,46 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
                 .map(|(name, value)| (name.as_str(), value.clone())),
         )
     };
+    match hold(model, &settings) {
+        Ok(body) => Response {
+            text: hosting(&body),
+            served: true,
+        },
+        // A model MCF cannot hold for want of an engine is a build away, and
+        // making the person run it themselves is the errand this tool exists
+        // to remove. Built once, the hold is asked for again.
+        Err(refusal) => match needs_component(&refusal.body) {
+            Some(component) => {
+                println!("  no engine here runs this model — building {component} first");
+                let _flushed = std::io::stdout().flush();
+                let built = crate::provision::run(Some(&component), None);
+                if !built.served {
+                    return built;
+                }
+                hold(model, &settings).map_or_else(
+                    |again| Response {
+                        text: again.text,
+                        served: false,
+                    },
+                    |body| Response {
+                        text: hosting(&body),
+                        served: true,
+                    },
+                )
+            }
+            None => Response {
+                text: refusal.text,
+                served: false,
+            },
+        },
+    }
+}
+
+fn hold(model: &str, settings: &Value) -> Result<Value, Refusal> {
     ask_as_it_comes(
         &Request::Host {
             model: model.to_owned(),
-            settings,
+            settings: settings.clone(),
         },
         &mut |body| {
             if let Some(said) = loading_said(body) {
@@ -84,16 +120,14 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
             }
         },
     )
-    .map_or_else(
-        |text| Response {
-            text,
-            served: false,
-        },
-        |body| Response {
-            text: hosting(&body),
-            served: true,
-        },
-    )
+}
+
+/// The component the daemon named when it had no engine for this model.
+fn needs_component(body: &Value) -> Option<String> {
+    body.get("context")
+        .and_then(|context| context.get("needs_component"))
+        .and_then(Value::as_text)
+        .map(str::to_owned)
 }
 
 pub(crate) fn loading_said(body: &Value) -> Option<String> {
@@ -212,36 +246,52 @@ pub(crate) fn freed_said(body: &Value) -> String {
     }
 }
 
+pub(crate) struct Refusal {
+    pub(crate) text: String,
+    pub(crate) body: Value,
+}
+
 pub(crate) fn ask_as_it_comes(
     request: &Request,
     heard: &mut dyn FnMut(&Value),
-) -> Result<Value, String> {
+) -> Result<Value, Refusal> {
+    let bare = |text: String| Refusal {
+        text,
+        body: Value::Null,
+    };
     let Some(socket) = crate::serve::socket_path() else {
-        return Err("mcf: MCF has nowhere to put a control socket on this machine".to_owned());
+        return Err(bare(
+            "mcf: MCF has nowhere to put a control socket on this machine".to_owned(),
+        ));
     };
     if let Some(why) = crate::serve::ensure_running(&socket) {
-        return Err(format!("mcf: MCF could not start\n  {why}"));
+        return Err(bare(format!("mcf: MCF could not start\n  {why}")));
     }
     let mut connection = UnixStream::connect(&socket)
-        .map_err(|error| format!("mcf: MCF is not answering\n  {error}"))?;
+        .map_err(|error| bare(format!("mcf: MCF is not answering\n  {error}")))?;
     writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
-        .map_err(|error| format!("mcf: the request could not be sent\n  {error}"))?;
+        .map_err(|error| bare(format!("mcf: the request could not be sent\n  {error}")))?;
     let reader = BufReader::new(&connection);
     for read in reader.lines() {
-        let read = read.map_err(|error| format!("mcf: MCF stopped answering\n  {error}"))?;
+        let read = read.map_err(|error| bare(format!("mcf: MCF stopped answering\n  {error}")))?;
         let Ok(answer) = Answer::read(read.trim_end()) else {
             continue;
         };
         if !answer.served {
-            return Err(format!("mcf: refused\n  {}", refused_because(&answer.body)));
+            return Err(Refusal {
+                text: format!("mcf: refused\n  {}", refused_because(&answer.body)),
+                body: answer.body,
+            });
         }
         if matches!(answer.body.get("done"), Some(Value::Bool(true))) {
             return Ok(answer.body);
         }
         heard(&answer.body);
     }
-    Err("mcf: MCF stopped answering before it said it had finished".to_owned())
+    Err(bare(
+        "mcf: MCF stopped answering before it said it had finished".to_owned(),
+    ))
 }
 
 pub(crate) fn held() -> Response {
