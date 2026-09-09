@@ -23,6 +23,7 @@ fn four_models() -> Desk {
             on_a_card: true,
             cache_per_token: Some(114_688),
             refused: None,
+            does_not_fit: None,
         },
         Model {
             name: "SmolLM2-135M-Instruct".to_owned(),

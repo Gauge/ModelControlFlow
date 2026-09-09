@@ -1611,18 +1611,25 @@ fn configure_foot(
         x += drawn.w + 12.0;
     }
     let waits = desk.needs_engine.is_some();
+    let too_big = held.does_not_fit.is_some();
     let (host, _) = ui::fitted(
         paint,
         mouse,
         (x, y),
-        if waits {
+        if too_big {
+            "Start server (it does not fit)"
+        } else if waits {
             "Start server (build the engine first)"
         } else {
             "Start server"
         },
-        if waits { Kind::Quiet } else { Kind::Primary },
+        if waits || too_big {
+            Kind::Quiet
+        } else {
+            Kind::Primary
+        },
     );
-    if host && !waits && !desk.doing.busy() {
+    if host && !waits && !too_big && !desk.doing.busy() {
         act = Some(Act::HostIt);
     }
     (act, y + 40.0)

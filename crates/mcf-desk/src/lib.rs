@@ -596,17 +596,21 @@ pub struct Model {
     pub file: String,
     pub on_a_card: bool,
     pub refused: Option<String>,
+    pub does_not_fit: Option<String>,
 }
 
 impl Model {
     #[must_use]
     pub fn will_run(&self) -> bool {
-        self.refused.is_none() && self.engine.is_some()
+        self.refused.is_none() && self.does_not_fit.is_none() && self.engine.is_some()
     }
 
     #[must_use]
     pub fn where_it_runs(&self) -> String {
         if let Some(why) = &self.refused {
+            return why.clone();
+        }
+        if let Some(why) = &self.does_not_fit {
             return why.clone();
         }
         if self.on_a_card {
@@ -621,6 +625,9 @@ impl Model {
     #[must_use]
     pub fn in_a_sentence(&self) -> String {
         if let Some(why) = &self.refused {
+            return why.clone();
+        }
+        if let Some(why) = &self.does_not_fit {
             return why.clone();
         }
         let place = if self.on_a_card {
@@ -719,6 +726,7 @@ fn model_from(held: &Value) -> Model {
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
+        does_not_fit: resolved_text("why_not"),
     }
 }
 

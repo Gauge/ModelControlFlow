@@ -765,6 +765,18 @@ fn said_of(verdict: &mcf_hub::fitment::Verdict) -> String {
     }
 }
 
+struct DoesNotFit {
+    why: String,
+    on_a_card: bool,
+}
+
+struct Recommended {
+    settings: crate::hosting::Hosting,
+    path: PathBuf,
+    largest: u64,
+    does_not_fit: Option<DoesNotFit>,
+}
+
 #[derive(Debug)]
 pub struct Daemon {
     timings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
@@ -1033,6 +1045,11 @@ impl Daemon {
                         ])
                     },
                     |choice| {
+                        let fits = choice.fits();
+                        let why_not = choice
+                            .does_not_fit
+                            .as_ref()
+                            .map_or(Value::Null, |why| Value::text(why.says()));
                         Value::map([
                             ("known", Value::Bool(true)),
                             ("engine", Value::text(choice.engine)),
@@ -1046,6 +1063,8 @@ impl Daemon {
                             ),
                             ("context", shape(Some(choice.context))),
                             ("device_free_bytes", shape(choice.device.free)),
+                            ("fits", Value::Bool(fits)),
+                            ("why_not", why_not),
                         ])
                     },
                 ),
@@ -1782,11 +1801,14 @@ impl Daemon {
         &self,
         named: &str,
     ) -> core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String> {
-        let (recommended, _, _) = self.recommend(named).map_err(|failure| {
-            failure
-                .context_value("wanted")
-                .map_or_else(|| failure.detail().to_owned(), str::to_owned)
-        })?;
+        let recommended = self
+            .recommend(named)
+            .map(|held| held.settings)
+            .map_err(|failure| {
+                failure
+                    .context_value("wanted")
+                    .map_or_else(|| failure.detail().to_owned(), str::to_owned)
+            })?;
         let (engine, _) = self
             .engines_held()
             .into_iter()
@@ -2090,11 +2112,14 @@ impl Daemon {
         named: &str,
         on: Option<crate::control::On>,
     ) -> core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64, String), String> {
-        let (recommended, _, largest) = self.recommend(named).map_err(|failure| {
-            failure
-                .context_value("wanted")
-                .map_or_else(|| failure.detail().to_owned(), str::to_owned)
-        })?;
+        let (recommended, largest) = self
+            .recommend(named)
+            .map(|held| (held.settings, held.largest))
+            .map_err(|failure| {
+                failure
+                    .context_value("wanted")
+                    .map_or_else(|| failure.detail().to_owned(), str::to_owned)
+            })?;
         let held = self.engines_held();
         let adapter = |engine: &crate::engines::Engine| crate::adapters::ProvisionedLlama {
             prefix: engine.prefix.clone(),
@@ -2217,8 +2242,18 @@ impl Daemon {
 
     fn settings_for(&self, named: &str) -> Answer {
         match self.recommend(named) {
-            Ok((recommended, path, _)) => Answer::served(Value::map([
+            Ok(Recommended {
+                settings: recommended,
+                path,
+                does_not_fit: why_not,
+                ..
+            }) => Answer::served(Value::map([
                 ("model", Value::text(named.to_owned())),
+                ("fits", Value::Bool(why_not.is_none())),
+                (
+                    "why_not",
+                    why_not.map_or(Value::Null, |held| Value::text(held.why)),
+                ),
                 ("recommended", recommended.to_value()),
                 ("settings", recommended.to_value()),
                 ("placements", self.placements(named, &recommended)),
@@ -2290,7 +2325,7 @@ impl Daemon {
         Some(per_token.saturating_mul(context))
     }
 
-    fn recommend(&self, named: &str) -> Result<(crate::hosting::Hosting, PathBuf, u64)> {
+    fn recommend(&self, named: &str) -> Result<Recommended> {
         let path = crate::generation::resolved(&self.places.models, named);
         let bytes = mcf_hub::store::bytes_of_the_whole(&path).map_err(|failure| {
             crate::control::refused("a model this machine is not holding", &failure.to_string())
@@ -2323,6 +2358,10 @@ impl Daemon {
             },
         )?;
         let on_a_card = matches!(choice.device.kind, crate::engines::Kind::Gpu);
+        let why_not = choice.does_not_fit.as_ref().map(|why| DoesNotFit {
+            why: why.says(),
+            on_a_card,
+        });
         let context = crate::engines::held_at(choice.context, bytes, cache.unwrap_or(0));
         let wanted = bytes.saturating_add(cache.unwrap_or(0).saturating_mul(context));
         let together = if choice.is_spread() {
@@ -2335,10 +2374,10 @@ impl Daemon {
         } else {
             choice.device.free
         };
-        let fits = together.is_none_or(|free| wanted <= free);
+        let fits = why_not.is_none() && together.is_none_or(|free| wanted <= free);
         let projector = crate::projector::beside(&path);
-        Ok((
-            crate::hosting::Hosting::recommended(
+        Ok(Recommended {
+            settings: crate::hosting::Hosting::recommended(
                 &choice.engine,
                 &choice.device.name,
                 on_a_card,
@@ -2349,8 +2388,9 @@ impl Daemon {
             )
             .spread_over(choice.split()),
             path,
-            choice.context,
-        ))
+            largest: choice.context,
+            does_not_fit: why_not,
+        })
     }
 
     fn engine_called(
@@ -2387,10 +2427,17 @@ impl Daemon {
         reason = "one hold, each refusal named before it starts"
     )]
     fn host(&self, named: &str, asked: &Value, report: &mut dyn FnMut(Value)) -> Answer {
-        let (recommended, path, _) = match self.recommend(named) {
-            Ok(held) => held,
+        let (recommended, path, why_not) = match self.recommend(named) {
+            Ok(held) => (held.settings, held.path, held.does_not_fit),
             Err(failure) => return Answer::refused(&failure),
         };
+        if let Some(held) = why_not {
+            return Answer::refused(&crate::control::does_not_fit(
+                &held.why,
+                named,
+                held.on_a_card,
+            ));
+        }
         let settings = crate::hosting::Hosting::from_value(asked, &recommended);
         let declared = crate::declared::Declared::of(&path);
         if let Err(failure) = settings.started.against(&declared) {

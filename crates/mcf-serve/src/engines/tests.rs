@@ -136,13 +136,51 @@ fn a_model_that_does_not_fit_says_by_how_much() {
             free: Some(2_000_000_000),
         }],
     )];
-    let refusal = resolve(&engines, 20_000_000_000, Some(114_688), 40_960).expect_err("too big");
+    let choice = resolve(&engines, 20_000_000_000, Some(114_688), 40_960)
+        .expect("a model too big still resolves to something the settings page can show");
+    assert!(
+        !choice.fits(),
+        "a model needing 30 GB on a 2 GB device is not a fit"
+    );
+    assert_eq!(
+        choice.device.name, "CPU",
+        "the best effort is the roomiest device there is"
+    );
+    let refusal = choice.does_not_fit.expect("it says why");
     let said = refusal.says();
     assert!(said.contains("30.0"), "{said}");
     assert!(said.contains("2.00 GB"), "{said}");
     assert!(
         said.contains(&format!("{}%", headroom_percent())),
         "the refusal names two numbers that do not entail it without the fraction: {said}"
+    );
+}
+
+#[test]
+fn a_model_that_does_not_fit_still_offers_every_setting() {
+    let engines = vec![(
+        Engine {
+            name: "an engine".to_owned(),
+            prefix: PathBuf::from("/nowhere"),
+            commit: "abc".to_owned(),
+        },
+        vec![Device {
+            kind: Kind::Gpu,
+            name: "a card".to_owned(),
+            free: Some(2_000_000_000),
+        }],
+    )];
+    let choice = resolve(&engines, 20_000_000_000, Some(114_688), 40_960)
+        .expect("the page still has an engine, a device and a context to show");
+    assert_eq!(choice.engine, "an engine");
+    assert_eq!(choice.device.kind, Kind::Gpu);
+    assert!(
+        choice.context > 0,
+        "a context of zero would leave the page with nothing to put in the field"
+    );
+    assert!(
+        !choice.fits(),
+        "offering the settings must not amount to saying it runs"
     );
 }
 

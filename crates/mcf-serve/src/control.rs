@@ -606,6 +606,22 @@ impl Answer {
     }
 }
 
+pub(crate) fn does_not_fit(why: &str, model: &str, on_a_card: bool) -> Failure {
+    let kept: String = model.chars().take(200).collect();
+    Failure::new(
+        if on_a_card {
+            Category::AccelMemoryExhausted
+        } else {
+            Category::ResourceMemoryExhausted
+        },
+        Attribution::Machine,
+        Disposition::Refused,
+        WHERE,
+        why,
+    )
+    .with_context("model", kept)
+}
+
 pub(crate) fn refused(wanted: &str, found: &str) -> Failure {
     let kept: String = found.chars().take(200).collect();
     Failure::new(

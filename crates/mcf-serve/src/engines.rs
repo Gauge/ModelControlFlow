@@ -251,6 +251,7 @@ pub struct Choice {
     pub device: Device,
     pub context: u64,
     pub across: Vec<Device>,
+    pub does_not_fit: Option<Refused>,
 }
 
 impl Choice {
@@ -261,7 +262,24 @@ impl Choice {
             device,
             context,
             across: Vec::new(),
+            does_not_fit: None,
         }
+    }
+
+    #[must_use]
+    pub fn that_does_not_fit(engine: String, device: Device, context: u64, why: Refused) -> Self {
+        Self {
+            engine,
+            device,
+            context,
+            across: Vec::new(),
+            does_not_fit: Some(why),
+        }
+    }
+
+    #[must_use]
+    pub const fn fits(&self) -> bool {
+        self.does_not_fit.is_none()
     }
 
     #[must_use]
@@ -647,12 +665,27 @@ pub fn resolve(
     if let Some(spread) = spread_across(engines, weights, cache_per_token, trained) {
         return Ok(spread);
     }
-    Err(Refused::DoesNotFit {
+    let why = Refused::DoesNotFit {
         largest_device,
         needs: weights
             .saturating_add(overhead_for(weights))
             .saturating_add(SMALLEST_CONTEXT.saturating_mul(cache_per_token)),
-    })
+    };
+    let roomiest = engines.iter().find_map(|(engine, devices)| {
+        devices
+            .iter()
+            .max_by_key(|device| device.free.unwrap_or(0))
+            .map(|device| (engine.name.clone(), device.clone()))
+    });
+    let Some((engine, device)) = roomiest else {
+        return Err(why);
+    };
+    Ok(Choice::that_does_not_fit(
+        engine,
+        device,
+        SMALLEST_CONTEXT.min(trained.max(1)),
+        why,
+    ))
 }
 
 fn spread_across(
@@ -688,6 +721,7 @@ fn spread_across(
                 device: biggest,
                 context,
                 across: cards,
+                does_not_fit: None,
             });
         }
     }
