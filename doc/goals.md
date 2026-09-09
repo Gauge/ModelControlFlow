@@ -63,13 +63,11 @@ combination delivered. See [statistics.md](statistics.md).
 
 This document describes the target. The diagnostics are gone — the
 laboratory and bench crates, the commands that drove them, and the daemon
-operations behind them — and what remains is the hosting tool. Three things it
+operations behind them — and what remains is the hosting tool. Two things it
 describes are still to build:
 
 - Engines are built through `mcf provision`. A model does not yet pull and
   build the engine it needs without being asked.
-- Power is measured and recorded. The electricity price setting, and the
-  running cost derived from it, do not exist.
 - The record holds what a measurement produced, not what a hold did. The row
   [statistics.md](statistics.md) describes is not written yet.
 

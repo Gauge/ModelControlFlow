@@ -90,5 +90,26 @@ impl fmt::Display for Energy {
     }
 }
 
+impl Energy {
+    /// What this energy cost at that price, where the energy was measured.
+    ///
+    /// A modelled or unknown energy has no cost: multiplying an estimate by a
+    /// real price produces a figure that looks like money and is not one.
+    #[must_use]
+    #[expect(
+        clippy::integer_division,
+        reason = "millionths of a currency unit, floored; the remainder is less than                   a millionth and there is no smaller unit to carry it into"
+    )]
+    pub const fn cost_at(&self, price: crate::price::PricePerKwh) -> Option<crate::price::Cost> {
+        match self {
+            Self::Measured { millijoules, .. } => Some(crate::price::Cost {
+                millionths: millijoules.saturating_mul(price.millionths)
+                    / crate::price::MILLIJOULES_IN_A_KWH,
+            }),
+            Self::Modelled { .. } | Self::Unknown { .. } => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

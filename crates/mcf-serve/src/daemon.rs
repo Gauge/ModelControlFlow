@@ -332,6 +332,20 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
             "card_energy_over_seconds",
             thousandths_of(spent.covered_ns, 1_000_000),
         ));
+        if let Some(price) = crate::power::price() {
+            let measured = mcf_core::energy::Energy::Measured {
+                millijoules: spent.microjoules.saturating_div(1_000),
+                rate: mcf_core::energy::PerSecond(2),
+                counter: "the device's own energy counter".to_owned(),
+            };
+            // A cost too large to carry is not reported as the largest number
+            // that fits: that is a figure with no measurement behind it (B39).
+            if let Some(cost) = measured.cost_at(price)
+                && let Ok(millionths) = i64::try_from(cost.millionths)
+            {
+                fields.push(("card_energy_cost_millionths", Value::Integer(millionths)));
+            }
+        }
     }
     let (Some(generated), Some(prompted)) = (generated, prompted) else {
         return fields;

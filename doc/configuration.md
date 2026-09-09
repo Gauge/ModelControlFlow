@@ -37,11 +37,19 @@ context length.
 
 ## Machine settings
 
-| Electricity price | Cost per kilowatt-hour, used to turn watts into money |
+| Electricity price | `MCF_PRICE_PER_KWH` — what a kilowatt-hour costs here |
 
-**Not implemented.** This is the setting [monitoring.md](monitoring.md)
-describes as missing. Power is measured today; the price that converts it to a
-running cost is not yet stored anywhere or editable.
+Set it the way a person writes a price: `0.28`, `.28`, `28`, up to six decimal
+places. MCF holds no currency — the number is yours, and it comes back out
+beside the energy it priced.
+
+```
+export MCF_PRICE_PER_KWH=0.28
+```
+
+Unset, MCF reports the energy and no cost. A price it invented would be a
+number that looks like money and is not one. An energy MCF modelled or could
+not read has no cost either, for the same reason.
 
 ## Environment
 

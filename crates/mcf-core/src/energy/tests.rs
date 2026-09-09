@@ -1,4 +1,5 @@
 use super::{Energy, PerSecond};
+use crate::price::{Cost, PricePerKwh};
 
 fn measured(millijoules: u64, rate: u32, counter: &str) -> Energy {
     Energy::Measured {
@@ -97,4 +98,35 @@ fn a_modelled_figure_compares_with_nothing() {
         !modelled.comparable_with(&modelled.clone()),
         "two models are two authors' opinions rather than two readings"
     );
+}
+
+#[test]
+fn a_measured_energy_costs_what_the_price_says() {
+    // One kilowatt-hour is 3.6e9 millijoules; at 0.28 it costs 0.28.
+    let energy = Energy::Measured {
+        millijoules: 3_600_000_000,
+        rate: PerSecond(1),
+        counter: "a counter".to_owned(),
+    };
+    let price = PricePerKwh::parse("0.28").expect("a price");
+    assert_eq!(
+        energy.cost_at(price),
+        Some(Cost {
+            millionths: 280_000
+        })
+    );
+}
+
+#[test]
+fn an_energy_nobody_measured_has_no_cost() {
+    let price = PricePerKwh::parse("0.28").expect("a price");
+    let modelled = Energy::Modelled {
+        millijoules: 3_600_000_000,
+        by: "an estimate".to_owned(),
+    };
+    let unknown = Energy::Unknown {
+        why: "no counter here".to_owned(),
+    };
+    assert_eq!(modelled.cost_at(price), None, "an estimate was priced");
+    assert_eq!(unknown.cost_at(price), None, "an unknown was priced");
 }

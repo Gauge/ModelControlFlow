@@ -18,6 +18,7 @@ pub mod instrumentation;
 pub mod integrity;
 pub mod measurement;
 pub mod origin;
+pub mod price;
 pub mod probe;
 pub mod provenance;
 pub mod self_cost;

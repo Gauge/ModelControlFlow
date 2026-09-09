@@ -2962,6 +2962,12 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
                 .card_energy_over_seconds
                 .map(|seconds| clock(seconds.max(0.0) as u64)),
         ),
+        (
+            "Cost",
+            in_use
+                .card_energy_cost_millionths
+                .map(|millionths| mcf_core::price::Cost { millionths }.to_string()),
+        ),
         ("Active", count(in_use.processing)),
         ("Queued", count(in_use.queued)),
         ("RAM", bytes(in_use.resident)),

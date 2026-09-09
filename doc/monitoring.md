@@ -54,9 +54,11 @@ from the additional draw under load, and reports the second. A machine that
 burns 40 W doing nothing and 140 W while generating is drawing 100 W for the
 model.
 
-**Cost is not implemented yet.** The electricity price setting described in
-[configuration.md](configuration.md) does not exist, and neither does the
-running cost derived from it. Power and energy are measured and recorded today.
+Cost appears once `MCF_PRICE_PER_KWH` is set — see
+[configuration.md](configuration.md). Without it MCF reports the energy alone.
+An energy it modelled rather than measured is never priced: multiplying an
+estimate by a real price produces a figure that looks like money and is not
+one.
 
 ## Time
 

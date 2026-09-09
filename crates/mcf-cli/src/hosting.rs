@@ -443,6 +443,17 @@ fn in_use_lines(body: &Value) -> Vec<String> {
             "                 {joules} J over {over} s of holding it — not this model's alone"
         ));
     }
+    if let Some(millionths) = body
+        .get("card_energy_cost_millionths")
+        .and_then(Value::as_integer)
+        .and_then(|held| u64::try_from(held).ok())
+    {
+        let cost = mcf_core::price::Cost { millionths };
+        lines.push(format!(
+            "                 {cost} of electricity at the price {} says",
+            mcf_serve::power::PRICE_VARIABLE
+        ));
+    }
     if let (Some(processing), Some(queued)) =
         (figure("requests_processing"), figure("requests_queued"))
     {
