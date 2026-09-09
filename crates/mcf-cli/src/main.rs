@@ -583,6 +583,24 @@ fn one_setting(
         ),
         "--threads" => number("threads")?,
         "--batch" => number("batch")?,
+        "--ubatch" => number("ubatch")?,
+        "--threads-batch" => number("threads_batch")?,
+        "--loading" => (
+            "loading".to_owned(),
+            Value::text(
+                mcf_serve::hosting::Loading::parse(said.ok_or("--loading with no value")?)
+                    .ok_or("--loading wants auto, none, mmap, mlock, mmap+mlock or dio")?
+                    .as_str(),
+            ),
+        ),
+        "--large-tensors" => (
+            "lazily".to_owned(),
+            Value::text(
+                mcf_serve::hosting::Lazily::parse(said.ok_or("--large-tensors with no value")?)
+                    .ok_or("--large-tensors wants auto, on or off")?
+                    .as_str(),
+            ),
+        ),
         "--slots" => number("slots")?,
         "--cache-reuse" => number("cache_reuse")?,
         "--prompt-cache-memory" => number("prompt_cache_mib")?,
@@ -999,6 +1017,10 @@ const COMMANDS: &str = "\
     \x20      [--main-device <n>]            otherwise\n\
     \x20      [--devices <list>]\n\
     \x20      [--override-tensor <pattern>]\n\
+    \x20      [--ubatch <n>]                 --ubatch is what the compute\n\
+    \x20      [--threads-batch <n>]          buffers are built for, so it\n\
+    \x20      [--loading <mode>]             is what to lower when a hold\n\
+    \x20      [--large-tensors auto|on|off]  is a little short of fitting\n\
     \x20                                     narrower, so the same memory\n\
     \x20                                     holds a longer conversation\n\
     \x20 mcf hosted                          what is being held, and where\n\

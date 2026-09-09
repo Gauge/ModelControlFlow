@@ -36,6 +36,10 @@ Every setting can be given explicitly:
 | `--gpu-layers <n>` | How many layers to offload |
 | `--threads <n>` | Thread count |
 | `--batch <n>` | Batch size |
+| `--ubatch <n>` | How much of a batch is computed at once; what the compute buffers are built for |
+| `--threads-batch <n>` | Threads for reading a prompt, counted separately from generating |
+| `--loading <mode>` | How the weights are read: mapped, held, both, direct, or plainly |
+| `--large-tensors auto\|on\|off` | Read a very large tensor's rows as they are needed |
 | `--slots <n>` | How many conversations at once; they share the window |
 | `--cache-reuse <n>` | Smallest run of tokens recovered rather than read again |
 | `--prompt-cache on\|off`, `--prompt-cache-memory <mib>` | Whether what was read is kept, and how much memory for it |

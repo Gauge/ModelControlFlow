@@ -8,6 +8,94 @@ pub const DEFAULT_PORT: u16 = 17817;
 
 pub const ALL_LAYERS: u32 = 999;
 
+/// How the weights are read from disk and whether they stay in memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Loading {
+    #[default]
+    Auto,
+    None,
+    Mapped,
+    Locked,
+    MappedAndLocked,
+    Direct,
+}
+
+impl Loading {
+    pub const ALL: [Self; 6] = [
+        Self::Auto,
+        Self::None,
+        Self::Mapped,
+        Self::Locked,
+        Self::MappedAndLocked,
+        Self::Direct,
+    ];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::None => "none",
+            Self::Mapped => "mmap",
+            Self::Locked => "mlock",
+            Self::MappedAndLocked => "mmap+mlock",
+            Self::Direct => "dio",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(said: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|held| held.as_str() == said)
+    }
+
+    #[must_use]
+    pub const fn said(self) -> &'static str {
+        match self {
+            Self::Auto => "mapped, unless a device cannot take it",
+            Self::None => "read plainly, neither mapped nor held",
+            Self::Mapped => "mapped from the file",
+            Self::Locked => "held in memory rather than paged out",
+            Self::MappedAndLocked => "mapped, and held in memory",
+            Self::Direct => "read straight from the device, past the page cache",
+        }
+    }
+}
+
+/// How much of a very large tensor is read before it is needed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Lazily {
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
+impl Lazily {
+    pub const ALL: [Self; 3] = [Self::Auto, Self::On, Self::Off];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::On => "on",
+            Self::Off => "off",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(said: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|held| held.as_str() == said)
+    }
+
+    #[must_use]
+    pub const fn said(self) -> &'static str {
+        match self {
+            Self::Auto => "on for tensors above four gigabytes",
+            Self::On => "rows read from disk as they are needed",
+            Self::Off => "everything resident",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Split {
     #[default]
@@ -271,6 +359,10 @@ pub struct Hosting {
     pub threads: u32,
     pub batch: u32,
     pub flash_attention: bool,
+    pub loading: Loading,
+    pub lazily: Lazily,
+    pub ubatch: u32,
+    pub threads_batch: u32,
     pub cache: CacheType,
     pub slots: u32,
     pub reuse: Reuse,
@@ -351,6 +443,16 @@ impl Hosting {
                 .max(1),
             batch: 2048,
             flash_attention: on_a_card && fits_on_the_card,
+            loading: Loading::default(),
+            lazily: Lazily::default(),
+            // The engine reads a batch 512 at a time whatever the batch is set
+            // to. The physical size is what the compute buffers are built for,
+            // so it belongs beside the batch rather than under it.
+            ubatch: 512,
+            threads_batch: cores
+                .and_then(|cores| u32::try_from(cores).ok())
+                .unwrap_or(4)
+                .max(1),
             cache: CacheType::default(),
             slots: 1,
             reuse: Reuse::default(),
@@ -431,9 +533,22 @@ impl Hosting {
             out.push("--flash-attn".to_owned());
             out.push("on".to_owned());
         }
-        if self.keep_resident {
-            out.push("--mlock".to_owned());
-        }
+        out.push("--load-mode".to_owned());
+        out.push(
+            if self.keep_resident && self.loading == Loading::Auto {
+                Loading::MappedAndLocked
+            } else {
+                self.loading
+            }
+            .as_str()
+            .to_owned(),
+        );
+        out.push("--lazy-mode".to_owned());
+        out.push(self.lazily.as_str().to_owned());
+        out.push("--ubatch-size".to_owned());
+        out.push(self.ubatch.min(self.batch).to_string());
+        out.push("--threads-batch".to_owned());
+        out.push(self.threads_batch.max(1).to_string());
         // The key goes in a file rather than on the command line: a command
         // line is world-readable, and a key in the process list is a key every
         // account on this machine has.
@@ -694,7 +809,41 @@ impl Hosting {
                 name: "keep resident",
                 value: yes_no(self.keep_resident),
                 recommended: yes_no(against.keep_resident),
-                because: "hold the model's pages in memory rather than letting them page out",
+                because: "hold the model's pages in memory rather than letting them page out. \
+                          This is the plain form of `loading`, and asking for it while loading \
+                          is left alone reads the file mapped and holds it",
+            },
+            Setting {
+                name: "loading",
+                value: self.loading.as_str().to_owned(),
+                recommended: against.loading.as_str().to_owned(),
+                because: "how the weights are read from the file: mapped, held in memory, \
+                          both, read straight from the device past the page cache, or plainly. \
+                          On a file of tens of gigabytes this is the difference between a fast \
+                          first load and a slow one",
+            },
+            Setting {
+                name: "large tensors",
+                value: self.lazily.as_str().to_owned(),
+                recommended: against.lazily.as_str().to_owned(),
+                because: "whether the rows of a very large tensor are read as they are needed \
+                          rather than all held: less memory for a slower first pass",
+            },
+            Setting {
+                name: "batch read at once",
+                value: self.ubatch.to_string(),
+                recommended: against.ubatch.to_string(),
+                because: "how much of a batch the engine actually computes in one pass. The \
+                          compute buffers are built for this rather than for the batch size, \
+                          so it is a memory setting as much as a speed one, and lowering it is \
+                          what to reach for when a hold is a little short of fitting",
+            },
+            Setting {
+                name: "threads for reading a prompt",
+                value: self.threads_batch.to_string(),
+                recommended: against.threads_batch.to_string(),
+                because: "how many processor threads read a prompt, which the engine counts \
+                          separately from the threads that generate",
             },
             Setting {
                 name: "reachable from the network",
@@ -825,6 +974,13 @@ impl Hosting {
                     .map_or(Value::Null, Value::text),
             ),
             ("keep_resident", Value::Bool(self.keep_resident)),
+            ("loading", Value::text(self.loading.as_str())),
+            ("lazily", Value::text(self.lazily.as_str())),
+            ("ubatch", Value::Integer(i64::from(self.ubatch))),
+            (
+                "threads_batch",
+                Value::Integer(i64::from(self.threads_batch)),
+            ),
             ("open", Value::Bool(self.open)),
             ("port", Value::Integer(i64::from(self.port))),
             ("api_key_set", Value::Bool(self.api_key.is_some())),
@@ -893,6 +1049,24 @@ impl Hosting {
                 .and_then(CacheType::parse)
                 .unwrap_or(recommended.cache),
             keep_resident: flag("keep_resident", recommended.keep_resident),
+            loading: value
+                .get("loading")
+                .and_then(Value::as_text)
+                .and_then(Loading::parse)
+                .unwrap_or(recommended.loading),
+            lazily: value
+                .get("lazily")
+                .and_then(Value::as_text)
+                .and_then(Lazily::parse)
+                .unwrap_or(recommended.lazily),
+            ubatch: number("ubatch")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.ubatch)
+                .max(1),
+            threads_batch: number("threads_batch")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.threads_batch)
+                .max(1),
             open: flag("open", recommended.open),
             port: number("port")
                 .and_then(|held| u16::try_from(held).ok())

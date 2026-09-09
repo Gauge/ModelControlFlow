@@ -41,6 +41,10 @@ setting a model would run under and where each came from.
 | Dense layers on the processor | How many keep their feed-forward weights in system memory |
 | Main device, devices | Which card, and which may be used at all |
 | Tensors placed by hand | A pattern matching tensor names to the memory they go in |
+| Loading | How the weights are read from the file, and whether they stay |
+| Large tensors | Whether a very large tensor is read as it is needed |
+| Batch read at once | How much of a batch the engine computes in one pass |
+| Threads for reading a prompt | Counted separately from the threads that generate |
 | Draft head | Use the file's own, where it carries one |
 | Rope scaling | Kind and factor, left to the engine unless set |
 | Port | Where the endpoint listens |

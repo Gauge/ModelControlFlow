@@ -815,6 +815,8 @@ fn ask_within(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
     Cache,
+    Loading,
+    LargeTensors,
     SplitMode,
     Experts,
     Model,
@@ -1113,6 +1115,8 @@ pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Slots,
+    Ubatch,
+    ThreadsBatch,
     DenseLayersOnCpu,
     MainDevice,
     Devices,
@@ -1201,6 +1205,8 @@ pub enum Act {
     Rope(usize),
     Cache(usize),
     SplitMode(usize),
+    Loading(usize),
+    LargeTensors(usize),
     Experts(usize),
     Copy(String),
     SetOn(Option<mcf_serve::control::On>),
@@ -1617,6 +1623,8 @@ impl Desk {
             | Act::Rope(_)
             | Act::Cache(_)
             | Act::SplitMode(_)
+            | Act::Loading(_)
+            | Act::LargeTensors(_)
             | Act::Experts(_) => {
                 self.configure(&act);
             }
@@ -2486,6 +2494,24 @@ impl Desk {
                 self.place(at);
                 self.open = None;
             }
+            Act::Loading(at) => {
+                self.apply_edit();
+                if let Some(settings) = self.settings.as_mut()
+                    && let Some(held) = mcf_serve::hosting::Loading::ALL.get(at).copied()
+                {
+                    settings.loading = held;
+                }
+                self.open = None;
+            }
+            Act::LargeTensors(at) => {
+                self.apply_edit();
+                if let Some(settings) = self.settings.as_mut()
+                    && let Some(held) = mcf_serve::hosting::Lazily::ALL.get(at).copied()
+                {
+                    settings.lazily = held;
+                }
+                self.open = None;
+            }
             Act::SplitMode(at) => {
                 self.apply_edit();
                 if let Some(settings) = self.settings.as_mut()
@@ -2540,6 +2566,8 @@ impl Desk {
             Field::Threads => settings.threads.to_string(),
             Field::Batch => settings.batch.to_string(),
             Field::Slots => settings.slots.to_string(),
+            Field::Ubatch => settings.ubatch.to_string(),
+            Field::ThreadsBatch => settings.threads_batch.to_string(),
             Field::DenseLayersOnCpu => settings.spread.ffn_layers_on_processor.to_string(),
             Field::MainDevice => settings.spread.main_device.to_string(),
             Field::Devices => settings.spread.devices.clone().unwrap_or_default(),
@@ -2624,6 +2652,20 @@ impl Desk {
                 settings.spread.override_tensors = (!typed.is_empty()).then(|| typed.clone());
                 None
             }
+            Field::Ubatch => match typed.parse::<u32>() {
+                Ok(held) if held >= 1 => {
+                    settings.ubatch = held;
+                    None
+                }
+                _ => not_a_number("what is read at once"),
+            },
+            Field::ThreadsBatch => match typed.parse::<u32>() {
+                Ok(held) if held >= 1 => {
+                    settings.threads_batch = held;
+                    None
+                }
+                _ => not_a_number("the prompt thread count"),
+            },
             Field::CacheReuse => match typed.parse::<u32>() {
                 Ok(held) => {
                     settings.reuse.cache_reuse = held;

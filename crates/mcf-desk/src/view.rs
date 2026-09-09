@@ -1240,6 +1240,16 @@ fn configure_tab(
             settings.spread.split.as_str().to_owned(),
         ),
         ("Experts", Picker::Experts, settings.spread.experts.said()),
+        (
+            "Loading",
+            Picker::Loading,
+            settings.loading.as_str().to_owned(),
+        ),
+        (
+            "Large tensors",
+            Picker::LargeTensors,
+            settings.lazily.as_str().to_owned(),
+        ),
     ] {
         label(
             paint,
@@ -1303,6 +1313,16 @@ fn configure_tab(
             "Batch size",
             crate::Field::Batch,
             settings.batch.to_string(),
+        ),
+        (
+            "Batch read at once",
+            crate::Field::Ubatch,
+            settings.ubatch.to_string(),
+        ),
+        (
+            "Threads for reading a prompt",
+            crate::Field::ThreadsBatch,
+            settings.threads_batch.to_string(),
         ),
         ("Slots", crate::Field::Slots, settings.slots.to_string()),
         (
@@ -1705,6 +1725,30 @@ fn configure_menu(
                 return None;
             }
             ui::options(paint, mouse, at, &labels, desk.placed_at()).map(Act::Place)
+        }
+        Picker::Loading => {
+            let labels: Vec<String> = mcf_serve::hosting::Loading::ALL
+                .iter()
+                .map(|held| format!("{} — {}", held.as_str(), held.said()))
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                mcf_serve::hosting::Loading::ALL
+                    .iter()
+                    .position(|held| *held == settings.loading)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::Loading)
+        }
+        Picker::LargeTensors => {
+            let labels: Vec<String> = mcf_serve::hosting::Lazily::ALL
+                .iter()
+                .map(|held| format!("{} — {}", held.as_str(), held.said()))
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                mcf_serve::hosting::Lazily::ALL
+                    .iter()
+                    .position(|held| *held == settings.lazily)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::LargeTensors)
         }
         Picker::SplitMode => {
             let labels: Vec<String> = mcf_serve::hosting::Split::ALL
@@ -2454,6 +2498,8 @@ fn open_menu(
         | Picker::Rope
         | Picker::Cache
         | Picker::SplitMode
+        | Picker::Loading
+        | Picker::LargeTensors
         | Picker::Experts
         | Picker::Quantization => None,
         Picker::Architecture => {
