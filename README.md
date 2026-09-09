@@ -80,6 +80,16 @@ mcf host Qwen3-4B-Q4_K_M
 `mcf host` prints the settings it chose and what they cost. If the engine that
 model needs is not built yet, MCF builds it first and says so.
 
+Ask it something without leaving the terminal:
+
+```
+mcf ask --prompt "what is this machine good at?"
+```
+
+`mcf ask` talks to whatever is held; name a model to ask that one instead. It
+prints the answer as it arrives, then what produced it — the engine, the
+sampler and seed, the token counts, and which daemon served it.
+
 Or skip the command line and open the window:
 
 ```
@@ -93,7 +103,11 @@ is visible in the others immediately.
 
 | `mcf desk` | The window. Needs SDL3 at build time, and says so if it is missing. |
 | `mcf tui` | The same screens with no display attached — over SSH, or on a headless box. |
+| `mcf` | With no arguments, opens the terminal interface where there is a terminal to draw in. Piped or redirected, it prints usage instead, so scripts see what they expect. |
 | `mcf <command>` | One-shot commands for scripting and for anything you would rather type. |
+
+Put the window's launcher on your desktop and type `mcf` when there isn't
+one — the same daemon either way.
 
 The daemon itself is `mcf serve`. It stays up, recovers what is on disk after a
 restart, and costs nothing while idle. Starting the window or the terminal

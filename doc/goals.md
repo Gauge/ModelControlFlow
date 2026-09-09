@@ -61,17 +61,18 @@ combination delivered. See [statistics.md](statistics.md).
 
 ## Where the code is today
 
-This document describes the target. The code has not been re-scoped to match it
-yet, and the gap is real:
+This document describes the target. The diagnostics are gone — the
+laboratory and bench crates, the commands that drove them, and the daemon
+operations behind them — and what remains is the hosting tool. Four things it
+describes are still to build:
 
-- The diagnostic surface still exists. `mcf bench`, `mcf eval`, `mcf examine`,
-  `mcf probe`, `mcf measure`, `mcf prompt`, `mcf cross-check` and the
-  laboratory crates are still present and still work.
-- Engines are built on demand through `mcf provision`, but a model is not yet
-  guaranteed to pull and build its engine without being asked.
+- Engines are built through `mcf provision`. A model does not yet pull and
+  build the engine it needs without being asked.
 - Power is measured and recorded. The electricity price setting, and the
-  running cost derived from it, are not implemented.
-- Nothing yet enforces the single-model constraint at the daemon level.
+  running cost derived from it, do not exist.
+- Nothing enforces the single-model constraint at the daemon.
+- The record holds what a measurement produced, not what a hold did. The row
+  [statistics.md](statistics.md) describes is not written yet.
 
 Each of these is work to be done, not a description of behaviour that exists.
 Where a document in this directory describes something not yet built, it says

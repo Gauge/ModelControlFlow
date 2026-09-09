@@ -85,6 +85,23 @@ model needs without being asked: if it is absent, MCF fetches the pinned source
 and builds it as part of holding the model, reporting progress as it goes. Today
 `mcf provision` must generally be run first. Making this automatic is open work.
 
+## Asking it something
+
+```
+mcf ask --prompt <text>              # whatever is held
+mcf ask <model> --prompt <text>      # a model you name
+mcf ask --prompt <text> --limit <n> --seed <n> --engine <name>
+```
+
+The answer streams as it arrives. After it, MCF prints what produced it: the
+model, the prompt and produced token counts and why it stopped, the sampler and
+seed, the engine, and which daemon served it. Where the engine dies part way,
+what arrived stays on the page and the failure is named under it — a partial
+answer is an answer, not a blank.
+
+A file MCF's own reader cannot read is refused with the engine that might read
+it named. The window's chat box asks the same way through the same daemon.
+
 ## The daemon
 
 `mcf serve` is the daemon. It holds the model, owns the endpoint, and is what
