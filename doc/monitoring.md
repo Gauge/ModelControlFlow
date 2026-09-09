@@ -82,3 +82,15 @@ the same daemon:
 
 The figures are also written to the record, which is what
 [statistics.md](statistics.md) describes.
+
+## What the engine says for itself
+
+MCF keeps the engine's own log while a hold is up, one file a model under
+`engine-logs` beside the record, written a JSON object to the line with
+timestamps on. The hold's row in the record names the file.
+
+This is where a single request's own account lives: how long its prompt took to
+read, how much of it the engine recovered from what it already had, and how many
+tokens it produced. Those are the figures that say whether a slow reply after a
+pause was the conversation being read again, and none of them was kept before —
+the engine's output went nowhere and only its dying words were held.

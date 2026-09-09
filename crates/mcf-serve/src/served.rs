@@ -429,6 +429,23 @@ pub struct Served {
     key_file: Option<PathBuf>,
 }
 
+/// Where the engine writes what it did, for the hold starting now.
+///
+/// The hosting path used to send the engine's output to nowhere and keep only
+/// its dying words, so a hold that behaved oddly while it was healthy left
+/// nothing to read. The engine reports each request's prefill time and how much
+/// of the prompt it reused, and all of that was being discarded.
+pub fn engine_log_for(model: &Path) -> Option<PathBuf> {
+    let beside = mcf_record::journal::default_path()?;
+    let directory = beside.parent()?.join("engine-logs");
+    std::fs::create_dir_all(&directory).ok()?;
+    let named = model
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or("model");
+    Some(directory.join(format!("{named}.jsonl")))
+}
+
 /// Writes the key the endpoint requires to a file only its owner can read.
 ///
 /// A command line is world-readable on Linux, so passing `--api-key` puts the
@@ -579,6 +596,7 @@ impl Served {
             .api_key
             .as_deref()
             .and_then(|key| key_written_beside(model, key));
+        let log_file = engine_log_for(model);
         let mut command = Command::new(&binary);
         command
             .args(settings.arguments(
@@ -586,6 +604,14 @@ impl Served {
                 settings.bind(),
                 key_file.as_deref(),
             ))
+            .args(log_file.iter().flat_map(|at| {
+                [
+                    "--log-file".to_owned(),
+                    at.display().to_string(),
+                    "--log-jsonl".to_owned(),
+                    "--log-timestamps".to_owned(),
+                ]
+            }))
             .arg("--port")
             .arg(settings.port.to_string())
             .stdin(Stdio::null())

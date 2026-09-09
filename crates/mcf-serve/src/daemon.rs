@@ -2535,6 +2535,11 @@ impl Daemon {
                             settings.network_address().map_or(Value::Null, Value::text),
                         ),
                         ("reachable_from", Value::text("this computer only")),
+                        (
+                            "engine_log",
+                            crate::served::engine_log_for(&path)
+                                .map_or(Value::Null, |at| Value::text(at.display().to_string())),
+                        ),
                         ("settings", settings.to_value()),
                         ("recommended", recommended.to_value()),
                         (
