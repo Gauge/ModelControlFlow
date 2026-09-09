@@ -46,7 +46,7 @@ Every setting can be given explicitly:
 | `--cache <type>` | How wide each cached token is held; a narrower one fits a longer conversation in the same memory |
 | `--draft-head on\|off` | Use the file's own draft head, where it carries one |
 | `--rope-scaling <kind>`, `--rope-scale <n>` | Rope scaling, left to the engine unless asked for |
-| `--api-key <key>` | Require a key on the endpoint |
+| `--api-key <key>` | Require a key on the endpoint; MCF writes it to a file only you can read rather than putting it on the engine's command line |
 
 | `--cache-on cpu\|gpu` | Hold the conversation in system memory, leaving the card to the weights |
 | `--experts-on cpu\|model\|<n>` | Where a mixture-of-experts model keeps its experts |

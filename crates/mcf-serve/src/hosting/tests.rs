@@ -20,7 +20,7 @@ fn a_model_that_fits_on_the_card_is_put_on_the_card() {
         recommended.gpu_layers > 0,
         "a model that fits on the card was recommended onto the processor"
     );
-    let arguments = recommended.arguments("/models/a.gguf", "127.0.0.1");
+    let arguments = recommended.arguments("/models/a.gguf", "127.0.0.1", None);
     let at = arguments
         .iter()
         .position(|held| held == "--n-gpu-layers")
@@ -104,6 +104,33 @@ fn a_setting_that_was_moved_says_so() {
 }
 
 #[test]
+fn a_key_never_reaches_the_command_line() {
+    let mut chosen = on_a_card();
+    chosen.api_key = Some("a-secret-nobody-should-see".to_owned());
+    let bare = chosen.arguments("/model.gguf", "127.0.0.1", None);
+    assert!(
+        !bare.iter().any(|held| held.contains("a-secret")),
+        "a key reached the arguments: {bare:?}"
+    );
+    assert!(
+        !bare.iter().any(|held| held == "--api-key"),
+        "the flag that puts a key in the process list is still passed: {bare:?}"
+    );
+
+    let named = std::path::Path::new("/run/user/1000/mcf/a-key");
+    let with = chosen.arguments("/model.gguf", "127.0.0.1", Some(named));
+    let at = with
+        .iter()
+        .position(|held| held == "--api-key-file")
+        .expect("the key is passed as a file");
+    assert_eq!(with.get(at + 1).map(String::as_str), named.to_str());
+    assert!(
+        !with.iter().any(|held| held.contains("a-secret")),
+        "a key reached the arguments beside the file: {with:?}"
+    );
+}
+
+#[test]
 fn a_key_is_recorded_as_present_and_never_as_itself() {
     let mut chosen = on_a_card();
     chosen.api_key = Some("a-secret-nobody-should-see".to_owned());
@@ -146,7 +173,7 @@ fn a_hosted_model_is_on_this_computer_only() {
             .address()
             .starts_with(&format!("http://{LOOPBACK}:"))
     );
-    let arguments = recommended.arguments("/models/a.gguf", LOOPBACK);
+    let arguments = recommended.arguments("/models/a.gguf", LOOPBACK, None);
     let at = arguments
         .iter()
         .position(|held| held == "--host")

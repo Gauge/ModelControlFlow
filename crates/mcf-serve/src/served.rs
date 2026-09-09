@@ -426,6 +426,33 @@ pub struct Served {
     pub prefix: PathBuf,
     pub gpu_layers: u32,
     pub started: crate::declared::Started,
+    key_file: Option<PathBuf>,
+}
+
+/// Writes the key the endpoint requires to a file only its owner can read.
+///
+/// A command line is world-readable on Linux, so passing `--api-key` puts the
+/// key in the process list for every account on the machine. The engine takes
+/// a file instead, and this is that file: beside the model, named for the
+/// process that wrote it, and removed when the hold is let go.
+fn key_written_beside(model: &Path, key: &str) -> Option<PathBuf> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    let at = model
+        .parent()
+        .map_or_else(std::env::temp_dir, Path::to_path_buf)
+        .join(format!(".mcf-api-key-{}", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&at)
+        .ok()?;
+    file.write_all(key.as_bytes()).ok()?;
+    file.write_all(b"\n").ok()?;
+    Some(at)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -548,9 +575,17 @@ impl Served {
             )
             .with_context("looked_for", binary.display().to_string()));
         }
+        let key_file = settings
+            .api_key
+            .as_deref()
+            .and_then(|key| key_written_beside(model, key));
         let mut command = Command::new(&binary);
         command
-            .args(settings.arguments(&model.display().to_string(), settings.bind()))
+            .args(settings.arguments(
+                &model.display().to_string(),
+                settings.bind(),
+                key_file.as_deref(),
+            ))
             .arg("--port")
             .arg(settings.port.to_string())
             .stdin(Stdio::null())
@@ -578,6 +613,7 @@ impl Served {
             commit: llama.commit.clone(),
             prefix: llama.prefix.clone(),
             gpu_layers: settings.gpu_layers,
+            key_file,
             window: settings.context,
             projector: settings.projector.as_ref().map(PathBuf::from),
             media_marker: None,
@@ -772,6 +808,7 @@ impl Served {
             commit: llama.commit.clone(),
             prefix: llama.prefix.clone(),
             gpu_layers,
+            key_file: None,
             window: context,
             projector: projector.map(Path::to_path_buf),
             media_marker: Some(media_marker),
@@ -1790,6 +1827,9 @@ impl Drop for Served {
         let _waited = self.child.wait();
         if let Reach::Socket(socket) = &self.reach {
             let _gone = std::fs::remove_file(socket);
+        }
+        if let Some(key_file) = &self.key_file {
+            let _gone = std::fs::remove_file(key_file);
         }
     }
 }

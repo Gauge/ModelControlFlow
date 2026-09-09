@@ -37,9 +37,13 @@ const DECLARED: &[Deletes] = &[
     },
     Deletes {
         file: "crates/mcf-serve/src/served.rs",
-        calls: 2,
+        calls: 3,
         what: "the Unix socket the provisioned server listens on — once before binding, in \
-               case a killed daemon left one behind, and once when the server is dropped. A \
+               case a killed daemon left one behind, and once when the server is dropped; and \
+               the file the endpoint's key was written to, when the server is dropped. The \
+               key file is written by MCF a moment earlier so the key stays out of the \
+               process list, and it is nobody's copy of anything: leaving it behind would \
+               leave a readable key on the disk after the hold that needed it is gone. A \
                socket is a name for a running process, not a thing anybody stored: it holds \
                no bytes, it is created by MCF a moment earlier under MCF's own runtime \
                directory, and leaving one behind is the litter B58 is about (A27, §3.11)",

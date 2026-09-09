@@ -393,7 +393,12 @@ impl Hosting {
     }
 
     #[must_use]
-    pub fn arguments(&self, model: &str, bind: &str) -> Vec<String> {
+    pub fn arguments(
+        &self,
+        model: &str,
+        bind: &str,
+        key_file: Option<&std::path::Path>,
+    ) -> Vec<String> {
         let mut out = vec![
             "--model".to_owned(),
             model.to_owned(),
@@ -429,9 +434,12 @@ impl Hosting {
         if self.keep_resident {
             out.push("--mlock".to_owned());
         }
-        if let Some(key) = &self.api_key {
-            out.push("--api-key".to_owned());
-            out.push(key.clone());
+        // The key goes in a file rather than on the command line: a command
+        // line is world-readable, and a key in the process list is a key every
+        // account on this machine has.
+        if let Some(key_file) = key_file {
+            out.push("--api-key-file".to_owned());
+            out.push(key_file.display().to_string());
         }
         if let Some(projector) = &self.projector {
             out.push("--mmproj".to_owned());
