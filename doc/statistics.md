@@ -54,15 +54,28 @@ recorded is the shape of the work — counts, rates, durations — never its tex
 
 ## Sending it somewhere
 
-If you want to share a record, you ask:
+Nothing leaves on its own. Two commands move the record, and both are acts you
+perform:
 
 ```
-mcf share [--into <path>]   # what would leave, row by row, before it does
 mcf export --to <path>      # the record as one portable file
+mcf share [--into <path>]   # what would leave, row by row, before it does
 ```
 
-`mcf share` shows you the actual rows, not a description of them, and states
-that the act cannot be undone. Publication is per share and always explicit.
+`mcf export` writes the whole record with a digest over it, and says how many
+entries hold a prompt or a completion recorded before MCF kept content out of
+the record. Those rows are in the file. The record is not edited to look
+better.
+
+`mcf share` is the curated route: it shows the actual rows rather than a
+description of them, states the terms, and states that the act cannot be
+undone. **It has not caught up with this document.** `share` reads the paired
+comparison rows the trials used to write, and nothing writes those any more,
+so on a record produced by hosting it correctly reports that no row can
+travel. Reshaping it around the hold rows above is open work.
+
+Neither command sends anything anywhere. Both write a file, and carrying that
+file somewhere is your act.
 
 ## Reading it back
 
@@ -87,3 +100,11 @@ comes from `mcf doctor`, for the reason above.
 What is not built is the reading: `mcf log` shows the rows, and nothing yet
 gathers them into an answer to "is this quantization worth it here". The rows
 are being kept so that question can be asked later.
+
+Two pieces of the old vocabulary are still in the source behind this. `mcf
+share` speaks in comparisons and arms, as above, and the types under it —
+`mcf_core::trial` and `mcf_core::contribution` — are the paired-trial
+machinery the diagnostics used. They are reachable and they are not written
+to any more. `mcf_core::measurement` is not part of that residue: `Bytes`,
+`Conditions` and `Quantity` are the vocabulary the hardware, engine, cost and
+record paths all speak.
