@@ -210,8 +210,8 @@ fn the_unclassified_category_is_detectable() {
 
 #[test]
 fn the_taxonomy_counts_hold() {
-    assert_eq!(Domain::ALL.len(), 16);
-    assert_eq!(Category::ALL.len(), 112);
+    assert_eq!(Domain::ALL.len(), 14);
+    assert_eq!(Category::ALL.len(), 99);
     assert_eq!(Attribution::ALL.len(), 8);
     assert_eq!(Disposition::ALL.len(), 6);
 }

@@ -2,8 +2,8 @@
 
 **Every failure is classified, attributed and persisted with its context** (A2).
 This file is the classification. It appears in the record, in every error type,
-in the laboratory's fault catalogue, in the recommender and in the interface, so
-it is designed once and deliberately rather than accreted.
+and in every interface, so it is designed once and deliberately rather than
+accreted.
 
 **It is also code.** `crates/mcf-core/src/failure/` holds the three axes as
 types — generated from this file, then committed — and
@@ -31,9 +31,10 @@ model is slow" and "this machine was busy", and B24 makes `unattributable` a
 verdict rather than a gap. Disposition matters because §3.1 makes partial
 success a real outcome and §3.2 makes degradation a marked one.
 
-**Every leaf has a laboratory scenario that produces it** (A13, §3.17). A
-category with no scenario is an untested claim, and the cross-check fails CI
-(B-010).
+**A leaf is a thing MCF's own code can produce.** A category nothing constructs
+is a claim about failures that never happen here, and the `probe.*` and `lab.*`
+families were exactly that once the diagnostics went — removed rather than kept
+as a scheme for a subsystem that no longer exists.
 
 ## The domains
 
@@ -86,6 +87,7 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | `engine.exit.signal` | Killed by signal, including the OOM killer |
 | `engine.hang.no_output` | Alive, silent, past deadline |
 | `engine.protocol.malformed` | Output MCF cannot parse |
+| `engine.interrupted` | Stopped while answering; what arrived is kept |
 | `engine.protocol.version` | Incompatible engine interface |
 | `engine.load.refused` | Engine declines the model |
 | `engine.unavailable` | No vendored engine supports this artifact |
@@ -135,29 +137,7 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | `config.unverified` | Declared, never probed, and required to be |
 | `config.identity.mismatch` | Realized differs from declared (placement) |
 
-### 9 · `probe.*` — capability probing
-| Code | Meaning |
-|---|---|
-| `probe.inconclusive` | Neither confirms nor denies |
-| `probe.timeout` | No result within its bound |
-| `probe.malformed_response` | Output the probe cannot grade |
-| `probe.unsupported` | Probe does not apply to this artifact |
-| `probe.divergence` | Declared and verified disagree — a *finding*, not an error |
-
-### 10 · `lab.*` — laboratory execution
-| Code | Meaning |
-|---|---|
-| `lab.setup.failed` | Environment could not be constructed |
-| `lab.teardown.failed` | Residue left behind |
-| `lab.gate.not_applicable` | Capability verified absent — not a failure |
-| `lab.gate.unknown` | Capability unestablished (B40) |
-| `lab.precondition.contended` | Machine not quiet for a timing run |
-| `lab.budget.exceeded` | Declared maximum duration reached |
-| `lab.interrupted` | Stopped by the operator; partial preserved |
-| `lab.workload.ungradable` | Supplied workload cannot be graded |
-| `lab.conditions.invalidated` | Conditions moved mid-run; result unsound |
-
-### 11 · `model.*` — the model under test's behaviour
+### 9 · `model.*` — the model under test's behaviour
 Not MCF failing. These are **measurements**, and §6.17 holds that *how* a trial
 failed is more informative than the pass rate.
 
@@ -175,7 +155,7 @@ failed is more informative than the pass rate.
 | `model.refused` | Declined the task |
 | `model.output.empty` | Produced nothing |
 
-### 12 · `sandbox.*` — containment
+### 10 · `sandbox.*` — containment
 | Code | Meaning |
 |---|---|
 | `sandbox.escape_attempted` | Reached for something absent — recorded, never permitted |
@@ -184,7 +164,7 @@ failed is more informative than the pass rate.
 | `sandbox.turn_budget` | Turn limit reached |
 | `sandbox.construct_failed` | Environment could not be built |
 
-### 13 · `platform.*` — the operating system and privilege
+### 11 · `platform.*` — the operating system and privilege
 | Code | Meaning |
 |---|---|
 | `platform.unsupported` | Outside the declared scope |
@@ -193,14 +173,14 @@ failed is more informative than the pass rate.
 | `platform.mechanism.unavailable` | Boxing, pinning or yielding unsupported here |
 | `platform.restore_failed` | Something changed could not be restored |
 
-### 14 · `time.*` — the clock
+### 12 · `time.*` — the clock
 | Code | Meaning |
 |---|---|
 | `time.jump.backward` | Wall clock stepped back mid-measurement |
 | `time.jump.forward` | Large forward step |
 | `time.monotonic.unavailable` | No monotonic source |
 
-### 15 · `exchange.*` — identifiers and contributions
+### 13 · `exchange.*` — identifiers and contributions
 | Code | Meaning |
 |---|---|
 | `exchange.identifier.malformed` | Unparseable |
@@ -210,7 +190,7 @@ failed is more informative than the pass rate.
 | `exchange.schema.unreadable` | Contribution written by an uninterpretable version |
 | `exchange.terms.absent` | Terms not shown before sending — a defect |
 
-### 16 · `internal.*` — MCF's own invariants
+### 14 · `internal.*` — MCF's own invariants
 | Code | Meaning |
 |---|---|
 | `internal.invariant_violated` | A state the type system was meant to prevent |
@@ -222,12 +202,12 @@ adding the category is the fix.
 
 ## Extension policy
 
-- **Adding a leaf is cheap** and needs a laboratory scenario in the same change
-  (A13).
+- **Adding a leaf is cheap** and needs the code that constructs it in the same
+  change.
 - **Renaming is forbidden.** Codes are stable for life (C5).
 - **Deprecating requires a named successor**, and the old code remains readable
   forever because contributions and records carry it (§7.30).
 - **Adding a domain is a decision**, recorded, because domains are the part
   consumers switch on.
-- A category that never fires in a year is a candidate for review, not deletion —
-  §3.17 wants the rare paths exercised, and the laboratory is where that happens.
+- A category that never fires is a candidate for review. One that nothing can
+  construct is not a rare path; it is a leftover, and it goes.

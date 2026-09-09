@@ -1257,7 +1257,7 @@ fn closed_failure(model: &Path, closed: Closed, progress: Option<&Progress>) -> 
         ),
     };
     let failure = Failure::new(
-        Category::LabInterrupted,
+        Category::EngineInterrupted,
         attribution,
         Disposition::Aborted,
         Subsystem::new("mcf-serve::served"),
