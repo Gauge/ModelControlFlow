@@ -28,6 +28,13 @@ setting a model would run under and where each came from.
 | Flash attention | On or off |
 | Cache width | How wide each cached token is held |
 | Slots | How many conversations the engine holds at once |
+| Reuse a prefix | The smallest run of tokens recovered rather than read again |
+| Prompt cache | Whether what was read for one message is kept for the next |
+| Prompt cache memory | How much system memory the kept prompts may take |
+| Keep idle slots | Whether an unused conversation is written to that cache |
+| Context shift | Whether a full window carries on by dropping its oldest tokens |
+| Checkpoints, checkpoint spacing | Places a conversation can return to |
+| Kept from the front | How much of the opening survives a context shift |
 | Draft head | Use the file's own, where it carries one |
 | Rope scaling | Kind and factor, left to the engine unless set |
 | Port | Where the endpoint listens |
@@ -43,6 +50,14 @@ the window it reports is the window one conversation gets. Ask for more and each
 gets a share of it; the `per conversation` row says what that share is. Left to
 the engine the number is its own choice, which is why MCF states it rather than
 omitting it.
+
+**What a second message reuses of the first is a group.** The engine keeps what
+it read, up to a size in system memory, and can recover part of a prefix that no
+longer matches exactly. MCF asks for that recovery, which the engine leaves off,
+because a conversation coming back after a pause is the case it exists for. A
+conversation whose cache is larger than the prompt cache memory does not fit in
+it, and comes back by being read again rather than restored, so that figure is
+the one to raise when a reply after a gap is slow.
 
 **Cache width is the setting that moves the others.** Every token of the window
 costs the cache width, so holding it narrower fits a longer conversation in the

@@ -560,6 +560,14 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
             "--threads" => number("threads")?,
             "--batch" => number("batch")?,
             "--slots" => number("slots")?,
+            "--cache-reuse" => number("cache_reuse")?,
+            "--prompt-cache-memory" => number("prompt_cache_mib")?,
+            "--checkpoints" => number("checkpoints")?,
+            "--checkpoint-spacing" => number("checkpoint_min_step")?,
+            "--keep" => number("keep")?,
+            "--prompt-cache" => ("prompt_cache".to_owned(), Value::Bool(said == Some("on"))),
+            "--idle-slots" => ("idle_slots".to_owned(), Value::Bool(said == Some("on"))),
+            "--context-shift" => ("context_shift".to_owned(), Value::Bool(said == Some("on"))),
             "--port" => number("port")?,
             "--engine" => (
                 "engine".to_owned(),
@@ -921,6 +929,14 @@ const COMMANDS: &str = "\
     \x20      [--rope-scaling <kind>]        in it unless it is asked for;\n\
     \x20      [--rope-scale <n>]             --on puts it where you say;\n\
     \x20      [--cache <type>] [--slots <n>] --cache holds each cached token\n\
+    \x20      [--cache-reuse <n>]            narrower, so the same memory\n\
+    \x20      [--prompt-cache on|off]        holds a longer conversation;\n\
+    \x20      [--prompt-cache-memory <mib>]  the prompt cache settings decide\n\
+    \x20      [--idle-slots on|off]          what a second message reuses of\n\
+    \x20      [--context-shift on|off]       the first, which is what a long\n\
+    \x20      [--checkpoints <n>]            pause after a gap is made of\n\
+    \x20      [--checkpoint-spacing <n>]\n\
+    \x20      [--keep <n>]\n\
     \x20                                     narrower, so the same memory\n\
     \x20                                     holds a longer conversation\n\
     \x20 mcf hosted                          what is being held, and where\n\

@@ -37,6 +37,11 @@ Every setting can be given explicitly:
 | `--threads <n>` | Thread count |
 | `--batch <n>` | Batch size |
 | `--slots <n>` | How many conversations at once; they share the window |
+| `--cache-reuse <n>` | Smallest run of tokens recovered rather than read again |
+| `--prompt-cache on\|off`, `--prompt-cache-memory <mib>` | Whether what was read is kept, and how much memory for it |
+| `--idle-slots on\|off` | Write an unused conversation to that cache |
+| `--context-shift on\|off`, `--keep <n>` | Carry on past a full window, and what survives |
+| `--checkpoints <n>`, `--checkpoint-spacing <n>` | Places a conversation can return to |
 | `--flash-attention` | Enable flash attention |
 | `--cache <type>` | How wide each cached token is held; a narrower one fits a longer conversation in the same memory |
 | `--draft-head on\|off` | Use the file's own draft head, where it carries one |

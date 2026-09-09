@@ -1111,6 +1111,11 @@ pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Slots,
+    CacheReuse,
+    PromptCacheMib,
+    Checkpoints,
+    CheckpointSpacing,
+    Keep,
     Context,
     Threads,
     Batch,
@@ -1121,6 +1126,9 @@ pub enum Field {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Switch {
+    PromptCache,
+    IdleSlots,
+    ContextShift,
     FlashAttention,
     KeepResident,
     DraftHead,
@@ -2497,6 +2505,11 @@ impl Desk {
             Field::Threads => settings.threads.to_string(),
             Field::Batch => settings.batch.to_string(),
             Field::Slots => settings.slots.to_string(),
+            Field::CacheReuse => settings.reuse.cache_reuse.to_string(),
+            Field::PromptCacheMib => settings.reuse.prompt_cache_mib.to_string(),
+            Field::Checkpoints => settings.reuse.checkpoints.to_string(),
+            Field::CheckpointSpacing => settings.reuse.checkpoint_min_step.to_string(),
+            Field::Keep => settings.reuse.keep.to_string(),
             Field::Port => settings.port.to_string(),
             Field::ApiKey => settings.api_key.clone().unwrap_or_default(),
             Field::RopeFactor => settings
@@ -2550,6 +2563,41 @@ impl Desk {
                 }
                 _ => not_a_number("the slot count"),
             },
+            Field::CacheReuse => match typed.parse::<u32>() {
+                Ok(held) => {
+                    settings.reuse.cache_reuse = held;
+                    None
+                }
+                Err(_) => not_a_number("the reuse chunk"),
+            },
+            Field::PromptCacheMib => match typed.parse::<i64>() {
+                Ok(held) if held >= -1 => {
+                    settings.reuse.prompt_cache_mib = held;
+                    None
+                }
+                _ => not_a_number("the prompt cache memory"),
+            },
+            Field::Checkpoints => match typed.parse::<u32>() {
+                Ok(held) => {
+                    settings.reuse.checkpoints = held;
+                    None
+                }
+                Err(_) => not_a_number("the checkpoint count"),
+            },
+            Field::CheckpointSpacing => match typed.parse::<u32>() {
+                Ok(held) => {
+                    settings.reuse.checkpoint_min_step = held;
+                    None
+                }
+                Err(_) => not_a_number("the checkpoint spacing"),
+            },
+            Field::Keep => match typed.parse::<i64>() {
+                Ok(held) if held >= -1 => {
+                    settings.reuse.keep = held;
+                    None
+                }
+                _ => not_a_number("what is kept from the front"),
+            },
             Field::Port => match typed.parse::<u16>() {
                 Ok(port) if port >= 1024 => {
                     settings.port = port;
@@ -2584,6 +2632,9 @@ impl Desk {
             return;
         };
         match switch {
+            Switch::PromptCache => settings.reuse.prompt_cache = !settings.reuse.prompt_cache,
+            Switch::IdleSlots => settings.reuse.idle_slots = !settings.reuse.idle_slots,
+            Switch::ContextShift => settings.reuse.context_shift = !settings.reuse.context_shift,
             Switch::FlashAttention => settings.flash_attention = !settings.flash_attention,
             Switch::KeepResident => settings.keep_resident = !settings.keep_resident,
             Switch::Open => settings.open = !settings.open,

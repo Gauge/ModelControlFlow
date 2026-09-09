@@ -1245,6 +1245,31 @@ fn configure_tab(
             settings.batch.to_string(),
         ),
         ("Slots", crate::Field::Slots, settings.slots.to_string()),
+        (
+            "Reuse a prefix",
+            crate::Field::CacheReuse,
+            settings.reuse.cache_reuse.to_string(),
+        ),
+        (
+            "Prompt cache memory",
+            crate::Field::PromptCacheMib,
+            settings.reuse.prompt_cache_mib.to_string(),
+        ),
+        (
+            "Checkpoints",
+            crate::Field::Checkpoints,
+            settings.reuse.checkpoints.to_string(),
+        ),
+        (
+            "Checkpoint spacing",
+            crate::Field::CheckpointSpacing,
+            settings.reuse.checkpoint_min_step.to_string(),
+        ),
+        (
+            "Kept from the front",
+            crate::Field::Keep,
+            settings.reuse.keep.to_string(),
+        ),
         ("Port", crate::Field::Port, settings.port.to_string()),
     ] {
         label(
@@ -1265,6 +1290,21 @@ fn configure_tab(
     }
 
     for (name, which, on) in [
+        (
+            "Prompt cache",
+            crate::Switch::PromptCache,
+            settings.reuse.prompt_cache,
+        ),
+        (
+            "Keep idle slots",
+            crate::Switch::IdleSlots,
+            settings.reuse.idle_slots,
+        ),
+        (
+            "Context shift",
+            crate::Switch::ContextShift,
+            settings.reuse.context_shift,
+        ),
         (
             "Flash attention",
             crate::Switch::FlashAttention,

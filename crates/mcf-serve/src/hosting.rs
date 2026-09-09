@@ -8,6 +8,42 @@ pub const DEFAULT_PORT: u16 = 17817;
 
 pub const ALL_LAYERS: u32 = 999;
 
+/// What a second message reuses of the first.
+///
+/// These only make sense together: the engine keeps what it read up to a size
+/// in memory, and recovers part of a prefix that no longer matches exactly.
+/// A long pause on a conversation coming back after a gap is made of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reuse {
+    pub prompt_cache: bool,
+    pub idle_slots: bool,
+    pub context_shift: bool,
+    pub prompt_cache_mib: i64,
+    pub cache_reuse: u32,
+    pub checkpoints: u32,
+    pub checkpoint_min_step: u32,
+    pub keep: i64,
+}
+
+impl Default for Reuse {
+    fn default() -> Self {
+        Self {
+            prompt_cache: true,
+            idle_slots: true,
+            context_shift: false,
+            prompt_cache_mib: 8_192,
+            // The engine leaves reuse off. A conversation that resends its
+            // history with anything changed near the front then re-reads all
+            // of it, which is the long pause after a gap; a chunk of 256
+            // recovers the matching part by shifting instead.
+            cache_reuse: 256,
+            checkpoints: 32,
+            checkpoint_min_step: 8_192,
+            keep: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hosting {
     pub context: u64,
@@ -19,6 +55,7 @@ pub struct Hosting {
     pub flash_attention: bool,
     pub cache: CacheType,
     pub slots: u32,
+    pub reuse: Reuse,
     pub keep_resident: bool,
     pub port: u16,
     pub api_key: Option<String>,
@@ -97,6 +134,7 @@ impl Hosting {
             flash_attention: on_a_card && fits_on_the_card,
             cache: CacheType::default(),
             slots: 1,
+            reuse: Reuse::default(),
             keep_resident: false,
             port: DEFAULT_PORT,
             api_key: None,
@@ -156,6 +194,40 @@ impl Hosting {
             out.push("--tensor-split".to_owned());
             out.push(self.shares());
         }
+        out.push(
+            if self.reuse.prompt_cache {
+                "--cache-prompt"
+            } else {
+                "--no-cache-prompt"
+            }
+            .to_owned(),
+        );
+        out.push("--cache-ram".to_owned());
+        out.push(self.reuse.prompt_cache_mib.to_string());
+        out.push("--cache-reuse".to_owned());
+        out.push(self.reuse.cache_reuse.to_string());
+        out.push(
+            if self.reuse.idle_slots {
+                "--cache-idle-slots"
+            } else {
+                "--no-cache-idle-slots"
+            }
+            .to_owned(),
+        );
+        out.push(
+            if self.reuse.context_shift {
+                "--context-shift"
+            } else {
+                "--no-context-shift"
+            }
+            .to_owned(),
+        );
+        out.push("--ctx-checkpoints".to_owned());
+        out.push(self.reuse.checkpoints.to_string());
+        out.push("--checkpoint-min-step".to_owned());
+        out.push(self.reuse.checkpoint_min_step.to_string());
+        out.push("--keep".to_owned());
+        out.push(self.reuse.keep.to_string());
         out.push("--parallel".to_owned());
         out.push(self.slots.max(1).to_string());
         out.push("--cache-type-k".to_owned());
@@ -253,6 +325,82 @@ impl Hosting {
                 value: yes_no(self.flash_attention),
                 recommended: yes_no(against.flash_attention),
                 because: "an attention kernel that reads less memory for the same answer",
+            },
+            Setting {
+                name: "reuse a prefix",
+                value: self.reuse.cache_reuse.to_string(),
+                recommended: against.reuse.cache_reuse.to_string(),
+                because: "the smallest run of tokens the engine will recover from what it \
+                          already read, rather than reading the conversation again. The engine \
+                          leaves this off; MCF asks for it, because a conversation that comes \
+                          back after a gap is the case it exists for. Zero turns it off",
+            },
+            Setting {
+                name: "prompt cache",
+                value: yes_no(self.reuse.prompt_cache),
+                recommended: yes_no(against.reuse.prompt_cache),
+                because: "whether what was read for one message is kept for the next",
+            },
+            Setting {
+                name: "prompt cache memory",
+                value: match self.reuse.prompt_cache_mib {
+                    -1 => "no limit".to_owned(),
+                    0 => "none".to_owned(),
+                    held => format!("{} MiB", grouped(held.unsigned_abs())),
+                },
+                recommended: match against.reuse.prompt_cache_mib {
+                    -1 => "no limit".to_owned(),
+                    0 => "none".to_owned(),
+                    held => format!("{} MiB", grouped(held.unsigned_abs())),
+                },
+                because: "how much system memory the kept prompts may take. A conversation \
+                          whose cache is larger than this does not fit in it, and comes back \
+                          from a gap by being read again rather than restored",
+            },
+            Setting {
+                name: "keep idle slots",
+                value: yes_no(self.reuse.idle_slots),
+                recommended: yes_no(against.reuse.idle_slots),
+                because: "whether a conversation nobody is using is written to the prompt \
+                          cache so its place is held while something else runs",
+            },
+            Setting {
+                name: "context shift",
+                value: yes_no(self.reuse.context_shift),
+                recommended: yes_no(against.reuse.context_shift),
+                because: "whether a conversation that fills the window carries on by dropping \
+                          its oldest tokens, rather than stopping",
+            },
+            Setting {
+                name: "checkpoints",
+                value: self.reuse.checkpoints.to_string(),
+                recommended: against.reuse.checkpoints.to_string(),
+                because: "how many places in a conversation the engine can return to without \
+                          reading from the start again",
+            },
+            Setting {
+                name: "checkpoint spacing",
+                value: format!(
+                    "{} tokens",
+                    grouped(u64::from(self.reuse.checkpoint_min_step))
+                ),
+                recommended: format!(
+                    "{} tokens",
+                    grouped(u64::from(against.reuse.checkpoint_min_step))
+                ),
+                because: "how far apart those places are put",
+            },
+            Setting {
+                name: "kept from the front",
+                value: match self.reuse.keep {
+                    -1 => "all of it".to_owned(),
+                    held => format!("{} tokens", grouped(held.unsigned_abs())),
+                },
+                recommended: match against.reuse.keep {
+                    -1 => "all of it".to_owned(),
+                    held => format!("{} tokens", grouped(held.unsigned_abs())),
+                },
+                because: "how much of the opening of a conversation survives a context shift",
             },
             Setting {
                 name: "per conversation",
@@ -362,6 +510,26 @@ impl Hosting {
             ("flash_attention", Value::Bool(self.flash_attention)),
             ("cache", Value::text(self.cache.as_str())),
             ("slots", Value::Integer(i64::from(self.slots))),
+            ("prompt_cache", Value::Bool(self.reuse.prompt_cache)),
+            (
+                "prompt_cache_mib",
+                Value::Integer(self.reuse.prompt_cache_mib),
+            ),
+            (
+                "cache_reuse",
+                Value::Integer(i64::from(self.reuse.cache_reuse)),
+            ),
+            ("idle_slots", Value::Bool(self.reuse.idle_slots)),
+            ("context_shift", Value::Bool(self.reuse.context_shift)),
+            (
+                "checkpoints",
+                Value::Integer(i64::from(self.reuse.checkpoints)),
+            ),
+            (
+                "checkpoint_min_step",
+                Value::Integer(i64::from(self.reuse.checkpoint_min_step)),
+            ),
+            ("keep", Value::Integer(self.reuse.keep)),
             ("keep_resident", Value::Bool(self.keep_resident)),
             ("open", Value::Bool(self.open)),
             ("port", Value::Integer(i64::from(self.port))),
@@ -419,6 +587,23 @@ impl Hosting {
                 .unwrap_or(recommended.batch)
                 .max(1),
             flash_attention: flag("flash_attention", recommended.flash_attention),
+            reuse: Reuse {
+                prompt_cache: flag("prompt_cache", recommended.reuse.prompt_cache),
+                idle_slots: flag("idle_slots", recommended.reuse.idle_slots),
+                context_shift: flag("context_shift", recommended.reuse.context_shift),
+                prompt_cache_mib: number("prompt_cache_mib")
+                    .unwrap_or(recommended.reuse.prompt_cache_mib),
+                cache_reuse: number("cache_reuse")
+                    .and_then(|held| u32::try_from(held).ok())
+                    .unwrap_or(recommended.reuse.cache_reuse),
+                checkpoints: number("checkpoints")
+                    .and_then(|held| u32::try_from(held).ok())
+                    .unwrap_or(recommended.reuse.checkpoints),
+                checkpoint_min_step: number("checkpoint_min_step")
+                    .and_then(|held| u32::try_from(held).ok())
+                    .unwrap_or(recommended.reuse.checkpoint_min_step),
+                keep: number("keep").unwrap_or(recommended.reuse.keep),
+            },
             slots: number("slots")
                 .and_then(|held| u32::try_from(held).ok())
                 .unwrap_or(recommended.slots)
