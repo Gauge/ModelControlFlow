@@ -1,5 +1,6 @@
 use mcf_record::json::Value;
 
+use mcf_core::configuration::CacheType;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::measurement::Bytes;
 
@@ -13,12 +14,12 @@ pub struct Shape {
     pub blocks: u64,
     pub key_value_heads: u64,
     pub per_head: u64,
-    pub bytes_per_element: u64,
+    pub cache: CacheType,
 }
 
 impl Shape {
     #[must_use]
-    pub fn from_configuration(configuration: &Value, bytes_per_element: u64) -> Option<Self> {
+    pub fn from_configuration(configuration: &Value, cache: CacheType) -> Option<Self> {
         let text = configuration.get("text_config");
         let field = |name: &str| {
             configuration
@@ -43,16 +44,25 @@ impl Shape {
             blocks: caching_blocks(list("layer_types"), declared_blocks)?,
             key_value_heads: field("num_key_value_heads")?,
             per_head: head_dimension.checked_mul(2)?,
-            bytes_per_element,
+            cache,
         })
     }
 
     #[must_use]
     pub fn bytes_per_token(&self) -> Option<u64> {
+        self.cache.bytes_for(self.elements_per_token()?)
+    }
+
+    #[must_use]
+    pub fn elements_per_token(&self) -> Option<u64> {
         self.blocks
             .checked_mul(self.key_value_heads)?
-            .checked_mul(self.per_head)?
-            .checked_mul(self.bytes_per_element)
+            .checked_mul(self.per_head)
+    }
+
+    #[must_use]
+    pub fn held_as(self, cache: CacheType) -> Self {
+        Self { cache, ..self }
     }
 }
 

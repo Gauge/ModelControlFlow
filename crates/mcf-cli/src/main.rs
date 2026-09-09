@@ -105,6 +105,7 @@ enum Request<'a> {
     },
     Settings {
         at: Option<u64>,
+        held_as: Option<mcf_core::configuration::CacheType>,
         model: &'a str,
     },
     Host {
@@ -252,11 +253,50 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "explain",
             argument,
         },
-        ["settings", model] => Request::Settings { model, at: None },
+        ["settings", model] => Request::Settings {
+            model,
+            at: None,
+            held_as: None,
+        },
+        ["settings", model, "--cache", held_as] => {
+            match mcf_core::configuration::CacheType::parse(held_as) {
+                Some(width) => Request::Settings {
+                    model,
+                    at: None,
+                    held_as: Some(width),
+                },
+                None => Request::UnexpectedArgument {
+                    command: "settings",
+                    argument: held_as,
+                },
+            }
+        }
+        ["settings", model, "--context", at, "--cache", held_as]
+        | ["settings", model, "--cache", held_as, "--context", at] => {
+            match (
+                at.parse::<u64>(),
+                mcf_core::configuration::CacheType::parse(held_as),
+            ) {
+                (Ok(at), Some(width)) => Request::Settings {
+                    model,
+                    at: Some(at),
+                    held_as: Some(width),
+                },
+                (Err(_), _) => Request::UnexpectedArgument {
+                    command: "settings",
+                    argument: at,
+                },
+                (_, None) => Request::UnexpectedArgument {
+                    command: "settings",
+                    argument: held_as,
+                },
+            }
+        }
         ["settings", model, "--context", at] => match at.parse::<u64>() {
             Ok(at) => Request::Settings {
                 model,
                 at: Some(at),
+                held_as: None,
             },
             Err(_) => Request::UnexpectedArgument {
                 command: "settings",
@@ -533,6 +573,16 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
                 Value::Bool(said == Some("on")),
             ),
             "--keep-resident" => ("keep_resident".to_owned(), Value::Bool(said == Some("on"))),
+            "--cache" => (
+                "cache".to_owned(),
+                Value::text(
+                    mcf_core::configuration::CacheType::parse(said.ok_or("--cache with no value")?)
+                        .ok_or(
+                            "--cache wants f32, f16, bf16, q8_0, q5_1, q5_0, q4_1, q4_0 or iq4_nl",
+                        )?
+                        .as_str(),
+                ),
+            ),
             "--open" => ("open".to_owned(), Value::Bool(said == Some("on"))),
             "--draft-head" => ("draft_head".to_owned(), Value::Bool(said == Some("on"))),
             "--rope-scaling" => (
@@ -868,7 +918,10 @@ const COMMANDS: &str = "\
     \x20      [--flash-attention]            draft head, which a file can\n\
     \x20      [--draft-head on|off]          carry and the engine leaves\n\
     \x20      [--rope-scaling <kind>]        in it unless it is asked for;\n\
-    \x20      [--rope-scale <n>]             --on puts it where you say\n\
+    \x20      [--rope-scale <n>]             --on puts it where you say;\n\
+    \x20      [--cache <type>]               --cache holds each cached token\n\
+    \x20                                     narrower, so the same memory\n\
+    \x20                                     holds a longer conversation\n\
     \x20 mcf hosted                          what is being held, and where\n\
     \x20 mcf settings <model>                every setting a model would run\n\
     \x20              [--context <n>]        under, and where each came from;\n\
@@ -970,7 +1023,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         } => check::run(*only, *reach, *from, *offered),
         Request::Explain { model, json: false } => explain::run(model),
         Request::Explain { model, json: true } => explain::json(model),
-        Request::Settings { model, at } => hosting::settings(model, *at),
+        Request::Settings { model, at, held_as } => hosting::settings(model, *at, *held_as),
         Request::Host { model, changes } => hosting::host(model, changes),
         Request::Ask {
             model,

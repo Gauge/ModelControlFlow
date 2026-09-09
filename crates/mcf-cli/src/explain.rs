@@ -344,7 +344,8 @@ fn resolved_here(
             "this file's header does not say how long a conversation it was trained for".to_owned(),
         );
     };
-    let cache = mcf_serve::engines::cache_bytes_per_token(file);
+    let cache =
+        mcf_serve::engines::cache_bytes_per_token(file, mcf_core::configuration::CacheType::F16);
     let free = mcf_core::hardware::Machine::read().memory.available;
     let free = match free {
         mcf_core::attested::Attested::Known(bytes) => Some(bytes.0),

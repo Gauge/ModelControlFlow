@@ -14,6 +14,11 @@ use crate::control::{Answer, REQUEST_CEILING, Request, VERSION};
 
 const WHERE: Subsystem = Subsystem::new("mcf-serve::daemon");
 
+// What a model is planned against before a hold names a width for its cache.
+// A recommendation is made at the width an engine holds without being asked,
+// so the figures beside it are the ones a person gets by doing nothing.
+const HELD_AS: mcf_core::configuration::CacheType = mcf_core::configuration::CacheType::F16;
+
 const CLOSING: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub const PATIENCE: std::time::Duration = std::time::Duration::from_secs(2);
@@ -485,7 +490,7 @@ fn shape_from_a_published_header(
             }
             if let Ok(model) = mcf_standin::gguf::parse(&held)
                 && header_describes_this_file(&model, entry.size)
-                && let Some(shape) = crate::engines::shape_of(&model)
+                && let Some(shape) = crate::engines::shape_of(&model, HELD_AS)
             {
                 return Some(shape);
             }
@@ -1029,7 +1034,7 @@ impl Daemon {
                 .and_then(mcf_standin::gguf::Value::as_integer)
                 .and_then(|value| u64::try_from(value).ok())
         });
-        let cache = crate::engines::cache_bytes_per_token(&file);
+        let cache = crate::engines::cache_bytes_per_token(&file, HELD_AS);
         let shape = |value: Option<u64>| {
             value.map_or(Value::Null, |held| {
                 Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
@@ -1096,6 +1101,13 @@ impl Daemon {
             ("readings_at", self.readings_at(path)),
             ("trained_context", shape(trained)),
             ("cache_bytes_per_token", shape(cache)),
+            (
+                "cache_elements_per_token",
+                shape(
+                    header_of(path)
+                        .and_then(|file| crate::engines::cache_elements_per_token(&file, HELD_AS)),
+                ),
+            ),
             ("resolved", resolved),
             ("configured", self.applied_to(path)),
         ])
@@ -2280,6 +2292,12 @@ impl Daemon {
                     }),
                 ),
                 (
+                    "cache_elements_per_token",
+                    self.cache_elements_for(named).map_or(Value::Null, |held| {
+                        Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+                    }),
+                ),
+                (
                     "explains",
                     Value::List(
                         recommended
@@ -2321,8 +2339,16 @@ impl Daemon {
     fn cache_for(&self, named: &str, context: u64) -> Option<u64> {
         let path = crate::generation::resolved(&self.places.models, named);
         let file = header_of(&path)?;
-        let per_token = crate::engines::cache_bytes_per_token(&file)?;
+        let per_token = crate::engines::cache_bytes_per_token(&file, HELD_AS)?;
         Some(per_token.saturating_mul(context))
+    }
+
+    // What one token of conversation occupies before a width is chosen for it,
+    // so a client can price any cache type without asking again.
+    fn cache_elements_for(&self, named: &str) -> Option<u64> {
+        let path = crate::generation::resolved(&self.places.models, named);
+        let file = header_of(&path)?;
+        crate::engines::cache_elements_per_token(&file, HELD_AS)
     }
 
     fn recommend(&self, named: &str) -> Result<Recommended> {
@@ -2339,7 +2365,7 @@ impl Daemon {
                 .and_then(mcf_standin::gguf::Value::as_integer)
                 .and_then(|value| u64::try_from(value).ok())
         });
-        let cache = crate::engines::cache_bytes_per_token(&file);
+        let cache = crate::engines::cache_bytes_per_token(&file, HELD_AS);
         let trained = trained.ok_or_else(|| {
             crate::control::refused(
                 "a model whose header does not say how long a conversation it was trained for",

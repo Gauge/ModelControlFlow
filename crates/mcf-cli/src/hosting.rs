@@ -7,7 +7,11 @@ use mcf_serve::control::{Answer, Request};
 
 use crate::Response;
 
-pub(crate) fn settings(model: &str, at: Option<u64>) -> Response {
+pub(crate) fn settings(
+    model: &str,
+    at: Option<u64>,
+    held_as: Option<mcf_core::configuration::CacheType>,
+) -> Response {
     ask(&Request::Settings {
         model: model.to_owned(),
     })
@@ -17,7 +21,7 @@ pub(crate) fn settings(model: &str, at: Option<u64>) -> Response {
             served: false,
         },
         |body| Response {
-            text: explained(&body, at),
+            text: explained(&body, at, held_as),
             served: true,
         },
     )
@@ -364,7 +368,27 @@ fn in_gigabytes(bytes: i64) -> String {
     format!("{whole}.{tenth} GiB")
 }
 
-fn explained(body: &Value, at: Option<u64>) -> String {
+// What one token costs at the width asked for, from the elements the daemon
+// counted rather than a second reading of the file.
+fn per_token(body: &Value, held_as: Option<mcf_core::configuration::CacheType>) -> Option<u64> {
+    let read = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok())
+    };
+    match held_as {
+        None => read("cache_bytes_per_token"),
+        Some(width) => read("cache_elements_per_token")
+            .and_then(|elements| width.bytes_for(elements))
+            .or_else(|| read("cache_bytes_per_token")),
+    }
+}
+
+fn explained(
+    body: &Value,
+    at: Option<u64>,
+    held_as: Option<mcf_core::configuration::CacheType>,
+) -> String {
     let mut lines = vec![format!(
         "{}\n",
         body.get("model").and_then(Value::as_text).unwrap_or("?")
@@ -433,16 +457,15 @@ fn explained(body: &Value, at: Option<u64>) -> String {
         }
         if name == "context window"
             && let Some(wanted) = at
-            && let Some(per) = body
-                .get("cache_bytes_per_token")
-                .and_then(Value::as_integer)
-                .and_then(|held| u64::try_from(held).ok())
+            && let Some(per) = per_token(body, held_as)
             && per > 0
         {
+            let width = held_as.map_or_else(String::new, |width| format!(" held as {width}"));
             lines.push(format!(
-                "  {:<20} at {} tokens it reserves {}",
+                "  {:<20} at {} tokens{} it reserves {}",
                 "",
                 wanted,
+                width,
                 in_gigabytes(i64::try_from(per.saturating_mul(wanted)).unwrap_or(i64::MAX))
             ));
         }

@@ -83,6 +83,7 @@ pub struct Hosted {
     pub address: String,
     pub since: String,
     pub context: Option<u64>,
+    pub cache: mcf_core::configuration::CacheType,
     pub projector: Option<String>,
     pub takes: Option<mcf_serve::takes::Takes>,
     pub api_key: bool,
@@ -284,7 +285,7 @@ pub fn will_take(
     settings: &mcf_serve::hosting::Hosting,
     placements: &[Placement],
 ) -> Option<(String, bool)> {
-    let (_, total) = view::reserve_of(held, settings.context)?;
+    let (_, total) = view::reserve_of(held, settings.context, settings.cache)?;
     let total = total?;
     let free = placements
         .iter()
@@ -545,6 +546,7 @@ pub struct Model {
     pub trained: Option<u64>,
     pub context: Option<u64>,
     pub cache_per_token: Option<u64>,
+    pub cache_elements_per_token: Option<u64>,
     pub engine: Option<String>,
     pub device: Option<String>,
     pub device_free: Option<u64>,
@@ -681,6 +683,7 @@ fn model_from(held: &Value) -> Model {
         file,
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
+        cache_elements_per_token: number_from_runs("cache_elements_per_token"),
         refused: if known { None } else { resolved_text("why") },
         does_not_fit: resolved_text("why_not"),
     }
@@ -811,6 +814,7 @@ fn ask_within(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
+    Cache,
     Model,
     Window,
     On,
@@ -1123,6 +1127,9 @@ pub enum Switch {
     Open,
 }
 
+pub const CACHE_CHOICES: [mcf_core::configuration::CacheType; 9] =
+    mcf_core::configuration::CacheType::ALL;
+
 pub const ROPE_CHOICES: [Option<mcf_serve::declared::Scaling>; 4] = [
     None,
     Some(mcf_serve::declared::Scaling::Off),
@@ -1170,6 +1177,7 @@ pub enum Act {
     Switch(Switch),
     Place(usize),
     Rope(usize),
+    Cache(usize),
     Copy(String),
     SetOn(Option<mcf_serve::control::On>),
     Open(Picker),
@@ -1578,7 +1586,12 @@ impl Desk {
                 self.typed = repository;
                 self.look_up();
             }
-            Act::Tab(_) | Act::Edit(_) | Act::Switch(_) | Act::Place(_) | Act::Rope(_) => {
+            Act::Tab(_)
+            | Act::Edit(_)
+            | Act::Switch(_)
+            | Act::Place(_)
+            | Act::Rope(_)
+            | Act::Cache(_) => {
                 self.configure(&act);
             }
             Act::Contents(page) => self.contents = page,
@@ -1766,6 +1779,13 @@ impl Desk {
                             .and_then(|settings| settings.get("context"))
                             .and_then(Value::as_integer)
                             .and_then(|context| u64::try_from(context).ok()),
+                        cache: answer
+                            .body
+                            .get("settings")
+                            .and_then(|settings| settings.get("cache"))
+                            .and_then(Value::as_text)
+                            .and_then(mcf_core::configuration::CacheType::parse)
+                            .unwrap_or_default(),
                         projector: answer
                             .body
                             .get("settings")
@@ -2438,6 +2458,18 @@ impl Desk {
             Act::Place(at) => {
                 self.apply_edit();
                 self.place(at);
+                self.open = None;
+            }
+            Act::Cache(at) => {
+                self.apply_edit();
+                if let Some(settings) = self.settings.as_mut()
+                    && let Some(width) = mcf_core::configuration::CacheType::ALL.get(at).copied()
+                {
+                    settings.cache = width;
+                    if width.is_quantized() {
+                        settings.flash_attention = true;
+                    }
+                }
                 self.open = None;
             }
             Act::Rope(at) => {

@@ -1,7 +1,9 @@
+mod cache;
 mod calibrated;
 mod placement;
 mod sampling;
 
+pub use cache::{BLOCK as CACHE_BLOCK, CacheType};
 pub use calibrated::{Calibrated, Chosen};
 pub use placement::Placement;
 pub use sampling::{Sampling, Thousandths};

@@ -183,7 +183,10 @@ const NO_GROWING_CACHE: &[&str] = &[
 ];
 
 #[must_use]
-pub fn shape_of(model: &mcf_standin::gguf::Model) -> Option<mcf_hub::fitment::Shape> {
+pub fn shape_of(
+    model: &mcf_standin::gguf::Model,
+    cache: mcf_core::configuration::CacheType,
+) -> Option<mcf_hub::fitment::Shape> {
     let body = mcf_standin::anatomy::of(model);
     match mcf_standin::anatomy::work::of(model, &body).cache {
         mcf_standin::anatomy::work::Cache::Sized {
@@ -195,14 +198,17 @@ pub fn shape_of(model: &mcf_standin::gguf::Model) -> Option<mcf_hub::fitment::Sh
             blocks: attending.0,
             key_value_heads: key_heads,
             per_head,
-            bytes_per_element: 2,
+            cache,
         }),
         mcf_standin::anatomy::work::Cache::Unsized(_) => None,
     }
 }
 
 #[must_use]
-pub fn cache_bytes_per_token(model: &mcf_standin::gguf::Model) -> Option<u64> {
+pub fn cache_bytes_per_token(
+    model: &mcf_standin::gguf::Model,
+    cache: mcf_core::configuration::CacheType,
+) -> Option<u64> {
     let architecture = model.architecture()?;
     if NO_GROWING_CACHE.contains(&architecture) {
         return Some(0);
@@ -211,7 +217,15 @@ pub fn cache_bytes_per_token(model: &mcf_standin::gguf::Model) -> Option<u64> {
     if census.attending == 0 && census.recurrent > 0 {
         return Some(0);
     }
-    shape_of(model)?.bytes_per_token()
+    shape_of(model, cache)?.bytes_per_token()
+}
+
+#[must_use]
+pub fn cache_elements_per_token(
+    model: &mcf_standin::gguf::Model,
+    cache: mcf_core::configuration::CacheType,
+) -> Option<u64> {
+    shape_of(model, cache)?.elements_per_token()
 }
 
 #[must_use]
@@ -580,10 +594,15 @@ fn first_card_under(drm: &Path) -> Option<PathBuf> {
 }
 
 #[must_use]
-pub fn would_not_fit(model: &Path, context: u64, gpu_layers: u32) -> Option<(u64, u64)> {
+pub fn would_not_fit(
+    model: &Path,
+    context: u64,
+    gpu_layers: u32,
+    held_as: mcf_core::configuration::CacheType,
+) -> Option<(u64, u64)> {
     let bytes = std::fs::metadata(model).ok()?.len();
     let cache = crate::declared::header(model)
-        .and_then(|file| cache_bytes_per_token(&file))
+        .and_then(|file| cache_bytes_per_token(&file, held_as))
         .map_or(0, |per_token| per_token.saturating_mul(context));
     let needs = bytes.saturating_add(cache);
     let host = mcf_core::hardware::memory_available_now()?;

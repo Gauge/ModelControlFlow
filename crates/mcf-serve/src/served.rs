@@ -386,7 +386,7 @@ pub struct Startup {
     pub batch: Option<u32>,
     pub ubatch: Option<u32>,
     pub parallel: Option<u32>,
-    pub cache: Option<&'static str>,
+    pub cache: mcf_core::configuration::CacheType,
 }
 
 impl Default for Startup {
@@ -401,7 +401,7 @@ impl Default for Startup {
             batch: None,
             ubatch: None,
             parallel: None,
-            cache: None,
+            cache: mcf_core::configuration::CacheType::default(),
         }
     }
 }
@@ -684,7 +684,8 @@ impl Served {
             .with_context("looked_for", binary.display().to_string()));
         }
 
-        if let Some((needs, available)) = crate::engines::would_not_fit(model, context, gpu_layers)
+        if let Some((needs, available)) =
+            crate::engines::would_not_fit(model, context, gpu_layers, startup.cache)
         {
             return Err(Failure::new(
                 Category::ResourceMemoryExhausted,
@@ -736,14 +737,13 @@ impl Served {
         if let Some(parallel) = startup.parallel {
             command.arg("--parallel").arg(parallel.to_string());
         }
-        if let Some(cache) = startup.cache {
-            command
-                .arg("--cache-type-k")
-                .arg(cache)
-                .arg("--cache-type-v")
-                .arg(cache)
-                .arg("--flash-attn")
-                .arg("on");
+        command
+            .arg("--cache-type-k")
+            .arg(startup.cache.as_str())
+            .arg("--cache-type-v")
+            .arg(startup.cache.as_str());
+        if startup.cache.is_quantized() {
+            command.arg("--flash-attn").arg("on");
         }
         let media_marker = fresh_marker();
         command

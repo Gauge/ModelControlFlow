@@ -1,3 +1,4 @@
+use mcf_core::configuration::CacheType;
 use mcf_record::json::Value;
 use mcf_standin::anatomy::grouped;
 
@@ -16,6 +17,7 @@ pub struct Hosting {
     pub threads: u32,
     pub batch: u32,
     pub flash_attention: bool,
+    pub cache: CacheType,
     pub keep_resident: bool,
     pub port: u16,
     pub api_key: Option<String>,
@@ -92,6 +94,7 @@ impl Hosting {
                 .max(1),
             batch: 2048,
             flash_attention: on_a_card && fits_on_the_card,
+            cache: CacheType::default(),
             keep_resident: false,
             port: DEFAULT_PORT,
             api_key: None,
@@ -143,7 +146,11 @@ impl Hosting {
             out.push("--tensor-split".to_owned());
             out.push(self.shares());
         }
-        if self.flash_attention {
+        out.push("--cache-type-k".to_owned());
+        out.push(self.cache.as_str().to_owned());
+        out.push("--cache-type-v".to_owned());
+        out.push(self.cache.as_str().to_owned());
+        if self.flash_attention || self.cache.is_quantized() {
             out.push("--flash-attn".to_owned());
             out.push("on".to_owned());
         }
@@ -235,6 +242,16 @@ impl Hosting {
                 because: "an attention kernel that reads less memory for the same answer",
             },
             Setting {
+                name: "cache width",
+                value: self.cache.as_str().to_owned(),
+                recommended: against.cache.as_str().to_owned(),
+                because: "how wide the engine holds each cached token. Every token of the \
+                          window costs this much, so a narrower one fits a longer conversation \
+                          in the same memory and answers from a shorter arithmetic; --cache \
+                          sets it, and a narrow one is held with flash attention because the \
+                          engine reads it no other way",
+            },
+            Setting {
                 name: "keep resident",
                 value: yes_no(self.keep_resident),
                 recommended: yes_no(against.keep_resident),
@@ -314,6 +331,7 @@ impl Hosting {
             ("threads", Value::Integer(i64::from(self.threads))),
             ("batch", Value::Integer(i64::from(self.batch))),
             ("flash_attention", Value::Bool(self.flash_attention)),
+            ("cache", Value::text(self.cache.as_str())),
             ("keep_resident", Value::Bool(self.keep_resident)),
             ("open", Value::Bool(self.open)),
             ("port", Value::Integer(i64::from(self.port))),
@@ -371,6 +389,11 @@ impl Hosting {
                 .unwrap_or(recommended.batch)
                 .max(1),
             flash_attention: flag("flash_attention", recommended.flash_attention),
+            cache: value
+                .get("cache")
+                .and_then(Value::as_text)
+                .and_then(CacheType::parse)
+                .unwrap_or(recommended.cache),
             keep_resident: flag("keep_resident", recommended.keep_resident),
             open: flag("open", recommended.open),
             port: number("port")

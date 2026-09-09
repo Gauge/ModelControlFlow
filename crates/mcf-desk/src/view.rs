@@ -261,8 +261,16 @@ fn spaced_width(paint: &mut Painter, text: &str) -> f32 {
 }
 
 #[must_use]
-pub fn reserve_of(held: &Model, context: u64) -> Option<(u64, Option<u64>)> {
-    let cache = held.cache_per_token?.saturating_mul(context);
+pub fn reserve_of(
+    held: &Model,
+    context: u64,
+    width: mcf_core::configuration::CacheType,
+) -> Option<(u64, Option<u64>)> {
+    let per_token = held
+        .cache_elements_per_token
+        .and_then(|elements| width.bytes_for(elements))
+        .or(held.cache_per_token)?;
+    let cache = per_token.saturating_mul(context);
     Some((cache, held.bytes.map(|held| held.saturating_add(cache))))
 }
 
@@ -277,8 +285,12 @@ pub fn gigabytes(bytes: u64) -> String {
 }
 
 #[must_use]
-pub fn reserve_line(held: &Model, context: u64) -> Option<String> {
-    let (cache, total) = reserve_of(held, context)?;
+pub fn reserve_line(
+    held: &Model,
+    context: u64,
+    width: mcf_core::configuration::CacheType,
+) -> Option<String> {
+    let (cache, total) = reserve_of(held, context, width)?;
     Some(match total {
         Some(total) => format!(
             "KV cache {} · total {} with weights",
@@ -1183,11 +1195,43 @@ fn configure_tab(
     }
     y += 34.0;
     let typed_window = text.trim().replace([',', '_'], "").parse::<u64>().ok();
-    if let Some(said) = reserve_line(held, typed_window.unwrap_or(settings.context)) {
+    if let Some(said) = reserve_line(
+        held,
+        typed_window.unwrap_or(settings.context),
+        settings.cache,
+    ) {
         paint.say_at(column, y, &said, Weight::Regular, size::SMALL, ink.faint);
         y += 18.0;
     }
     recommends(paint, &mut y, "context window");
+
+    label(
+        paint,
+        y,
+        Row {
+            name: "Cache width",
+            because: because_of("cache width"),
+        },
+        &mut hovered,
+    );
+    let cache_box = Box::new(column, y - 6.0, 150.0, 28.0);
+    let cache_open = desk.open == Some(Picker::Cache);
+    if ui::picker(paint, mouse, cache_box, settings.cache.as_str(), cache_open) {
+        act = Some(Act::Open(Picker::Cache));
+    }
+    if cache_open {
+        menu = Some((Picker::Cache, cache_box));
+    }
+    paint.say_at(
+        column + 160.0,
+        y,
+        settings.cache.said(),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    y += 34.0;
+    recommends(paint, &mut y, "cache width");
 
     for (name, field, now) in [
         (
@@ -1546,6 +1590,18 @@ fn configure_menu(
             }
             ui::options(paint, mouse, at, &labels, desk.placed_at()).map(Act::Place)
         }
+        Picker::Cache => {
+            let labels: Vec<String> = crate::CACHE_CHOICES
+                .iter()
+                .map(|width| format!("{width} — {}", width.said()))
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                crate::CACHE_CHOICES
+                    .iter()
+                    .position(|width| *width == settings.cache)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::Cache)
+        }
         Picker::Rope => {
             let labels: Vec<String> = (0..crate::ROPE_CHOICES.len())
                 .map(|at| rope_label(at).to_owned())
@@ -1684,8 +1740,8 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         .is_some_and(|(hosting, held)| hosting.model == held.path);
     let stop_label = desk
         .hosted_model()
-        .zip(desk.hosted.as_ref().and_then(|hosting| hosting.context))
-        .and_then(|(held, context)| reserve_of(held, context))
+        .zip(desk.hosted.as_ref())
+        .and_then(|(held, hosting)| reserve_of(held, hosting.context?, hosting.cache))
         .and_then(|(_, total)| total)
         .map_or_else(
             || "Stop server".to_owned(),
@@ -2254,7 +2310,7 @@ fn open_menu(
                 .and_then(|index| ON_CHOICES.get(index).copied())
                 .map(Act::SetOn)
         }
-        Picker::Placement | Picker::Rope | Picker::Quantization => None,
+        Picker::Placement | Picker::Rope | Picker::Cache | Picker::Quantization => None,
         Picker::Architecture => {
             let mut labels = vec!["any".to_owned()];
             labels.extend(desk.architectures());
@@ -3034,7 +3090,7 @@ fn where_it_answers(
         ),
         model
             .zip(hosting.context)
-            .and_then(|(model, context)| reserve_line(model, context))
+            .and_then(|(model, context)| reserve_line(model, context, hosting.cache))
             .unwrap_or_default(),
         takes_line(hosting),
     ] {

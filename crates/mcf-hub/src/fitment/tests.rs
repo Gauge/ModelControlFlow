@@ -16,7 +16,7 @@ fn shape() -> Shape {
         blocks: 32,
         key_value_heads: 8,
         per_head: 256,
-        bytes_per_element: 2,
+        cache: mcf_core::configuration::CacheType::default(),
     }
 }
 
@@ -150,7 +150,7 @@ fn a_plan_does_not_fill_the_machine() {
             blocks: 1,
             key_value_heads: 1,
             per_head: 1,
-            bytes_per_element: 2,
+            cache: mcf_core::configuration::CacheType::default(),
         },
     };
     assert!(matches!(
@@ -177,7 +177,7 @@ fn arithmetic_that_overflows_refuses_to_plan() {
             blocks: u64::MAX,
             key_value_heads: u64::MAX,
             per_head: u64::MAX,
-            bytes_per_element: 2,
+            cache: mcf_core::configuration::CacheType::default(),
         },
     };
     let failure = assess(&absurd, 8192, Bytes(16 * GIB)).expect_err("it cannot be planned");
@@ -219,12 +219,12 @@ fn a_shape_is_read_from_a_configuration() {
     )
     .expect("JSON");
     assert_eq!(
-        Shape::from_configuration(&stated, 2),
+        Shape::from_configuration(&stated, mcf_core::configuration::CacheType::default()),
         Some(Shape {
             blocks: 28,
             key_value_heads: 8,
             per_head: 256,
-            bytes_per_element: 2,
+            cache: mcf_core::configuration::CacheType::default(),
         })
     );
 
@@ -234,7 +234,8 @@ fn a_shape_is_read_from_a_configuration() {
     )
     .expect("JSON");
     assert_eq!(
-        Shape::from_configuration(&derived, 2).map(|shape| shape.per_head),
+        Shape::from_configuration(&derived, mcf_core::configuration::CacheType::default())
+            .map(|shape| shape.per_head),
         Some(256)
     );
 }
@@ -248,12 +249,12 @@ fn a_nested_configuration_is_read_where_the_model_puts_it() {
     )
     .expect("JSON");
     assert_eq!(
-        Shape::from_configuration(&nested, 2),
+        Shape::from_configuration(&nested, mcf_core::configuration::CacheType::default()),
         Some(Shape {
             blocks: 64,
             key_value_heads: 4,
             per_head: 512,
-            bytes_per_element: 2,
+            cache: mcf_core::configuration::CacheType::default(),
         }),
         "the transformer's own fields were not read"
     );
@@ -269,7 +270,8 @@ fn only_the_blocks_that_cache_are_counted() {
     )
     .expect("JSON");
     assert_eq!(
-        Shape::from_configuration(&hybrid, 2).map(|shape| shape.blocks),
+        Shape::from_configuration(&hybrid, mcf_core::configuration::CacheType::default())
+            .map(|shape| shape.blocks),
         Some(2),
         "every block was counted, and only two of them cache"
     );
@@ -279,7 +281,8 @@ fn only_the_blocks_that_cache_are_counted() {
     )
     .expect("JSON");
     assert_eq!(
-        Shape::from_configuration(&plain, 2).map(|shape| shape.blocks),
+        Shape::from_configuration(&plain, mcf_core::configuration::CacheType::default())
+            .map(|shape| shape.blocks),
         Some(8)
     );
 
@@ -289,7 +292,10 @@ fn only_the_blocks_that_cache_are_counted() {
             "linear_attention"]}"#,
     )
     .expect("JSON");
-    assert_eq!(Shape::from_configuration(&cacheless, 2), None);
+    assert_eq!(
+        Shape::from_configuration(&cacheless, mcf_core::configuration::CacheType::default()),
+        None
+    );
 }
 
 #[test]
@@ -306,7 +312,7 @@ fn a_configuration_that_does_not_say_produces_no_shape() {
     ] {
         let value = mcf_record::json::parse(incomplete).expect("JSON");
         assert_eq!(
-            Shape::from_configuration(&value, 2),
+            Shape::from_configuration(&value, mcf_core::configuration::CacheType::default()),
             None,
             "a shape was invented from {incomplete}"
         );
@@ -319,7 +325,8 @@ fn the_cache_is_sized_by_the_grouped_heads_not_the_query_heads() {
         r#"{"num_hidden_layers":32,"num_key_value_heads":8,"num_attention_heads":32,"head_dim":128}"#,
     )
     .expect("JSON");
-    let shape = Shape::from_configuration(&value, 2).expect("a shape");
+    let shape = Shape::from_configuration(&value, mcf_core::configuration::CacheType::default())
+        .expect("a shape");
     let grouped = shape.bytes_per_token().expect("it multiplies out");
 
     let ungrouped = Shape {

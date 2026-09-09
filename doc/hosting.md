@@ -37,6 +37,7 @@ Every setting can be given explicitly:
 | `--threads <n>` | Thread count |
 | `--batch <n>` | Batch size |
 | `--flash-attention` | Enable flash attention |
+| `--cache <type>` | How wide each cached token is held; a narrower one fits a longer conversation in the same memory |
 | `--draft-head on\|off` | Use the file's own draft head, where it carries one |
 | `--rope-scaling <kind>`, `--rope-scale <n>` | Rope scaling, left to the engine unless asked for |
 | `--api-key <key>` | Require a key on the endpoint |

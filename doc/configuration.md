@@ -26,6 +26,7 @@ setting a model would run under and where each came from.
 | Threads | Thread count |
 | Batch size | Tokens per batch |
 | Flash attention | On or off |
+| Cache width | How wide each cached token is held |
 | Draft head | Use the file's own, where it carries one |
 | Rope scaling | Kind and factor, left to the engine unless set |
 | Port | Where the endpoint listens |
@@ -33,7 +34,17 @@ setting a model would run under and where each came from.
 
 `mcf settings <model> --context <n>` also reports what a given window would
 reserve in memory, which is the number worth checking before committing to a
-context length.
+context length. Add `--cache <type>` and it reports the same window at that
+width instead.
+
+**Cache width is the setting that moves the others.** Every token of the window
+costs the cache width, so holding it narrower fits a longer conversation in the
+same memory. The engine takes `f32`, `f16`, `bf16`, `q8_0`, `q5_1`, `q5_0`,
+`q4_1`, `q4_0` and `iq4_nl`; MCF holds `f16`, which is what an engine holds
+without being asked, and every figure MCF reports is computed at the width the
+hold will actually use. A narrow width is held with flash attention on, because
+the engine reads it no other way, and MCF turns it on rather than failing at
+the point of loading.
 
 ## Machine settings
 

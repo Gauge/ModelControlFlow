@@ -266,7 +266,7 @@ fn what_this_machine_resolves() {
             continue;
         };
         let weights = std::fs::metadata(path).map_or(0, |m| m.len());
-        let per = cache_bytes_per_token(&model);
+        let per = cache_bytes_per_token(&model, mcf_core::configuration::CacheType::F16);
         let trained = model
             .architecture()
             .and_then(|a| model.get(&format!("{a}.context_length")))
@@ -306,7 +306,8 @@ fn a_shape_is_read_from_a_header() {
         eprintln!("skipped: {} has no header MCF could read", path.display());
         return;
     };
-    let Some(shape) = super::shape_of(&model) else {
+    let held_as = mcf_core::configuration::CacheType::F16;
+    let Some(shape) = super::shape_of(&model, held_as) else {
         panic!(
             "{} has a header and no shape came out of it",
             path.display()
@@ -315,17 +316,23 @@ fn a_shape_is_read_from_a_header() {
     assert!(shape.blocks > 0, "a model with no blocks");
     assert!(shape.key_value_heads > 0, "a model with no key/value heads");
     assert!(shape.per_head > 0, "a model with heads that keep nothing");
-    assert_eq!(shape.bytes_per_element, 2);
+    assert_eq!(shape.cache, held_as);
 
-    if let Some(per_token) = super::cache_bytes_per_token(&model) {
-        let from_shape = shape
+    if let Some(per_token) = super::cache_bytes_per_token(&model, held_as) {
+        let elements = shape
             .blocks
             .saturating_mul(shape.key_value_heads)
-            .saturating_mul(shape.per_head)
-            .saturating_mul(shape.bytes_per_element);
+            .saturating_mul(shape.per_head);
         assert_eq!(
-            from_shape, per_token,
+            held_as.bytes_for(elements),
+            Some(per_token),
             "the shape and the cache arithmetic disagree about the same header"
+        );
+        let narrow = super::cache_bytes_per_token(&model, mcf_core::configuration::CacheType::Q8_0)
+            .expect("the same header is sized at every width");
+        assert!(
+            narrow < per_token,
+            "a narrower cache costs no less on this header: {narrow} against {per_token}"
         );
     }
 }
@@ -365,12 +372,21 @@ fn a_hybrid_caches_only_in_the_blocks_that_attend() {
         data_offset: 0,
         alignment: 32,
     };
-    assert_eq!(cache_bytes_per_token(&model), Some(2 * 32 * 2));
-    assert_eq!(shape_of(&model).map(|held| held.blocks), Some(1));
+    assert_eq!(
+        cache_bytes_per_token(&model, mcf_core::configuration::CacheType::F16),
+        Some(2 * 32 * 2)
+    );
+    assert_eq!(
+        shape_of(&model, mcf_core::configuration::CacheType::F16).map(|held| held.blocks),
+        Some(1)
+    );
 
     let mut only_recurrent = model.clone();
     only_recurrent.tensors.truncate(3);
-    assert_eq!(cache_bytes_per_token(&only_recurrent), Some(0));
+    assert_eq!(
+        cache_bytes_per_token(&only_recurrent, mcf_core::configuration::CacheType::F16),
+        Some(0)
+    );
 
     let mut latent = model;
     for (key, value) in [
@@ -382,7 +398,10 @@ fn a_hybrid_caches_only_in_the_blocks_that_attend() {
             .metadata
             .insert(key.to_owned(), Value::Integer(value));
     }
-    assert_eq!(cache_bytes_per_token(&latent), Some(16 * 2));
+    assert_eq!(
+        cache_bytes_per_token(&latent, mcf_core::configuration::CacheType::F16),
+        Some(16 * 2)
+    );
 }
 
 #[test]

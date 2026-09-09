@@ -5,8 +5,6 @@ use mcf_core::measurement::Bytes;
 
 pub const PLANNING_CONTEXT: u64 = 4096;
 
-const CACHE_ELEMENT: u64 = 2;
-
 #[derive(Debug, Clone)]
 pub struct Plan {
     pub available: Bytes,
@@ -31,7 +29,11 @@ pub fn shape_from_configuration(hub: &Hub, listing: &Listing) -> Result<Shape, S
             return Err(format!("its configuration could not be read — {failure}"));
         }
     };
-    Shape::from_configuration(&configuration, CACHE_ELEMENT).ok_or_else(|| {
+    Shape::from_configuration(
+        &configuration,
+        mcf_core::configuration::CacheType::default(),
+    )
+    .ok_or_else(|| {
         "its configuration does not say how many blocks, key/value heads and head dimensions \
          the model has, and MCF will not guess at a shape (A7)"
             .to_owned()

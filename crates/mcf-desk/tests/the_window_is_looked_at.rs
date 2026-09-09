@@ -22,6 +22,7 @@ fn four_models() -> Desk {
             file: String::new(),
             on_a_card: true,
             cache_per_token: Some(114_688),
+            cache_elements_per_token: Some(57_344),
             refused: None,
             does_not_fit: None,
         },
@@ -697,8 +698,10 @@ fn a_window_holding_a_model_says_that_it_is() {
 
 #[test]
 fn a_window_costs_the_cache_it_reserves() {
+    use mcf_core::configuration::CacheType;
     let held = &four_models().models[0];
-    let (cache, total) = mcf_desk::view::reserve_of(held, 32_768).expect("this model is priced");
+    let (cache, total) =
+        mcf_desk::view::reserve_of(held, 32_768, CacheType::F16).expect("this model is priced");
     assert_eq!(
         cache,
         114_688 * 32_768,
@@ -709,16 +712,26 @@ fn a_window_costs_the_cache_it_reserves() {
         Some(5_020_000_000 + 114_688 * 32_768),
         "what it comes to is the window and the weights"
     );
-    let (twice, _) = mcf_desk::view::reserve_of(held, 65_536).expect("still priced");
+    let (twice, _) =
+        mcf_desk::view::reserve_of(held, 65_536, CacheType::F16).expect("still priced");
     assert_eq!(twice, cache * 2);
+
+    let (narrow, _) =
+        mcf_desk::view::reserve_of(held, 32_768, CacheType::Q8_0).expect("priced at every width");
+    assert!(
+        narrow < cache,
+        "a narrower cache reserves no less: {narrow} against {cache}"
+    );
 }
 
 #[test]
 fn a_model_that_cannot_be_priced_is_not_given_a_price() {
     let mut held = four_models().models[0].clone();
     held.cache_per_token = None;
-    assert!(mcf_desk::view::reserve_of(&held, 32_768).is_none());
-    assert!(mcf_desk::view::reserve_line(&held, 32_768).is_none());
+    held.cache_elements_per_token = None;
+    let width = mcf_core::configuration::CacheType::F16;
+    assert!(mcf_desk::view::reserve_of(&held, 32_768, width).is_none());
+    assert!(mcf_desk::view::reserve_line(&held, 32_768, width).is_none());
 }
 
 #[test]
@@ -743,6 +756,7 @@ fn the_price_of_a_window_is_shown_where_it_is_chosen() {
     unpriced.settings = Some(settings.clone());
     unpriced.recommended = Some(settings);
     unpriced.models[0].cache_per_token = None;
+    unpriced.models[0].cache_elements_per_token = None;
 
     let with = drawn(&priced, DAY, "window-priced");
     let without = drawn(&unpriced, DAY, "window-unpriced");
