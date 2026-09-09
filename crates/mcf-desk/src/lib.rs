@@ -815,6 +815,8 @@ fn ask_within(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
     Cache,
+    SplitMode,
+    Experts,
     Model,
     Window,
     On,
@@ -1111,6 +1113,10 @@ pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Slots,
+    DenseLayersOnCpu,
+    MainDevice,
+    Devices,
+    OverrideTensors,
     CacheReuse,
     PromptCacheMib,
     Checkpoints,
@@ -1126,6 +1132,7 @@ pub enum Field {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Switch {
+    CacheOnProcessor,
     PromptCache,
     IdleSlots,
     ContextShift,
@@ -1135,6 +1142,12 @@ pub enum Switch {
     Projector,
     Open,
 }
+
+pub const EXPERT_CHOICES: [mcf_serve::hosting::Experts; 3] = [
+    mcf_serve::hosting::Experts::WithTheModel,
+    mcf_serve::hosting::Experts::OnTheProcessor,
+    mcf_serve::hosting::Experts::FirstLayers(8),
+];
 
 pub const CACHE_CHOICES: [mcf_core::configuration::CacheType; 9] =
     mcf_core::configuration::CacheType::ALL;
@@ -1187,6 +1200,8 @@ pub enum Act {
     Place(usize),
     Rope(usize),
     Cache(usize),
+    SplitMode(usize),
+    Experts(usize),
     Copy(String),
     SetOn(Option<mcf_serve::control::On>),
     Open(Picker),
@@ -1600,7 +1615,9 @@ impl Desk {
             | Act::Switch(_)
             | Act::Place(_)
             | Act::Rope(_)
-            | Act::Cache(_) => {
+            | Act::Cache(_)
+            | Act::SplitMode(_)
+            | Act::Experts(_) => {
                 self.configure(&act);
             }
             Act::Contents(page) => self.contents = page,
@@ -2469,6 +2486,24 @@ impl Desk {
                 self.place(at);
                 self.open = None;
             }
+            Act::SplitMode(at) => {
+                self.apply_edit();
+                if let Some(settings) = self.settings.as_mut()
+                    && let Some(split) = mcf_serve::hosting::Split::ALL.get(at).copied()
+                {
+                    settings.spread.split = split;
+                }
+                self.open = None;
+            }
+            Act::Experts(at) => {
+                self.apply_edit();
+                if let Some(settings) = self.settings.as_mut()
+                    && let Some(held) = EXPERT_CHOICES.get(at).copied()
+                {
+                    settings.spread.experts = held;
+                }
+                self.open = None;
+            }
             Act::Cache(at) => {
                 self.apply_edit();
                 if let Some(settings) = self.settings.as_mut()
@@ -2505,6 +2540,10 @@ impl Desk {
             Field::Threads => settings.threads.to_string(),
             Field::Batch => settings.batch.to_string(),
             Field::Slots => settings.slots.to_string(),
+            Field::DenseLayersOnCpu => settings.spread.ffn_layers_on_processor.to_string(),
+            Field::MainDevice => settings.spread.main_device.to_string(),
+            Field::Devices => settings.spread.devices.clone().unwrap_or_default(),
+            Field::OverrideTensors => settings.spread.override_tensors.clone().unwrap_or_default(),
             Field::CacheReuse => settings.reuse.cache_reuse.to_string(),
             Field::PromptCacheMib => settings.reuse.prompt_cache_mib.to_string(),
             Field::Checkpoints => settings.reuse.checkpoints.to_string(),
@@ -2563,6 +2602,28 @@ impl Desk {
                 }
                 _ => not_a_number("the slot count"),
             },
+            Field::DenseLayersOnCpu => match typed.parse::<u32>() {
+                Ok(held) => {
+                    settings.spread.ffn_layers_on_processor = held;
+                    None
+                }
+                Err(_) => not_a_number("the dense layer count"),
+            },
+            Field::MainDevice => match typed.parse::<u32>() {
+                Ok(held) => {
+                    settings.spread.main_device = held;
+                    None
+                }
+                Err(_) => not_a_number("the main device"),
+            },
+            Field::Devices => {
+                settings.spread.devices = (!typed.is_empty()).then(|| typed.clone());
+                None
+            }
+            Field::OverrideTensors => {
+                settings.spread.override_tensors = (!typed.is_empty()).then(|| typed.clone());
+                None
+            }
             Field::CacheReuse => match typed.parse::<u32>() {
                 Ok(held) => {
                     settings.reuse.cache_reuse = held;
@@ -2632,6 +2693,9 @@ impl Desk {
             return;
         };
         match switch {
+            Switch::CacheOnProcessor => {
+                settings.spread.cache_on_processor = !settings.spread.cache_on_processor;
+            }
             Switch::PromptCache => settings.reuse.prompt_cache = !settings.reuse.prompt_cache,
             Switch::IdleSlots => settings.reuse.idle_slots = !settings.reuse.idle_slots,
             Switch::ContextShift => settings.reuse.context_shift = !settings.reuse.context_shift,

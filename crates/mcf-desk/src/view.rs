@@ -1233,6 +1233,66 @@ fn configure_tab(
     y += 34.0;
     recommends(paint, &mut y, "cache width");
 
+    for (name, picker, shown) in [
+        (
+            "Split mode",
+            Picker::SplitMode,
+            settings.spread.split.as_str().to_owned(),
+        ),
+        ("Experts", Picker::Experts, settings.spread.experts.said()),
+    ] {
+        label(
+            paint,
+            y,
+            Row {
+                name,
+                because: because_of(name),
+            },
+            &mut hovered,
+        );
+        let box_of = Box::new(column, y - 6.0, 210.0, 28.0);
+        let open = desk.open == Some(picker);
+        if ui::picker(paint, mouse, box_of, &shown, open) {
+            act = Some(Act::Open(picker));
+        }
+        if open {
+            menu = Some((picker, box_of));
+        }
+        y += 34.0;
+        recommends(paint, &mut y, name);
+    }
+
+    for (name, field, now, empty) in [
+        (
+            "Devices",
+            crate::Field::Devices,
+            settings.spread.devices.clone().unwrap_or_default(),
+            "every one MCF found",
+        ),
+        (
+            "Tensors placed by hand",
+            crate::Field::OverrideTensors,
+            settings.spread.override_tensors.clone().unwrap_or_default(),
+            "none",
+        ),
+    ] {
+        label(
+            paint,
+            y,
+            Row {
+                name,
+                because: because_of(name),
+            },
+            &mut hovered,
+        );
+        let (pressed, _) = typed_in(paint, mouse, y, field, now, empty);
+        if pressed {
+            act = Some(Act::Edit(field));
+        }
+        y += 34.0;
+        recommends(paint, &mut y, name);
+    }
+
     for (name, field, now) in [
         (
             "Threads",
@@ -1245,6 +1305,16 @@ fn configure_tab(
             settings.batch.to_string(),
         ),
         ("Slots", crate::Field::Slots, settings.slots.to_string()),
+        (
+            "Dense layers on the processor",
+            crate::Field::DenseLayersOnCpu,
+            settings.spread.ffn_layers_on_processor.to_string(),
+        ),
+        (
+            "Main device",
+            crate::Field::MainDevice,
+            settings.spread.main_device.to_string(),
+        ),
         (
             "Reuse a prefix",
             crate::Field::CacheReuse,
@@ -1290,6 +1360,11 @@ fn configure_tab(
     }
 
     for (name, which, on) in [
+        (
+            "Cache on the processor",
+            crate::Switch::CacheOnProcessor,
+            settings.spread.cache_on_processor,
+        ),
         (
             "Prompt cache",
             crate::Switch::PromptCache,
@@ -1630,6 +1705,30 @@ fn configure_menu(
                 return None;
             }
             ui::options(paint, mouse, at, &labels, desk.placed_at()).map(Act::Place)
+        }
+        Picker::SplitMode => {
+            let labels: Vec<String> = mcf_serve::hosting::Split::ALL
+                .iter()
+                .map(|split| format!("{} — {}", split.as_str(), split.said()))
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                mcf_serve::hosting::Split::ALL
+                    .iter()
+                    .position(|split| *split == settings.spread.split)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::SplitMode)
+        }
+        Picker::Experts => {
+            let labels: Vec<String> = crate::EXPERT_CHOICES
+                .iter()
+                .map(|held| held.said())
+                .collect();
+            let now = desk.settings.as_ref().and_then(|settings| {
+                crate::EXPERT_CHOICES
+                    .iter()
+                    .position(|held| *held == settings.spread.experts)
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::Experts)
         }
         Picker::Cache => {
             let labels: Vec<String> = crate::CACHE_CHOICES
@@ -2351,7 +2450,12 @@ fn open_menu(
                 .and_then(|index| ON_CHOICES.get(index).copied())
                 .map(Act::SetOn)
         }
-        Picker::Placement | Picker::Rope | Picker::Cache | Picker::Quantization => None,
+        Picker::Placement
+        | Picker::Rope
+        | Picker::Cache
+        | Picker::SplitMode
+        | Picker::Experts
+        | Picker::Quantization => None,
         Picker::Architecture => {
             let mut labels = vec!["any".to_owned()];
             labels.extend(desk.architectures());

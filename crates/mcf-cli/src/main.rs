@@ -531,80 +531,135 @@ fn export(to: &std::path::Path) -> Response {
     }
 }
 
-fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>, &'static str> {
+// A setting as the daemon takes it: the name it knows and the value given.
+type Change = (String, mcf_record::json::Value);
+
+fn host_options(rest: &[&str]) -> Result<Vec<Change>, &'static str> {
     use mcf_record::json::Value;
     let mut changes = Vec::new();
     let mut at = 0;
     while at < rest.len() {
         let Some(flag) = rest.get(at) else { break };
         let said = rest.get(at + 1).copied();
-        let number = |name: &str| -> Result<(String, Value), &'static str> {
+        let number = |name: &str| -> Result<Change, &'static str> {
             let held: i64 = said
                 .ok_or("a setting with no value")?
                 .parse()
                 .map_err(|_| "a setting whose value is not a number")?;
             Ok((name.to_owned(), Value::Integer(held)))
         };
-        let change = match *flag {
-            "--context" => number("context")?,
-            "--gpu-layers" => number("gpu_layers")?,
-            "--on" => (
-                "on".to_owned(),
-                Value::text(
-                    mcf_serve::control::On::parse(said.ok_or("--on with no value")?)
-                        .ok_or("--on wants cpu or gpu")?
-                        .as_str()
-                        .to_owned(),
-                ),
-            ),
-            "--threads" => number("threads")?,
-            "--batch" => number("batch")?,
-            "--slots" => number("slots")?,
-            "--cache-reuse" => number("cache_reuse")?,
-            "--prompt-cache-memory" => number("prompt_cache_mib")?,
-            "--checkpoints" => number("checkpoints")?,
-            "--checkpoint-spacing" => number("checkpoint_min_step")?,
-            "--keep" => number("keep")?,
-            "--prompt-cache" => ("prompt_cache".to_owned(), Value::Bool(said == Some("on"))),
-            "--idle-slots" => ("idle_slots".to_owned(), Value::Bool(said == Some("on"))),
-            "--context-shift" => ("context_shift".to_owned(), Value::Bool(said == Some("on"))),
-            "--port" => number("port")?,
-            "--engine" => (
-                "engine".to_owned(),
-                Value::text(said.ok_or("--engine with no value")?),
-            ),
-            "--api-key" => (
-                "api_key".to_owned(),
-                Value::text(said.ok_or("--api-key with no value")?),
-            ),
-            "--flash-attention" => (
-                "flash_attention".to_owned(),
-                Value::Bool(said == Some("on")),
-            ),
-            "--keep-resident" => ("keep_resident".to_owned(), Value::Bool(said == Some("on"))),
-            "--cache" => (
-                "cache".to_owned(),
-                Value::text(
-                    mcf_core::configuration::CacheType::parse(said.ok_or("--cache with no value")?)
-                        .ok_or(
-                            "--cache wants f32, f16, bf16, q8_0, q5_1, q5_0, q4_1, q4_0 or iq4_nl",
-                        )?
-                        .as_str(),
-                ),
-            ),
-            "--open" => ("open".to_owned(), Value::Bool(said == Some("on"))),
-            "--draft-head" => ("draft_head".to_owned(), Value::Bool(said == Some("on"))),
-            "--rope-scaling" => (
-                "rope_scaling".to_owned(),
-                Value::text(said.ok_or("--rope-scaling with no value")?),
-            ),
-            "--rope-scale" => number("rope_scale")?,
-            _ => return Err("a setting mcf host does not take"),
+        let Some(change) = one_setting(flag, said, &number)? else {
+            return Err("a setting mcf host does not take");
         };
         changes.push(change);
         at += 2;
     }
     Ok(changes)
+}
+
+// One flag, read into the name and value the daemon takes. `None` is a flag
+// `mcf host` does not have, which the caller turns into the refusal.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one flag a line, which is the readable shape for a list of them"
+)]
+fn one_setting(
+    flag: &str,
+    said: Option<&str>,
+    number: &dyn Fn(&str) -> Result<Change, &'static str>,
+) -> Result<Option<Change>, &'static str> {
+    use mcf_record::json::Value;
+    Ok(Some(match flag {
+        "--context" => number("context")?,
+        "--gpu-layers" => number("gpu_layers")?,
+        "--on" => (
+            "on".to_owned(),
+            Value::text(
+                mcf_serve::control::On::parse(said.ok_or("--on with no value")?)
+                    .ok_or("--on wants cpu or gpu")?
+                    .as_str()
+                    .to_owned(),
+            ),
+        ),
+        "--threads" => number("threads")?,
+        "--batch" => number("batch")?,
+        "--slots" => number("slots")?,
+        "--cache-reuse" => number("cache_reuse")?,
+        "--prompt-cache-memory" => number("prompt_cache_mib")?,
+        "--checkpoints" => number("checkpoints")?,
+        "--checkpoint-spacing" => number("checkpoint_min_step")?,
+        "--keep" => number("keep")?,
+        "--cache-on" => (
+            "cache_on_processor".to_owned(),
+            Value::Bool(said == Some("cpu")),
+        ),
+        "--split-mode" => (
+            "split_mode".to_owned(),
+            Value::text(
+                mcf_serve::hosting::Split::parse(said.ok_or("--split-mode with no value")?)
+                    .ok_or("--split-mode wants layer, none, row or tensor")?
+                    .as_str(),
+            ),
+        ),
+        "--experts-on" => {
+            let said = said.ok_or("--experts-on with no value")?;
+            (
+                "experts".to_owned(),
+                match said {
+                    "cpu" => Value::text("all"),
+                    "model" => Value::Null,
+                    layers => Value::Integer(
+                        layers
+                            .parse()
+                            .map_err(|_| "--experts-on wants cpu, model, or a layer count")?,
+                    ),
+                },
+            )
+        }
+        "--dense-layers-on-cpu" => number("ffn_layers_on_processor")?,
+        "--main-device" => number("main_device")?,
+        "--devices" => (
+            "devices".to_owned(),
+            Value::text(said.ok_or("--devices with no value")?),
+        ),
+        "--override-tensor" => (
+            "override_tensors".to_owned(),
+            Value::text(said.ok_or("--override-tensor with no value")?),
+        ),
+        "--prompt-cache" => ("prompt_cache".to_owned(), Value::Bool(said == Some("on"))),
+        "--idle-slots" => ("idle_slots".to_owned(), Value::Bool(said == Some("on"))),
+        "--context-shift" => ("context_shift".to_owned(), Value::Bool(said == Some("on"))),
+        "--port" => number("port")?,
+        "--engine" => (
+            "engine".to_owned(),
+            Value::text(said.ok_or("--engine with no value")?),
+        ),
+        "--api-key" => (
+            "api_key".to_owned(),
+            Value::text(said.ok_or("--api-key with no value")?),
+        ),
+        "--flash-attention" => (
+            "flash_attention".to_owned(),
+            Value::Bool(said == Some("on")),
+        ),
+        "--keep-resident" => ("keep_resident".to_owned(), Value::Bool(said == Some("on"))),
+        "--cache" => (
+            "cache".to_owned(),
+            Value::text(
+                mcf_core::configuration::CacheType::parse(said.ok_or("--cache with no value")?)
+                    .ok_or("--cache wants f32, f16, bf16, q8_0, q5_1, q5_0, q4_1, q4_0 or iq4_nl")?
+                    .as_str(),
+            ),
+        ),
+        "--open" => ("open".to_owned(), Value::Bool(said == Some("on"))),
+        "--draft-head" => ("draft_head".to_owned(), Value::Bool(said == Some("on"))),
+        "--rope-scaling" => (
+            "rope_scaling".to_owned(),
+            Value::text(said.ok_or("--rope-scaling with no value")?),
+        ),
+        "--rope-scale" => number("rope_scale")?,
+        _ => return Ok(None),
+    }))
 }
 
 fn on_a_terminal() -> bool {
@@ -937,6 +992,13 @@ const COMMANDS: &str = "\
     \x20      [--checkpoints <n>]            pause after a gap is made of\n\
     \x20      [--checkpoint-spacing <n>]\n\
     \x20      [--keep <n>]\n\
+    \x20      [--cache-on cpu|gpu]           --cache-on cpu leaves the card's\n\
+    \x20      [--split-mode <kind>]          whole pool to the weights;\n\
+    \x20      [--experts-on cpu|model|<n>]   --experts-on cpu fits a mixture\n\
+    \x20      [--dense-layers-on-cpu <n>]    of experts that would not fit\n\
+    \x20      [--main-device <n>]            otherwise\n\
+    \x20      [--devices <list>]\n\
+    \x20      [--override-tensor <pattern>]\n\
     \x20                                     narrower, so the same memory\n\
     \x20                                     holds a longer conversation\n\
     \x20 mcf hosted                          what is being held, and where\n\

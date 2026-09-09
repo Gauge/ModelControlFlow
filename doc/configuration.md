@@ -35,6 +35,12 @@ setting a model would run under and where each came from.
 | Context shift | Whether a full window carries on by dropping its oldest tokens |
 | Checkpoints, checkpoint spacing | Places a conversation can return to |
 | Kept from the front | How much of the opening survives a context shift |
+| Cache on the processor | Hold the conversation in system memory, not on the card |
+| Split mode | How a model on several cards is divided |
+| Experts | Where a mixture-of-experts model keeps its experts |
+| Dense layers on the processor | How many keep their feed-forward weights in system memory |
+| Main device, devices | Which card, and which may be used at all |
+| Tensors placed by hand | A pattern matching tensor names to the memory they go in |
 | Draft head | Use the file's own, where it carries one |
 | Rope scaling | Kind and factor, left to the engine unless set |
 | Port | Where the endpoint listens |
@@ -50,6 +56,13 @@ the window it reports is the window one conversation gets. Ask for more and each
 gets a share of it; the `per conversation` row says what that share is. Left to
 the engine the number is its own choice, which is why MCF states it rather than
 omitting it.
+
+**Placement is no longer all or nothing.** A model can be held on the card with
+its conversation in system memory, which leaves the card's whole pool to the
+weights and is what fits a longer window on a machine whose card memory is the
+smaller half. A mixture-of-experts model can keep its experts in system memory,
+which fits one that would not fit at all. Both cost time on every token, and
+both are settings rather than something MCF decides.
 
 **What a second message reuses of the first is a group.** The engine keeps what
 it read, up to a size in system memory, and can recover part of a prefix that no

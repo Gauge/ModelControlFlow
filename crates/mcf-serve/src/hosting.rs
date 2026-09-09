@@ -8,6 +8,157 @@ pub const DEFAULT_PORT: u16 = 17817;
 
 pub const ALL_LAYERS: u32 = 999;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Split {
+    #[default]
+    Layer,
+    None,
+    Row,
+    Tensor,
+}
+
+impl Split {
+    pub const ALL: [Self; 4] = [Self::Layer, Self::None, Self::Row, Self::Tensor];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Layer => "layer",
+            Self::None => "none",
+            Self::Row => "row",
+            Self::Tensor => "tensor",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(said: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|held| held.as_str() == said)
+    }
+
+    #[must_use]
+    pub const fn said(self) -> &'static str {
+        match self {
+            Self::Layer => "layers and cache divided between the cards",
+            Self::None => "one card only",
+            Self::Row => "each weight divided across the cards by rows",
+            Self::Tensor => "weights and cache divided across the cards",
+        }
+    }
+}
+
+/// Where a model's mixture-of-experts weights are held.
+///
+/// A model whose experts sit in system memory fits on a card that could not
+/// otherwise hold it, and the experts are the part least worth the card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Experts {
+    #[default]
+    WithTheModel,
+    FirstLayers(u32),
+    OnTheProcessor,
+}
+
+impl Experts {
+    #[must_use]
+    pub fn said(self) -> String {
+        match self {
+            Self::WithTheModel => "wherever the model is".to_owned(),
+            Self::FirstLayers(layers) => {
+                format!("the first {layers} layers' experts on the processor")
+            }
+            Self::OnTheProcessor => "all of them on the processor".to_owned(),
+        }
+    }
+}
+
+/// Which parts of a model go where.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Spread {
+    pub cache_on_processor: bool,
+    pub split: Split,
+    pub experts: Experts,
+    pub ffn_layers_on_processor: u32,
+    pub main_device: u32,
+    pub devices: Option<String>,
+    pub override_tensors: Option<String>,
+}
+
+impl Spread {
+    #[must_use]
+    pub fn arguments(&self) -> Vec<String> {
+        let mut out = vec![
+            "--split-mode".to_owned(),
+            self.split.as_str().to_owned(),
+            "--main-gpu".to_owned(),
+            self.main_device.to_string(),
+        ];
+        if self.cache_on_processor {
+            out.push("--no-kv-offload".to_owned());
+        }
+        match self.experts {
+            Experts::WithTheModel => {}
+            Experts::OnTheProcessor => out.push("--cpu-moe".to_owned()),
+            Experts::FirstLayers(layers) => {
+                out.push("--n-cpu-moe".to_owned());
+                out.push(layers.to_string());
+            }
+        }
+        if self.ffn_layers_on_processor > 0 {
+            out.push("--n-cpu-ffn".to_owned());
+            out.push(self.ffn_layers_on_processor.to_string());
+        }
+        if let Some(devices) = &self.devices {
+            out.push("--device".to_owned());
+            out.push(devices.clone());
+        }
+        if let Some(overridden) = &self.override_tensors {
+            out.push("--override-tensor".to_owned());
+            out.push(overridden.clone());
+        }
+        out
+    }
+
+    #[must_use]
+    pub fn from_value(value: &Value, recommended: &Self) -> Self {
+        let number = |key: &str| value.get(key).and_then(Value::as_integer);
+        Self {
+            cache_on_processor: match value.get("cache_on_processor") {
+                Some(Value::Bool(held)) => *held,
+                _ => recommended.cache_on_processor,
+            },
+            split: value
+                .get("split_mode")
+                .and_then(Value::as_text)
+                .and_then(Split::parse)
+                .unwrap_or(recommended.split),
+            experts: match value.get("experts") {
+                Some(Value::Text(said)) if said == "all" => Experts::OnTheProcessor,
+                Some(Value::Integer(layers)) => {
+                    u32::try_from(*layers).map_or(Experts::WithTheModel, Experts::FirstLayers)
+                }
+                Some(Value::Null) => Experts::WithTheModel,
+                _ => recommended.experts,
+            },
+            ffn_layers_on_processor: number("ffn_layers_on_processor")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.ffn_layers_on_processor),
+            main_device: number("main_device")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.main_device),
+            devices: match value.get("devices") {
+                None => recommended.devices.clone(),
+                Some(Value::Text(named)) if !named.is_empty() => Some(named.clone()),
+                Some(_) => None,
+            },
+            override_tensors: match value.get("override_tensors") {
+                None => recommended.override_tensors.clone(),
+                Some(Value::Text(said)) if !said.is_empty() => Some(said.clone()),
+                Some(_) => None,
+            },
+        }
+    }
+}
+
 /// What a second message reuses of the first.
 ///
 /// These only make sense together: the engine keeps what it read up to a size
@@ -23,6 +174,73 @@ pub struct Reuse {
     pub checkpoints: u32,
     pub checkpoint_min_step: u32,
     pub keep: i64,
+}
+
+impl Reuse {
+    #[must_use]
+    pub fn arguments(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        out.push(
+            if self.prompt_cache {
+                "--cache-prompt"
+            } else {
+                "--no-cache-prompt"
+            }
+            .to_owned(),
+        );
+        out.push("--cache-ram".to_owned());
+        out.push(self.prompt_cache_mib.to_string());
+        out.push("--cache-reuse".to_owned());
+        out.push(self.cache_reuse.to_string());
+        out.push(
+            if self.idle_slots {
+                "--cache-idle-slots"
+            } else {
+                "--no-cache-idle-slots"
+            }
+            .to_owned(),
+        );
+        out.push(
+            if self.context_shift {
+                "--context-shift"
+            } else {
+                "--no-context-shift"
+            }
+            .to_owned(),
+        );
+        out.push("--ctx-checkpoints".to_owned());
+        out.push(self.checkpoints.to_string());
+        out.push("--checkpoint-min-step".to_owned());
+        out.push(self.checkpoint_min_step.to_string());
+        out.push("--keep".to_owned());
+        out.push(self.keep.to_string());
+        out
+    }
+
+    #[must_use]
+    pub fn from_value(value: &Value, recommended: Self) -> Self {
+        let number = |key: &str| value.get(key).and_then(Value::as_integer);
+        let flag = |key: &str, fallback: bool| match value.get(key) {
+            Some(Value::Bool(held)) => *held,
+            _ => fallback,
+        };
+        Self {
+            prompt_cache: flag("prompt_cache", recommended.prompt_cache),
+            idle_slots: flag("idle_slots", recommended.idle_slots),
+            context_shift: flag("context_shift", recommended.context_shift),
+            prompt_cache_mib: number("prompt_cache_mib").unwrap_or(recommended.prompt_cache_mib),
+            cache_reuse: number("cache_reuse")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.cache_reuse),
+            checkpoints: number("checkpoints")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.checkpoints),
+            checkpoint_min_step: number("checkpoint_min_step")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.checkpoint_min_step),
+            keep: number("keep").unwrap_or(recommended.keep),
+        }
+    }
 }
 
 impl Default for Reuse {
@@ -56,6 +274,7 @@ pub struct Hosting {
     pub cache: CacheType,
     pub slots: u32,
     pub reuse: Reuse,
+    pub spread: Spread,
     pub keep_resident: bool,
     pub port: u16,
     pub api_key: Option<String>,
@@ -135,6 +354,7 @@ impl Hosting {
             cache: CacheType::default(),
             slots: 1,
             reuse: Reuse::default(),
+            spread: Spread::default(),
             keep_resident: false,
             port: DEFAULT_PORT,
             api_key: None,
@@ -194,40 +414,8 @@ impl Hosting {
             out.push("--tensor-split".to_owned());
             out.push(self.shares());
         }
-        out.push(
-            if self.reuse.prompt_cache {
-                "--cache-prompt"
-            } else {
-                "--no-cache-prompt"
-            }
-            .to_owned(),
-        );
-        out.push("--cache-ram".to_owned());
-        out.push(self.reuse.prompt_cache_mib.to_string());
-        out.push("--cache-reuse".to_owned());
-        out.push(self.reuse.cache_reuse.to_string());
-        out.push(
-            if self.reuse.idle_slots {
-                "--cache-idle-slots"
-            } else {
-                "--no-cache-idle-slots"
-            }
-            .to_owned(),
-        );
-        out.push(
-            if self.reuse.context_shift {
-                "--context-shift"
-            } else {
-                "--no-context-shift"
-            }
-            .to_owned(),
-        );
-        out.push("--ctx-checkpoints".to_owned());
-        out.push(self.reuse.checkpoints.to_string());
-        out.push("--checkpoint-min-step".to_owned());
-        out.push(self.reuse.checkpoint_min_step.to_string());
-        out.push("--keep".to_owned());
-        out.push(self.reuse.keep.to_string());
+        out.extend(self.spread.arguments());
+        out.extend(self.reuse.arguments());
         out.push("--parallel".to_owned());
         out.push(self.slots.max(1).to_string());
         out.push("--cache-type-k".to_owned());
@@ -325,6 +513,72 @@ impl Hosting {
                 value: yes_no(self.flash_attention),
                 recommended: yes_no(against.flash_attention),
                 because: "an attention kernel that reads less memory for the same answer",
+            },
+            Setting {
+                name: "cache on the processor",
+                value: yes_no(self.spread.cache_on_processor),
+                recommended: yes_no(against.spread.cache_on_processor),
+                because: "hold the conversation in system memory rather than on the card. \
+                          The card then has its whole pool for the weights, which is what \
+                          fits a longer window on a machine whose card memory is the smaller \
+                          half; reading it back costs time on every token",
+            },
+            Setting {
+                name: "split mode",
+                value: self.spread.split.as_str().to_owned(),
+                recommended: against.spread.split.as_str().to_owned(),
+                because: "how a model on more than one card is divided: by layer, by rows of \
+                          each weight, by tensor, or not at all",
+            },
+            Setting {
+                name: "experts",
+                value: self.spread.experts.said(),
+                recommended: against.spread.experts.said(),
+                because: "where a mixture-of-experts model keeps its experts. Holding them in \
+                          system memory fits a model on a card that could not otherwise take \
+                          it, and the experts are the part least worth the card",
+            },
+            Setting {
+                name: "dense layers on the processor",
+                value: self.spread.ffn_layers_on_processor.to_string(),
+                recommended: against.spread.ffn_layers_on_processor.to_string(),
+                because: "how many of the first layers keep their dense feed-forward weights \
+                          in system memory, for the same reason",
+            },
+            Setting {
+                name: "main device",
+                value: self.spread.main_device.to_string(),
+                recommended: against.spread.main_device.to_string(),
+                because: "which card holds the model where the split mode is none",
+            },
+            Setting {
+                name: "devices",
+                value: self
+                    .spread
+                    .devices
+                    .clone()
+                    .unwrap_or_else(|| "every one MCF found".to_owned()),
+                recommended: against
+                    .spread
+                    .devices
+                    .clone()
+                    .unwrap_or_else(|| "every one MCF found".to_owned()),
+                because: "which devices may be used at all, named as the engine names them",
+            },
+            Setting {
+                name: "tensors placed by hand",
+                value: self
+                    .spread
+                    .override_tensors
+                    .clone()
+                    .unwrap_or_else(|| "none".to_owned()),
+                recommended: against
+                    .spread
+                    .override_tensors
+                    .clone()
+                    .unwrap_or_else(|| "none".to_owned()),
+                because: "a pattern matching tensor names to the memory they are put in, for \
+                          a placement none of the settings above expresses",
             },
             Setting {
                 name: "reuse a prefix",
@@ -530,6 +784,38 @@ impl Hosting {
                 Value::Integer(i64::from(self.reuse.checkpoint_min_step)),
             ),
             ("keep", Value::Integer(self.reuse.keep)),
+            (
+                "cache_on_processor",
+                Value::Bool(self.spread.cache_on_processor),
+            ),
+            ("split_mode", Value::text(self.spread.split.as_str())),
+            (
+                "experts",
+                match self.spread.experts {
+                    Experts::WithTheModel => Value::Null,
+                    Experts::OnTheProcessor => Value::text("all"),
+                    Experts::FirstLayers(layers) => Value::Integer(i64::from(layers)),
+                },
+            ),
+            (
+                "ffn_layers_on_processor",
+                Value::Integer(i64::from(self.spread.ffn_layers_on_processor)),
+            ),
+            (
+                "main_device",
+                Value::Integer(i64::from(self.spread.main_device)),
+            ),
+            (
+                "devices",
+                self.spread.devices.clone().map_or(Value::Null, Value::text),
+            ),
+            (
+                "override_tensors",
+                self.spread
+                    .override_tensors
+                    .clone()
+                    .map_or(Value::Null, Value::text),
+            ),
             ("keep_resident", Value::Bool(self.keep_resident)),
             ("open", Value::Bool(self.open)),
             ("port", Value::Integer(i64::from(self.port))),
@@ -587,23 +873,8 @@ impl Hosting {
                 .unwrap_or(recommended.batch)
                 .max(1),
             flash_attention: flag("flash_attention", recommended.flash_attention),
-            reuse: Reuse {
-                prompt_cache: flag("prompt_cache", recommended.reuse.prompt_cache),
-                idle_slots: flag("idle_slots", recommended.reuse.idle_slots),
-                context_shift: flag("context_shift", recommended.reuse.context_shift),
-                prompt_cache_mib: number("prompt_cache_mib")
-                    .unwrap_or(recommended.reuse.prompt_cache_mib),
-                cache_reuse: number("cache_reuse")
-                    .and_then(|held| u32::try_from(held).ok())
-                    .unwrap_or(recommended.reuse.cache_reuse),
-                checkpoints: number("checkpoints")
-                    .and_then(|held| u32::try_from(held).ok())
-                    .unwrap_or(recommended.reuse.checkpoints),
-                checkpoint_min_step: number("checkpoint_min_step")
-                    .and_then(|held| u32::try_from(held).ok())
-                    .unwrap_or(recommended.reuse.checkpoint_min_step),
-                keep: number("keep").unwrap_or(recommended.reuse.keep),
-            },
+            reuse: Reuse::from_value(value, recommended.reuse),
+            spread: Spread::from_value(value, &recommended.spread),
             slots: number("slots")
                 .and_then(|held| u32::try_from(held).ok())
                 .unwrap_or(recommended.slots)

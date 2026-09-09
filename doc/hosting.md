@@ -48,6 +48,12 @@ Every setting can be given explicitly:
 | `--rope-scaling <kind>`, `--rope-scale <n>` | Rope scaling, left to the engine unless asked for |
 | `--api-key <key>` | Require a key on the endpoint |
 
+| `--cache-on cpu\|gpu` | Hold the conversation in system memory, leaving the card to the weights |
+| `--experts-on cpu\|model\|<n>` | Where a mixture-of-experts model keeps its experts |
+| `--dense-layers-on-cpu <n>` | Layers whose feed-forward weights stay in system memory |
+| `--split-mode <kind>`, `--main-device <n>`, `--devices <list>` | How several cards are used |
+| `--override-tensor <pattern>` | Place named tensors by hand |
+
 ### Across several devices
 
 Where a model is too large for any single device, MCF divides it across the
