@@ -533,6 +533,13 @@ impl Hosting {
             out.push("--flash-attn".to_owned());
             out.push("on".to_owned());
         }
+        // MCF has already planned this hold against the model's shape and the
+        // memory the device reports, and every figure it showed a person came
+        // out of that plan. The engine's own fitter would adjust what MCF left
+        // unset, which would make the settings printed here and the settings
+        // run under two different things.
+        out.push("--fit".to_owned());
+        out.push("off".to_owned());
         out.push("--load-mode".to_owned());
         out.push(
             if self.keep_resident && self.loading == Loading::Auto {
@@ -812,6 +819,15 @@ impl Hosting {
                 because: "hold the model's pages in memory rather than letting them page out. \
                           This is the plain form of `loading`, and asking for it while loading \
                           is left alone reads the file mapped and holds it",
+            },
+            Setting {
+                name: "who sizes the hold",
+                value: "MCF".to_owned(),
+                recommended: "MCF".to_owned(),
+                because: "the engine can adjust settings it was not given, to fit the devices \
+                          it finds. MCF turns that off and plans the hold itself, so that what \
+                          it printed is what ran; two fitters with no knowledge of each other \
+                          is how a reported figure and a real one come apart",
             },
             Setting {
                 name: "loading",

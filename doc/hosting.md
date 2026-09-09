@@ -68,6 +68,12 @@ One card holds the whole model wherever it fits — crossing between cards costs
 time, so spreading is what MCF does when it must, not by preference. The
 `spread over` setting says which it did.
 
+**MCF sizes the hold, not the engine.** The engine can adjust settings it was
+not given so a model fits the devices it finds. MCF turns that off and plans the
+hold itself from the model's shape and the memory each device reports, so the
+settings it printed are the settings it ran under. Two fitters with no knowledge
+of each other is how a reported figure and a real one come apart.
+
 MCF plans to all of a device's free memory. `MCF_MEMORY_HEADROOM` lowers that
 share if you want room left for other work; see
 [configuration.md](configuration.md).
