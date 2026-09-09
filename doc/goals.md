@@ -63,11 +63,14 @@ combination delivered. See [statistics.md](statistics.md).
 
 This document describes the target. The diagnostics are gone — the
 laboratory and bench crates, the commands that drove them, and the daemon
-operations behind them — and what remains is the hosting tool. One thing it
-describes is still to build: the record holds what a measurement produced, not
-what a hold did, so the row [statistics.md](statistics.md) describes is not
-written yet.
+operations behind them — and what remains is the hosting tool, which does what
+this document describes.
 
-That is work to be done, not a description of behaviour that exists. Where a
-document in this directory describes something not yet built, it says so in the
-same way.
+One thing is written down and not yet read back: a hold records the
+configuration, the machine and what it produced, and nothing yet gathers those
+rows into an answer to "is this quantization worth it here". The rows are being
+kept so that question can be asked later — see
+[statistics.md](statistics.md).
+
+Where a document in this directory describes something not yet built, it says
+so in the same way.

@@ -2461,10 +2461,6 @@ impl Daemon {
                             "network_address",
                             settings.network_address().map_or(Value::Null, Value::text),
                         ),
-                        (
-                            "network_address",
-                            settings.network_address().map_or(Value::Null, Value::text),
-                        ),
                         ("reachable_from", Value::text("this computer only")),
                         ("settings", settings.to_value()),
                         ("recommended", recommended.to_value()),
@@ -2600,6 +2596,11 @@ impl Daemon {
         let model = held.model.display().to_string();
         let resident = held.served.resident_bytes();
         let energy = energy_of(held.served.reach());
+        // What the hold actually did, read before the engine goes: a row that
+        // says what it cost and not what it produced cannot be compared.
+        let worked: Vec<(&'static str, Value)> = crate::served::metrics_via(held.served.reach())
+            .map(|metrics| counters(&metrics))
+            .unwrap_or_default();
         let card_before = (held.settings.gpu_layers > 0)
             .then(crate::engines::card_memory_used)
             .flatten();
@@ -2642,6 +2643,10 @@ impl Daemon {
                     spent.map_or(Value::Null, |(_, covered_ns)| {
                         thousandths_of(covered_ns, 1_000_000)
                     }),
+                ),
+                (
+                    "worked",
+                    Value::map(worked.iter().map(|(name, held)| (*name, held.clone()))),
                 ),
             ]),
         );

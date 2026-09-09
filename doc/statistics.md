@@ -28,6 +28,11 @@ by MCF or given by you.
 memory, total memory, kernel, and the governor and power state in effect. Not a
 class of machine — this machine, as it was at the time.
 
+The hardware is read by `mcf doctor`, not by the daemon. A daemon that read
+`/proc` and `/sys` while holding a model would be one of the things competing
+for the machine it reports, so the reading is done by a command you ran and the
+hold's row is matched to it by when it happened.
+
 **The performance that resulted.** Prefill and generation rates, latency to
 first token, the token counts from [monitoring.md](monitoring.md), memory and
 video memory actually resident, watts drawn, and the wall-clock shape of the
@@ -72,11 +77,13 @@ record as it does in the source.
 
 ## Where the code is today
 
-The record exists and works: it is append-only, it survives a restart, and it
-recovers from an interrupted write. What it holds today is shaped around the
-diagnostic runs that are being removed rather than around continuous hosting.
+The record is append-only, survives a restart, and recovers from an interrupted
+write. A hold writes both halves of the row above: the settings it ran under,
+what it declared and what MCF recommended go down when the model is held; the
+memory and card memory it gave back, the energy it drew and what that cost, and
+the token counts the engine reported go down when it is let go. The hardware
+comes from `mcf doctor`, for the reason above.
 
-The work is to make a hold produce the row described above — configuration,
-hardware and performance together, written as the hold proceeds rather than
-assembled at the end of a trial. Until that is done, the rows in the record are
-about measurements taken, not about use.
+What is not built is the reading: `mcf log` shows the rows, and nothing yet
+gathers them into an answer to "is this quantization worth it here". The rows
+are being kept so that question can be asked later.
