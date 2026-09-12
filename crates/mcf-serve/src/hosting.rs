@@ -1163,6 +1163,35 @@ impl Hosting {
             ),
             ("draft_head", Value::Bool(self.started.draft_head)),
             (
+                "drafted",
+                self.started
+                    .drafted
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
+            ),
+            (
+                "trained",
+                self.started
+                    .trained
+                    .map_or(Value::Null, |held| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))),
+            ),
+            (
+                "lift",
+                self.started.lift.map_or(Value::Null, |held| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))),
+            ),
+            (
+                "architecture",
+                self.started
+                    .architecture
+                    .clone()
+                    .map_or(Value::Null, Value::text),
+            ),
+            (
+                "thinking",
+                self.started
+                    .thinking
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
+            ),
+            (
                 "rope_scaling",
                 self.started
                     .rope

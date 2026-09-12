@@ -697,6 +697,10 @@ fn one_setting(
             Value::text(said.ok_or("--rope-scaling with no value")?),
         ),
         "--rope-scale" => number("rope_scale")?,
+        "--draft-depth" => number("drafted")?,
+        "--trained-window" => number("trained")?,
+        "--lift-ceiling" => number("lift")?,
+        "--thinking-budget" => number("thinking")?,
         _ => return Ok(None),
     }))
 }
@@ -1021,6 +1025,12 @@ const COMMANDS: &str = "\
     \x20      [--draft-head on|off]          carry and the engine leaves\n\
     \x20      [--rope-scaling <kind>]        in it unless it is asked for;\n\
     \x20      [--rope-scale <n>]             --on puts it where you say;\n\
+    \x20      [--trained-window <n>]         --trained-window is what a rope\n\
+    \x20      [--lift-ceiling <n>]           scaling counts from, and\n\
+    \x20      [--draft-depth <n>]            --lift-ceiling raises the window\n\
+    \x20      [--thinking-budget <n>]        the file itself declares;\n\
+    \x20                                     --thinking-budget stops reasoning\n\
+    \x20                                     after n tokens, 0 at once;\n\
     \x20      [--cache <type>] [--slots <n>] --cache holds each cached token\n\
     \x20      [--cache-reuse <n>]            narrower, so the same memory\n\
     \x20      [--prompt-cache on|off]        holds a longer conversation;\n\
