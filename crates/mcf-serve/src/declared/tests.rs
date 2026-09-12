@@ -15,6 +15,7 @@ fn the_switches_are_the_engines_own() {
         rope: Some(Scaling::Yarn),
         factor: Some(4),
         window: None,
+        ..Started::default()
     };
     assert_eq!(
         asked.arguments(),
@@ -39,24 +40,28 @@ fn what_was_asked_survives_the_wire() {
             rope: None,
             factor: None,
             window: None,
+            ..Started::default()
         },
         Started {
             draft_head: false,
             rope: Some(Scaling::Off),
             factor: None,
             window: None,
+            ..Started::default()
         },
         Started {
             draft_head: true,
             rope: Some(Scaling::Linear),
             factor: Some(8),
             window: None,
+            ..Started::default()
         },
         Started {
             draft_head: false,
             rope: None,
             factor: None,
             window: Some(8192),
+            ..Started::default()
         },
     ] {
         assert_eq!(Started::from_value(&asked.to_value()), asked);
@@ -142,23 +147,23 @@ fn what_was_left_in_the_file_is_said() {
         ..Declared::default()
     };
     let said = declares_one
-        .not_started(Started::default())
+        .not_started(&Started::default())
         .expect("a draft head nobody asked for");
     assert!(said.contains("a draft head of 1 layer,"), "{said}");
     assert_eq!(
-        declares_one.not_started(Started {
+        declares_one.not_started(&Started {
             draft_head: true,
             ..Started::default()
         }),
         None
     );
-    assert_eq!(Declared::default().not_started(Started::default()), None);
+    assert_eq!(Declared::default().not_started(&Started::default()), None);
     let declares_two = Declared {
         draft_head: Some(2),
         ..Declared::default()
     };
     let said = declares_two
-        .not_started(Started::default())
+        .not_started(&Started::default())
         .expect("two layers");
     assert!(said.contains("2 layers"), "{said}");
 }
@@ -181,4 +186,92 @@ fn only_the_engines_own_words_are_scalings() {
     assert_eq!(Scaling::from_word("none"), Some(Scaling::Off));
     assert_eq!(Scaling::from_word("Yarn"), None);
     assert_eq!(Scaling::from_word("stretched"), None);
+}
+
+#[test]
+fn the_tuning_switches_reach_the_engine_in_the_order_it_reads_them() {
+    let asked = Started {
+        draft_head: true,
+        drafted: Some(2),
+        rope: Some(Scaling::Yarn),
+        factor: Some(2),
+        trained: Some(262_144),
+        lift: Some(524_288),
+        architecture: Some("llama".to_owned()),
+        thinking: Some(4096),
+        window: Some(524_288),
+    };
+    assert_eq!(
+        asked.arguments(),
+        vec![
+            "--spec-type".to_owned(),
+            "draft-mtp".to_owned(),
+            "--spec-draft-n-max".to_owned(),
+            "2".to_owned(),
+            "--rope-scaling".to_owned(),
+            "yarn".to_owned(),
+            "--rope-scale".to_owned(),
+            "2".to_owned(),
+            "--yarn-orig-ctx".to_owned(),
+            "262144".to_owned(),
+            "--override-kv".to_owned(),
+            "llama.context_length=int:524288".to_owned(),
+            "--reasoning-budget".to_owned(),
+            "4096".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn lifting_the_ceiling_needs_the_architecture_the_header_named() {
+    let without = Started {
+        lift: Some(524_288),
+        ..Started::default()
+    };
+    assert!(
+        without.arguments().is_empty(),
+        "a ceiling cannot be lifted without the architecture whose key carries it"
+    );
+    let with = Started {
+        lift: Some(524_288),
+        architecture: Some("gpt-oss".to_owned()),
+        ..Started::default()
+    };
+    assert_eq!(
+        with.arguments(),
+        vec![
+            "--override-kv".to_owned(),
+            "gpt-oss.context_length=int:524288".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn a_thinking_budget_of_zero_is_a_setting_not_an_absence() {
+    let cut = Started {
+        thinking: Some(0),
+        ..Started::default()
+    };
+    assert!(cut.asks_anything());
+    assert_eq!(
+        cut.arguments(),
+        vec!["--reasoning-budget".to_owned(), "0".to_owned()]
+    );
+    assert!(cut.said().contains("cut off at once"), "{}", cut.said());
+}
+
+#[test]
+fn every_new_switch_survives_the_wire() {
+    let asked = Started {
+        draft_head: false,
+        drafted: Some(5),
+        rope: None,
+        factor: None,
+        trained: Some(131_072),
+        lift: Some(1_048_576),
+        architecture: Some("nemotron_h_moe".to_owned()),
+        thinking: Some(6144),
+        window: Some(1_048_576),
+    };
+    assert_eq!(Started::from_value(&asked.to_value()), asked);
 }

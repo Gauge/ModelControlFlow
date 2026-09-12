@@ -393,7 +393,7 @@ pub(crate) fn serve_generation(
     cached: bool,
     turn: Option<&crate::turn::Turn>,
     picture: Option<&Path>,
-    started: crate::declared::Started,
+    started: &crate::declared::Started,
     held: Option<&Served>,
     waiting: crate::served::Waiting<'_>,
     writer: &mut &UnixStream,
@@ -515,7 +515,7 @@ fn engine_for(
     mcf_home: &Path,
     picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
     engine: Option<&str>,
-    started: crate::declared::Started,
+    started: &crate::declared::Started,
     declared: &crate::declared::Declared,
 ) -> (Result<Chosen, Failure>, u32, u64) {
     let (chosen, gpu_layers, context) = chosen_engine(mcf_home, picked, engine);
@@ -629,7 +629,7 @@ struct Place<'a> {
     named: &'a str,
     gpu_layers: u32,
     server: &'a std::sync::Mutex<Option<Served>>,
-    started: crate::declared::Started,
+    started: &'a crate::declared::Started,
     held: Option<&'a Served>,
 }
 
@@ -889,14 +889,14 @@ pub(crate) fn framed_as(
 
 const SMALLEST_WINDOW: u64 = 4096;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct Where<'a> {
     pub store: &'a Path,
     pub llama: &'a crate::adapters::ProvisionedLlama,
     pub runtime: &'a Path,
     pub named: &'a str,
     pub gpu_layers: u32,
-    pub started: crate::declared::Started,
+    pub started: &'a crate::declared::Started,
     pub held: Option<&'a Served>,
 }
 
@@ -950,7 +950,7 @@ fn serving<'slot>(
             && held.prefix == llama.prefix
             && held.gpu_layers == gpu_layers
             && window_suits(held.window, window)
-            && held.started.same_switches(&started)
+            && held.started.same_switches(started)
     });
     if !reused {
         *slot = None;
@@ -1007,7 +1007,7 @@ fn through_served(
     draw: Draw,
     gpu_layers: u32,
     context: u64,
-    started: crate::declared::Started,
+    started: &crate::declared::Started,
     declared: &crate::declared::Declared,
     waiting: crate::served::Waiting<'_>,
     writer: &mut &UnixStream,

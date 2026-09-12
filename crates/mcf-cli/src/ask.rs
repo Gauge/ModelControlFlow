@@ -82,7 +82,7 @@ fn asking(
         pinned: false,
         turn: None,
         image: None,
-        started: mcf_serve::declared::Started::default(),
+        started: std::boxed::Box::new(mcf_serve::declared::Started::default()),
     };
     if let Err(error) =
         writeln!(connection, "{}", request.to_line()).and_then(|()| connection.flush())

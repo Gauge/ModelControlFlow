@@ -131,6 +131,17 @@ kept in the local record.
 ## 6 · Where things live
 
 | Models | `$MCF_MODELS`, or `$XDG_DATA_HOME/mcf` or `$HOME/.local/share/mcf` |
+
+`MCF_MODELS` takes a list separated the way `PATH` is, and each entry is
+searched right through, so an existing collection can be used where it already
+lies rather than copied:
+
+```
+MCF_MODELS=/var/cache/models/hf:/srv/models mcf list
+```
+
+The first entry is also where `mcf pull` puts what it fetches, unless `--into`
+names somewhere else.
 | Engines | Built into `~/.local/share/mcf/provisioned` |
 | Control socket | `/run/user/<uid>/mcf/control.sock` |
 | Settings | Editable from any of the three interfaces |

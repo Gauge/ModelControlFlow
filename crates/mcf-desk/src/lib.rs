@@ -2974,7 +2974,7 @@ impl Desk {
                 pinned: false,
                 turn: None,
                 image: None,
-                started: mcf_serve::declared::Started::default(),
+                started: std::boxed::Box::new(mcf_serve::declared::Started::default()),
             },
             format!("asking {}", held.name),
         ));

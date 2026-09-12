@@ -31,6 +31,7 @@ pub struct Declared {
     pub draft_head: Option<u64>,
     pub rope: Option<Rope>,
     pub context: Option<u64>,
+    pub architecture: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +61,7 @@ impl Declared {
                 .and_then(|held| u64::try_from(held).ok())
         };
         Self {
+            architecture: Some(architecture.to_owned()),
             draft_head: number("nextn_predict_layers").filter(|layers| *layers > 0),
             rope: under("rope.scaling.type")
                 .and_then(Held::as_text)
@@ -73,7 +75,7 @@ impl Declared {
     }
 
     #[must_use]
-    pub fn not_started(&self, started: Started) -> Option<String> {
+    pub fn not_started(&self, started: &Started) -> Option<String> {
         let layers = self.draft_head.filter(|_| !started.draft_head)?;
         let plural = if layers == 1 { "" } else { "s" };
         Some(format!(
@@ -90,6 +92,10 @@ impl Declared {
         };
         let rope = value.get("rope_scaling");
         Self {
+            architecture: value
+                .get("architecture")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
             draft_head: number(value.get("draft_head")),
             rope: rope
                 .and_then(|rope| rope.get("kind"))
@@ -142,12 +148,17 @@ impl Declared {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Started {
     pub draft_head: bool,
     pub rope: Option<Scaling>,
     pub factor: Option<u32>,
     pub window: Option<u64>,
+    pub drafted: Option<u32>,
+    pub trained: Option<u64>,
+    pub lift: Option<u64>,
+    pub architecture: Option<String>,
+    pub thinking: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,7 +192,13 @@ impl Scaling {
 impl Started {
     #[must_use]
     pub const fn asks_anything(&self) -> bool {
-        self.draft_head || self.rope.is_some() || self.factor.is_some()
+        self.draft_head
+            || self.rope.is_some()
+            || self.factor.is_some()
+            || self.drafted.is_some()
+            || self.trained.is_some()
+            || self.lift.is_some()
+            || self.thinking.is_some()
     }
 
     #[must_use]
@@ -189,6 +206,10 @@ impl Started {
         self.draft_head == other.draft_head
             && self.rope == other.rope
             && self.factor == other.factor
+            && self.drafted == other.drafted
+            && self.trained == other.trained
+            && self.lift == other.lift
+            && self.thinking == other.thinking
     }
 
     #[must_use]
@@ -198,6 +219,10 @@ impl Started {
             out.push("--spec-type".to_owned());
             out.push("draft-mtp".to_owned());
         }
+        if let Some(drafted) = self.drafted {
+            out.push("--spec-draft-n-max".to_owned());
+            out.push(drafted.to_string());
+        }
         if let Some(rope) = self.rope {
             out.push("--rope-scaling".to_owned());
             out.push(rope.as_str().to_owned());
@@ -205,6 +230,18 @@ impl Started {
         if let Some(factor) = self.factor {
             out.push("--rope-scale".to_owned());
             out.push(factor.to_string());
+        }
+        if let Some(trained) = self.trained {
+            out.push("--yarn-orig-ctx".to_owned());
+            out.push(trained.to_string());
+        }
+        if let (Some(lift), Some(architecture)) = (self.lift, self.architecture.as_ref()) {
+            out.push("--override-kv".to_owned());
+            out.push(format!("{architecture}.context_length=int:{lift}"));
+        }
+        if let Some(thinking) = self.thinking {
+            out.push("--reasoning-budget".to_owned());
+            out.push(thinking.to_string());
         }
         out
     }
@@ -223,6 +260,22 @@ impl Started {
         }
         if let Some(window) = self.window {
             said.push(format!("a window of {window} tokens"));
+        }
+        if let Some(drafted) = self.drafted {
+            said.push(format!("{drafted} tokens drafted at a time"));
+        }
+        if let Some(trained) = self.trained {
+            said.push(format!("scaled from the {trained} it was trained on"));
+        }
+        if let Some(lift) = self.lift {
+            said.push(format!("its declared ceiling lifted to {lift}"));
+        }
+        if let Some(thinking) = self.thinking {
+            said.push(if thinking == 0 {
+                "thinking cut off at once".to_owned()
+            } else {
+                format!("thinking capped at {thinking} tokens")
+            });
         }
         if said.is_empty() {
             "nothing beyond the plain load".to_owned()
@@ -244,6 +297,31 @@ impl Started {
                 "rope_scale",
                 self.factor
                     .map_or(Value::Null, |factor| Value::Integer(i64::from(factor))),
+            ),
+            (
+                "drafted",
+                self.drafted
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
+            ),
+            (
+                "trained",
+                self.trained
+                    .map_or(Value::Null, |held| whole(u128::from(held))),
+            ),
+            (
+                "lift",
+                self.lift.map_or(Value::Null, |held| whole(u128::from(held))),
+            ),
+            (
+                "architecture",
+                self.architecture
+                    .as_ref()
+                    .map_or(Value::Null, |held| Value::text(held.clone())),
+            ),
+            (
+                "thinking",
+                self.thinking
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
             ),
             (
                 "window",
@@ -270,6 +348,26 @@ impl Started {
                 .get("window")
                 .and_then(Value::as_integer)
                 .and_then(|held| u64::try_from(held).ok()),
+            drafted: value
+                .get("drafted")
+                .and_then(Value::as_integer)
+                .and_then(|held| u32::try_from(held).ok()),
+            trained: value
+                .get("trained")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+            lift: value
+                .get("lift")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+            architecture: value
+                .get("architecture")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
+            thinking: value
+                .get("thinking")
+                .and_then(Value::as_integer)
+                .and_then(|held| u32::try_from(held).ok()),
         }
     }
 

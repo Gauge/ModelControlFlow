@@ -555,7 +555,7 @@ impl Served {
         gpu_layers: u32,
         context: u64,
         projector: Option<&Path>,
-        started: crate::declared::Started,
+        started: &crate::declared::Started,
     ) -> Result<Self, Failure> {
         Self::start_within(
             llama, model, runtime, ATTEMPTS, gpu_layers, context, projector, started,
@@ -631,7 +631,7 @@ impl Served {
             window: settings.context,
             projector: settings.projector.as_ref().map(PathBuf::from),
             media_marker: None,
-            started: settings.started,
+            started: settings.started.clone(),
         };
         served
             .wait_until_answering(settings.port, ATTEMPTS, report)
@@ -687,7 +687,7 @@ impl Served {
         gpu_layers: u32,
         context: u64,
         projector: Option<&Path>,
-        started: crate::declared::Started,
+        started: &crate::declared::Started,
     ) -> Result<Self, Failure> {
         Self::start_as(
             llama,
@@ -698,7 +698,7 @@ impl Served {
                 gpu_layers,
                 context,
                 projector: projector.map(Path::to_path_buf),
-                started,
+                started: started.clone(),
                 ..Startup::default()
             },
         )
@@ -718,7 +718,7 @@ impl Served {
             startup.attempts,
             startup.gpu_layers,
             startup.context,
-            startup.started,
+            &startup.started,
         );
         let projector = startup.projector.as_deref();
         let binary = llama.prefix.join("build").join("bin").join("llama-server");
@@ -826,7 +826,7 @@ impl Served {
             window: context,
             projector: projector.map(Path::to_path_buf),
             media_marker: Some(media_marker),
-            started,
+            started: started.clone(),
         };
         served
             .wait_until_listening(attempts)

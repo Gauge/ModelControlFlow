@@ -59,7 +59,7 @@ pub enum Request {
         pinned: bool,
         turn: Option<crate::turn::Turn>,
         image: Option<String>,
-        started: crate::declared::Started,
+        started: std::boxed::Box<crate::declared::Started>,
     },
     Offered {
         reference: String,
@@ -110,7 +110,7 @@ fn generate_line(
     pinned: bool,
     turn: Option<&crate::turn::Turn>,
     image: Option<&str>,
-    started: crate::declared::Started,
+    started: &crate::declared::Started,
 ) -> Value {
     Value::map([
         ("ask", Value::text("generate")),
@@ -247,7 +247,7 @@ impl Request {
                 *pinned,
                 turn.as_ref(),
                 image.as_deref(),
-                *started,
+                started,
             ),
             Self::Offered {
                 reference,
@@ -445,10 +445,12 @@ impl Request {
                         .get("image")
                         .and_then(Value::as_text)
                         .map(str::to_owned),
-                    started: value
-                        .get("started_with")
-                        .map(crate::declared::Started::from_value)
-                        .unwrap_or_default(),
+                    started: std::boxed::Box::new(
+                        value
+                            .get("started_with")
+                            .map(crate::declared::Started::from_value)
+                            .unwrap_or_default(),
+                    ),
                 })
             }
             Some(other) => Err(refused("a request MCF does not have", other)),

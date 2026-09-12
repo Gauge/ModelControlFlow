@@ -432,7 +432,7 @@ fn explained(
                 .get("declares")
                 .map(mcf_serve::declared::Declared::from_value)
                 .and_then(|declared| {
-                    declared.not_started(mcf_serve::declared::Started::from_value(
+                    declared.not_started(&mcf_serve::declared::Started::from_value(
                         body.get("settings").unwrap_or(&Value::Null),
                     ))
                 })
@@ -612,7 +612,7 @@ fn hosting(body: &Value) -> String {
     if let Some(left) = body
         .get("declares")
         .map(mcf_serve::declared::Declared::from_value)
-        .and_then(|declared| declared.not_started(started))
+        .and_then(|declared| declared.not_started(&started))
     {
         lines.push(format!("  declares       {left}"));
     }

@@ -1564,7 +1564,7 @@ impl Daemon {
                     pinned,
                     turn.as_ref(),
                     image.as_deref().map(Path::new),
-                    started,
+                    &started,
                     waiting,
                     writer,
                 );
@@ -1606,7 +1606,7 @@ impl Daemon {
         pinned: bool,
         turn: Option<&crate::turn::Turn>,
         picture: Option<&Path>,
-        started: crate::declared::Started,
+        started: &crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
@@ -1619,7 +1619,7 @@ impl Daemon {
         let hosted = self.hosted_for(named, started, engine);
         let (picked, started) = hosted.as_ref().map_or_else(
             || (self.picked_engine(named), started),
-            |hosted| (Some(hosted.picked.clone()), hosted.started),
+            |hosted| (Some(hosted.picked.clone()), &hosted.started),
         );
         let produced = crate::generation::serve_generation(
             &self.places.models,
@@ -1772,7 +1772,7 @@ impl Daemon {
     fn hosted_for(
         &self,
         named: &str,
-        started: crate::declared::Started,
+        started: &crate::declared::Started,
         engine: Option<&str>,
     ) -> Option<HeldFor> {
         if engine.is_some_and(|engine| engine != "provisioned") {
@@ -1786,7 +1786,7 @@ impl Daemon {
         if held.model != crate::generation::resolved(&self.places.models, named) {
             return None;
         }
-        if started.asks_anything() && started != held.served.started {
+        if started.asks_anything() && *started != held.served.started {
             return None;
         }
         Some(HeldFor {
@@ -1799,7 +1799,7 @@ impl Daemon {
                 held.settings.gpu_layers,
                 held.settings.context,
             ),
-            started: held.served.started,
+            started: held.served.started.clone(),
             served: std::sync::Arc::clone(&held.served),
         })
     }
