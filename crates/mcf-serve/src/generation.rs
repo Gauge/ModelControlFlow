@@ -690,9 +690,32 @@ fn choose_engine(mcf_home: &Path, asked: Option<&str>) -> Result<Chosen, Failure
     match asked {
         Some("stand-in") => return Ok(Chosen::StandIn),
         Some("provisioned") | None => {}
+        Some(wanted) if wanted.starts_with("llama.cpp") => {
+            let found = provisioned_llama(mcf_home);
+            let held = found.components();
+            return found.named(wanted).map(Chosen::Provisioned).ok_or_else(|| {
+                Failure::new(
+                    mcf_core::failure::Category::EngineUnavailable,
+                    mcf_core::failure::Attribution::User,
+                    mcf_core::failure::Disposition::Refused,
+                    mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+                    "that engine is not provisioned here",
+                )
+                .with_context("asked", wanted.to_owned())
+                .with_context(
+                    "provisioned",
+                    if held.is_empty() {
+                        "nothing".to_owned()
+                    } else {
+                        held.join(", ")
+                    },
+                )
+            });
+        }
         Some(other) => {
             return Err(crate::control::refused(
-                "an engine MCF does not have: stand-in or provisioned",
+                "an engine MCF does not have: stand-in, provisioned, or a provisioned build \
+                 by name",
                 other,
             ));
         }

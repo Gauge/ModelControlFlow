@@ -117,6 +117,35 @@ pub const COMPONENTS: &[Component] = &[
         ],
     },
     Component {
+        name: "llama.cpp-rocm",
+        role: "the same reference built against ROCm's HIP. On an AMD card this and the \
+           Vulkan build are two engines with two speeds, and which is faster is a property \
+           of the model rather than the machine — so both can be here at once and the \
+           figures decide, with `--engine` naming which holds",
+        image: "docker.io/rocm/dev-ubuntu-24.04:7.0-complete",
+        image_digest: "sha256:ffd8ac00ca6c8e2dbfd0c364c7cc27542f90148f3f358d74efd028f67c33607b",
+        source: "https://github.com/ggml-org/llama.cpp.git",
+        commit: "acecd56032ddc34bada14a2d978f110d9c987095",
+        packages: &["build-essential", "cmake", "git", "ca-certificates"],
+        packaging: Packaging::Apt,
+        configure: &[
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DGGML_NATIVE=OFF",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DLLAMA_CURL=OFF",
+            "-DLLAMA_BUILD_TESTS=OFF",
+            "-DLLAMA_BUILD_EXAMPLES=ON",
+            "-DGGML_HIP=ON",
+        ],
+        targets: &[
+            "llama-tokenize",
+            "llama-completion",
+            "llama-embedding",
+            "llama-server",
+            "llama-mtmd-cli",
+        ],
+    },
+    Component {
         name: "SDL3",
         role: "a window, keyboard and mouse events, and a 2D renderer for the desktop \
                application (B-405). It is the ONLY thing vendored for it: MCF draws every \

@@ -230,7 +230,32 @@ impl ProvisionedLlama {
 pub enum Found {
     One(ProvisionedLlama),
     None,
-    Several(Vec<PathBuf>),
+    Several(Vec<ProvisionedLlama>),
+}
+
+impl Found {
+    #[must_use]
+    pub fn named(self, wanted: &str) -> Option<ProvisionedLlama> {
+        let held = match self {
+            Self::One(llama) => vec![llama],
+            Self::Several(llamas) => llamas,
+            Self::None => Vec::new(),
+        };
+        held.into_iter()
+            .find(|llama| llama.component == wanted)
+    }
+
+    #[must_use]
+    pub fn components(&self) -> Vec<String> {
+        match self {
+            Self::One(llama) => vec![llama.component.clone()],
+            Self::Several(llamas) => llamas
+                .iter()
+                .map(|llama| llama.component.clone())
+                .collect(),
+            Self::None => Vec::new(),
+        }
+    }
 }
 
 #[must_use]
@@ -280,7 +305,16 @@ pub fn provisioned_llama(mcf_home: &Path) -> Found {
             }),
             None => Found::None,
         },
-        _ => Found::Several(prefixes.into_iter().map(|(prefix, _, _)| prefix).collect()),
+        _ => Found::Several(
+            prefixes
+                .into_iter()
+                .map(|(prefix, commit, component)| ProvisionedLlama {
+                    prefix,
+                    commit,
+                    component,
+                })
+                .collect(),
+        ),
     }
 }
 
@@ -288,25 +322,27 @@ pub fn only_one(found: Found) -> Result<Option<ProvisionedLlama>, Failure> {
     match found {
         Found::One(llama) => Ok(Some(llama)),
         Found::None => Ok(None),
-        Found::Several(prefixes) => Err(Failure::new(
-            Category::ConfigConflict,
-            Attribution::User,
-            Disposition::Refused,
-            WHERE,
-            "more than one llama.cpp is provisioned, and MCF will not choose between builds",
-        )
-        .with_context(
-            "prefixes",
-            prefixes
+        Found::Several(llamas) => {
+            let names: Vec<String> = llamas
                 .iter()
-                .map(|prefix| prefix.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        )
-        .with_context(
-            "what_to_do",
-            "remove all but one (`mcf provision --remove`)",
-        )),
+                .map(|llama| llama.component.clone())
+                .collect();
+            Err(Failure::new(
+                Category::ConfigConflict,
+                Attribution::User,
+                Disposition::Refused,
+                WHERE,
+                "more than one llama.cpp is provisioned and none was named. Two back ends are \
+                 two engines with two speeds, and which is faster is a property of the model \
+                 rather than the machine — so MCF holds under the one you name rather than \
+                 picking for you",
+            )
+            .with_context("provisioned", names.join(", "))
+            .with_context(
+                "what_to_do",
+                format!("name one: `mcf host <model> --engine {}`", names.join(" | ")),
+            ))
+        }
     }
 }
 
