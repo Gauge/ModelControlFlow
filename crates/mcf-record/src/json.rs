@@ -309,8 +309,6 @@ fn parse_string(bytes: &[u8], at: &mut usize) -> Result<String, ParseError> {
                 });
             }
             _ => {
-                // Multi-byte UTF-8: take the whole sequence from the original
-                // text rather than pushing a byte, which would split it.
                 let start = *at - 1;
                 let length = utf8_length(byte);
                 let Some(slice) = bytes.get(start..start + length) else {

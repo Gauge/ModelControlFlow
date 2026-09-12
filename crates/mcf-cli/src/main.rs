@@ -531,7 +531,6 @@ fn export(to: &std::path::Path) -> Response {
     }
 }
 
-// A setting as the daemon takes it: the name it knows and the value given.
 type Change = (String, mcf_record::json::Value);
 
 fn host_options(rest: &[&str]) -> Result<Vec<Change>, &'static str> {
@@ -557,8 +556,6 @@ fn host_options(rest: &[&str]) -> Result<Vec<Change>, &'static str> {
     Ok(changes)
 }
 
-// One flag, read into the name and value the daemon takes. `None` is a flag
-// `mcf host` does not have, which the caller turns into the refusal.
 #[allow(
     clippy::too_many_lines,
     reason = "one flag a line, which is the readable shape for a list of them"
@@ -705,7 +702,6 @@ fn one_setting(
 }
 
 fn on_a_terminal() -> bool {
-    // SAFETY: isatty reads a descriptor number and returns a flag; it touches nothing here.
     #[allow(
         unsafe_code,
         reason = "asking the C library whether stdout is a terminal"

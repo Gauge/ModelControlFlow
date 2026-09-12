@@ -1884,9 +1884,6 @@ fn a_daemon_killed_mid_generation_leaves_a_client_that_says_so_and_a_record_that
     assert!(next.wait().expect("the daemon exits").success());
 }
 
-/// A port nothing is on, asked of the kernel rather than picked and hoped for:
-/// a test that fails and leaves an engine behind must not take the next run
-/// down with it.
 fn anything_answering_on(port: u16) -> bool {
     use std::io::Write as _;
     let Ok(mut connection) = std::net::TcpStream::connect(("127.0.0.1", port)) else {
@@ -1916,8 +1913,6 @@ impl Drop for Reaped {
     }
 }
 
-/// A machine with two models it can hold, an engine that answers, and a
-/// daemon up and waiting.
 fn a_machine_ready_to_host(named: &str) -> (Machine, Reaped) {
     let machine = Machine::new(named);
     let models = machine
@@ -1952,8 +1947,6 @@ fn a_machine_ready_to_host(named: &str) -> (Machine, Reaped) {
     (machine, serving)
 }
 
-/// `mcf host` end to end: a model held on a port, asked a question through
-/// the endpoint, and let go — with the record showing what it did.
 #[test]
 fn a_model_is_held_asked_and_let_go() {
     let (machine, mut serving) = a_machine_ready_to_host("held-asked-let-go");
@@ -1971,8 +1964,6 @@ fn a_model_is_held_asked_and_let_go() {
         "the port is not named: {hosted}"
     );
 
-    // Asked through the hold rather than by naming a file: the point of
-    // hosting is that a question goes to whatever is up.
     let answered = machine.run(&["ask", "--prompt", "where"]);
     assert!(answered.status.success(), "{}", error_text(&answered));
     let answer = text(&answered);
@@ -1985,7 +1976,6 @@ fn a_model_is_held_asked_and_let_go() {
         "the answer does not say who served it: {answer}"
     );
 
-    // One model at a time: holding the second lets the first go.
     let second_port = a_free_port().to_string();
     let second = machine.run(&["host", "lab/fixture:second.gguf", "--port", &second_port]);
     assert!(second.status.success(), "{}", error_text(&second));
@@ -1998,9 +1988,6 @@ fn a_model_is_held_asked_and_let_go() {
         !hosted.contains("first.gguf"),
         "both are held, and one runs at a time: {hosted}"
     );
-    // The daemon's own view saying one thing is held proves nothing on its
-    // own: what proves the first was let go is that its engine is gone from
-    // the port it was on.
     let first_port: u16 = first_port.parse().expect("a port");
     let mut freed = false;
     for _ in 0..40 {
@@ -2027,7 +2014,6 @@ fn a_model_is_held_asked_and_let_go() {
     let _stopped = machine.run(&["stop", "--because", "the hosting test is done"]);
     let _waited = serving.0.wait();
 
-    // The record says what was held and what the hold did.
     let log = text(&machine.run(&["log", "--full"]));
     assert!(
         log.contains("first.gguf"),
@@ -2093,7 +2079,6 @@ fn dies_part_way(connection: &mut dyn std::io::Write) -> ! {
 
 const STAND_IN_ANSWER: &str = "Paris is the capital.";
 
-/// What the stand-in says it has done, in the shape llama.cpp publishes.
 const ENGINE_METRICS: &str = "\
 # HELP llamacpp:prompt_tokens_total Number of prompt tokens processed.
 # TYPE llamacpp:prompt_tokens_total counter
@@ -2106,9 +2091,6 @@ llamacpp:tokens_predicted_total 34
 llamacpp:requests_processing 0
 ";
 
-/// Where the stand-in listens. `mcf host` puts an engine on a port and asks
-/// it for `/health`; everything else reaches it over a socket in the runtime
-/// directory. One server answers both, because what it answers is the same.
 enum Listening {
     Socket(std::os::unix::net::UnixListener),
     Port(std::net::TcpListener),

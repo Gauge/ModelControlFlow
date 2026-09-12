@@ -758,9 +758,6 @@ fn the_price_of_a_window_is_shown_where_it_is_chosen() {
     unpriced.models[0].cache_per_token = None;
     unpriced.models[0].cache_elements_per_token = None;
 
-    // Tall enough that the whole configure page fits: on one screen the extra
-    // line pushes a later row off the bottom, and the count goes down for a
-    // reason that has nothing to do with the price being drawn.
     let tall = (1180, 1900);
     let with = drawn_sized(&priced, DAY, "window-priced", tall);
     let without = drawn_sized(&unpriced, DAY, "window-unpriced", tall);

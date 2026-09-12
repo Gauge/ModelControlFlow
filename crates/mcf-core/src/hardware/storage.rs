@@ -61,9 +61,6 @@ pub(super) fn of_mounts(mounts: &str, path: &str) -> Option<Storage> {
     best
 }
 
-/// Whether a mount point is an ancestor of a path, by path components rather
-/// than by string prefix — `/home` covers `/home/x` and does not cover
-/// `/homework`.
 fn covers(mount_point: &str, path: &str) -> bool {
     if mount_point == "/" {
         return path.starts_with('/');

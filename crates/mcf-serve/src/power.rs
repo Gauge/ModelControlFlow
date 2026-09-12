@@ -7,9 +7,6 @@ const EVERY: std::time::Duration = std::time::Duration::from_millis(500);
 
 pub const PRICE_VARIABLE: &str = "MCF_PRICE_PER_KWH";
 
-/// What a kilowatt-hour costs here, if anybody has said. Unset means MCF
-/// reports the energy and no cost: a price it invented would be a number
-/// that looks like money and is not one.
 #[must_use]
 pub fn price() -> Option<mcf_core::price::PricePerKwh> {
     std::env::var(PRICE_VARIABLE)

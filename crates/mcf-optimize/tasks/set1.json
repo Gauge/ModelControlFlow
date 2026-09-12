@@ -1,0 +1,42 @@
+[
+ {
+  "n": "expr-eval",
+  "p": "Write a complete arithmetic expression evaluator with THREE functions that work together: `tokenize(s)` returning a token list, `parse(tokens)` returning an AST, and `evaluate(ast)` returning a number. Support + - * / , parentheses, unary minus, integer and float literals, and correct precedence. Also expose `calc(s)` that chains all three. Division by zero raises ZeroDivisionError. Malformed input raises SyntaxError.",
+  "t": "assert calc('2+3*4')==14\nassert calc('(2+3)*4')==20\nassert calc('-5+3')==-2\nassert calc('2*-3')==-6\nassert abs(calc('7/2')-3.5)<1e-9\nassert calc('((1+2)*(3+4))')==21\nassert calc('-(3+4)')==-7\ntry:\n    calc('1/0')\n    assert False\nexcept ZeroDivisionError:\n    pass\ntry:\n    calc('2+*3')\n    assert False\nexcept SyntaxError:\n    pass"
+ },
+ {
+  "n": "json-parser",
+  "p": "Write a JSON parser from scratch WITHOUT importing json. Provide `parse_json(s)` returning Python objects. Support objects, arrays, strings with \\\" \\\\ \\n \\t escapes, integers, floats, true/false/null, and nested structures. Ignore insignificant whitespace. Raise ValueError on malformed input.",
+  "t": "assert parse_json('{\"a\":[1,2,{\"b\":null}]}')=={'a':[1,2,{'b':None}]}\nassert parse_json('  true ')==True\nassert parse_json('[]')==[]\nassert parse_json('{}')=={}\nassert parse_json('\"a\\\\nb\"')=='a\\nb'\nassert parse_json('-1.5e2')==-150.0\nassert parse_json('[1 , 2]')==[1,2]\ntry:\n    parse_json('{\"a\":}')\n    assert False\nexcept ValueError:\n    pass"
+ },
+ {
+  "n": "regex",
+  "p": "Implement a mini regex matcher `match(pattern, text)` returning True if the WHOLE text matches. Support: literal chars, '.' any char, '*' zero-or-more of the preceding element, '+' one-or-more, '?' optional, and character classes like [abc] and [a-z]. No other syntax.",
+  "t": "assert match('a*','')==True\nassert match('a*b','aaab')==True\nassert match('a.c','abc')==True\nassert match('a.c','ac')==False\nassert match('[a-c]+','abcab')==True\nassert match('[a-c]+','abd')==False\nassert match('ab?c','ac')==True\nassert match('ab?c','abc')==True\nassert match('a+','')==False"
+ },
+ {
+  "n": "diff-patch",
+  "p": "Write TWO functions that round-trip: `make_diff(a,b)` taking two lists of strings and returning a compact diff structure of your own design, and `apply_diff(a,diff)` that reconstructs b exactly. apply_diff(a, make_diff(a,b)) must equal b for ANY inputs.",
+  "t": "import random\nrandom.seed(7)\nfor _ in range(60):\n    a=[str(random.randint(0,5)) for _ in range(random.randint(0,12))]\n    b=[str(random.randint(0,5)) for _ in range(random.randint(0,12))]\n    assert apply_diff(a,make_diff(a,b))==b, (a,b)\nassert apply_diff([],make_diff([],[]))==[]"
+ },
+ {
+  "n": "ini-parser",
+  "p": "Write `parse_config(text)` for an INI-like format. Sections as [name]; key=value pairs; ';' and '#' start comments; blank lines ignored; values are type-coerced to int, float, bool (true/false/yes/no, case-insensitive) or str; keys before any section go under ''. Later duplicate keys override earlier ones. Whitespace around keys/values is stripped. Raise ValueError on a malformed line.",
+  "t": "c=parse_config('''\\ntop=1\\n[a]\\n; comment\\nx = 5\\ny=2.5\\nz = yes\\nw = hello world\\n[b]\\nx=no\\nx=TRUE\\n''')\nassert c['']['top']==1\nassert c['a']['x']==5 and c['a']['y']==2.5\nassert c['a']['z'] is True\nassert c['a']['w']=='hello world'\nassert c['b']['x'] is True\ntry:\n    parse_config('[a]\\nbroken line\\n')\n    assert False\nexcept ValueError:\n    pass"
+ },
+ {
+  "n": "scheduler",
+  "p": "Write `schedule(tasks)` where tasks is a dict name -> {'deps': [names], 'duration': int}. Return (order, total_time) where order is a valid topological order broken by (a) longest critical path first, then (b) alphabetically, and total_time is the minimum makespan assuming UNLIMITED parallel workers (i.e. the critical path length). Raise ValueError('cycle') on a cycle.",
+  "t": "t={'a':{'deps':[],'duration':3},'b':{'deps':['a'],'duration':2},'c':{'deps':['a'],'duration':5},'d':{'deps':['b','c'],'duration':1}}\no,tt=schedule(t)\nassert tt==9\nassert o.index('a')<o.index('b') and o.index('c')<o.index('d')\nassert schedule({'x':{'deps':[],'duration':4}})==(['x'],4)\ntry:\n    schedule({'a':{'deps':['b'],'duration':1},'b':{'deps':['a'],'duration':1}})\n    assert False\nexcept ValueError:\n    pass"
+ },
+ {
+  "n": "lru-ttl",
+  "p": "Write an `LRUTTLCache` class: __init__(capacity, ttl, clock) where clock is a zero-arg callable returning current time. get(k) returns None if missing or expired; put(k,v) inserts, evicting the least-recently-used when over capacity; expired entries are never returned and must not occupy capacity when a new put needs room. Expose .stats() returning dict with 'hits','misses','evictions','expirations'.",
+  "t": "now=[0]\nc=LRUTTLCache(2,10,lambda:now[0])\nc.put('a',1); c.put('b',2)\nassert c.get('a')==1\nnow[0]=11\nassert c.get('a') is None\nc.put('c',3); c.put('d',4)\nassert c.get('c')==3 and c.get('d')==4\ns=c.stats()\nassert s['hits']>=2 and s['misses']>=1 and s['expirations']>=1"
+ },
+ {
+  "n": "debug-fix",
+  "p": "The following function is SUPPOSED to return all root-to-leaf paths in a binary tree as lists of values, but it has bugs. Rewrite it correctly as `root_to_leaf(node)` where node is None or a dict {'val':v,'left':...,'right':...}. A leaf has both children None. Buggy version:\\n\\ndef root_to_leaf(node, path=[]):\\n    if not node: return []\\n    path.append(node['val'])\\n    if not node['left'] and not node['right']: return path\\n    return root_to_leaf(node['left'],path)+root_to_leaf(node['right'],path)",
+  "t": "L=lambda v:{'val':v,'left':None,'right':None}\nt={'val':1,'left':{'val':2,'left':L(4),'right':L(5)},'right':L(3)}\nr=root_to_leaf(t)\nassert sorted(r)==sorted([[1,2,4],[1,2,5],[1,3]]), r\nassert root_to_leaf(None)==[]\nassert root_to_leaf(L(9))==[[9]]\nassert sorted(root_to_leaf(t))==sorted([[1,2,4],[1,2,5],[1,3]])"
+ }
+]

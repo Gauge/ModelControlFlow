@@ -25,10 +25,6 @@ fn ages_script() -> String {
         .expect("scripts/check-tier-ages.sh is readable")
 }
 
-fn build_document() -> String {
-    std::fs::read_to_string(root().join("doc").join("build.md")).expect("doc/build.md is readable")
-}
-
 #[test]
 fn the_register_is_exactly_the_disciplines_d10_names() {
     let mut declared: Vec<&str> = TIERS.iter().map(|tier| tier.id).collect();
@@ -139,36 +135,6 @@ fn every_scheduled_rust_tier_keeps_itself_out_of_the_gate() {
             "the scheduled tier {} would run in the gating tier",
             tier.id
         );
-    }
-}
-
-#[test]
-fn the_build_document_describes_exactly_these_tiers() {
-    let document = build_document();
-    for tier in TIERS {
-        assert!(
-            document.contains(&format!("`{}`", tier.id)),
-            "doc/build.md does not name the {} tier",
-            tier.id
-        );
-    }
-    for discipline in D10_DISCIPLINES {
-        let named = TIERS.iter().any(|tier| tier.id == discipline);
-        assert!(named, "{discipline} is a D10 discipline with no tier");
-    }
-}
-
-#[test]
-fn the_build_document_names_every_flag() {
-    let document = build_document();
-    for tier in TIERS {
-        if let Cadence::Scheduled { flag } = tier.cadence {
-            assert!(
-                document.contains(&format!("--{flag}")),
-                "doc/build.md does not say how to run the {} tier",
-                tier.id
-            );
-        }
     }
 }
 

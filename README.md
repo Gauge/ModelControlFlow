@@ -33,8 +33,7 @@ One model, held well. MCF is not a model manager, a benchmark suite or a
 research instrument. It runs a single model at a time and gives you complete
 control over how it runs, plus an honest account of what that costs.
 
-The full statement of what MCF does and does not try to do is in
-[goals.md](doc/goals.md). The short version:
+MCF hosts one model at a time and gives you complete control over how it runs:
 
 - **One model at a time.** Hosting a second releases the first.
 - **The engine is MCF's problem, not yours.** The engine a model needs is
@@ -117,7 +116,7 @@ interface starts it if it is not already running.
 
 Monitoring is meant to be light enough to leave on. The full set, with the
 definition of each figure and how it is obtained, is in
-[monitoring.md](doc/monitoring.md).
+the window, the terminal interface and the command line.
 
 | **Throughput** | Tokens received, sent, processed and generated; active sessions |
 | **Machine** | Processor and accelerator utilisation, memory and video memory |
@@ -127,14 +126,14 @@ definition of each figure and how it is obtained, is in
 MCF does not run diagnostics on models. What it collects instead is a record of
 real use: the exact configuration, on the exact hardware, with the performance
 that combination actually delivered. That record and what it is for are
-described in [statistics.md](doc/statistics.md).
+kept in the local record.
 
 ## 6 · Where things live
 
 | Models | `$MCF_MODELS`, or `$XDG_DATA_HOME/mcf` or `$HOME/.local/share/mcf` |
 | Engines | Built into `~/.local/share/mcf/provisioned` |
 | Control socket | `/run/user/<uid>/mcf/control.sock` |
-| Settings | Editable from any of the three interfaces — see [configuration.md](doc/configuration.md) |
+| Settings | Editable from any of the three interfaces |
 
 ## 7 · Working on MCF
 
@@ -146,16 +145,10 @@ scripts/ci.sh
 
 It builds, lints and runs the fast hermetic tier — no network, no accelerator,
 no model file. Heavier tiers run on a schedule and before a release; they are
-described with the rest of the build process in [build.md](doc/build.md).
+described in scripts/lib-tiers.sh.
 
 ## 8 · The documents
 
-| [goals.md](doc/goals.md) | What MCF is for, and what it deliberately will not do |
-| [hosting.md](doc/hosting.md) | How a model is held, and how engines are obtained |
-| [configuration.md](doc/configuration.md) | Every setting, where it lives, and how to change it |
-| [monitoring.md](doc/monitoring.md) | The figures MCF reports while a model is held |
-| [statistics.md](doc/statistics.md) | The record of real use that replaces diagnostics |
-| [build.md](doc/build.md) | Building, the test tiers, and how a release is made |
 | [vendored.md](doc/vendored.md) | Every vendored component, its terms, and the compatibility finding |
 | [taxonomy.md](doc/taxonomy.md) | The failure codes, which the code is checked against |
 

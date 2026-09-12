@@ -482,20 +482,95 @@ pub enum Caret {
 pub enum Tab {
     #[default]
     Configure,
+    Optimize,
     Statistics,
     Contents,
 }
 
 impl Tab {
-    pub const ALL: [Self; 3] = [Self::Configure, Self::Statistics, Self::Contents];
+    pub const ALL: [Self; 4] = [
+        Self::Configure,
+        Self::Optimize,
+        Self::Statistics,
+        Self::Contents,
+    ];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::Configure => "Configure",
+            Self::Optimize => "Optimize",
             Self::Statistics => "Statistics",
             Self::Contents => "Contents",
         }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Optimizing {
+    pub sweep: mcf_optimize::dial::Sweep,
+    pub report: mcf_optimize::reading::Report,
+    pub running: bool,
+    pub done: usize,
+    pub refused: Option<String>,
+}
+
+impl Optimizing {
+    #[must_use]
+    pub fn left(&self) -> usize {
+        self.sweep.trials().saturating_sub(self.done)
+    }
+
+    #[must_use]
+    pub fn fraction(&self) -> Option<f32> {
+        let all = self.sweep.trials();
+        if all == 0 {
+            return None;
+        }
+        let done = u16::try_from(self.done).unwrap_or(u16::MAX);
+        let all = u16::try_from(all).unwrap_or(u16::MAX);
+        Some(f32::from(done) / f32::from(all.max(1)))
+    }
+
+    pub fn pick_dial(&mut self, at: usize) {
+        if let Some(dial) = mcf_optimize::dial::Dial::ALL.get(at) {
+            self.sweep = mcf_optimize::dial::Sweep::on(*dial);
+            self.report = mcf_optimize::reading::Report::default();
+            self.done = 0;
+        }
+    }
+
+    pub fn toggle_value(&mut self, at: usize) {
+        let offered = self.sweep.dial.suggested();
+        let Some(step) = offered.get(at) else { return };
+        if let Some(found) = self.sweep.steps.iter().position(|held| held == step) {
+            let _dropped = self.sweep.steps.remove(found);
+        } else {
+            self.sweep.steps.push(*step);
+            self.sweep
+                .steps
+                .sort_by_key(|held| match held {
+                    mcf_optimize::dial::Step::Whole(value)
+                    | mcf_optimize::dial::Step::Thousandths(value) => *value,
+                });
+        }
+    }
+
+    pub fn toggle_set(&mut self, number: usize) {
+        if let Some(found) = self.sweep.sets.iter().position(|held| *held == number) {
+            let _dropped = self.sweep.sets.remove(found);
+        } else {
+            self.sweep.sets.push(number);
+            self.sweep.sets.sort_unstable();
+        }
+    }
+
+    pub fn cycle_repeats(&mut self) {
+        self.sweep.repeats = match self.sweep.repeats {
+            1 => 2,
+            2 => 3,
+            _ => 1,
+        };
     }
 }
 
@@ -678,7 +753,6 @@ fn model_from(held: &Value) -> Model {
             .and_then(|resolved| resolved.get("device_free_bytes"))
             .and_then(Value::as_integer)
             .and_then(|number| u64::try_from(number).ok()),
-        // **What the daemon says of a model's runs is under `runs`.** The
         repository: repository_of(held),
         file,
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
@@ -1201,6 +1275,11 @@ pub enum Act {
     HostAgain,
     Pick(String),
     Tab(Tab),
+    Dial(usize),
+    SweepValue(usize),
+    TestSet(usize),
+    Repeats,
+    Sweep,
     Contents(Page),
     Edit(Field),
     Switch(Switch),
@@ -1364,6 +1443,7 @@ pub struct Desk {
     pub placements: Vec<Placement>,
     pub on: Option<mcf_serve::control::On>,
     pub tab: Tab,
+    pub optimizing: Optimizing,
     pub contents: Page,
     pub editing: Option<(Field, String)>,
     pub edit_refused: Option<String>,
@@ -1396,6 +1476,7 @@ impl Desk {
             placements: Vec::new(),
             on: None,
             tab: Tab::default(),
+            optimizing: Optimizing::default(),
             contents: Page::Anatomy,
             editing: None,
             edit_refused: None,
@@ -1622,6 +1703,11 @@ impl Desk {
                 self.look_up();
             }
             Act::Tab(_)
+            | Act::Dial(_)
+            | Act::SweepValue(_)
+            | Act::TestSet(_)
+            | Act::Repeats
+            | Act::Sweep
             | Act::Edit(_)
             | Act::Switch(_)
             | Act::Place(_)
@@ -2481,7 +2567,51 @@ impl Desk {
         });
     }
 
+    fn start_or_stop_sweeping(&mut self) {
+        if self.optimizing.running {
+            self.optimizing.running = false;
+            return;
+        }
+        self.optimizing.refused = None;
+        if self.optimizing.sweep.steps.is_empty() || self.optimizing.sweep.sets.is_empty() {
+            self.optimizing.refused =
+                Some("choose at least one value and one test set before running".to_owned());
+            return;
+        }
+        let Some(hosted) = self.hosted.as_ref() else {
+            self.optimizing.refused =
+                Some("nothing is held: a sweep asks the held model, so host one first".to_owned());
+            return;
+        };
+        if hosted.address.is_empty() {
+            self.optimizing.refused =
+                Some("the held model is not answering on an address yet".to_owned());
+            return;
+        }
+        self.optimizing.report = mcf_optimize::reading::Report::default();
+        self.optimizing.done = 0;
+        self.optimizing.running = true;
+    }
+
+    fn dialling(&mut self, act: &Act) -> bool {
+        match *act {
+            Act::Dial(at) => {
+                self.open = None;
+                self.optimizing.pick_dial(at);
+            }
+            Act::SweepValue(at) => self.optimizing.toggle_value(at),
+            Act::TestSet(number) => self.optimizing.toggle_set(number),
+            Act::Repeats => self.optimizing.cycle_repeats(),
+            Act::Sweep => self.start_or_stop_sweeping(),
+            _ => return false,
+        }
+        true
+    }
+
     fn configure(&mut self, act: &Act) {
+        if self.dialling(act) {
+            return;
+        }
         match *act {
             Act::Tab(tab) => {
                 self.apply_edit();

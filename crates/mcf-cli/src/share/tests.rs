@@ -35,7 +35,6 @@ fn nothing_that_leaves_carries_a_separator() {
     }
 }
 
-/// And it never carries a home directory, whoever's it is.
 #[test]
 fn nothing_that_leaves_carries_a_user_name() {
     let travelled = publishable("/home/gauge/.local/share/mcf/models/x/example.gguf");

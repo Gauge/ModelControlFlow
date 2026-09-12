@@ -1,0 +1,14 @@
+[package]
+name = "mcf-optimize"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Dialling one setting in: a fixed base, a swept value, a corpus, and the rows that result."
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }
+mcf-record = { path = "../mcf-record" }
+
+[lints]
+workspace = true

@@ -8,11 +8,6 @@ pub const DEFAULT_PORT: u16 = 17817;
 
 pub const ALL_LAYERS: u32 = 999;
 
-/// What the endpoint answers.
-///
-/// A hold has been a chat endpoint and nothing else. The same engine will serve
-/// embeddings or reranking from the same file, and a model published for either
-/// could not be held at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Answers {
     #[default]
@@ -47,19 +42,12 @@ impl Answers {
         }
     }
 
-    /// Whether a hold of this shape grows a cache as a conversation goes on.
-    ///
-    /// An embedding model reads a passage and returns a vector. It keeps
-    /// nothing between requests, so the window is what one passage may be
-    /// rather than what a conversation may reach, and pricing it per token of
-    /// conversation would report a reserve for something that never happens.
     #[must_use]
     pub const fn keeps_a_conversation(self) -> bool {
         matches!(self, Self::Chat)
     }
 }
 
-/// How embeddings are reduced to one vector for a passage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Pooling {
     #[default]
@@ -99,7 +87,6 @@ impl Pooling {
     }
 }
 
-/// How the weights are read from disk and whether they stay in memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Loading {
     #[default]
@@ -151,7 +138,6 @@ impl Loading {
     }
 }
 
-/// How much of a very large tensor is read before it is needed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Lazily {
     #[default]
@@ -225,10 +211,6 @@ impl Split {
     }
 }
 
-/// Where a model's mixture-of-experts weights are held.
-///
-/// A model whose experts sit in system memory fits on a card that could not
-/// otherwise hold it, and the experts are the part least worth the card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Experts {
     #[default]
@@ -250,7 +232,6 @@ impl Experts {
     }
 }
 
-/// Which parts of a model go where.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Spread {
     pub cache_on_processor: bool,
@@ -338,11 +319,6 @@ impl Spread {
     }
 }
 
-/// What a second message reuses of the first.
-///
-/// These only make sense together: the engine keeps what it read up to a size
-/// in memory, and recovers part of a prefix that no longer matches exactly.
-/// A long pause on a conversation coming back after a gap is made of these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Reuse {
     pub prompt_cache: bool,
@@ -429,10 +405,6 @@ impl Default for Reuse {
             idle_slots: true,
             context_shift: false,
             prompt_cache_mib: 8_192,
-            // The engine leaves reuse off. A conversation that resends its
-            // history with anything changed near the front then re-reads all
-            // of it, which is the long pause after a gap; a chunk of 256
-            // recovers the matching part by shifting instead.
             cache_reuse: 256,
             checkpoints: 32,
             checkpoint_min_step: 8_192,
@@ -504,7 +476,6 @@ fn projector_named(projector: Option<&str>) -> String {
     )
 }
 
-// Two maps into one, the second winning where they name the same field.
 fn merged(one: Value, two: Value) -> Value {
     match (one, two) {
         (Value::Map(mut into), Value::Map(from)) => {
@@ -557,9 +528,6 @@ impl Hosting {
             adapters: Vec::new(),
             loading: Loading::default(),
             lazily: Lazily::default(),
-            // The engine reads a batch 512 at a time whatever the batch is set
-            // to. The physical size is what the compute buffers are built for,
-            // so it belongs beside the batch rather than under it.
             ubatch: 512,
             threads_batch: cores
                 .and_then(|cores| u32::try_from(cores).ok())
@@ -579,7 +547,6 @@ impl Hosting {
         }
     }
 
-    /// What one conversation gets of the window the slots share.
     #[must_use]
     pub fn per_conversation(&self) -> u64 {
         self.context
@@ -645,11 +612,6 @@ impl Hosting {
             out.push("--flash-attn".to_owned());
             out.push("on".to_owned());
         }
-        // MCF has already planned this hold against the model's shape and the
-        // memory the device reports, and every figure it showed a person came
-        // out of that plan. The engine's own fitter would adjust what MCF left
-        // unset, which would make the settings printed here and the settings
-        // run under two different things.
         match self.answers {
             Answers::Chat => {}
             Answers::Embeddings => out.push("--embeddings".to_owned()),
@@ -690,9 +652,6 @@ impl Hosting {
         out.push(self.ubatch.min(self.batch).to_string());
         out.push("--threads-batch".to_owned());
         out.push(self.threads_batch.max(1).to_string());
-        // The key goes in a file rather than on the command line: a command
-        // line is world-readable, and a key in the process list is a key every
-        // account on this machine has.
         if let Some(key_file) = key_file {
             out.push("--api-key-file".to_owned());
             out.push(key_file.display().to_string());
@@ -1177,8 +1136,6 @@ impl Hosting {
         merged(hold, merged(grouped, self.tail_of_to_value()))
     }
 
-    // The settings that are neither the hold's own nor part of a group, kept
-    // apart so the writer stays short enough to read in one go.
     #[must_use]
     fn tail_of_to_value(&self) -> Value {
         Value::map([

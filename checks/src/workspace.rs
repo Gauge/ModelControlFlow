@@ -36,6 +36,11 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core", "mcf-record"],
     },
     Member {
+        name: "mcf-optimize",
+        path: "crates/mcf-optimize",
+        depends_on: &["mcf-core", "mcf-record"],
+    },
+    Member {
         name: "mcf-serve",
         path: "crates/mcf-serve",
         depends_on: &["mcf-core", "mcf-record", "mcf-hub", "mcf-standin"],
@@ -48,7 +53,7 @@ pub const MEMBERS: &[Member] = &[
     Member {
         name: "mcf-desk",
         path: "crates/mcf-desk",
-        depends_on: &["mcf-core", "mcf-record", "mcf-serve", "mcf-tui"],
+        depends_on: &["mcf-core", "mcf-optimize", "mcf-record", "mcf-serve", "mcf-tui"],
     },
     Member {
         name: "mcf-cli",

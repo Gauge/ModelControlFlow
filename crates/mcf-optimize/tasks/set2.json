@@ -1,0 +1,42 @@
+[
+ {
+  "n": "bigint",
+  "p": "Implement arbitrary-precision integer arithmetic on DECIMAL STRINGS without using Python's big ints for the core work (do not just call int(a)*int(b)). Provide `big_mul(a,b)` and `big_divmod(a,b)` returning (quotient,remainder) as strings. Handle negative numbers, leading zeros, and zero. big_divmod truncates toward zero and the remainder takes the sign of the dividend.",
+  "t": "import random\nassert big_mul('0','12345')=='0'\nassert big_mul('-12','12')=='-144'\nassert big_mul('99999999999999999999','99999999999999999999')==str(99999999999999999999*99999999999999999999)\nassert big_divmod('100','7')==('14','2')\nassert big_divmod('-100','7')==('-14','-2')\nassert big_divmod('7','100')==('0','7')\nrandom.seed(3)\nfor _ in range(40):\n    a=random.randint(-10**25,10**25); b=random.randint(1,10**12)\n    q,r=big_divmod(str(a),str(b))\n    assert int(q)==int(a/b) if a%b==0 else True\n    assert int(q)*b+int(r)==a, (a,b,q,r)\n    assert big_mul(str(a),str(b))==str(a*b)"
+ },
+ {
+  "n": "avl-tree",
+  "p": "Implement a self-balancing AVL tree class `AVL` with insert(key), delete(key), __contains__(key), and inorder() returning a sorted list. After every operation the tree must satisfy the AVL invariant. Also expose `height()` and `check_invariant()` returning True only if every node's balance factor is in {-1,0,1} and BST ordering holds.",
+  "t": "import random\nt=AVL()\nrandom.seed(11)\nks=random.sample(range(10000),500)\nfor k in ks:\n    t.insert(k)\n    assert t.check_invariant()\nassert t.inorder()==sorted(ks)\nassert t.height()<=2*(len(ks).bit_length())\nfor k in ks[:250]:\n    t.delete(k)\n    assert t.check_invariant()\nassert t.inorder()==sorted(ks[250:])\nassert all(k in t for k in ks[250:])\nassert all(k not in t for k in ks[:250])"
+ },
+ {
+  "n": "sudoku",
+  "p": "Write `solve_sudoku(grid)` taking a 9x9 list of lists with 0 for blanks. Return a solved grid, or None if unsolvable. Must not mutate the input. Use constraint propagation or backtracking.",
+  "t": "g=[[5,3,0,0,7,0,0,0,0],[6,0,0,1,9,5,0,0,0],[0,9,8,0,0,0,0,6,0],[8,0,0,0,6,0,0,0,3],[4,0,0,8,0,3,0,0,1],[7,0,0,0,2,0,0,0,6],[0,6,0,0,0,0,2,8,0],[0,0,0,4,1,9,0,0,5],[0,0,0,0,8,0,0,7,9]]\nimport copy\ng2=copy.deepcopy(g)\ns=solve_sudoku(g)\nassert g==g2, 'input was mutated'\nassert s is not None\nfor r in s:\n    assert sorted(r)==list(range(1,10))\nfor c in range(9):\n    assert sorted(s[r][c] for r in range(9))==list(range(1,10))\nfor br in range(0,9,3):\n    for bc in range(0,9,3):\n        assert sorted(s[br+i][bc+j] for i in range(3) for j in range(3))==list(range(1,10))\nbad=[[1]*9 for _ in range(9)]\nassert solve_sudoku(bad) is None"
+ },
+ {
+  "n": "business-days",
+  "p": "Write `add_business_days(start_iso, n, holidays)` where start_iso is 'YYYY-MM-DD', n is an integer (may be negative or zero), holidays is a set of ISO date strings. Weekends (Sat/Sun) and holidays are skipped. Return the resulting ISO date. If start is itself a non-business day and n==0, roll FORWARD to the next business day. Use only the standard library.",
+  "t": "H={'2026-01-01','2026-12-25'}\nassert add_business_days('2026-01-02',1,H)=='2026-01-05'\nassert add_business_days('2026-01-05',-1,H)=='2026-01-02'\nassert add_business_days('2026-01-03',0,H)=='2026-01-05'\nassert add_business_days('2026-01-02',0,H)=='2026-01-02'\nassert add_business_days('2025-12-31',1,H)=='2026-01-02'\nassert add_business_days('2026-12-24',1,H)=='2026-12-28'\nassert add_business_days('2026-01-05',10,H)=='2026-01-19'\nassert add_business_days('2026-01-19',-10,H)=='2026-01-05'"
+ },
+ {
+  "n": "token-bucket",
+  "p": "Implement a `TokenBucket` class: __init__(capacity, refill_per_sec, clock) where clock is a zero-arg callable returning float seconds. `consume(n)` returns True and deducts n if at least n tokens are available, else returns False and deducts nothing. Tokens refill continuously at refill_per_sec, capped at capacity. Bucket starts full. Also expose `tokens()` returning the current float count.",
+  "t": "now=[0.0]\nb=TokenBucket(10,2.0,lambda:now[0])\nassert abs(b.tokens()-10)<1e-9\nassert b.consume(10) is True\nassert b.consume(1) is False\nnow[0]=1.0\nassert abs(b.tokens()-2.0)<1e-6\nassert b.consume(2) is True\nassert b.consume(1) is False\nnow[0]=100.0\nassert abs(b.tokens()-10)<1e-6\nassert b.consume(5) is True\nassert abs(b.tokens()-5)<1e-6"
+ },
+ {
+  "n": "tarjan-scc",
+  "p": "Write `strongly_connected(graph)` where graph maps node -> list of successors. Return a list of components, each a SORTED list of nodes, with the OUTER list sorted by each component's first element. Must run in linear time (Tarjan or Kosaraju), not by brute-force reachability.",
+  "t": "g={'a':['b'],'b':['c'],'c':['a'],'d':['b','c','e'],'e':['d','f'],'f':['c','g'],'g':['f'],'h':[]}\nr=strongly_connected(g)\nassert ['a','b','c'] in r\nassert ['d','e'] in r\nassert ['f','g'] in r\nassert ['h'] in r\nassert len(r)==4\nassert r==sorted(r,key=lambda c:c[0])\nassert strongly_connected({})==[]\nassert strongly_connected({'x':[]})==[['x']]\nbig={str(i):[str((i+1)%500)] for i in range(500)}\nrr=strongly_connected(big)\nassert len(rr)==1 and len(rr[0])==500"
+ },
+ {
+  "n": "text-wrap",
+  "p": "Write `wrap_text(text, width)` returning a list of lines, each at most `width` display columns. Break on spaces where possible. A word longer than width is hard-split across lines. Collapse runs of whitespace to one space. Treat East Asian wide characters (unicodedata.east_asian_width in 'WF') as 2 columns. Empty or whitespace-only input returns [].",
+  "t": "assert wrap_text('the quick brown fox',10)==['the quick','brown fox']\nassert wrap_text('  a   b  ',10)==['a b']\nassert wrap_text('',5)==[]\nassert wrap_text('   ',5)==[]\nassert wrap_text('abcdefghij',4)==['abcd','efgh','ij']\nr=wrap_text('\\u4f60\\u597d\\u4e16\\u754c',4)\nassert r==['\\u4f60\\u597d','\\u4e16\\u754c'], r\nimport unicodedata\nfor line in wrap_text('hello \\u4f60\\u597d world',7):\n    w=sum(2 if unicodedata.east_asian_width(ch) in 'WF' else 1 for ch in line)\n    assert w<=7, (line,w)"
+ },
+ {
+  "n": "bitset-rank",
+  "p": "Implement a `BitSet` class over n bits: __init__(n), set(i), clear(i), get(i), and two succinct operations \u2014 `rank(i)` returning the number of set bits in positions [0,i), and `select(k)` returning the position of the k-th set bit (0-indexed) or -1 if fewer than k+1 are set. rank and select must be correct after arbitrary set/clear calls.",
+  "t": "import random\nrandom.seed(5)\nn=2000\nb=BitSet(n)\nref=[0]*n\nfor _ in range(3000):\n    i=random.randrange(n)\n    if random.random()<0.6:\n        b.set(i); ref[i]=1\n    else:\n        b.clear(i); ref[i]=0\nfor i in range(0,n,37):\n    assert b.get(i)==ref[i]\n    assert b.rank(i)==sum(ref[:i]), i\nones=[i for i,v in enumerate(ref) if v]\nfor k in range(0,len(ones),17):\n    assert b.select(k)==ones[k], k\nassert b.select(len(ones))==-1"
+ }
+]

@@ -6,7 +6,10 @@ use mcf_record::json::Value;
 
 const THE_READER: &str = "crates/mcf-record/src/json.rs";
 
-const THE_ENGINE_REQUEST: &str = "crates/mcf-serve/src/served.rs";
+const THE_ENGINE_REQUEST: [&str; 2] = [
+    "crates/mcf-serve/src/served.rs",
+    "crates/mcf-optimize/src/trial.rs",
+];
 
 #[test]
 fn nothing_but_the_reader_constructs_a_number_the_record_cannot_carry() {
@@ -27,7 +30,7 @@ fn nothing_but_the_reader_constructs_a_number_the_record_cannot_carry() {
             if code.contains("ForeignNumber(") && !code.contains("Value::ForeignNumber(_)") {
                 found.push(format!("{relative}:{}", number.saturating_add(1)));
             }
-            if code.contains("exact_thousandths(") && relative != THE_ENGINE_REQUEST {
+            if code.contains("exact_thousandths(") && !THE_ENGINE_REQUEST.contains(&relative.as_str()) {
                 found.push(format!("{relative}:{}", number.saturating_add(1)));
             }
         }

@@ -1,21 +1,13 @@
 use core::fmt;
 
-/// What a kilowatt-hour costs where this machine is, in millionths of a
-/// currency unit. MCF holds no currency: the number is the one the person
-/// typed, and it comes back out beside the energy it priced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PricePerKwh {
     pub millionths: u64,
 }
 
-/// A millijoule is this many millionths of a kilowatt-hour's price divisor:
-/// one kilowatt-hour is 3.6e6 joules, which is 3.6e9 millijoules.
 pub(crate) const MILLIJOULES_IN_A_KWH: u64 = 3_600_000_000;
 
 impl PricePerKwh {
-    /// Reads a price a person typed: `0.28`, `.28`, `28`, up to six decimal
-    /// places. Anything else is refused rather than rounded into something
-    /// plausible.
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
@@ -59,7 +51,6 @@ impl fmt::Display for PricePerKwh {
     }
 }
 
-/// What some energy cost, in millionths of a currency unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cost {
     pub millionths: u64,

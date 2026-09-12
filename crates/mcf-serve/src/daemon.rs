@@ -14,9 +14,6 @@ use crate::control::{Answer, REQUEST_CEILING, Request, VERSION};
 
 const WHERE: Subsystem = Subsystem::new("mcf-serve::daemon");
 
-// What a model is planned against before a hold names a width for its cache.
-// A recommendation is made at the width an engine holds without being asked,
-// so the figures beside it are the ones a person gets by doing nothing.
 const HELD_AS: mcf_core::configuration::CacheType = mcf_core::configuration::CacheType::F16;
 
 const CLOSING: std::time::Duration = std::time::Duration::from_secs(10);
@@ -343,8 +340,6 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
                 rate: mcf_core::energy::PerSecond(2),
                 counter: "the device's own energy counter".to_owned(),
             };
-            // A cost too large to carry is not reported as the largest number
-            // that fits: that is a figure with no measurement behind it (B39).
             if let Some(cost) = measured.cost_at(price)
                 && let Ok(millionths) = i64::try_from(cost.millionths)
             {
@@ -2343,8 +2338,6 @@ impl Daemon {
         Some(per_token.saturating_mul(context))
     }
 
-    // What one token of conversation occupies before a width is chosen for it,
-    // so a client can price any cache type without asking again.
     fn cache_elements_for(&self, named: &str) -> Option<u64> {
         let path = crate::generation::resolved(&self.places.models, named);
         let file = header_of(&path)?;
@@ -2674,8 +2667,6 @@ impl Daemon {
         let model = held.model.display().to_string();
         let resident = held.served.resident_bytes();
         let energy = energy_of(held.served.reach());
-        // What the hold actually did, read before the engine goes: a row that
-        // says what it cost and not what it produced cannot be compared.
         let worked: Vec<(&'static str, Value)> = crate::served::metrics_via(held.served.reach())
             .map(|metrics| counters(&metrics))
             .unwrap_or_default();

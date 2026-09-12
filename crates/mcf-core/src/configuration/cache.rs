@@ -50,12 +50,6 @@ impl CacheType {
         Self::ALL.into_iter().find(|held| held.as_str() == wanted)
     }
 
-    /// What [`BLOCK`] cached elements cost, in bytes.
-    ///
-    /// The quantized types carry their scales alongside the values, so a rate
-    /// per element is not a whole number for them. The rate is given over a
-    /// block so the arithmetic stays exact where it matters, which is a cache
-    /// of millions of elements rather than a handful.
     #[must_use]
     pub const fn bytes_per_block(self) -> u64 {
         match self {
@@ -74,12 +68,6 @@ impl CacheType {
         !matches!(self, Self::F32 | Self::F16 | Self::Bf16)
     }
 
-    /// What a cache of `elements` costs, rounded up to the byte.
-    ///
-    /// The wide types are exact at every count. A quantized one is charged its
-    /// share of a block rather than a whole block, because a latent cache can
-    /// hold fewer elements than a block and charging it a whole one would
-    /// report a reserve twice the size of the thing being reserved.
     #[must_use]
     pub fn bytes_for(self, elements: u64) -> Option<u64> {
         Some(
@@ -137,7 +125,6 @@ mod tests {
 
     #[test]
     fn a_narrower_cache_costs_less_for_the_same_conversation() {
-        // A token of the 27B this was read against: 68 KiB held as f16.
         let elements = 34_816;
         let wide = CacheType::F16.bytes_for(elements).expect("f16 is sized");
         let narrow = CacheType::Q8_0.bytes_for(elements).expect("q8_0 is sized");

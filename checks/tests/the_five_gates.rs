@@ -234,6 +234,12 @@ const DECLARED: &[(&str, &str)] = &[
      carries nothing (B-028, D26)",
     ),
     (
+        "crates/mcf-optimize/src/trial.rs",
+        "asking the held engine on 127.0.0.1 the corpus a sweep is made of. It reaches the \
+     process MCF itself started, on this machine, and carries out only the prompt a person \
+     chose to run; the answer never leaves the record it is written into",
+    ),
+    (
         "crates/mcf-serve/src/served.rs",
         "asking a hosted engine on 127.0.0.1 whether it has finished loading. A model is \
      loaded before it answers, and on a large one that is tens of seconds during which the \

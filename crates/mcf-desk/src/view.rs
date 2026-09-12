@@ -867,6 +867,7 @@ fn model_page(
         below,
         |paint, mouse, inner| match desk.tab {
             crate::Tab::Configure => configure_tab(paint, desk, mouse, inner, held),
+            crate::Tab::Optimize => optimize_tab(paint, desk, mouse, inner),
             crate::Tab::Statistics => {
                 statistics_tab(paint, inner, held);
                 None
@@ -875,6 +876,301 @@ fn model_page(
         },
     );
     drawn.or(act)
+}
+
+
+fn section(paint: &mut Painter, area: Box, y: f32, title: &str, because: &str) -> f32 {
+    let ink = paint.ink;
+    paint.say_at(area.x, y, title, Weight::Bold, size::BODY, ink.ink);
+    let titled = paint.measure(title, Weight::Bold, size::BODY);
+    let room = area.w - titled - 18.0;
+    let shown = paint.elide(because, Weight::Regular, size::SMALL, room.max(20.0));
+    paint.say_at(
+        area.x + titled + 12.0,
+        y + 2.0,
+        &shown,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    y + 26.0
+}
+
+fn chips(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    area: Box,
+    y: f32,
+    labels: &[(String, bool)],
+) -> (f32, Option<usize>) {
+    let mut picked = None;
+    let mut x = area.x;
+    let mut line = y;
+    for (at, (label, on)) in labels.iter().enumerate() {
+        let wide = paint.measure(label, Weight::Bold, size::SMALL) + 24.0;
+        if x + wide > area.right() {
+            x = area.x;
+            line += 34.0;
+        }
+        if ui::nav(paint, mouse, Box::new(x, line, wide, 28.0), label, *on) {
+            picked = Some(at);
+        }
+        x += wide + 6.0;
+    }
+    (line + 38.0, picked)
+}
+
+fn base_configuration(paint: &mut Painter, desk: &Desk, area: Box, mut y: f32) -> f32 {
+    let ink = paint.ink;
+    y = section(
+        paint,
+        area,
+        y,
+        "Base configuration",
+        "held as it stands — every trial in a sweep runs against exactly this",
+    );
+    let Some(hosted) = &desk.hosted else {
+        paint.say_at(
+            area.x,
+            y,
+            "Nothing is held. Host a model on the Configure tab and it becomes the base here.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return y + 30.0;
+    };
+    let window = hosted
+        .context
+        .map_or_else(|| UNKNOWN.to_owned(), |held| format!("{held} tokens"));
+    let rows: [(&str, String); 4] = [
+        ("model", hosted.model.clone()),
+        ("answering on", hosted.address.clone()),
+        ("context window", window),
+        ("key cache", format!("{:?}", hosted.cache)),
+    ];
+    for (name, value) in rows {
+        paint.say_at(area.x, y, name, Weight::Regular, size::SMALL, ink.faint);
+        let shown = paint.elide(&value, Weight::Regular, size::SMALL, area.w - 150.0);
+        paint.say_at(
+            area.x + 140.0,
+            y,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.ink,
+        );
+        y += 20.0;
+    }
+    y + 12.0
+}
+
+fn setting_to_optimize(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    y = section(
+        paint,
+        area,
+        y,
+        "Setting to optimize",
+        "one dial moves, everything above stays where it is",
+    );
+    let dials: Vec<(String, bool)> = mcf_optimize::dial::Dial::ALL
+        .iter()
+        .map(|dial| {
+            (
+                dial.label().to_owned(),
+                *dial == desk.optimizing.sweep.dial,
+            )
+        })
+        .collect();
+    let (below, picked) = chips(paint, mouse, area, y, &dials);
+    if let Some(at) = picked {
+        act = Some(Act::Dial(at));
+    }
+    y = below;
+    let dial = desk.optimizing.sweep.dial;
+    let how = if dial.reloads_the_engine() {
+        format!(
+            "{} is a launch flag — each value reloads the engine",
+            dial.flag().unwrap_or("")
+        )
+    } else {
+        format!(
+            "{} rides in each request — no reload between values",
+            dial.field().unwrap_or("")
+        )
+    };
+    paint.say_at(area.x, y, &how, Weight::Regular, size::SMALL, ink.faint);
+    y += 24.0;
+    let values: Vec<(String, bool)> = dial
+        .suggested()
+        .iter()
+        .map(|step| {
+            (
+                step.said(),
+                desk.optimizing.sweep.steps.iter().any(|held| held == step),
+            )
+        })
+        .collect();
+    let (below, picked) = chips(paint, mouse, area, y, &values);
+    if let Some(at) = picked {
+        act = Some(Act::SweepValue(at));
+    }
+    (below, act)
+}
+
+fn test_set(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    y = section(
+        paint,
+        area,
+        y,
+        "Test set",
+        "sixty-four checked programming tasks in eight prompts of eight",
+    );
+    let sets: Vec<(String, bool)> = mcf_optimize::corpus::Set::all()
+        .iter()
+        .map(|set| {
+            (
+                format!("Set {}", set.number),
+                desk.optimizing.sweep.sets.contains(&set.number),
+            )
+        })
+        .collect();
+    let (below, picked) = chips(paint, mouse, area, y, &sets);
+    if let Some(at) = picked {
+        act = Some(Act::TestSet(at.saturating_add(1)));
+    }
+    y = below;
+    let repeats = format!("Repeats: {}", desk.optimizing.sweep.repeats);
+    let (pressed, area_of) = ui::fitted(paint, mouse, (area.x, y), &repeats, Kind::Ordinary);
+    if pressed {
+        act = Some(Act::Repeats);
+    }
+    paint.say_at(
+        area_of.right() + 12.0,
+        y + 9.0,
+        &desk.optimizing.sweep.said(),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    (y + 44.0, act)
+}
+
+fn sweep_report(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, mut y: f32) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    y = section(
+        paint,
+        area,
+        y,
+        "Report",
+        "one row for every prompt run, exactly as it was measured",
+    );
+    let label = if desk.optimizing.running {
+        "Stop".to_owned()
+    } else {
+        "Run sweep".to_owned()
+    };
+    let kind = if desk.optimizing.running {
+        Kind::Ordinary
+    } else {
+        Kind::Primary
+    };
+    let (pressed, button) = ui::fitted(paint, mouse, (area.x, y), &label, kind);
+    if pressed {
+        act = Some(Act::Sweep);
+    }
+    if desk.optimizing.running {
+        ui::progress(
+            paint,
+            Box::new(button.right() + 14.0, y + 13.0, 180.0, 6.0),
+            desk.optimizing.fraction(),
+        );
+        paint.say_at(
+            button.right() + 206.0,
+            y + 9.0,
+            &format!("{} trials left", desk.optimizing.left()),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    if let Some(why) = &desk.optimizing.refused {
+        let shown = paint.elide(why, Weight::Regular, size::SMALL, area.w - 20.0);
+        paint.say_at(area.x, y + 40.0, &shown, Weight::Regular, size::SMALL, ink.warn);
+    }
+    y += 52.0;
+    let rows = desk.optimizing.report.to_rows();
+    if rows.is_empty() {
+        paint.say_at(
+            area.x,
+            y,
+            "No rows yet. A sweep writes one row per prompt as it finishes.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return act;
+    }
+    let wide = (area.w / 9.0).max(60.0);
+    for (at, head) in mcf_optimize::reading::Report::COLUMNS.iter().enumerate() {
+        paint.say_at(
+            area.x + wide * at as f32,
+            y,
+            head,
+            Weight::Bold,
+            size::LABEL,
+            ink.faint,
+        );
+    }
+    y += 20.0;
+    for row in rows {
+        for (at, cell) in row.iter().enumerate() {
+            let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
+            paint.say_at(
+                area.x + wide * at as f32,
+                y,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.ink,
+            );
+        }
+        y += 19.0;
+        if y > area.bottom() {
+            break;
+        }
+    }
+    act
+}
+
+fn optimize_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let mut act = None;
+    let mut y = area.y;
+    y = base_configuration(paint, desk, area, y);
+    let (below, picked) = setting_to_optimize(paint, desk, mouse, area, y);
+    act = act.or(picked);
+    y = below;
+    let (below, picked) = test_set(paint, desk, mouse, area, y);
+    act = act.or(picked);
+    y = below;
+    act.or(sweep_report(paint, desk, mouse, area, y))
 }
 
 fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {

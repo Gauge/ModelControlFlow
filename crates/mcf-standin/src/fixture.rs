@@ -35,8 +35,6 @@ pub fn a_model_that_ends_its_turn() -> Vec<u8> {
     runnable(Some(0))
 }
 
-/// A model whose header says enough for a placement to be planned: the
-/// key/value head count the others leave out, which is what sizes a cache.
 #[must_use]
 pub fn a_model_that_can_be_hosted() -> Vec<u8> {
     built(Some(0), true)

@@ -97,6 +97,7 @@ name = "mcf-desk"
 version = "0.1.0-m0"
 dependencies = [
  "mcf-core",
+ "mcf-optimize",
  "mcf-record",
  "mcf-serve",
  "mcf-tui",
@@ -118,6 +119,14 @@ dependencies = [
  "rustls",
  "rustls-graviola",
  "webpki-roots",
+]
+
+[[package]]
+name = "mcf-optimize"
+version = "0.1.0-m0"
+dependencies = [
+ "mcf-core",
+ "mcf-record",
 ]
 
 [[package]]

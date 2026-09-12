@@ -7,9 +7,13 @@ license.workspace = true
 
 [dependencies]
 mcf-core = { path = "../mcf-core" }
+mcf-optimize = { path = "../mcf-optimize" }
 mcf-record = { path = "../mcf-record" }
 mcf-serve = { path = "../mcf-serve" }
 mcf-tui = { path = "../mcf-tui" }
+
+[dev-dependencies]
+mcf-optimize = { path = "../mcf-optimize" }
 
 [lints]
 workspace = true

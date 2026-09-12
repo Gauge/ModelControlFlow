@@ -102,7 +102,6 @@ fn a_modelled_figure_compares_with_nothing() {
 
 #[test]
 fn a_measured_energy_costs_what_the_price_says() {
-    // One kilowatt-hour is 3.6e9 millijoules; at 0.28 it costs 0.28.
     let energy = Energy::Measured {
         millijoules: 3_600_000_000,
         rate: PerSecond(1),

@@ -1,14 +1,3 @@
-# The companion site: its OWN workspace, deliberately.
-#
-# It is not MCF. It binds a TCP port and receives files from strangers, and
-# MCF's rules refuse both — `the_five_gates` holds the absence of network
-# exposure against `crates/`, and it should. Keeping the site outside that
-# workspace is what lets MCF stay unable to listen while the site does nothing
-# else.
-#
-# It has its own lockfile for the same reason: whatever the site grows to need —
-# a database, TLS, sessions — must never become a condition of a measurement
-# taken on somebody's machine (P3).
 [workspace]
 resolver = "3"
 members = ["."]
@@ -21,9 +10,6 @@ rust-version = "1.98.0"
 license = "GPL-3.0-only"
 
 [dependencies]
-# The one edge back into MCF, and it points at the crate with no dependencies
-# of its own: the contribution format has one definition, so the producer and
-# the receiver cannot drift apart.
 mcf-core = { path = "../crates/mcf-core" }
 
 [[bin]]

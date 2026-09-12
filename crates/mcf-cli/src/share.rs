@@ -15,8 +15,6 @@ fn publishable(arm: &str) -> Arm {
         .find(|part| !part.is_empty())
         .unwrap_or("");
     if name.is_empty() {
-        // An arm that names no file names nothing anybody else can use, and
-        // saying so is better than passing a separator along (A7).
         return Arm::new("unnamed");
     }
     Arm::new(name)
@@ -60,9 +58,6 @@ pub(crate) fn run(into: Option<&str>) -> Response {
                     )
                 )),
             },
-            // A comparison whose outcome has no size is not a row: there is
-            // nothing to contribute about it, and saying so beats inventing a
-            // number (A9, A7).
             None => refused.push(format!(
                 "  {} — no established size to contribute: the arms did not separate, or the \
                  comparison was confounded, or the size was not established at the resolution \
@@ -79,7 +74,6 @@ pub(crate) fn run(into: Option<&str>) -> Response {
     render(&held, &refused, unreadable, &to, write(&held, &to))
 }
 
-/// Writes the file, and says what happened.
 fn write(held: &Contribution, to: &Path) -> Result<usize, String> {
     if held.rows().is_empty() {
         return Ok(0);
@@ -89,30 +83,19 @@ fn write(held: &Contribution, to: &Path) -> Result<usize, String> {
     {
         return Err(format!("{} could not be made: {error}", parent.display()));
     }
-    // The rows as they are shown, so that what the operator read and what the
-    // file holds are the same text. A file whose contents differ from the
-    // confirmation is a confirmation of something else (A24).
     match std::fs::write(to, format!("{held}\n")) {
         Ok(()) => Ok(held.rows().len()),
         Err(error) => Err(format!("{} could not be written: {error}", to.display())),
     }
 }
 
-/// Where the file goes.
 fn destination(into: Option<&str>) -> PathBuf {
     into.map_or_else(|| PathBuf::from("contribution.mcf"), PathBuf::from)
 }
 
-/// One comparison from the record, where it is one.
-///
-/// Reads the record rather than recomputing: the row that would travel is the
-/// row that was recorded, and a second computation here would be a second
-/// opinion about what happened (D20, C1).
 fn read_comparison(entry: &Entry) -> Option<Comparison> {
     let body = entry.body();
     let outcome = body.get("outcome")?;
-    // Only an established size travels. `same`, `not_comparable`, `ordered`
-    // and `not_yet` are all real results and none of them is a size (A9, A8).
     if outcome.get("kind").and_then(Value::as_text)? != "differ" {
         return None;
     }
@@ -130,7 +113,6 @@ fn read_comparison(entry: &Entry) -> Option<Comparison> {
         effect,
         left_quicker,
         conditions: mcf_record::encode::conditions_from(body.get("left")?.get("conditions")?)?,
-        // The record does not yet carry where a benchmark's workload came from,
         workload: workload_of(body),
     })
 }

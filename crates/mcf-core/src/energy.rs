@@ -91,10 +91,6 @@ impl fmt::Display for Energy {
 }
 
 impl Energy {
-    /// What this energy cost at that price, where the energy was measured.
-    ///
-    /// A modelled or unknown energy has no cost: multiplying an estimate by a
-    /// real price produces a figure that looks like money and is not one.
     #[must_use]
     #[expect(
         clippy::integer_division,

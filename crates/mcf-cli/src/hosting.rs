@@ -81,9 +81,6 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
             text: hosting(&body),
             served: true,
         },
-        // A model MCF cannot hold for want of an engine is a build away, and
-        // making the person run it themselves is the errand this tool exists
-        // to remove. Built once, the hold is asked for again.
         Err(refusal) => match needs_component(&refusal.body) {
             Some(component) => {
                 println!("  no engine here runs this model — building {component} first");
@@ -126,7 +123,6 @@ fn hold(model: &str, settings: &Value) -> Result<Value, Refusal> {
     )
 }
 
-/// The component the daemon named when it had no engine for this model.
 fn needs_component(body: &Value) -> Option<String> {
     body.get("context")
         .and_then(|context| context.get("needs_component"))
@@ -368,8 +364,6 @@ fn in_gigabytes(bytes: i64) -> String {
     format!("{whole}.{tenth} GiB")
 }
 
-// What one token costs at the width asked for, from the elements the daemon
-// counted rather than a second reading of the file.
 fn per_token(body: &Value, held_as: Option<mcf_core::configuration::CacheType>) -> Option<u64> {
     let read = |key: &str| {
         body.get(key)

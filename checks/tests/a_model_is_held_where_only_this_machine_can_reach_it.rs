@@ -103,8 +103,6 @@ fn hosting_and_letting_go_are_both_recorded() {
     let (_, written) = hosting
         .split_once("pub fn to_value")
         .expect("the settings say how they are recorded");
-    // Everything up to the reader, so the settings a hold writes in more than
-    // one piece are all watched rather than only the first of them.
     let written = written
         .split_once("pub fn from_value")
         .map_or(written, |(held, _)| held);

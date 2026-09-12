@@ -1,12 +1,3 @@
-# The MCF workspace (B-001).
-#
-# Every crate here is a member of one workspace with one lockfile, because
-# §3.12 makes reproducibility a precedence rule (P3) and independent lockfiles
-# are independent sets of conditions. The crate split is a boundary, not a
-# packaging convenience: it is how §3.16's "make illegal states
-# unrepresentable" is applied above the type level, since a dependency edge
-# that does not exist cannot be taken by a tired author at the end of a long
-# change.
 
 [workspace]
 resolver = "3"
@@ -16,6 +7,7 @@ members = [
     "crates/mcf-standin",
     "crates/mcf-helper",
     "crates/mcf-hub",
+    "crates/mcf-optimize",
     "crates/mcf-serve",
     "crates/mcf-desk",
     "crates/mcf-tui",
@@ -30,41 +22,20 @@ members = [
 version = "0.1.0-m0"
 edition = "2024"
 rust-version = "1.98.0"
-# D28. `LICENSE` holds the verbatim text. Every component MCF vendors is
-# checked against this before it is admitted (B-330), and one whose terms are
-# incompatible goes to D23's third tier with its reason recorded rather than
-# being shipped anyway.
 license = "GPL-3.0-only"
-# No `repository` and no `authors`. A7 forbids filling an unknown with a
-# plausible value, this tree has no published remote yet, and git already
-# records who wrote each line.
 
-# No workspace dependencies. B15 admits weight only against a stated cost, and
-# at M0 nothing has stated one — the workspace compiles from the standard
-# library alone. The check in checks/tests/workspace_shape.rs asserts this, so
-# the first dependency admitted has to state its cost there to get in.
 [workspace.dependencies]
 
-# Lints applied to every member. These are the machine-checked form of rules
-# that would otherwise rest on review (B16).
 [workspace.lints.rust]
-# §3.16: a memory-safety escape hatch is exactly the kind of discipline that
-# erodes. Denied rather than forbidden so that the C-ABI work D4 anticipates
-# can opt in per module, with the reason written at the opt-in site.
 unsafe_code = "deny"
 missing_debug_implementations = "deny"
 unreachable_pub = "deny"
 rust_2018_idioms = { level = "deny", priority = -1 }
-# A2: a discarded `Result` is the swallowed exception, spelled in Rust. Warned
-# by default, which is how it survives; denied here.
 unused_must_use = "deny"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
-# A2 forbids the silent failure and the dishonest crash alike. B-003 makes the
-# error type that replaces these; the lints exist from the first commit so that
-# no code is written under the old habit and migrated later.
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
@@ -72,27 +43,14 @@ todo = "deny"
 unimplemented = "deny"
 indexing_slicing = "deny"
 integer_division = "deny"
-# `let _ = fallible();` is the other spelling of the same discard.
 let_underscore_must_use = "deny"
-# A27: MCF restores what it changed, including after an interruption.
-# `process::exit` leaves destructors unrun, so the exit status travels back
-# through `main` instead.
 exit = "deny"
-# A6: measurements carry conditions. Silent numeric truncation is how a
-# condition-carrying value becomes a bare one.
 cast_possible_truncation = "deny"
 cast_precision_loss = "deny"
 cast_sign_loss = "deny"
-# These two require a `# Errors` / `# Panics` section in a doc comment. The
-# crates carry no doc comments, so the sections they ask for have nowhere to
-# live.
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
-# Release profile. `panic = "abort"` follows A2: a panic is an
-# `internal.invariant_violated` that the type system was meant to prevent, and
-# unwinding past it invites the bare catch-and-continue A2 calls worse than a
-# crash. `debug = false` and `strip` keep the core binary inside D24's 40 MiB.
 [profile.release]
 panic = "abort"
 lto = "fat"
@@ -103,25 +61,9 @@ debug = false
 incremental = false
 overflow-checks = true
 
-# Overflow checks stay on in release: an arithmetic overflow that wraps is a
-# wrong number, and P1 puts honesty above continuity. The cost is a branch per
-# arithmetic operation, which D24's budgets are measured against rather than
-# assumed to be free.
-
 [profile.dev]
 panic = "abort"
 overflow-checks = true
 
-# The window's painter — a rasteriser and a text shaper — is what every
-# window test spends its time in: a frame took seventy milliseconds
-# unoptimised and a test that presses its way across a screen renders a
-# frame a press. Optimised a little, the same frame takes a fraction of
-# that, and the suite is minutes rather than half an hour; the rest of the
-# tree stays unoptimised for its compile time.
 [profile.dev.package.mcf-desk]
 opt-level = 3
-
-# Cargo forces the test and bench profiles to unwind whatever the dev profile
-# says, because the harness catches a failing assertion. That is the one place
-# where what the suite runs and what MCF ships genuinely differ, and it is why
-# B-011's budget suite measures the release artifact rather than the test one.

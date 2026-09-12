@@ -1,14 +1,3 @@
-# The pinned toolchain (B-001, §3.12).
-#
-# Pinned rather than floating because §3.12 makes reproducibility a precedence
-# rule (P3): the compiler is part of the conditions under which every artifact
-# was produced, and a floating `stable` silently changes them. The version is
-# recorded in every record MCF writes (see the M0 mockup's `mcf.rustc` field)
-# and is therefore a measurement condition (§3.4), not a developer preference.
-#
-# Raising it is a deliberate change: it invalidates byte-identical comparison
-# with artifacts built before it, so it is made in its own commit with the
-# reproducibility check re-run.
 [toolchain]
 channel = "1.98.0"
 components = ["rustfmt", "clippy"]

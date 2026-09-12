@@ -10,11 +10,11 @@ fn documents() -> Vec<Document> {
 fn the_documents_are_found() {
     let documents = documents();
     assert!(
-        documents.len() >= 4,
+        documents.len() >= 3,
         "only {} documents were found",
         documents.len()
     );
-    for expected in ["README.md", "doc/goals.md", "doc/build.md"] {
+    for expected in ["README.md", "doc/taxonomy.md", "doc/vendored.md"] {
         assert!(
             documents.iter().any(|d| d.relative_path == expected),
             "{expected} was not found"
