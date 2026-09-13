@@ -208,25 +208,49 @@ impl Report {
         held
     }
 
+    /// The columns a reading of this dial is worth showing. A timed run marks no answers
+    /// and runs no set, so those columns would be a row of dashes.
+    #[must_use]
+    pub fn columns_of(dial: Dial) -> Vec<&'static str> {
+        if dial.only_changes_speed() {
+            return vec!["Value", "Take", "Tokens", "Tok/s", "Seconds", "Ending"];
+        }
+        vec![
+            "Value", "Set", "Take", "Score", "Tokens", "Tok/s", "Tok/✓", "Seconds", "Ending",
+        ]
+    }
+
     #[must_use]
     pub fn cells_of(reading: &Reading, dial: Dial, named: &[String]) -> Vec<String> {
+        let rate = reading
+            .tokens_a_second()
+            .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}"));
+        let seconds = reading
+            .milliseconds
+            .checked_div(1000)
+            .unwrap_or(0)
+            .to_string();
+        if dial.only_changes_speed() {
+            return vec![
+                dial.said_among(reading.step, named),
+                reading.repeat.to_string(),
+                reading.produced.to_string(),
+                rate,
+                seconds,
+                reading.ending.label().to_owned(),
+            ];
+        }
         vec![
             dial.said_among(reading.step, named),
             reading.set.to_string(),
             reading.repeat.to_string(),
             format!("{}/{}", reading.passed, reading.of),
             reading.produced.to_string(),
-            reading
-                .tokens_a_second()
-                .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}")),
+            rate,
             reading
                 .tokens_an_answer()
                 .map_or_else(|| "—".to_owned(), |held| held.to_string()),
-            reading
-                .milliseconds
-                .checked_div(1000)
-                .unwrap_or(0)
-                .to_string(),
+            seconds,
             reading.ending.label().to_owned(),
         ]
     }

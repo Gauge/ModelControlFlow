@@ -149,3 +149,41 @@ fn only_one_of_the_two_measures_needs_a_model_s_code_to_be_run() {
     assert!(!Measure::Speed.needs_the_answers_run());
     assert!(Measure::Correctness.needs_the_answers_run());
 }
+
+#[test]
+fn a_timed_reading_is_shown_without_the_columns_that_would_be_dashes() {
+    let columns = Report::columns_of(Dial::MicroBatch);
+    for gone in ["Set", "Score", "Tok/✓"] {
+        assert!(
+            !columns.contains(&gone),
+            "{gone} runs no set and marks no answer in a timed sweep, so it would be a column \
+             of nothing: {columns:?}"
+        );
+    }
+    for kept in ["Value", "Take", "Tokens", "Tok/s", "Seconds", "Ending"] {
+        assert!(columns.contains(&kept), "{kept} is missing: {columns:?}");
+    }
+}
+
+#[test]
+fn a_reading_of_the_tasks_keeps_the_columns_about_the_answers() {
+    let columns = Report::columns_of(Dial::ThinkingBudget);
+    for kept in ["Value", "Set", "Take", "Score", "Tokens", "Tok/s"] {
+        assert!(columns.contains(&kept), "{kept} is missing: {columns:?}");
+    }
+}
+
+#[test]
+fn a_row_has_exactly_as_many_cells_as_the_table_has_columns() {
+    for dial in Dial::ALL {
+        let held = at(dial.step_of(2), 1000, 1000, 4);
+        let cells = Report::cells_of(&held, dial, &[]);
+        assert_eq!(
+            cells.len(),
+            Report::columns_of(dial).len(),
+            "{} draws {cells:?} under {:?}",
+            dial.label(),
+            Report::columns_of(dial)
+        );
+    }
+}

@@ -11,6 +11,19 @@ use crate::trial::{Asked, Endpoint, ask, reading_of};
 
 const MARKING_PATIENCE: Duration = Duration::from_secs(600);
 
+#[must_use]
+pub fn as_a_clock(held: Duration) -> String {
+    let all = held.as_secs();
+    let hours = all.checked_div(3600).unwrap_or(0);
+    let minutes = all
+        .checked_div(60)
+        .unwrap_or(0)
+        .checked_rem(60)
+        .unwrap_or(0);
+    let seconds = all.checked_rem(60).unwrap_or(0);
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
 fn judged_by(
     mark: bool,
     room: &std::path::Path,
@@ -53,6 +66,7 @@ pub fn needs_a_fresh_hold(dial: Dial, held_at: Option<Step>, wanted: Step) -> bo
 pub enum Heard {
     Started(At),
     Holding(String),
+    Producing(u64),
     Took(Box<Reading>),
     Skipped(usize),
     Refused(String),
@@ -116,7 +130,11 @@ fn held_again(
 }
 
 fn answered(doing: &mut Doing, asked: &Asked, step: Step) -> Result<crate::trial::Said, Stopped> {
-    let first = match ask(&doing.endpoint, asked) {
+    let telling = doing.send.clone();
+    let mut along = move |held: u64| {
+        let _sent = telling.send(Heard::Producing(held));
+    };
+    let first = match ask(&doing.endpoint, asked, &mut along) {
         Ok(said) => return Ok(said),
         Err(failure) => failure.to_string(),
     };
@@ -135,7 +153,11 @@ fn answered(doing: &mut Doing, asked: &Asked, step: Step) -> Result<crate::trial
             )));
         }
     }
-    ask(&doing.endpoint, asked).map_err(|again| {
+    let telling = doing.send.clone();
+    let mut along = move |held: u64| {
+        let _sent = telling.send(Heard::Producing(held));
+    };
+    ask(&doing.endpoint, asked, &mut along).map_err(|again| {
         Stopped::Refused(format!("the engine stopped answering twice over: {again}"))
     })
 }
@@ -261,6 +283,7 @@ pub struct Running {
     pub skipped: usize,
     pub refused: Option<String>,
     pub holding: Option<String>,
+    pub produced: u64,
     pub stopped: Option<String>,
     pub finished: bool,
     started: Instant,
@@ -316,6 +339,7 @@ impl Running {
             skipped: 0,
             refused: None,
             holding: None,
+            produced: 0,
             stopped: None,
             finished: false,
             started: Instant::now(),
@@ -342,10 +366,15 @@ impl Running {
             match self.heard.try_recv() {
                 Ok(Heard::Started(at)) => {
                     self.doing = Some(at);
+                    self.produced = 0;
                     moved = true;
                 }
                 Ok(Heard::Holding(said)) => {
                     self.holding = Some(said);
+                    moved = true;
+                }
+                Ok(Heard::Producing(held)) => {
+                    self.produced = held;
                     moved = true;
                 }
                 Ok(Heard::Skipped(over)) => {
@@ -381,6 +410,33 @@ impl Running {
             }
         }
         moved
+    }
+
+    /// What a sweep is doing this second, with the clock running: the time it has been
+    /// going, then the value, the set where the tasks are run, and which take of it.
+    #[must_use]
+    pub fn label(&self, named: &[String], dial: Dial) -> String {
+        let clock = as_a_clock(self.running_for());
+        if let Some(said) = &self.holding {
+            return format!("{clock} — {said}");
+        }
+        let Some(at) = self.doing else {
+            if self.finished {
+                return format!("{clock} — {}", self.said());
+            }
+            return format!("{clock} — starting");
+        };
+        let value = dial.said_among(at.step, named);
+        if dial.only_changes_speed() {
+            return format!(
+                "{clock} — {value} iteration {} tokens {}",
+                at.repeat, self.produced
+            );
+        }
+        format!(
+            "{clock} — {value} on set {} iteration {} tokens {}",
+            at.set, at.repeat, self.produced
+        )
     }
 
     #[must_use]

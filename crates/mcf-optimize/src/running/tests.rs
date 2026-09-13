@@ -1,10 +1,10 @@
-use super::{Orders, Running};
+use super::{Heard, Orders, Running};
 use crate::course::Course;
 use crate::dial::{Dial, Step};
 use crate::hunt::Way;
 use crate::ledger::{CORPUS, Ledger, Under};
 use crate::reading::Measure;
-use crate::trial::Endpoint;
+use crate::trial::{Asked, Endpoint};
 
 struct Scratch {
     path: std::path::PathBuf,
@@ -362,70 +362,166 @@ fn nothing_is_asked_of_an_engine_that_is_not_answering_yet() {
     assert!(ledger.rows().is_empty());
 }
 
-fn a_port_that_answers_health_then_vanishes() -> u16 {
-    use std::io::Write as _;
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port to listen on");
-    let port = listener.local_addr().expect("an address").port();
-    let _serving = std::thread::spawn(move || {
-        for stream in listener.incoming().take(1) {
-            let Ok(mut stream) = stream else { continue };
-            let said = "HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n                        {\"status\":\"ok\"}";
-            let _written = stream.write_all(said.as_bytes());
-            let _flushed = stream.flush();
-        }
-    });
-    port
-}
-
 #[test]
 fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
     let scratch = Scratch::new("held-again");
-    let held: Vec<Step> = vec![Step::Whole(256)];
-    let course = Course::laid_out(
-        under(),
-        Way::ByHand,
-        Dial::MicroBatch,
-        &held,
-        &[1],
-        1,
-        Measure::Speed,
-    );
+    let (send, heard) = std::sync::mpsc::channel();
     let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let kept = std::sync::Arc::clone(&asked);
-    let mut running = Running::begun(
-        super::Orders {
-            endpoint: Endpoint {
-                port: 1,
-                key: None,
-                patience: std::time::Duration::from_millis(100),
-            },
-            under: under(),
-            dial: Dial::MicroBatch,
-            ceiling: 64,
-            named: Vec::new(),
-            mark: false,
-            room: scratch.path.join("marking"),
-            ready_within: std::time::Duration::from_secs(5),
+    let mut doing = super::Doing {
+        send,
+        course: Course::laid_out(
+            under(),
+            Way::ByHand,
+            Dial::MicroBatch,
+            &[Step::Whole(256)],
+            &[1],
+            1,
+            Measure::Speed,
+        ),
+        ledger: Ledger::open(&scratch.at()).expect("opens"),
+        report: crate::reading::Report::default(),
+        endpoint: Endpoint {
+            port: 1,
+            key: None,
+            patience: std::time::Duration::from_millis(50),
         },
-        course,
-        Ledger::open(&scratch.at()).expect("opens"),
-        std::boxed::Box::new(move |_step, _along| {
-            let held = kept.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if held == 0 {
-                return Ok(a_port_that_answers_health_then_vanishes());
-            }
-            Err("the engine would not come back".to_owned())
+        under: under(),
+        dial: Dial::MicroBatch,
+        ceiling: 64,
+        named: Vec::new(),
+        mark: false,
+        room: scratch.path.join("marking"),
+        ready_within: std::time::Duration::from_millis(20),
+        host: std::boxed::Box::new(move |_step, _along| {
+            kept.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(1)
         }),
-        || "now".to_owned(),
-    );
-    settled(&mut running);
-    assert!(
-        asked.load(std::sync::atomic::Ordering::Relaxed) >= 2,
+        recorded: std::boxed::Box::new(|| "now".to_owned()),
+        asked_to_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    };
+    let trial = Asked {
+        set: crate::corpus::Set::numbered(1).expect("set one"),
+        dial: Dial::MicroBatch,
+        step: Step::Whole(256),
+        repeat: 1,
+        ceiling: 64,
+        named: Vec::new(),
+        timing: true,
+    };
+    let outcome = super::answered(&mut doing, &trial, Step::Whole(256));
+    assert_eq!(
+        asked.load(std::sync::atomic::Ordering::Relaxed),
+        1,
         "an engine that dies four hours into a sweep should cost one hold, not the sweep"
     );
-    let why = running.refused.clone().unwrap_or_default();
+    let Err(super::Stopped::Refused(why)) = outcome else {
+        panic!("nothing was listening, so it cannot have answered");
+    };
     assert!(
         why.contains("did not work either"),
         "and when holding it again does not help, it says so: {why}"
+    );
+    assert!(
+        heard
+            .try_iter()
+            .any(|held| matches!(held, Heard::Holding(_))),
+        "it says it is holding the model again rather than going quiet"
+    );
+}
+#[test]
+fn a_clock_counts_hours_minutes_and_seconds_with_their_noughts() {
+    use super::as_a_clock;
+    use std::time::Duration;
+    assert_eq!(as_a_clock(Duration::from_secs(0)), "00:00:00");
+    assert_eq!(as_a_clock(Duration::from_secs(9)), "00:00:09");
+    assert_eq!(as_a_clock(Duration::from_secs(61)), "00:01:01");
+    assert_eq!(as_a_clock(Duration::from_secs(3600)), "01:00:00");
+    assert_eq!(as_a_clock(Duration::from_secs(3661)), "01:01:01");
+    assert_eq!(as_a_clock(Duration::from_hours(24)), "24:00:00");
+}
+
+fn labelled(dial: Dial, at: Option<crate::ledger::At>, holding: Option<&str>) -> String {
+    let scratch = Scratch::new("label");
+    let mut running = begun(&scratch, &[], &[]);
+    running.doing = at;
+    running.holding = holding.map(str::to_owned);
+    running.produced = 512;
+    running.label(&[], dial)
+}
+
+#[test]
+fn a_trial_of_the_tasks_names_the_value_the_set_and_the_take() {
+    let said = labelled(
+        Dial::ThinkingBudget,
+        Some(crate::ledger::At {
+            dial: Dial::ThinkingBudget,
+            step: Step::Whole(4096),
+            set: 3,
+            repeat: 2,
+        }),
+        None,
+    );
+    assert!(
+        said.contains("4096 on set 3 iteration 2 tokens 512"),
+        "{said}"
+    );
+    assert!(said.starts_with("00:00:0"), "the clock leads: {said}");
+}
+
+#[test]
+fn a_timed_trial_names_no_set_because_it_runs_none() {
+    let said = labelled(
+        Dial::MicroBatch,
+        Some(crate::ledger::At {
+            dial: Dial::MicroBatch,
+            step: Step::Whole(1024),
+            set: 1,
+            repeat: 4,
+        }),
+        None,
+    );
+    assert!(said.contains("1024 iteration 4 tokens 512"), "{said}");
+    assert!(
+        !said.contains("set"),
+        "a timed trial runs no tasks, so naming a set would be naming something that did not \
+         happen: {said}"
+    );
+}
+
+#[test]
+fn a_sweep_that_is_holding_the_model_says_that_with_the_clock_still_running() {
+    let said = labelled(Dial::MicroBatch, None, Some("holding the model at 1024"));
+    assert!(said.contains("holding the model at 1024"), "{said}");
+    assert!(said.starts_with("00:00:0"), "{said}");
+}
+
+#[test]
+fn a_sweep_between_trials_still_shows_a_clock() {
+    let said = labelled(Dial::MicroBatch, None, None);
+    assert!(said.starts_with("00:00:0"), "{said}");
+}
+
+#[test]
+fn the_token_count_starts_again_with_each_trial() {
+    let scratch = Scratch::new("tokens-reset");
+    let mut running = begun(&scratch, &[], &[]);
+    running.produced = 4096;
+    assert_eq!(running.produced, 4096);
+    running.doing = None;
+    let said = running.label(&[], Dial::MicroBatch);
+    assert!(
+        !said.contains("4096"),
+        "between trials there is no count to show: {said}"
+    );
+}
+
+#[test]
+fn a_trial_says_how_far_it_has_got_often_enough_to_look_alive() {
+    let told = crate::trial::TOLD_EVERY;
+    assert!(
+        (8..=64).contains(&told),
+        "at eighty tokens a second, saying so every {told} is about once a second; saying so \
+         on every token would make the saying the work"
     );
 }

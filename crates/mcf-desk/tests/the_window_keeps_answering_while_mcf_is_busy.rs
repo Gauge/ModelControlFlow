@@ -49,3 +49,29 @@ fn a_poll_of_a_daemon_that_never_answers_costs_a_moment_rather_than_seconds() {
         began.elapsed()
     );
 }
+
+#[test]
+fn a_window_with_a_sweep_going_has_something_to_redraw_every_second() {
+    let mut desk = desk();
+    assert!(
+        desk.optimizing.run.is_none(),
+        "nothing is running to begin with"
+    );
+    desk.optimizing.running = true;
+    assert!(
+        !desk.busy_elsewhere(),
+        "the running flag alone is not a daemon call in flight"
+    );
+}
+
+#[test]
+fn a_clock_that_only_moves_when_a_message_arrives_would_sit_still_for_a_minute() {
+    use mcf_optimize::running::as_a_clock;
+    use std::time::Duration;
+    assert_ne!(
+        as_a_clock(Duration::from_secs(10)),
+        as_a_clock(Duration::from_secs(11)),
+        "a trial takes the best part of a minute, so a label that only redraws when one \
+         finishes looks stopped"
+    );
+}

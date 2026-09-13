@@ -2,6 +2,7 @@ use super::{Asked, Endpoint, Said, blocks, body};
 use crate::corpus::Set;
 use crate::dial::{Dial, Step};
 use crate::reading::Ending;
+use mcf_record::json::Value;
 
 fn asked(dial: Dial, step: Step) -> Asked {
     let Some(set) = Set::numbered(1) else {
@@ -227,45 +228,42 @@ fn a_sampling_dial_is_still_sent_as_a_number() {
 }
 
 #[test]
-fn a_timed_trial_asks_for_tokens_rather_than_for_the_tasks() {
+fn a_timed_trial_goes_to_the_plain_endpoint_and_asks_for_tokens() {
     let mut held = asked(Dial::MicroBatch, Step::Whole(1024));
     held.timing = true;
     held.ceiling = super::TOKENS_TIMED;
+    assert_eq!(
+        super::the_way_in(&held),
+        "/completion",
+        "the chat endpoint applies a template and parses the reply; a model told to ignore \
+         its own ending walks off the end of that parser and takes the engine with it"
+    );
     let asking = super::body(&held);
-    let said = asking
-        .get("messages")
-        .and_then(mcf_record::json::Value::as_list)
-        .and_then(|held| held.first().cloned())
-        .and_then(|one| {
-            one.get("content")
-                .and_then(|held| held.as_text())
-                .map(str::to_owned)
-        })
-        .unwrap_or_default();
-    assert_eq!(said, super::TO_BE_TIMED);
+    assert_eq!(
+        asking.get("prompt").and_then(Value::as_text),
+        Some(super::TO_BE_TIMED)
+    );
     assert!(
-        !said.contains("SOLUTION"),
-        "a sweep of a setting that cannot change an answer should not spend an hour on \
-         programming tasks"
+        asking.get("messages").is_none(),
+        "there is no conversation here, only tokens"
     );
     assert_eq!(
-        asking.get("max_tokens"),
-        Some(&mcf_record::json::Value::Integer(i64::from(
-            super::TOKENS_TIMED
-        )))
+        asking.get("n_predict"),
+        Some(&Value::Integer(i64::from(super::TOKENS_TIMED)))
     );
-    assert!(
-        asking.get("ignore_eos").is_none(),
-        "this build of llama.cpp drops the connection and sometimes dies on it, so the prompt \
-         has to do the work instead"
-    );
-    assert!(
-        said.contains("3000"),
-        "it asks for far more numbers than the count allows, so the engine stops on the count \
-         rather than the model stopping when it feels finished: {said}"
+    assert_eq!(
+        asking.get("ignore_eos"),
+        Some(&Value::Bool(true)),
+        "this is what makes the count the count rather than whatever the model felt like"
     );
 }
 
+#[test]
+fn a_trial_of_the_tasks_goes_to_the_chat_endpoint() {
+    let held = asked(Dial::ThinkingBudget, Step::Whole(4096));
+    assert_eq!(super::the_way_in(&held), "/v1/chat/completions");
+    assert!(super::body(&held).get("ignore_eos").is_none());
+}
 #[test]
 fn a_trial_of_the_tasks_asks_for_the_tasks() {
     let asking = super::body(&asked(Dial::ThinkingBudget, Step::Whole(4096)));

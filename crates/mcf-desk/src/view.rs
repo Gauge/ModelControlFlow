@@ -1499,7 +1499,7 @@ fn run_row(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, y: f32) -
     }
     let doing = desk.optimizing.run.as_ref().map_or_else(
         || desk.optimizing.standing(),
-        mcf_optimize::running::Running::said,
+        |run| run.label(&desk.optimizing.named, desk.optimizing.sweep.dial),
     );
     let at = if desk.optimizing.running {
         button.right() + 206.0
@@ -1607,7 +1607,9 @@ fn rows_of_the_record(
     let ink = paint.ink;
     let mut act = None;
     let dial = desk.optimizing.sweep.dial;
-    let wide = ((area.w - 28.0 - BESIDE) / 9.0).max(52.0);
+    let columns = mcf_optimize::reading::Report::columns_of(dial);
+    let across = u16::try_from(columns.len().max(1)).unwrap_or(9);
+    let wide = ((area.w - 28.0 - BESIDE) / f32::from(across)).max(52.0);
     paint.say_at(
         area.x,
         *y,
@@ -1648,7 +1650,7 @@ fn rows_of_the_record(
         }
         *y += 40.0;
     }
-    for (at, head) in mcf_optimize::reading::Report::COLUMNS.iter().enumerate() {
+    for (at, head) in columns.iter().enumerate() {
         paint.say_at(
             area.x + 28.0 + wide * at as f32,
             *y,

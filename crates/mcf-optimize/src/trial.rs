@@ -13,13 +13,16 @@ use crate::reading::{Ending, Reading};
 const LOOPBACK: &str = "127.0.0.1";
 const READ_AT_A_TIME: usize = 8192;
 const CHECKED_EVERY: usize = 200;
+
+/// How often a trial says how far it has got. Often enough to look alive, seldom enough
+/// that saying so is not the work.
+pub(crate) const TOLD_EVERY: u64 = 32;
 const KEPT_OF_THE_REPLY: usize = 4096;
 
-/// What a speed trial asks for. What comes back is never read: only how long it took.
-/// It asks for far more numbers than the token count allows, so the engine stops on the
-/// count rather than the model stopping when it feels finished.
-pub const TO_BE_TIMED: &str = "Write the numbers from 1 to 3000, one per line. Output only \
-                               the numbers, nothing else. Do not stop early.";
+/// What a speed trial starts from. What comes back is never read: only how long it took.
+/// The engine is told to ignore the model's own ending, so this only has to be something
+/// to continue from.
+pub const TO_BE_TIMED: &str = "1\n2\n3\n";
 
 pub const TOKENS_TIMED: u32 = 4096;
 
@@ -66,21 +69,35 @@ pub struct Said {
     pub counted: Option<u64>,
 }
 
+/// Where a trial is sent. A timed run goes to the plain completion endpoint: it wants
+/// tokens rather than an answer, and that endpoint applies no chat template and parses no
+/// reply, so a model told to ignore its own ending cannot walk off the end of a parser.
+#[must_use]
+pub const fn the_way_in(asked: &Asked) -> &'static str {
+    if asked.timing {
+        "/completion"
+    } else {
+        "/v1/chat/completions"
+    }
+}
+
 #[must_use]
 pub fn body(asked: &Asked) -> Value {
+    if asked.timing {
+        return Value::map([
+            ("prompt", Value::text(TO_BE_TIMED.to_owned())),
+            ("n_predict", Value::Integer(i64::from(asked.ceiling))),
+            ("ignore_eos", Value::Bool(true)),
+            ("stream", Value::Bool(true)),
+            ("cache_prompt", Value::Bool(false)),
+        ]);
+    }
     let mut fields: Vec<(&str, Value)> = vec![
         (
             "messages",
             Value::List(vec![Value::map([
                 ("role", Value::text("user")),
-                (
-                    "content",
-                    Value::text(if asked.timing {
-                        TO_BE_TIMED.to_owned()
-                    } else {
-                        asked.set.asked()
-                    }),
-                ),
+                ("content", Value::text(asked.set.asked())),
             ])]),
         ),
         ("max_tokens", Value::Integer(i64::from(asked.ceiling))),
@@ -152,7 +169,7 @@ pub fn ready_within(port: u16, patience: Duration, mut along: impl FnMut(u64)) -
     is_ready(port)
 }
 
-pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
+fn sent_to(endpoint: &Endpoint, asked: &Asked) -> Result<TcpStream, Failure> {
     let payload = body(asked).to_string();
     let mut connection = TcpStream::connect((LOOPBACK, endpoint.port))
         .map_err(|error| unreachable(endpoint.port, &error.to_string()))?;
@@ -164,13 +181,22 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
     });
     write!(
         connection,
-        "POST /v1/chat/completions HTTP/1.1\r\nHost: localhost\r\nContent-Type: \
+        "POST {} HTTP/1.1\r\nHost: localhost\r\nContent-Type: \
          application/json\r\n{bearer}Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        the_way_in(asked),
         payload.len()
     )
     .and_then(|()| connection.flush())
     .map_err(|error| unreachable(endpoint.port, &error.to_string()))?;
+    Ok(connection)
+}
 
+pub fn ask(
+    endpoint: &Endpoint,
+    asked: &Asked,
+    along: &mut dyn FnMut(u64),
+) -> Result<Said, Failure> {
+    let mut connection = sent_to(endpoint, asked)?;
     let started = Instant::now();
     let mut held = [0_u8; READ_AT_A_TIME];
     let mut pending = String::new();
@@ -203,6 +229,13 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
                 break 'reading;
             }
             let Ok(value) = parse(data) else { continue };
+            if let Some(held) = value
+                .get("tokens_predicted")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+            {
+                counted = Some(held);
+            }
             if let Some(timings) = value.get("timings") {
                 let whole = |key: &str| {
                     timings
@@ -217,6 +250,12 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
             };
             produced = produced.saturating_add(1);
             answer.push_str(&piece);
+            if produced
+                .checked_rem(TOLD_EVERY)
+                .is_some_and(|left| left == 0)
+            {
+                along(counted.unwrap_or(produced));
+            }
             let time_to_look = !asked.timing
                 && produced
                     .checked_rem(u64::try_from(CHECKED_EVERY).unwrap_or(1))
@@ -330,7 +369,11 @@ fn sent(step: Step) -> Value {
 }
 
 fn spoken(value: &Value) -> Option<String> {
-    let Value::List(choices) = value.get("choices")? else {
+    let Some(choices) = value.get("choices") else {
+        let said = value.get("content").and_then(Value::as_text)?;
+        return (!said.is_empty()).then(|| said.to_owned());
+    };
+    let Value::List(choices) = choices else {
         return None;
     };
     let delta = choices.first()?.get("delta")?;

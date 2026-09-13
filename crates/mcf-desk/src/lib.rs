@@ -4492,7 +4492,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
             acted = true;
         }
 
-        let a_run = desk.doing.busy();
+        let a_run = desk.doing.busy() || desk.optimizing.run.is_some();
         let due = (desk.page == Page::Hosting || a_run)
             && last.elapsed() >= std::time::Duration::from_secs(1);
         if due {
