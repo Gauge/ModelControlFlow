@@ -32,6 +32,7 @@ pub struct Declared {
     pub rope: Option<Rope>,
     pub context: Option<u64>,
     pub architecture: Option<String>,
+    pub thinking: crate::thinking::Thinking,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,8 +52,12 @@ impl Declared {
 
     #[must_use]
     pub fn in_header(file: &Model) -> Self {
+        let thinking = crate::thinking::Thinking::of(file);
         let Some(architecture) = file.architecture() else {
-            return Self::default();
+            return Self {
+                thinking,
+                ..Self::default()
+            };
         };
         let under = |suffix: &str| file.get(&format!("{architecture}.{suffix}"));
         let number = |suffix: &str| {
@@ -71,6 +76,7 @@ impl Declared {
                     trained: number("rope.scaling.original_context_length"),
                 }),
             context: number("context_length"),
+            thinking,
         }
     }
 
@@ -109,6 +115,7 @@ impl Declared {
                     trained: number(rope.and_then(|rope| rope.get("trained_context"))),
                 }),
             context: number(value.get("context")),
+            thinking: crate::thinking::Thinking::from_value(value.get("thinking_levels")),
         }
     }
 
@@ -144,6 +151,7 @@ impl Declared {
                 self.context
                     .map_or(Value::Null, |context| whole(u128::from(context))),
             ),
+            ("thinking_levels", self.thinking.to_value()),
         ])
     }
 }

@@ -2,6 +2,7 @@
 pub enum Dial {
     #[default]
     ThinkingBudget,
+    ThinkingLevel,
     Temperature,
     TopP,
     TopK,
@@ -10,8 +11,9 @@ pub enum Dial {
 }
 
 impl Dial {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::ThinkingBudget,
+        Self::ThinkingLevel,
         Self::Temperature,
         Self::TopP,
         Self::TopK,
@@ -23,6 +25,7 @@ impl Dial {
     pub const fn label(self) -> &'static str {
         match self {
             Self::ThinkingBudget => "Thinking budget",
+            Self::ThinkingLevel => "Thinking level",
             Self::Temperature => "Temperature",
             Self::TopP => "Top-p",
             Self::TopK => "Top-k",
@@ -45,14 +48,18 @@ impl Dial {
             Self::ThinkingBudget => "tokens",
             Self::MicroBatch => "tokens per pass",
             Self::DraftDepth => "drafted tokens",
-            Self::Temperature | Self::TopP | Self::TopK => "",
+            Self::ThinkingLevel | Self::Temperature | Self::TopP | Self::TopK => "",
         }
     }
 
     #[must_use]
     pub const fn scale(self) -> Scale {
         match self {
-            Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth | Self::TopK => Scale::Whole,
+            Self::ThinkingBudget
+            | Self::ThinkingLevel
+            | Self::MicroBatch
+            | Self::DraftDepth
+            | Self::TopK => Scale::Whole,
             Self::Temperature | Self::TopP => Scale::Thousandths,
         }
     }
@@ -61,6 +68,7 @@ impl Dial {
     pub const fn span(self) -> Span {
         match self {
             Self::ThinkingBudget => Span::new(0, 32_768, 256),
+            Self::ThinkingLevel => Span::new(0, 7, 1),
             Self::Temperature => Span::new(0, 1000, 25),
             Self::TopP => Span::new(500, 1000, 10),
             Self::TopK => Span::new(0, 200, 5),
@@ -73,6 +81,7 @@ impl Dial {
     pub fn coarse(self) -> Vec<Step> {
         let held: &[u32] = match self {
             Self::ThinkingBudget => &[0, 4096, 8192, 16_384, 32_768],
+            Self::ThinkingLevel => &[0, 1, 2],
             Self::Temperature => &[0, 250, 500, 750, 1000],
             Self::TopP => &[500, 625, 750, 875, 1000],
             Self::TopK => &[0, 50, 100, 150, 200],
@@ -97,6 +106,7 @@ impl Dial {
                 .into_iter()
                 .map(Step::Whole)
                 .collect(),
+            Self::ThinkingLevel => (0..3).map(Step::Whole).collect(),
             Self::Temperature => [0, 200, 400, 600, 800, 1000]
                 .into_iter()
                 .map(Step::Thousandths)
@@ -120,7 +130,7 @@ impl Dial {
             Self::ThinkingBudget => Some("--reasoning-budget"),
             Self::MicroBatch => Some("--ubatch-size"),
             Self::DraftDepth => Some("--spec-draft-n-max"),
-            Self::Temperature | Self::TopP | Self::TopK => None,
+            Self::ThinkingLevel | Self::Temperature | Self::TopP | Self::TopK => None,
         }
     }
 
@@ -130,13 +140,42 @@ impl Dial {
             Self::Temperature => Some("temperature"),
             Self::TopP => Some("top_p"),
             Self::TopK => Some("top_k"),
+            Self::ThinkingLevel => Some("reasoning_effort"),
             Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth => None,
         }
     }
 
     #[must_use]
+    pub const fn is_named_by_the_model(self) -> bool {
+        matches!(self, Self::ThinkingLevel)
+    }
+
+    #[must_use]
     pub fn said(self, step: Step) -> String {
         step.said()
+    }
+
+    #[must_use]
+    pub fn said_among(self, step: Step, named: &[String]) -> String {
+        if !self.is_named_by_the_model() {
+            return step.said();
+        }
+        step.whole()
+            .and_then(|at| named.get(usize::try_from(at).unwrap_or(usize::MAX)))
+            .map_or_else(|| step.said(), Clone::clone)
+    }
+
+    #[must_use]
+    pub fn read_among(self, typed: &str, named: &[String]) -> Option<Step> {
+        if !self.is_named_by_the_model() {
+            return None;
+        }
+        let wanted = typed.trim().to_ascii_lowercase();
+        named
+            .iter()
+            .position(|held| held.to_ascii_lowercase() == wanted)
+            .and_then(|at| u32::try_from(at).ok())
+            .map(Step::Whole)
     }
 }
 

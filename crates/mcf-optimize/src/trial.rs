@@ -39,6 +39,7 @@ pub struct Asked {
     pub step: Step,
     pub repeat: u8,
     pub ceiling: u32,
+    pub named: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +65,12 @@ pub fn body(asked: &Asked) -> Value {
         ("cache_prompt", Value::Bool(false)),
     ];
     if let Some(field) = asked.dial.field() {
-        fields.push((field, sent(asked.step)));
+        if asked.dial.is_named_by_the_model() {
+            let said = asked.dial.said_among(asked.step, &asked.named);
+            fields.push((field, Value::text(said)));
+        } else {
+            fields.push((field, sent(asked.step)));
+        }
     }
     Value::map(fields)
 }

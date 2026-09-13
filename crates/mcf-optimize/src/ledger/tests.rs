@@ -42,6 +42,7 @@ fn under() -> Under {
         draft_head: false,
         draft_depth: None,
         thinking_budget: Some(4096),
+        thinking_level: None,
         temperature: Some(200),
         top_p: Some(950),
         top_k: Some(20),

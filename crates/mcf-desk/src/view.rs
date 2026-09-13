@@ -1249,7 +1249,8 @@ fn setting_to_optimize(
         "Setting to optimize",
         "one dial moves, everything above stays where it is",
     );
-    let dials: Vec<(String, bool)> = mcf_optimize::dial::Dial::ALL
+    let offered = desk.dials_worth_offering();
+    let dials: Vec<(String, bool)> = offered
         .iter()
         .map(|dial| (dial.label().to_owned(), *dial == desk.optimizing.sweep.dial))
         .collect();
@@ -1259,7 +1260,11 @@ fn setting_to_optimize(
     }
     y = below;
     let dial = desk.optimizing.sweep.dial;
-    let how = if dial.reloads_the_engine() {
+    let how = if dial.is_named_by_the_model() {
+        desk.declared
+            .as_ref()
+            .map_or_else(String::new, |held| held.thinking.said())
+    } else if dial.reloads_the_engine() {
         format!(
             "{} is a launch flag, so MCF holds the model again for each value.",
             dial.flag().unwrap_or("")
@@ -1270,12 +1275,17 @@ fn setting_to_optimize(
             dial.field().unwrap_or("")
         )
     };
-    paint.say_at(area.x, y, &how, Weight::Regular, size::SMALL, ink.faint);
-    y += 26.0;
+    for line in paint.wrap(&how, Weight::Regular, size::SMALL, area.w - 20.0) {
+        paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    y += 10.0;
     let (below, chosen) = how_it_searches(paint, desk, mouse, area, y);
     act = act.or(chosen);
     y = below;
-    if desk.optimizing.way == mcf_optimize::hunt::Way::Halving {
+    if desk.optimizing.way == mcf_optimize::hunt::Way::Halving
+        && !desk.optimizing.sweep.dial.is_named_by_the_model()
+    {
         return (y, act);
     }
     let (below, picked) = the_values_by_hand(paint, desk, mouse, area, y);
@@ -1291,12 +1301,19 @@ fn the_values_by_hand(
 ) -> (f32, Option<Act>) {
     let mut act = None;
     let dial = desk.optimizing.sweep.dial;
-    let values: Vec<(String, bool)> = dial
-        .suggested()
+    let offered: Vec<mcf_optimize::dial::Step> = if dial.is_named_by_the_model() {
+        (0..desk.optimizing.named.len())
+            .filter_map(|at| u32::try_from(at).ok())
+            .map(mcf_optimize::dial::Step::Whole)
+            .collect()
+    } else {
+        dial.suggested()
+    };
+    let values: Vec<(String, bool)> = offered
         .iter()
         .map(|step| {
             (
-                step.said(),
+                dial.said_among(*step, &desk.optimizing.named),
                 desk.optimizing.sweep.steps.iter().any(|held| held == step),
             )
         })
@@ -1626,7 +1643,8 @@ fn rows_of_the_record(
                     ink.accent,
                 );
             }
-            let cells = mcf_optimize::reading::Report::cells_of(&row.reading, dial);
+            let cells =
+                mcf_optimize::reading::Report::cells_of(&row.reading, dial, &desk.optimizing.named);
             for (column, cell) in cells.iter().enumerate() {
                 let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
                 paint.say_at(

@@ -14,7 +14,7 @@ fn optimize_sits_between_configure_and_statistics() {
 #[test]
 fn picking_a_dial_replaces_the_values_with_that_dials_own() {
     let mut desk = desk();
-    desk.act(Act::Dial(dial_at(Dial::Temperature)));
+    desk.act(Act::Dial(dial_at(&desk, Dial::Temperature)));
     assert_eq!(desk.optimizing.sweep.dial, Dial::Temperature);
     assert!(
         desk.optimizing
@@ -238,7 +238,7 @@ fn a_value_already_in_the_list_is_not_added_twice() {
 #[test]
 fn a_dial_read_in_thousandths_takes_a_value_with_a_point_in_it() {
     let mut desk = desk();
-    desk.act(Act::Dial(dial_at(Dial::Temperature)));
+    desk.act(Act::Dial(dial_at(&desk, Dial::Temperature)));
     desk.optimizing.sweep.steps.clear();
     desk.optimizing.custom.set("0.35");
     desk.act(Act::AddCustom);
@@ -275,11 +275,23 @@ fn the_corpus_the_tab_offers_is_the_whole_sixty_four() {
     assert_eq!(mcf_optimize::corpus::Set::all().len(), 8);
 }
 
-fn dial_at(wanted: Dial) -> usize {
-    Dial::ALL
+fn dial_at(desk: &Desk, wanted: Dial) -> usize {
+    desk.dials_worth_offering()
         .iter()
         .position(|dial| *dial == wanted)
         .unwrap_or(0)
+}
+
+fn reading_a_level() -> Desk {
+    let mut desk = desk();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template(
+            "{%- if reasoning_effort not in ('xhigh', 'medium', 'low') %}{{ raise_exception('no') \
+             }}{%- endif %}{% if enable_thinking %}<think>{% endif %}",
+        ),
+        ..mcf_serve::declared::Declared::default()
+    });
+    desk
 }
 
 fn a_spot(step: u32, set: usize, repeat: u8) -> mcf_optimize::ledger::At {
@@ -359,12 +371,99 @@ fn every_dial_offered_is_one_the_engine_enforces() {
 }
 
 #[test]
-fn a_thinking_level_is_not_offered_because_nothing_enforces_it() {
-    for dial in Dial::ALL {
-        assert!(
-            !dial.label().to_lowercase().contains("level"),
-            "a reasoning level is text in the prompt: {}",
-            dial.label()
-        );
-    }
+fn a_model_whose_template_reads_no_level_is_not_offered_one() {
+    let desk = desk();
+    assert!(
+        !desk.dials_worth_offering().contains(&Dial::ThinkingLevel),
+        "setting a level on a model that never reads it would change nothing at all"
+    );
+}
+
+#[test]
+fn a_model_whose_template_reads_a_level_is_offered_it() {
+    let desk = reading_a_level();
+    assert!(desk.dials_worth_offering().contains(&Dial::ThinkingLevel));
+    assert_eq!(
+        desk.levels_of_the_model(),
+        vec![
+            "none".to_owned(),
+            "low".to_owned(),
+            "medium".to_owned(),
+            "xhigh".to_owned()
+        ],
+        "the levels offered are that model's own words, not a list MCF made up"
+    );
+}
+
+#[test]
+fn choosing_the_level_puts_every_level_the_model_takes_on_the_list() {
+    let mut desk = reading_a_level();
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
+    assert_eq!(desk.optimizing.sweep.dial, Dial::ThinkingLevel);
+    assert_eq!(
+        desk.optimizing.sweep.steps.len(),
+        4,
+        "four words means four values, and running all four is the whole search"
+    );
+    assert_eq!(
+        desk.optimizing.way,
+        mcf_optimize::hunt::Way::ByHand,
+        "there is nothing to halve between four named words"
+    );
+}
+
+#[test]
+fn a_level_is_typed_in_as_one_of_the_model_s_own_words() {
+    let mut desk = reading_a_level();
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
+    desk.optimizing.sweep.steps.clear();
+    desk.optimizing.custom.set("xhigh");
+    desk.act(Act::AddCustom);
+    assert!(
+        desk.optimizing.sweep.steps.contains(&Step::Whole(3)),
+        "{:?} {:?}",
+        desk.optimizing.sweep.steps,
+        desk.optimizing.custom_refused
+    );
+}
+
+#[test]
+fn a_level_this_model_does_not_take_is_refused_even_though_another_model_would() {
+    let mut desk = reading_a_level();
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
+    desk.optimizing.custom.set("high");
+    desk.act(Act::AddCustom);
+    assert!(
+        desk.optimizing.custom_refused.is_some(),
+        "this template raises an exception for 'high', so sending it would fail the trial"
+    );
+}
+
+#[test]
+fn moving_to_a_model_that_reads_no_level_moves_off_the_level_dial() {
+    let mut desk = reading_a_level();
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
+    assert_eq!(desk.optimizing.sweep.dial, Dial::ThinkingLevel);
+    desk.declared = Some(mcf_serve::declared::Declared::default());
+    desk.optimizing.named = desk.levels_of_the_model();
+    assert!(
+        !desk.dials_worth_offering().contains(&Dial::ThinkingLevel),
+        "the new model reads no level, so the dial is not among those offered"
+    );
+}
+
+#[test]
+fn the_level_a_sweep_sends_is_the_word_and_the_record_keeps_the_word_too() {
+    let desk = reading_a_level();
+    let named = desk.levels_of_the_model();
+    assert_eq!(
+        Dial::ThinkingLevel.said_among(Step::Whole(1), &named),
+        "low",
+        "what is drawn in the table is the word the model was actually given"
+    );
+    assert_eq!(
+        Dial::ThinkingLevel.read_among("LOW", &named),
+        Some(Step::Whole(1)),
+        "and typing it back in capitals finds the same level"
+    );
 }

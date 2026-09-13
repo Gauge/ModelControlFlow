@@ -69,6 +69,7 @@ struct Doing {
     under: Under,
     dial: Dial,
     ceiling: u32,
+    named: Vec<String>,
     mark: bool,
     room: std::path::PathBuf,
     ready_within: Duration,
@@ -190,6 +191,7 @@ fn sweeping(mut doing: Doing) {
             step: spot.step,
             repeat: spot.repeat,
             ceiling: doing.ceiling,
+            named: doing.named.clone(),
         };
         let began = Instant::now();
         let said = match answered(&mut doing, &asked, spot.step) {
@@ -234,6 +236,7 @@ pub struct Orders {
     pub under: Under,
     pub dial: Dial,
     pub ceiling: u32,
+    pub named: Vec<String>,
     pub mark: bool,
     pub room: std::path::PathBuf,
     pub ready_within: Duration,
@@ -271,6 +274,7 @@ impl Running {
             under,
             dial,
             ceiling,
+            named,
             mark,
             room,
             ready_within,
@@ -288,6 +292,7 @@ impl Running {
                 under,
                 dial,
                 ceiling,
+                named,
                 mark,
                 room,
                 ready_within,

@@ -516,6 +516,7 @@ pub struct Optimizing {
     pub refused: Option<String>,
     pub way: mcf_optimize::hunt::Way,
     pub measure: mcf_optimize::reading::Measure,
+    pub named: Vec<String>,
     pub custom: crate::typing::Typing,
     pub custom_focused: bool,
     pub custom_refused: Option<String>,
@@ -543,8 +544,8 @@ impl Optimizing {
         Some(f32::from(done) / f32::from(all.max(1)))
     }
 
-    pub fn pick_dial(&mut self, at: usize) {
-        if let Some(dial) = mcf_optimize::dial::Dial::ALL.get(at) {
+    pub fn pick_dial_among(&mut self, at: usize, offered: &[mcf_optimize::dial::Dial]) {
+        if let Some(dial) = offered.get(at) {
             self.sweep = mcf_optimize::dial::Sweep::on(*dial);
             self.report = mcf_optimize::reading::Report::default();
             self.done = 0;
@@ -623,7 +624,11 @@ impl Optimizing {
             return;
         }
         let dial = self.sweep.dial;
-        let Some(step) = read_a_value(dial, &typed) else {
+        let Some(step) = dial.read_among(&typed, &self.named).or_else(|| {
+            (!dial.is_named_by_the_model())
+                .then(|| read_a_value(dial, &typed))
+                .flatten()
+        }) else {
             self.custom_refused = Some(format!(
                 "{typed:?} is not a value {} takes",
                 dial.label().to_lowercase()
@@ -705,7 +710,8 @@ fn hold_it_at(
             held.started.draft_head = wanted > 0;
             held.started.drafted = (wanted > 0).then_some(wanted);
         }
-        mcf_optimize::dial::Dial::Temperature
+        mcf_optimize::dial::Dial::ThinkingLevel
+        | mcf_optimize::dial::Dial::Temperature
         | mcf_optimize::dial::Dial::TopP
         | mcf_optimize::dial::Dial::TopK => {}
     }
@@ -2181,6 +2187,13 @@ impl Desk {
                     .body
                     .get("declares")
                     .map(mcf_serve::declared::Declared::from_value);
+                self.optimizing.named = self.levels_of_the_model();
+                if self.optimizing.sweep.dial.is_named_by_the_model()
+                    && self.optimizing.named.is_empty()
+                {
+                    self.optimizing
+                        .pick_dial_among(0, &self.dials_worth_offering());
+                }
                 self.placements = answer
                     .body
                     .get("placements")
@@ -3145,6 +3158,23 @@ impl Desk {
     }
 
     #[must_use]
+    pub fn levels_of_the_model(&self) -> Vec<String> {
+        self.declared
+            .as_ref()
+            .map(|held| held.thinking.levels.clone())
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn dials_worth_offering(&self) -> Vec<mcf_optimize::dial::Dial> {
+        let levels = self.levels_of_the_model();
+        mcf_optimize::dial::Dial::ALL
+            .into_iter()
+            .filter(|dial| !dial.is_named_by_the_model() || !levels.is_empty())
+            .collect()
+    }
+
+    #[must_use]
     fn base_for_a_sweep(&self) -> Option<mcf_optimize::ledger::Under> {
         let held = self.chosen.and_then(|at| self.models.get(at))?;
         let settings = self.settings.as_ref()?;
@@ -3161,6 +3191,7 @@ impl Desk {
             draft_head: settings.started.draft_head,
             draft_depth: settings.started.drafted,
             thinking_budget: settings.started.thinking,
+            thinking_level: None,
             temperature: None,
             top_p: None,
             top_k: None,
@@ -3169,6 +3200,7 @@ impl Desk {
     }
 
     pub fn read_the_ledger(&mut self) {
+        self.optimizing.named = self.levels_of_the_model();
         self.optimizing.rows.clear();
         let Some(path) = self.ledger_path() else {
             return;
@@ -3336,6 +3368,7 @@ impl Desk {
             under,
             dial: self.optimizing.sweep.dial,
             ceiling: SWEEP_CEILING,
+            named: self.levels_of_the_model(),
             mark: self.optimizing.measure.needs_the_answers_run(),
             ready_within: HOLDING_PATIENCE,
             room: path
@@ -3384,7 +3417,16 @@ impl Desk {
         match *act {
             Act::Dial(at) => {
                 self.open = None;
-                self.optimizing.pick_dial(at);
+                let offered = self.dials_worth_offering();
+                let levels = self.levels_of_the_model();
+                self.optimizing.pick_dial_among(at, &offered);
+                if self.optimizing.sweep.dial.is_named_by_the_model() {
+                    self.optimizing.way = mcf_optimize::hunt::Way::ByHand;
+                    self.optimizing.sweep.steps = (0..levels.len())
+                        .filter_map(|at| u32::try_from(at).ok())
+                        .map(mcf_optimize::dial::Step::Whole)
+                        .collect();
+                }
                 self.read_the_ledger();
             }
             Act::SweepValue(at) => self.optimizing.toggle_value(at),

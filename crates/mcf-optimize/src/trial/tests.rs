@@ -13,6 +13,7 @@ fn asked(dial: Dial, step: Step) -> Asked {
         step,
         repeat: 0,
         ceiling: 40_000,
+        named: Vec::new(),
     }
 }
 
@@ -173,5 +174,52 @@ fn a_sweep_sends_no_chat_template_switches_at_all() {
 #[test]
 fn a_sampling_dial_reaches_the_model_as_a_field_the_engine_applies() {
     let asking = super::body(&asked(Dial::Temperature, Step::Thousandths(200)));
+    assert!(asking.get("temperature").is_some());
+}
+
+#[test]
+fn a_level_reaches_the_model_as_the_word_it_named_and_not_as_a_number() {
+    let named = vec!["none".to_owned(), "low".to_owned(), "xhigh".to_owned()];
+    let mut held = asked(Dial::ThinkingLevel, Step::Whole(2));
+    held.named = named;
+    let asking = super::body(&held);
+    assert_eq!(
+        asking
+            .get("reasoning_effort")
+            .and_then(mcf_record::json::Value::as_text),
+        Some("xhigh"),
+        "the index is what MCF keeps; the word is what the engine takes"
+    );
+    assert!(
+        asking.get("chat_template_kwargs").is_none(),
+        "it goes in the field llama.cpp parses itself, so that 'none' means what it means \
+         there rather than being passed straight to a template"
+    );
+}
+
+#[test]
+fn a_level_outside_what_the_model_named_is_never_invented() {
+    let mut held = asked(Dial::ThinkingLevel, Step::Whole(9));
+    held.named = vec!["low".to_owned()];
+    let asking = super::body(&held);
+    assert_eq!(
+        asking
+            .get("reasoning_effort")
+            .and_then(mcf_record::json::Value::as_text),
+        Some("9"),
+        "with nothing to name it, the step is sent as it stands rather than as a guess"
+    );
+}
+
+#[test]
+fn a_sampling_dial_is_still_sent_as_a_number() {
+    let asking = super::body(&asked(Dial::Temperature, Step::Thousandths(200)));
+    assert!(
+        asking
+            .get("temperature")
+            .and_then(mcf_record::json::Value::as_text)
+            .is_none(),
+        "a temperature is a number, not a word"
+    );
     assert!(asking.get("temperature").is_some());
 }

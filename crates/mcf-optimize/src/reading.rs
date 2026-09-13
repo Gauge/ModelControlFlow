@@ -209,9 +209,9 @@ impl Report {
     }
 
     #[must_use]
-    pub fn cells_of(reading: &Reading, dial: Dial) -> Vec<String> {
+    pub fn cells_of(reading: &Reading, dial: Dial, named: &[String]) -> Vec<String> {
         vec![
-            dial.said(reading.step),
+            dial.said_among(reading.step, named),
             reading.set.to_string(),
             reading.repeat.to_string(),
             format!("{}/{}", reading.passed, reading.of),
