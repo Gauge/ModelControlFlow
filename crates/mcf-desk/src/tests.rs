@@ -127,7 +127,7 @@ fn every_menu_entry_reaches_something_built() {
 fn an_empty_field_asks_for_nothing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.page = Page::Adding;
-    desk.typed = "   ".to_owned();
+    desk.typed.set("   ");
     desk.look_up();
     assert!(
         matches!(desk.doing, crate::Doing::Nothing),
@@ -145,7 +145,7 @@ fn an_empty_field_asks_for_nothing() {
 #[test]
 fn only_one_thing_runs_at_a_time() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    desk.typed = "owner/repository".to_owned();
+    desk.typed.set("owner/repository");
     desk.look_up();
     assert!(matches!(desk.doing, crate::Doing::Listing(_)));
     desk.download("owner/repository", "a-model.gguf");
@@ -181,31 +181,34 @@ fn a_pasted_reference_is_taken_as_a_value() {
 
     desk.paste("an-owner/a-repository-GGUF");
     assert_eq!(
-        desk.typed, "an-owner/a-repository-GGUF",
+        desk.typed.said(),
+        "an-owner/a-repository-GGUF",
         "a plain reference is kept as it is"
     );
 
     desk.typed.clear();
     desk.paste("an-owner/a-repository-GGUF\n");
-    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+    assert_eq!(desk.typed.said(), "an-owner/a-repository-GGUF");
 
     desk.typed.clear();
     desk.paste("an-owner/a-repository-GGUF\nand a second line\n");
-    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+    assert_eq!(desk.typed.said(), "an-owner/a-repository-GGUF");
 
     desk.typed.clear();
     desk.paste("\tan-owner/a-repository-GGUF\r");
-    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+    assert_eq!(desk.typed.said(), "an-owner/a-repository-GGUF");
 
-    desk.typed.clear();
-    desk.typed.push_str("an-owner/");
+    desk.typed.set("an-owner/");
     desk.paste("   \n  ");
-    assert_eq!(desk.typed, "an-owner/", "an empty paste changes nothing");
+    assert_eq!(
+        desk.typed.said(),
+        "an-owner/",
+        "an empty paste changes nothing"
+    );
 
-    desk.typed.clear();
-    desk.typed.push_str("an-owner/");
+    desk.typed.set("an-owner/");
     desk.paste("a-repository-GGUF");
-    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+    assert_eq!(desk.typed.said(), "an-owner/a-repository-GGUF");
 }
 
 #[test]
@@ -528,13 +531,12 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
     desk.recommended = Some(recommended);
     desk.page = Page::Models;
 
-    desk.edit(crate::Field::Context);
+    desk.edit(crate::Field::Context, crate::ui::Touched::No);
     assert!(
         desk.takes_typing(),
         "a field being typed into takes the keys"
     );
-    desk.typing().clear();
-    desk.typing().push_str("32,768");
+    desk.typing().set("32,768");
     desk.apply_edit();
     assert_eq!(
         desk.settings.as_ref().map(|held| held.context),
@@ -542,9 +544,8 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
     );
     assert!(desk.edit_refused.is_none());
 
-    desk.edit(crate::Field::Context);
-    desk.typing().clear();
-    desk.typing().push_str("lots");
+    desk.edit(crate::Field::Context, crate::ui::Touched::No);
+    desk.typing().set("lots");
     desk.apply_edit();
     assert_eq!(
         desk.settings.as_ref().map(|held| held.context),
@@ -557,9 +558,8 @@ fn a_typed_setting_is_taken_or_refused_with_the_word() {
         "the refusal names what was typed: {why}"
     );
 
-    desk.edit(crate::Field::Port);
-    desk.typing().clear();
-    desk.typing().push_str("80");
+    desk.edit(crate::Field::Port, crate::ui::Touched::No);
+    desk.typing().set("80");
     desk.apply_edit();
     assert!(
         desk.edit_refused
@@ -657,9 +657,8 @@ fn start_server_takes_the_key_being_typed_and_names_the_field_it_needs() {
         !matches!(desk.doing, crate::Doing::Hosting(_)),
         "nothing was asked of the daemon"
     );
-    desk.edit(crate::Field::ApiKey);
-    desk.typing().clear();
-    desk.typing().push_str("mcf-home");
+    desk.edit(crate::Field::ApiKey, crate::ui::Touched::No);
+    desk.typing().set("mcf-home");
     desk.host_it();
     assert_eq!(
         desk.settings
@@ -726,17 +725,17 @@ fn the_search_field_narrows_the_library() {
             .collect()
     };
     assert_eq!(members(&desk), vec![0, 1, 2]);
-    desk.filter = "LLAMA".to_owned();
+    desk.filter.set("LLAMA");
     assert_eq!(
         members(&desk),
         vec![0, 2],
         "the architecture counts, case aside"
     );
-    desk.filter = "q4_k".to_owned();
+    desk.filter.set("q4_k");
     assert_eq!(members(&desk), vec![0, 1]);
-    desk.filter = "coder xl".to_owned();
+    desk.filter.set("coder xl");
     assert_eq!(members(&desk), vec![1], "every word must match");
-    desk.filter = "gemma".to_owned();
+    desk.filter.set("gemma");
     assert!(desk.library().is_empty());
     assert!(!desk.hub_matches(), "nothing has been asked of the hub");
     desk.page = Page::Models;
@@ -751,7 +750,7 @@ fn the_search_field_narrows_the_library() {
 fn the_hubs_answer_is_kept_for_its_words() {
     use mcf_record::json::Value;
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    desk.filter = "gemma".to_owned();
+    desk.filter.set("gemma");
     let mut job = crate::job::Job::already(
         "searching".to_owned(),
         vec![Value::map([
@@ -774,7 +773,7 @@ fn the_hubs_answer_is_kept_for_its_words() {
     assert_eq!(hub.repositories.len(), 1);
     assert_eq!(hub.repositories[0].downloads, Some(1_295_081));
     assert!(desk.hub_matches());
-    desk.filter = "gemma 4".to_owned();
+    desk.filter.set("gemma 4");
     assert!(!desk.hub_matches(), "other words are another question");
 }
 
@@ -912,7 +911,7 @@ fn the_filters_narrow_the_library_with_the_words() {
     assert_eq!(members(&desk), vec![0, 2]);
     desk.act(crate::Act::SetSize(1));
     assert_eq!(members(&desk), vec![0], "up to 8 GB");
-    desk.filter = "moe".to_owned();
+    desk.filter.set("moe");
     assert!(
         members(&desk).is_empty(),
         "the words and the filters both apply"

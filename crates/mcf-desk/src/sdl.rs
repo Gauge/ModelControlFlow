@@ -28,12 +28,16 @@ pub const KEY_OFFSET: usize = 28;
 
 pub const MOD_OFFSET: usize = 32;
 pub const KMOD_CTRL: u16 = 0x00C0;
+pub const KMOD_SHIFT: u16 = 0x0003;
 
 pub const KEY_MASK: u32 = 0x4000_0000;
 pub const KEY_RIGHT: u32 = KEY_MASK | 0x4F;
 pub const KEY_LEFT: u32 = KEY_MASK | 0x50;
 pub const KEY_DOWN: u32 = KEY_MASK | 0x51;
 pub const KEY_UP: u32 = KEY_MASK | 0x52;
+pub const KEY_HOME: u32 = KEY_MASK | 0x4A;
+pub const KEY_END: u32 = KEY_MASK | 0x4D;
+pub const KEY_DELETE: u32 = 0x7F;
 pub const KEY_RETURN: u32 = 0x0D;
 pub const KEY_ESCAPE: u32 = 0x1B;
 pub const KEY_BACKSPACE: u32 = 0x08;
@@ -462,6 +466,11 @@ pub fn event_mod(event: &[u8; EVENT_BYTES]) -> u16 {
 #[must_use]
 pub fn event_has_ctrl(event: &[u8; EVENT_BYTES]) -> bool {
     event_mod(event) & KMOD_CTRL != 0
+}
+
+#[must_use]
+pub fn event_has_shift(event: &[u8; EVENT_BYTES]) -> bool {
+    event_mod(event) & KMOD_SHIFT != 0
 }
 
 fn float_at(event: &[u8; EVENT_BYTES], at: usize) -> f32 {

@@ -14,6 +14,8 @@ pub struct Mouse {
     pub began: Option<(f32, f32)>,
     pub click: Option<(f32, f32)>,
     pub wheel: f32,
+    pub twice: bool,
+    pub just_pressed: bool,
 }
 
 thread_local! {
@@ -33,6 +35,7 @@ impl Mouse {
     pub fn settle(&mut self) {
         self.click = None;
         self.wheel = 0.0;
+        self.just_pressed = false;
     }
 
     #[must_use]
@@ -71,6 +74,21 @@ impl Mouse {
     #[must_use]
     pub fn holding(&self, area: Box) -> bool {
         self.down && area.holds(self.at) && self.began.is_some_and(|down| area.holds(down))
+    }
+
+    #[must_use]
+    pub fn double_clicked(&self, area: Box) -> bool {
+        self.twice && self.click.is_some_and(|up| area.holds(up))
+    }
+
+    #[must_use]
+    pub fn dragging(&self, area: Box) -> bool {
+        self.down && self.began.is_some_and(|down| area.holds(down))
+    }
+
+    #[must_use]
+    pub fn pressed(&self, area: Box) -> bool {
+        self.just_pressed && self.began.is_some_and(|down| area.holds(down))
     }
 }
 
@@ -162,55 +180,124 @@ pub fn label(paint: &mut Painter, x: f32, y: f32, text: &str) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Touched {
+    No,
+    At(usize),
+    Word(usize),
+    DraggedTo(usize),
+}
+
+const TEXT: f32 = 13.5;
+const LEFT: f32 = 12.0;
+
+fn caret_at(paint: &mut Painter, said: &str, from: f32, x: f32) -> usize {
+    let mut best = 0;
+    let mut nearest = f32::MAX;
+    for (at, _) in said
+        .char_indices()
+        .chain(core::iter::once((said.len(), ' ')))
+    {
+        let upto = said.get(..at).unwrap_or("");
+        let edge = from + paint.measure(upto, Weight::Regular, TEXT);
+        let away = (edge - x).abs();
+        if away < nearest {
+            nearest = away;
+            best = at;
+        }
+    }
+    best
+}
+
+fn shown_from(paint: &mut Painter, said: &str, caret: usize, room: f32) -> usize {
+    let mut from = 0;
+    while from < caret {
+        let window = said.get(from..caret).unwrap_or("");
+        if paint.measure(window, Weight::Regular, TEXT) <= room {
+            break;
+        }
+        from = said
+            .get(from..)
+            .and_then(|rest| rest.char_indices().nth(1).map(|(at, _)| from + at))
+            .unwrap_or(caret);
+    }
+    from
+}
+
 pub fn field(
     paint: &mut Painter,
     mouse: &Mouse,
     area: Box,
-    held: &str,
+    held: &crate::typing::Typing,
     placeholder: &str,
     focused: bool,
-) -> bool {
+) -> Touched {
     let ink = paint.ink;
     let edge = if focused { ink.accent } else { ink.line };
     paint.edge(area, RADIUS, edge, ink.card);
-    let inner = area.x + 12.0;
-    let room = area.w - 24.0;
-    if held.is_empty() {
-        let shown = paint.elide(placeholder, Weight::Regular, 13.5, room);
+    let inner = area.x + LEFT;
+    let room = area.w - LEFT * 2.0;
+    let said = held.said();
+    if said.is_empty() {
+        let ghost = paint.elide(placeholder, Weight::Regular, TEXT, room);
         paint.say_at(
             inner,
             area.y + 8.0,
-            &shown,
+            &ghost,
             Weight::Regular,
-            13.5,
+            TEXT,
             ink.faint,
         );
-    } else {
-        let width = paint.measure(held, Weight::Regular, 13.5);
-        let from = if width > room {
-            let mut kept = held;
-            while paint.measure(kept, Weight::Regular, 13.5) > room && !kept.is_empty() {
-                kept = kept
-                    .get(kept.char_indices().nth(1).map_or(kept.len(), |(at, _)| at)..)
-                    .unwrap_or("");
-            }
-            kept.to_owned()
-        } else {
-            held.to_owned()
-        };
-        let ended = {
-            paint.say_at(inner, area.y + 8.0, &from, Weight::Regular, 13.5, ink.ink);
-            inner + paint.measure(&from, Weight::Regular, 13.5)
-        };
         if focused {
+            paint.wash(Box::new(inner, area.y + 8.0, 1.5, 17.0), ink.accent, 255);
+        }
+        return touch(mouse, area, 0);
+    }
+    let from = shown_from(paint, said, held.caret(), room);
+    let visible = said.get(from..).unwrap_or("");
+    if let Some((one, two)) = held.selection() {
+        let one = one.max(from);
+        let two = two.max(from);
+        if two > one {
+            let before = said.get(from..one).unwrap_or("");
+            let inside = said.get(one..two).unwrap_or("");
+            let x = inner + paint.measure(before, Weight::Regular, TEXT);
+            let wide = paint.measure(inside, Weight::Regular, TEXT);
             paint.wash(
-                Box::new(ended + 1.0, area.y + 8.0, 1.5, 17.0),
+                Box::new(x, area.y + 6.0, wide.min(room), 21.0),
                 ink.accent,
-                255,
+                70,
             );
         }
     }
-    mouse.clicked(area)
+    paint.say_at(inner, area.y + 8.0, visible, Weight::Regular, TEXT, ink.ink);
+    if focused {
+        let upto = said.get(from..held.caret()).unwrap_or("");
+        let x = inner + paint.measure(upto, Weight::Regular, TEXT);
+        paint.wash(Box::new(x, area.y + 8.0, 1.5, 17.0), ink.accent, 255);
+    }
+    let at = if mouse.over(area) {
+        from + caret_at(paint, visible, inner, mouse.at.0)
+    } else {
+        held.caret()
+    };
+    touch(mouse, area, at)
+}
+
+fn touch(mouse: &Mouse, area: Box, at: usize) -> Touched {
+    if mouse.double_clicked(area) {
+        return Touched::Word(at);
+    }
+    if mouse.pressed(area) {
+        return Touched::At(at);
+    }
+    if mouse.dragging(area) {
+        return Touched::DraggedTo(at);
+    }
+    if mouse.clicked(area) {
+        return Touched::At(at);
+    }
+    Touched::No
 }
 
 pub fn area(

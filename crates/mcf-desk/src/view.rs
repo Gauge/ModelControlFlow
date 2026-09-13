@@ -878,7 +878,6 @@ fn model_page(
     drawn.or(act)
 }
 
-
 fn section(paint: &mut Painter, area: Box, y: f32, title: &str, because: &str) -> f32 {
     let ink = paint.ink;
     paint.say_at(area.x, y, title, Weight::Bold, size::BODY, ink.ink);
@@ -983,12 +982,7 @@ fn setting_to_optimize(
     );
     let dials: Vec<(String, bool)> = mcf_optimize::dial::Dial::ALL
         .iter()
-        .map(|dial| {
-            (
-                dial.label().to_owned(),
-                *dial == desk.optimizing.sweep.dial,
-            )
-        })
+        .map(|dial| (dial.label().to_owned(), *dial == desk.optimizing.sweep.dial))
         .collect();
     let (below, picked) = chips(paint, mouse, area, y, &dials);
     if let Some(at) = picked {
@@ -1072,7 +1066,13 @@ fn test_set(
     (y + 44.0, act)
 }
 
-fn sweep_report(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, mut y: f32) -> Option<Act> {
+fn sweep_report(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
     y = section(
@@ -1113,7 +1113,14 @@ fn sweep_report(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, mut 
     }
     if let Some(why) = &desk.optimizing.refused {
         let shown = paint.elide(why, Weight::Regular, size::SMALL, area.w - 20.0);
-        paint.say_at(area.x, y + 40.0, &shown, Weight::Regular, size::SMALL, ink.warn);
+        paint.say_at(
+            area.x,
+            y + 40.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.warn,
+        );
     }
     y += 52.0;
     let rows = desk.optimizing.report.to_rows();
@@ -1371,7 +1378,7 @@ fn configure_tab(
                     field: crate::Field,
                     now: String,
                     placeholder: &str|
-     -> (bool, String) {
+     -> (ui::Touched, String) {
         let focused = desk
             .editing
             .as_ref()
@@ -1381,15 +1388,20 @@ fn configure_tab(
         } else {
             now
         };
-        let pressed = ui::field(
+        let held = if focused {
+            desk.typing_now().clone()
+        } else {
+            crate::typing::Typing::of(text.clone())
+        };
+        let touched = ui::field(
             paint,
             mouse,
             Box::new(column, y - 6.0, control, 28.0),
-            &text,
+            &held,
             placeholder,
             focused,
         );
-        (pressed, text)
+        (touched, text)
     };
     let switch = |paint: &mut Painter, mouse: &Mouse, y: f32, on: bool| -> bool {
         let square = Box::new(column, y - 3.0, 20.0, 20.0);
@@ -1478,7 +1490,7 @@ fn configure_tab(
         },
         &mut hovered,
     );
-    let (pressed, text) = typed_in(
+    let (touched, text) = typed_in(
         paint,
         mouse,
         y,
@@ -1486,8 +1498,8 @@ fn configure_tab(
         settings.context.to_string(),
         "tokens",
     );
-    if pressed {
-        act = Some(Act::Edit(crate::Field::Context));
+    if touched != ui::Touched::No {
+        act = Some(Act::Edit(crate::Field::Context, touched));
     }
     y += 34.0;
     let typed_window = text.trim().replace([',', '_'], "").parse::<u64>().ok();
@@ -1607,9 +1619,9 @@ fn configure_tab(
             },
             &mut hovered,
         );
-        let (pressed, _) = typed_in(paint, mouse, y, field, now, empty);
-        if pressed {
-            act = Some(Act::Edit(field));
+        let (touched, _) = typed_in(paint, mouse, y, field, now, empty);
+        if touched != ui::Touched::No {
+            act = Some(Act::Edit(field, touched));
         }
         y += 34.0;
         recommends(paint, &mut y, name);
@@ -1683,9 +1695,9 @@ fn configure_tab(
             },
             &mut hovered,
         );
-        let (pressed, _) = typed_in(paint, mouse, y, field, now, "");
-        if pressed {
-            act = Some(Act::Edit(field));
+        let (touched, _) = typed_in(paint, mouse, y, field, now, "");
+        if touched != ui::Touched::No {
+            act = Some(Act::Edit(field, touched));
         }
         y += 34.0;
         recommends(paint, &mut y, name);
@@ -1753,7 +1765,7 @@ fn configure_tab(
         },
         &mut hovered,
     );
-    let (pressed, _) = typed_in(
+    let (touched, _) = typed_in(
         paint,
         mouse,
         y,
@@ -1761,8 +1773,8 @@ fn configure_tab(
         settings.api_key.clone().unwrap_or_default(),
         "none (open on localhost)",
     );
-    if pressed {
-        act = Some(Act::Edit(crate::Field::ApiKey));
+    if touched != ui::Touched::No {
+        act = Some(Act::Edit(crate::Field::ApiKey, touched));
     }
     y += 34.0;
 
@@ -1841,15 +1853,21 @@ fn configure_tab(
                 .factor
                 .map_or_else(String::new, |factor| factor.to_string())
         };
-        if ui::field(
+        let held = if focused {
+            desk.typing_now().clone()
+        } else {
+            crate::typing::Typing::of(text.clone())
+        };
+        let touched = ui::field(
             paint,
             mouse,
             Box::new(column + 160.0, y - 6.0, 100.0, 28.0),
-            &text,
-            "factor",
+            &held,
+            "",
             focused,
-        ) {
-            act = Some(Act::Edit(crate::Field::RopeFactor));
+        );
+        if touched != ui::Touched::No {
+            act = Some(Act::Edit(crate::Field::RopeFactor, touched));
         }
     }
     y += 34.0;
@@ -3247,7 +3265,8 @@ fn ask_box(
         &desk.typed,
         "Message the model",
         desk.caret == Caret::Document,
-    ) {
+    ) != ui::Touched::No
+    {
         act = Some(Act::Focus(Caret::Document));
     }
     let (asked, _) = ui::fitted(

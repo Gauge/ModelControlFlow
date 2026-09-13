@@ -4,6 +4,7 @@ pub mod job;
 pub mod paint;
 pub mod paper;
 pub mod sdl;
+pub mod typing;
 pub mod ui;
 pub mod view;
 pub mod words;
@@ -547,12 +548,10 @@ impl Optimizing {
             let _dropped = self.sweep.steps.remove(found);
         } else {
             self.sweep.steps.push(*step);
-            self.sweep
-                .steps
-                .sort_by_key(|held| match held {
-                    mcf_optimize::dial::Step::Whole(value)
-                    | mcf_optimize::dial::Step::Thousandths(value) => *value,
-                });
+            self.sweep.steps.sort_by_key(|held| match held {
+                mcf_optimize::dial::Step::Whole(value)
+                | mcf_optimize::dial::Step::Thousandths(value) => *value,
+            });
         }
     }
 
@@ -1281,7 +1280,7 @@ pub enum Act {
     Repeats,
     Sweep,
     Contents(Page),
-    Edit(Field),
+    Edit(Field, crate::ui::Touched),
     Switch(Switch),
     Place(usize),
     Rope(usize),
@@ -1419,8 +1418,8 @@ pub struct Desk {
     pub reading: mcf_tui::machine::Reading,
     pub refusal: Option<String>,
     pub busy: bool,
-    pub typed: String,
-    pub filter: String,
+    pub typed: crate::typing::Typing,
+    pub filter: crate::typing::Typing,
     pub hub: Option<HubList>,
     pub hub_chosen: Option<usize>,
     pub offered: std::collections::BTreeMap<String, Vec<OfferedFile>>,
@@ -1445,7 +1444,7 @@ pub struct Desk {
     pub tab: Tab,
     pub optimizing: Optimizing,
     pub contents: Page,
-    pub editing: Option<(Field, String)>,
+    pub editing: Option<(Field, crate::typing::Typing)>,
     pub edit_refused: Option<String>,
     pub declared: Option<mcf_serve::declared::Declared>,
     host_after: Option<String>,
@@ -1488,7 +1487,7 @@ impl Desk {
             reading: mcf_tui::machine::Reading::default(),
             refusal: None,
             busy: false,
-            typed: String::new(),
+            typed: crate::typing::Typing::default(),
             caret: Caret::Document,
             chosen: None,
             doing: Doing::Nothing,
@@ -1500,7 +1499,7 @@ impl Desk {
             recommended: None,
             no_settings: None,
             last_settings: None,
-            filter: String::new(),
+            filter: crate::typing::Typing::default(),
             hub: None,
             hub_chosen: None,
             offered: std::collections::BTreeMap::new(),
@@ -1543,8 +1542,7 @@ impl Desk {
                 .chars()
                 .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
                 .collect();
-            let room = Self::PROMPT_LIMIT.saturating_sub(self.typed.chars().count());
-            self.typed.extend(kept.chars().take(room));
+            self.typed.put(&kept, Self::PROMPT_LIMIT);
             return;
         }
         let first = text.lines().next().unwrap_or_default();
@@ -1557,15 +1555,24 @@ impl Desk {
         if kept.is_empty() {
             return;
         }
-        let into = self.typing();
-        let room = Self::PASTE_LIMIT.saturating_sub(into.chars().count());
-        if room == 0 {
-            return;
-        }
-        into.extend(kept.chars().take(room));
+        let limit = Self::PASTE_LIMIT;
+        self.typing().put(kept, limit);
     }
 
-    pub fn typing(&mut self) -> &mut String {
+    pub fn stopped_typing(&mut self) {
+        if self.editing.is_some() {
+            self.editing = None;
+            self.edit_refused = None;
+            return;
+        }
+        if self.page == Page::Models && !self.filter.is_empty() {
+            self.filter.clear();
+            return;
+        }
+        self.typing().none();
+    }
+
+    pub fn typing(&mut self) -> &mut crate::typing::Typing {
         if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_mut()) {
             return typed;
         }
@@ -1577,6 +1584,11 @@ impl Desk {
 
     #[must_use]
     pub fn being_typed(&self) -> &str {
+        self.typing_now().said()
+    }
+
+    #[must_use]
+    pub fn typing_now(&self) -> &crate::typing::Typing {
         if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_ref()) {
             return typed;
         }
@@ -1588,9 +1600,8 @@ impl Desk {
 
     pub fn returned(&mut self, with_control: bool) {
         if self.page == Page::Hosting && !with_control && self.caret == Caret::Document {
-            if self.typed.chars().count() < Self::PROMPT_LIMIT {
-                self.typed.push('\n');
-            }
+            let limit = Self::PROMPT_LIMIT;
+            self.typed.put("\n", limit);
             return;
         }
         self.entered();
@@ -1699,7 +1710,7 @@ impl Desk {
             Act::Download { reference, file } => self.download(&reference, &file),
             Act::HostAgain => self.host_again(),
             Act::Pick(repository) => {
-                self.typed = repository;
+                self.typed.set(repository);
                 self.look_up();
             }
             Act::Tab(_)
@@ -1708,7 +1719,7 @@ impl Desk {
             | Act::TestSet(_)
             | Act::Repeats
             | Act::Sweep
-            | Act::Edit(_)
+            | Act::Edit(..)
             | Act::Switch(_)
             | Act::Place(_)
             | Act::Rope(_)
@@ -2621,7 +2632,7 @@ impl Desk {
                     self.read_anatomy();
                 }
             }
-            Act::Edit(field) => self.edit(field),
+            Act::Edit(field, touched) => self.edit(field, touched),
             Act::Switch(switch) => {
                 self.apply_edit();
                 self.flip(switch);
@@ -2711,7 +2722,27 @@ impl Desk {
         }
     }
 
-    pub fn edit(&mut self, field: Field) {
+    fn touch(&mut self, touched: crate::ui::Touched) {
+        let Some((_, held)) = self.editing.as_mut() else {
+            return;
+        };
+        match touched {
+            crate::ui::Touched::No => {}
+            crate::ui::Touched::At(at) => held.place(at, false),
+            crate::ui::Touched::Word(at) => held.word_at(at),
+            crate::ui::Touched::DraggedTo(at) => held.place(at, true),
+        }
+    }
+
+    pub fn edit(&mut self, field: Field, touched: crate::ui::Touched) {
+        if self
+            .editing
+            .as_ref()
+            .is_some_and(|(held, _)| *held == field)
+        {
+            self.touch(touched);
+            return;
+        }
         self.apply_edit();
         let Some(settings) = self.settings.as_ref() else {
             return;
@@ -2740,7 +2771,8 @@ impl Desk {
                 .factor
                 .map_or_else(String::new, |factor| factor.to_string()),
         };
-        self.editing = Some((field, now));
+        self.editing = Some((field, crate::typing::Typing::of(now)));
+        self.touch(touched);
         self.edit_refused = None;
         self.caret = Caret::Setting;
     }
@@ -3190,6 +3222,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     desk.read_build();
 
     let mut mouse = ui::Mouse::default();
+    let mut last_click: Option<((f32, f32), std::time::Instant)> = None;
     let mut last = std::time::Instant::now();
     let mut dirty = true;
     let mut waiting: Option<[u8; sdl::EVENT_BYTES]> = None;
@@ -3215,11 +3248,19 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     mouse.at = points(&paint, sdl::event_mouse(&event));
                     mouse.down = true;
                     mouse.began = Some(mouse.at);
+                    mouse.just_pressed = true;
                 }
                 sdl::EVENT_MOUSE_BUTTON_UP if sdl::event_is_left_button(&event) => {
                     mouse.at = points(&paint, sdl::event_mouse(&event));
                     mouse.down = false;
                     mouse.click = Some(mouse.at);
+                    mouse.twice =
+                        last_click.is_some_and(|(at, when): ((f32, f32), std::time::Instant)| {
+                            when.elapsed() < std::time::Duration::from_millis(400)
+                                && (at.0 - mouse.at.0).abs() < 4.0
+                                && (at.1 - mouse.at.1).abs() < 4.0
+                        });
+                    last_click = Some((mouse.at, std::time::Instant::now()));
                     desk.released();
                 }
                 sdl::EVENT_MOUSE_WHEEL => mouse.wheel = sdl::event_wheel(&event),
@@ -3227,13 +3268,66 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     if desk.takes_typing()
                         && let Some(text) = sdl::event_text(&event)
                     {
-                        desk.typing().push_str(&text);
+                        let limit = Desk::PASTE_LIMIT;
+                        desk.typing().put(&text, limit);
                     }
                 }
                 sdl::EVENT_KEY_DOWN => match sdl::event_key(&event) {
+                    sdl::KEY_ESCAPE if desk.takes_typing() => {
+                        desk.stopped_typing();
+                    }
                     sdl::KEY_ESCAPE => {
                         closing(&mut paint, &mut desk);
                         return Ok(());
+                    }
+                    key if matches!(key, sdl::KEY_LEFT | sdl::KEY_RIGHT) && desk.takes_typing() => {
+                        let way = if key == sdl::KEY_LEFT {
+                            crate::typing::Way::Back
+                        } else {
+                            crate::typing::Way::On
+                        };
+                        let by = if sdl::event_has_ctrl(&event) {
+                            crate::typing::By::Word
+                        } else {
+                            crate::typing::By::Character
+                        };
+                        let keeping = sdl::event_has_shift(&event);
+                        desk.typing().go(way, by, keeping);
+                    }
+                    key if matches!(key, sdl::KEY_HOME | sdl::KEY_END) && desk.takes_typing() => {
+                        let way = if key == sdl::KEY_HOME {
+                            crate::typing::Way::Back
+                        } else {
+                            crate::typing::Way::On
+                        };
+                        let keeping = sdl::event_has_shift(&event);
+                        desk.typing().go(way, crate::typing::By::Line, keeping);
+                    }
+                    sdl::KEY_DELETE if desk.takes_typing() => {
+                        desk.typing().rub(
+                            crate::typing::Way::On,
+                            if sdl::event_has_ctrl(&event) {
+                                crate::typing::By::Word
+                            } else {
+                                crate::typing::By::Character
+                            },
+                        );
+                    }
+                    key if key == u32::from(b'a')
+                        && sdl::event_has_ctrl(&event)
+                        && desk.takes_typing() =>
+                    {
+                        desk.typing().all();
+                    }
+                    key if key == u32::from(b'x')
+                        && sdl::event_has_ctrl(&event)
+                        && desk.takes_typing() =>
+                    {
+                        if let Some(taken) = desk.typing().cut()
+                            && let Some(window) = paint.window()
+                        {
+                            let _went = window.put_on_clipboard(&taken);
+                        }
                     }
                     key if key == u32::from(b'v')
                         && sdl::event_has_ctrl(&event)
@@ -3247,12 +3341,21 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                         && sdl::event_has_ctrl(&event)
                         && !desk.being_typed().is_empty() =>
                     {
-                        if let Some(window) = paint.window() {
-                            let _went = window.put_on_clipboard(desk.being_typed());
+                        if let Some(copied) = desk.typing_now().copied()
+                            && let Some(window) = paint.window()
+                        {
+                            let _went = window.put_on_clipboard(&copied);
                         }
                     }
                     sdl::KEY_BACKSPACE if desk.takes_typing() => {
-                        let _removed = desk.typing().pop();
+                        desk.typing().rub(
+                            crate::typing::Way::Back,
+                            if sdl::event_has_ctrl(&event) {
+                                crate::typing::By::Word
+                            } else {
+                                crate::typing::By::Character
+                            },
+                        );
                     }
                     sdl::KEY_RETURN if desk.takes_typing() => {
                         desk.returned(sdl::event_has_ctrl(&event));

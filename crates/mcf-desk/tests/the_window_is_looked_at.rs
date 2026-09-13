@@ -207,7 +207,7 @@ fn a_daemon_that_is_not_answering_looks_different() {
 fn words_nothing_matches_offer_the_hub_from_the_list() {
     let mut desk = four_models();
     desk.page = Page::Models;
-    desk.filter = "gemma".to_owned();
+    desk.filter.set("gemma");
     assert!(desk.library().is_empty());
     assert!(
         act_within(&desk, &mcf_desk::Act::SearchHub, (40.0, 400.0)),
@@ -230,7 +230,7 @@ fn a_repositorys_files_show_though_the_stream_closed_without_a_word() {
     use mcf_record::json::Value;
     let mut desk = four_models();
     desk.page = Page::Models;
-    desk.filter = "gemma".to_owned();
+    desk.filter.set("gemma");
     desk.doing = a_search_answer();
     if let mcf_desk::Doing::Listing(job) = &mut desk.doing {
         job.finished = true;
@@ -442,6 +442,8 @@ fn pressed_at(desk: &Desk, at: (f32, f32)) -> Option<mcf_desk::Act> {
         began: Some(at),
         click: Some(at),
         wheel: 0.0,
+        twice: false,
+        just_pressed: false,
     };
     mcf_desk::view::draw(&mut paint, desk, &mouse)
 }
@@ -498,6 +500,8 @@ fn the_library_scrolls_and_the_splitters_move() {
         began: None,
         click: None,
         wheel: -1.0,
+        twice: false,
+        just_pressed: false,
     };
     assert_eq!(
         acted_with(&desk, &wheel, small),
@@ -518,6 +522,8 @@ fn the_library_scrolls_and_the_splitters_move() {
         began: Some((band_x, 300.0)),
         click: None,
         wheel: 0.0,
+        twice: false,
+        just_pressed: false,
     };
     let Some(mcf_desk::Act::Split(mcf_desk::Splitter::List, to)) = acted_with(&desk, &drag, small)
     else {
@@ -956,4 +962,67 @@ fn an_anatomy_answer() -> mcf_serve::anatomy::Said {
         Some(said) => said,
         None => panic!("the answer does not read"),
     }
+}
+
+#[test]
+fn a_field_answers_a_press_before_it_answers_the_release() {
+    use mcf_desk::paint::Box;
+    use mcf_desk::ui::Mouse;
+    let area = Box::new(10.0, 10.0, 200.0, 28.0);
+    let at = (60.0, 20.0);
+    let pressing = Mouse {
+        at,
+        down: true,
+        began: Some(at),
+        click: None,
+        wheel: 0.0,
+        twice: false,
+        just_pressed: true,
+    };
+    assert!(
+        pressing.pressed(area),
+        "the frame a button goes down is the frame the caret is placed"
+    );
+    assert!(
+        pressing.dragging(area),
+        "the same frame also reads as a drag, so the order the two are asked in decides"
+    );
+    let dragging = Mouse {
+        at: (120.0, 20.0),
+        just_pressed: false,
+        ..pressing
+    };
+    assert!(!dragging.pressed(area), "a press is one frame only");
+    assert!(dragging.dragging(area));
+}
+
+#[test]
+fn a_release_far_from_the_last_one_is_not_a_second_click() {
+    use mcf_desk::paint::Box;
+    use mcf_desk::ui::Mouse;
+    let area = Box::new(10.0, 10.0, 200.0, 28.0);
+    let at = (60.0, 20.0);
+    let once = Mouse {
+        at,
+        down: false,
+        began: Some(at),
+        click: Some(at),
+        wheel: 0.0,
+        twice: false,
+        just_pressed: false,
+    };
+    assert!(!once.double_clicked(area));
+    let twice = Mouse {
+        twice: true,
+        ..once
+    };
+    assert!(twice.double_clicked(area));
+    let elsewhere = Mouse {
+        click: Some((500.0, 500.0)),
+        ..twice
+    };
+    assert!(
+        !elsewhere.double_clicked(area),
+        "a second click outside the field is not this field's"
+    );
 }
