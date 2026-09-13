@@ -283,11 +283,11 @@ fn a_trial_of_the_tasks_asks_for_the_tasks() {
 #[test]
 fn a_timed_run_that_stopped_early_is_not_offered_as_a_rate() {
     assert!(
-        super::enough_of(4096) > 3000,
+        super::enough_of(super::TOKENS_TIMED) * 2 > u64::from(super::TOKENS_TIMED),
         "most of the tokens asked for is the bar; a run that stopped at a tenth is not the \
          same measurement as one that ran the whole way"
     );
-    assert!(super::enough_of(4096) <= 4096);
+    assert!(super::enough_of(super::TOKENS_TIMED) <= u64::from(super::TOKENS_TIMED));
 }
 
 #[test]
@@ -341,7 +341,7 @@ fn a_timed_trial_is_not_cut_short_for_repeating_itself() {
 
 #[test]
 fn a_timed_run_is_long_enough_to_mean_something_and_taken_more_than_once() {
-    assert_eq!(super::TOKENS_TIMED, 4096);
+    assert_eq!(super::TOKENS_TIMED, 2048);
     assert_eq!(
         super::TIMES_TIMED,
         5,

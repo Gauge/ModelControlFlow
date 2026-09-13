@@ -24,7 +24,7 @@ const KEPT_OF_THE_REPLY: usize = 4096;
 /// to continue from.
 pub const TO_BE_TIMED: &str = "1\n2\n3\n";
 
-pub const TOKENS_TIMED: u32 = 4096;
+pub const TOKENS_TIMED: u32 = 2048;
 
 /// A timed run is short enough that one of them is mostly noise, so every value is timed
 /// this many times and the readings are taken together.
