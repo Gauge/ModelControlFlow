@@ -77,10 +77,33 @@ impl Dial {
         }
     }
 
-    /// Where an automatic search starts: the two ends of the span and the middle of it,
-    /// and nothing else. Three readings say which end of the span is worth having, which
-    /// is all a first round is for — the halving that follows spends its trials near
-    /// whichever one won rather than on a grid laid out before anything was known.
+    /// Where an automatic search starts climbing, for a setting whose useful values are
+    /// spread over powers of two. A search of one of these starts small and doubles, and
+    /// only closes in once a value comes back worse than the one below it: doubling covers
+    /// the whole span in a handful of trials, and until something gets worse there is no
+    /// reason to believe the best is anywhere but further up.
+    ///
+    /// Nothing for a setting whose span is a short run of numbers, or one where the value
+    /// that turns it off sits at the bottom and would be climbed straight past. Those start
+    /// on the ladder below instead.
+    #[must_use]
+    pub const fn climbs_from(self) -> Option<u32> {
+        match self {
+            Self::MicroBatch => Some(256),
+            Self::ThinkingBudget
+            | Self::ThinkingLevel
+            | Self::Temperature
+            | Self::TopP
+            | Self::TopK
+            | Self::DraftDepth => None,
+        }
+    }
+
+    /// Where an automatic search starts when it does not climb: the two ends of the span
+    /// and the middle of it, and nothing else. Three readings say which end of the span is
+    /// worth having, which is all a first round is for — the halving that follows spends
+    /// its trials near whichever one won rather than on a grid laid out before anything
+    /// was known.
     #[must_use]
     pub fn coarse(self) -> Vec<Step> {
         let held: &[u32] = match self {
@@ -89,7 +112,7 @@ impl Dial {
             Self::Temperature => &[0, 500, 1000],
             Self::TopP => &[500, 750, 1000],
             Self::TopK => &[0, 100, 200],
-            Self::MicroBatch => &[64, 4096, 8192],
+            Self::MicroBatch => &[256, 2048, 8192],
             Self::DraftDepth => &[0, 4, 8],
         };
         held.iter().map(|held| self.step_of(*held)).collect()

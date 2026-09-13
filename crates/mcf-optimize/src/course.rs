@@ -220,7 +220,7 @@ impl Course {
             .iter()
             .map(|row| row.at.step)
             .collect();
-        let opened = hunt.closed_in_on(best, &already);
+        let opened = hunt.stepped_on(best, &report.scored_by(measure), &already);
         if opened.is_empty() {
             self.stopped = Some(format!("the search settled: {}", hunt.said()));
             return false;

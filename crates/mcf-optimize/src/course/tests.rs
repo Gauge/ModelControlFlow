@@ -209,9 +209,9 @@ fn a_crash_halfway_resumes_where_it_stopped() {
 }
 
 #[test]
-fn an_automatic_course_opens_on_the_coarse_ladder() {
+fn an_automatic_course_opens_where_its_setting_says_to_start() {
     let scratch = Scratch::new("automatic-open");
-    let course = Course::laid_out(
+    let climbing = Course::laid_out(
         under(),
         Way::Halving,
         Dial::MicroBatch,
@@ -220,13 +220,34 @@ fn an_automatic_course_opens_on_the_coarse_ladder() {
         1,
         Measure::Correctness,
     );
-    assert_eq!(course.steps(), Dial::MicroBatch.coarse());
-    assert!(course.hunt().is_some());
+    assert_eq!(
+        climbing.steps(),
+        vec![Step::Whole(
+            Dial::MicroBatch.climbs_from().unwrap_or_default()
+        )],
+        "a setting that climbs opens on one rung and doubles from there"
+    );
+    assert!(climbing.hunt().is_some());
+
+    let laddered = Course::laid_out(
+        under(),
+        Way::Halving,
+        Dial::TopK,
+        &[],
+        &[1],
+        1,
+        Measure::Correctness,
+    );
+    assert_eq!(
+        laddered.steps(),
+        Dial::TopK.coarse(),
+        "one that does not climb opens on the ends of its span and the middle"
+    );
     let _unused = scratch.at();
 }
 
 #[test]
-fn an_automatic_course_closes_in_once_the_coarse_ladder_is_measured() {
+fn an_automatic_course_doubles_until_a_value_is_worse_and_then_closes_in() {
     let scratch = Scratch::new("automatic-close");
     let ledger = scratch.ledger();
     let mut course = Course::laid_out(
@@ -239,24 +260,34 @@ fn an_automatic_course_closes_in_once_the_coarse_ladder_is_measured() {
         Measure::Correctness,
     );
     let mut report = Report::default();
-    let ladder = Dial::MicroBatch.coarse().len();
-    let mut taken = Vec::new();
-    for _ in 0..ladder {
-        let Next::Take(at) = course.next(Dial::MicroBatch, &ledger, &mut report) else {
-            panic!("the coarse ladder is laid out first");
+    let mut climbed = Vec::new();
+    let mut closed = Vec::new();
+    while let Next::Take(at) = course.next(Dial::MicroBatch, &ledger, &mut report) {
+        let value = match at.step {
+            Step::Whole(held) | Step::Thousandths(held) => held,
         };
-        let passed = if at.step == Step::Whole(1024) { 8 } else { 2 };
+        let away = value.abs_diff(1024).div_euclid(256);
+        let passed = 8_u32.saturating_sub(away);
         report.record(reading(at.step, at.set, at.repeat, passed));
-        taken.push(at);
+        if [256, 512, 1024, 2048].contains(&value) {
+            climbed.push(value);
+        } else {
+            closed.push(value);
+        }
     }
-    assert_eq!(taken.len(), ladder);
-    let Next::Take(closer) = course.next(Dial::MicroBatch, &ledger, &mut report) else {
-        panic!("having found a best it looks either side of it");
-    };
+    climbed.sort_unstable();
+    assert_eq!(
+        climbed,
+        vec![256, 512, 1024, 2048],
+        "it doubles from the bottom until 2048 comes back worse than 1024"
+    );
     assert!(
-        !Dial::MicroBatch.coarse().contains(&closer.step),
-        "the next value is one the coarse ladder did not reach: {:?}",
-        closer.step
+        !closed.contains(&4096) && !closed.contains(&8192),
+        "and having turned, it does not go on doubling: {closed:?}"
+    );
+    assert!(
+        closed.iter().any(|held| (1024..2048).contains(held)),
+        "it closes in between the rung that improved and the one that did not: {closed:?}"
     );
 }
 
@@ -345,7 +376,10 @@ fn a_course_never_hands_out_the_same_trial_twice_even_with_nothing_written_down(
             Next::Finished => break,
         }
     }
-    assert!(handed.len() > Dial::MicroBatch.coarse().len());
+    assert!(
+        handed.len() > 1,
+        "a course that opens on one rung and never asks for another has not searched"
+    );
 }
 
 #[test]

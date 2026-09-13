@@ -188,6 +188,17 @@ impl Report {
         held
     }
 
+    /// What each value scored, or nothing for one that produced no reading to score. A
+    /// search that climbs until something gets worse needs the values beside each other
+    /// rather than only the best of them.
+    #[must_use]
+    pub fn scored_by(&self, measure: Measure) -> Vec<(Step, Option<f64>)> {
+        self.by_step()
+            .into_iter()
+            .map(|summary| (summary.step, summary.scored(measure)))
+            .collect()
+    }
+
     #[must_use]
     pub fn best(&self) -> Option<Summary> {
         self.best_by(Measure::Correctness)

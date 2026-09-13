@@ -1216,15 +1216,23 @@ fn how_it_searches(
 
     let automatic = desk.optimizing.way == mcf_optimize::hunt::Way::Halving;
     let said = if automatic {
-        format!(
-            "Starts at {}, then halves the gap around whichever wins, down to steps of {}.",
-            dial.coarse()
-                .iter()
-                .map(|step| step.said())
-                .collect::<Vec<_>>()
-                .join(", "),
-            dial.step_of(span.finest).said()
-        )
+        match dial.climbs_from() {
+            Some(from) => format!(
+                "Starts at {} and doubles, until a value comes back worse than the one below \
+                 it. Then it halves the gap around whichever won, down to steps of {}.",
+                dial.step_of(from).said(),
+                dial.step_of(span.finest).said()
+            ),
+            None => format!(
+                "Starts at {}, then halves the gap around whichever wins, down to steps of {}.",
+                dial.coarse()
+                    .iter()
+                    .map(|step| step.said())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                dial.step_of(span.finest).said()
+            ),
+        }
     } else {
         format!(
             "Runs the values below and nothing else, anywhere from {} to {}.",
