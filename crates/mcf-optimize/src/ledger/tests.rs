@@ -418,3 +418,56 @@ fn a_sweep_of_the_thinking_budget_ignores_the_budget_in_the_base() {
         "the budget is what this sweep varies, so it is not part of the base it varies against"
     );
 }
+
+#[test]
+fn a_trial_that_failed_is_not_a_measurement_to_skip_over() {
+    let scratch = Scratch::new("failed-not-known");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    let spot = at(Step::Whole(256), 1);
+    let mut broke = reading(Step::Whole(256), 1, 0);
+    broke.ending = Ending::Failed;
+    ledger
+        .record(&under(), spot, &broke, "before")
+        .expect("written");
+    assert!(
+        ledger.already(&under(), &spot).is_none(),
+        "a sweep that skips its own failures never measures them, and the table keeps \
+         showing them"
+    );
+}
+
+#[test]
+fn a_measurement_taken_after_a_failure_is_what_is_known() {
+    let scratch = Scratch::new("failed-then-taken");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    let spot = at(Step::Whole(256), 1);
+    let mut broke = reading(Step::Whole(256), 1, 0);
+    broke.ending = Ending::Failed;
+    ledger
+        .record(&under(), spot, &broke, "before")
+        .expect("written");
+    ledger
+        .record(&under(), spot, &reading(Step::Whole(256), 1, 6), "after")
+        .expect("written");
+    let found = ledger.already(&under(), &spot).expect("the good one");
+    assert_eq!(found.reading.passed, 6);
+    assert_ne!(found.reading.ending, Ending::Failed);
+}
+
+#[test]
+fn a_run_that_looped_or_filled_its_budget_is_still_a_measurement() {
+    let scratch = Scratch::new("runaway-known");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    for (step, ending) in [(256_u32, Ending::Looped), (512, Ending::Filled)] {
+        let spot = at(Step::Whole(step), 1);
+        let mut held = reading(Step::Whole(step), 1, 0);
+        held.ending = ending;
+        ledger
+            .record(&under(), spot, &held, "before")
+            .expect("written");
+        assert!(
+            ledger.already(&under(), &spot).is_some(),
+            "{ending:?} is what the model did, and doing it again would find the same thing"
+        );
+    }
+}

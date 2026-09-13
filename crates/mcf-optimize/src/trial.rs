@@ -206,10 +206,20 @@ pub fn ask(
     let mut ending = Ending::Answered;
     let mut why = None;
     let mut counted: Option<u64> = None;
-    'reading: while let Ok(read) = connection.read(&mut held) {
-        if read == 0 {
-            break;
-        }
+    let mut cut_short = None;
+    'reading: loop {
+        let read = match connection.read(&mut held) {
+            Ok(0) => break,
+            Ok(read) => read,
+            // A signal arriving in this process interrupts a blocking read. The window
+            // samples the machine once a second while a sweep runs, and sampling starts a
+            // child, so this happens often. It is not the end of anything: read again.
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                cut_short = Some(error.to_string());
+                break;
+            }
+        };
         let arrived = String::from_utf8_lossy(held.get(..read).unwrap_or_default()).into_owned();
         if whole.len() < KEPT_OF_THE_REPLY {
             whole.push_str(&arrived);
@@ -271,7 +281,14 @@ pub fn ask(
         }
     }
     let counted_now = counted.unwrap_or(produced);
-    (ending, why) = how_it_ended(asked, counted_now, produced, ending, why, &whole);
+    if let Some(broke) = cut_short {
+        ending = Ending::Failed;
+        why = Some(format!(
+            "the reply stopped arriving after {counted_now} token(s): {broke}"
+        ));
+    } else {
+        (ending, why) = how_it_ended(asked, counted_now, produced, ending, why, &whole);
+    }
     let _elapsed = started.elapsed();
     Ok(Said {
         answer,

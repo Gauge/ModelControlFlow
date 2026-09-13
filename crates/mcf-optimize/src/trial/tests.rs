@@ -348,3 +348,44 @@ fn a_timed_run_is_long_enough_to_mean_something_and_taken_more_than_once() {
         "a single run of a few thousand tokens is mostly whatever else the machine was doing"
     );
 }
+
+#[test]
+fn a_read_interrupted_by_a_signal_is_not_the_end_of_the_reply() {
+    use std::io::{Read, Result};
+    struct Twitchy {
+        given: usize,
+    }
+    impl Read for Twitchy {
+        fn read(&mut self, into: &mut [u8]) -> Result<usize> {
+            self.given += 1;
+            if self.given % 2 == 1 {
+                return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
+            }
+            if self.given > 6 {
+                return Ok(0);
+            }
+            let said = b"x";
+            into.get_mut(..1).map_or(Ok(0), |room| {
+                room.copy_from_slice(said);
+                Ok(1)
+            })
+        }
+    }
+    let mut held = Twitchy { given: 0 };
+    let mut all = Vec::new();
+    let mut room = [0_u8; 8];
+    loop {
+        match held.read(&mut room) {
+            Ok(0) => break,
+            Ok(read) => all.extend_from_slice(room.get(..read).unwrap_or_default()),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => break,
+        }
+    }
+    assert_eq!(
+        all.len(),
+        3,
+        "every byte after an interruption must still arrive; treating the interruption as \
+         the end loses the rest of the reply"
+    );
+}

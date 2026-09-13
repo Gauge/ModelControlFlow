@@ -367,13 +367,19 @@ impl Ledger {
     }
 
     #[must_use]
+    /// What was measured here before, if it was a measurement. A trial that failed produced
+    /// no reading to stand on, so it is not something to skip over: it is something to do
+    /// again.
     pub fn already(&self, under: &Under, at: &At) -> Option<&Row> {
         let wanted = under.without(at.dial);
-        self.rows.iter().find(|row| {
-            row.at == *at
-                && row.under.without(at.dial) == wanted
-                && row.under.corpus == under.corpus
-        })
+        self.rows
+            .iter()
+            .filter(|row| {
+                row.at == *at
+                    && row.under.without(at.dial) == wanted
+                    && row.under.corpus == under.corpus
+            })
+            .find(|row| row.reading.ending != Ending::Failed)
     }
 
     #[must_use]
