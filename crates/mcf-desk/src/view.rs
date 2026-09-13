@@ -1278,11 +1278,14 @@ fn setting_to_optimize(
         why
     } else if dial.only_changes_speed() {
         format!(
-            "{} cannot change what a model answers, only how fast — so each value asks for {} \
-             tokens {} times over and takes the rate, rather than running the tasks.",
+            "{} cannot change what a model answers, only how fast — so each value is timed \
+             over {} tokens and the rate is the reading, rather than running the tasks.",
             dial.flag().unwrap_or(dial.label()),
-            mcf_optimize::trial::TOKENS_TIMED,
-            mcf_optimize::trial::TIMES_TIMED
+            if dial.times_reading_the_prompt() {
+                mcf_optimize::trial::TOKENS_PREFILLED
+            } else {
+                mcf_optimize::trial::TOKENS_TIMED
+            }
         )
     } else if dial.is_named_by_the_model() {
         desk.declared

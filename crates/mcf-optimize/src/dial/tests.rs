@@ -172,8 +172,22 @@ fn a_span_rounds_to_something_it_could_actually_run() {
 }
 
 #[test]
-fn rounding_counts_from_the_floor_not_from_zero() {
+fn rounding_counts_from_nothing_so_a_coarse_grain_lands_on_round_numbers() {
     let span = Span::new(500, 1000, 10);
     assert_eq!(span.rounded(953), 950);
     assert_eq!(span.rounded(957), 960);
+
+    let coarse = Span::new(64, 8192, 256);
+    assert_eq!(
+        coarse.rounded(1000),
+        1024,
+        "counted from a floor of 64 this would land on 1088, which is a micro-batch nobody \
+         would type and no better than the one beside it"
+    );
+    assert_eq!(coarse.rounded(2100), 2048);
+    assert_eq!(
+        coarse.rounded(100),
+        64,
+        "the floor is still the floor, however the grain falls"
+    );
 }

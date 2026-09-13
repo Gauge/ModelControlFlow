@@ -66,9 +66,11 @@ pub fn to_be_read(tokens: u32) -> Value {
     )
 }
 
-/// A timed run is short enough that one of them is mostly noise, so every value is timed
-/// this many times and the readings are taken together.
-pub const TIMES_TIMED: u8 = 5;
+/// How many times a value is timed. One: a sweep is for telling values apart, not for
+/// settling the last percent of any one of them, and the gap a sweep is looking for is
+/// wider than the spread between takes. Ask for a take again by hand when one reading
+/// looks wrong.
+pub const TIMES_TIMED: u8 = 1;
 
 #[derive(Debug, Clone)]
 pub struct Endpoint {

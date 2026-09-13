@@ -72,21 +72,25 @@ impl Dial {
             Self::Temperature => Span::new(0, 1000, 25),
             Self::TopP => Span::new(500, 1000, 10),
             Self::TopK => Span::new(0, 200, 5),
-            Self::MicroBatch => Span::new(64, 8192, 16),
+            Self::MicroBatch => Span::new(64, 8192, 256),
             Self::DraftDepth => Span::new(0, 8, 1),
         }
     }
 
+    /// Where an automatic search starts: the two ends of the span and the middle of it,
+    /// and nothing else. Three readings say which end of the span is worth having, which
+    /// is all a first round is for — the halving that follows spends its trials near
+    /// whichever one won rather than on a grid laid out before anything was known.
     #[must_use]
     pub fn coarse(self) -> Vec<Step> {
         let held: &[u32] = match self {
-            Self::ThinkingBudget => &[0, 4096, 8192, 16_384, 32_768],
+            Self::ThinkingBudget => &[0, 16_384, 32_768],
             Self::ThinkingLevel => &[0, 1, 2],
-            Self::Temperature => &[0, 250, 500, 750, 1000],
-            Self::TopP => &[500, 625, 750, 875, 1000],
-            Self::TopK => &[0, 50, 100, 150, 200],
-            Self::MicroBatch => &[64, 512, 1024, 2048, 4096],
-            Self::DraftDepth => &[0, 2, 4, 6, 8],
+            Self::Temperature => &[0, 500, 1000],
+            Self::TopP => &[500, 750, 1000],
+            Self::TopK => &[0, 100, 200],
+            Self::MicroBatch => &[64, 4096, 8192],
+            Self::DraftDepth => &[0, 4, 8],
         };
         held.iter().map(|held| self.step_of(*held)).collect()
     }
@@ -236,14 +240,16 @@ impl Span {
         }
     }
 
+    /// The nearest value on the grain, counted from nothing rather than from the floor, and
+    /// then brought inside the span. Counting from nothing is what keeps a coarse grain on
+    /// round numbers: a micro-batch counted from a floor of 64 lands on 320 and 576, and a
+    /// setting nobody would type by hand is a poor thing for a search to report back.
     #[must_use]
     pub fn rounded(self, value: u32) -> u32 {
         let finest = if self.finest == 0 { 1 } else { self.finest };
-        let from = self.floor;
-        let over = value.saturating_sub(from);
         let half = finest.checked_div(2).unwrap_or(0);
-        let steps = over.saturating_add(half).checked_div(finest).unwrap_or(0);
-        self.clamped(from.saturating_add(steps.saturating_mul(finest)))
+        let steps = value.saturating_add(half).checked_div(finest).unwrap_or(0);
+        self.clamped(steps.saturating_mul(finest))
     }
 }
 

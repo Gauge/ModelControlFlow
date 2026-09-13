@@ -698,8 +698,8 @@ fn choosing_a_setting_that_only_changes_speed_ranks_by_speed() {
     assert_eq!(
         desk.optimizing.sweep.repeats,
         mcf_optimize::trial::TIMES_TIMED,
-        "one timed run of four thousand tokens is mostly noise, so each value is timed several \
-         times"
+        "a sweep tells values apart rather than settling any one of them, so a value is timed \
+         once and taken again by hand when a reading looks wrong"
     );
 }
 

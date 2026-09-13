@@ -1,5 +1,6 @@
 use super::{Hunt, Way};
 use crate::dial::{Dial, Step};
+use crate::trial::TIMES_TIMED;
 
 fn values(steps: &[Step]) -> Vec<u32> {
     steps
@@ -23,24 +24,25 @@ fn the_opening_gap_is_the_widest_the_coarse_ladder_leaves() {
     let hunt = Hunt::started(Dial::MicroBatch);
     assert_eq!(
         hunt.gap(),
-        2048,
-        "2048 to 4096 is the widest gap in that ladder, so that is what halving starts from"
+        4096,
+        "the ladder is the two ends and the middle, so 4096 to 8192 is the widest gap it \
+         leaves and that is what halving starts from"
     );
 }
 
 #[test]
 fn closing_in_asks_either_side_of_the_best_at_half_the_gap() {
     let mut hunt = Hunt::started(Dial::MicroBatch);
-    let next = hunt.closed_in_on(Step::Whole(1024), &Dial::MicroBatch.coarse());
+    let next = hunt.closed_in_on(Step::Whole(2048), &Dial::MicroBatch.coarse());
     assert_eq!(
         values(&next),
-        vec![1536],
-        "1024 either side lands on values the coarse ladder already ran, so it halves \
-         again and asks 1536; 512 below is the ladder's own"
+        vec![1024, 3072],
+        "half of 4096 either side of 2048 is the ladder's own floor and its own middle, so \
+         it halves again and asks 1024 and 3072, which are new"
     );
     assert_eq!(
         hunt.gap(),
-        512,
+        1024,
         "it halved twice to find somewhere new to look"
     );
 }
@@ -165,6 +167,34 @@ fn every_dial_can_be_hunted_to_a_settlement() {
         }
         assert!(hunt.settled(), "{} does not settle", dial.label());
     }
+}
+
+/// What an automatic search asks for, end to end, counted rather than guessed at. Every
+/// value of a setting that reloads the engine costs a held model as well as a trial, so
+/// this count is the sweep's running time, and it is the thing a rough search is rough for.
+#[test]
+fn an_automatic_search_of_any_setting_asks_for_few_enough_values_to_sit_through() {
+    const AT_MOST: usize = 16;
+    for dial in Dial::ALL {
+        let mut hunt = Hunt::started(dial);
+        let mut run: Vec<Step> = dial.coarse();
+        let middle = dial.coarse().get(1).copied().unwrap_or(dial.step_of(0));
+        while !hunt.closed_in_on(middle, &run).is_empty() {
+            run = hunt.asked();
+        }
+        assert!(
+            hunt.tried().len() <= AT_MOST,
+            "{} works its way down to {} values, and a sweep nobody waits out is a sweep \
+             nobody runs: {:?}",
+            dial.label(),
+            hunt.tried().len(),
+            hunt.tried()
+        );
+    }
+    assert_eq!(
+        TIMES_TIMED, 1,
+        "and a timed value is measured once, so for those the value count is the trial count"
+    );
 }
 
 #[test]
