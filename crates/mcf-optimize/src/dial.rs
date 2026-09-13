@@ -60,9 +60,15 @@ impl Dial {
                 .into_iter()
                 .map(Step::Thousandths)
                 .collect(),
-            Self::TopP => [800, 900, 950, 1000].into_iter().map(Step::Thousandths).collect(),
+            Self::TopP => [800, 900, 950, 1000]
+                .into_iter()
+                .map(Step::Thousandths)
+                .collect(),
             Self::TopK => [0, 20, 40, 100].into_iter().map(Step::Whole).collect(),
-            Self::MicroBatch => [256, 512, 1024, 2048].into_iter().map(Step::Whole).collect(),
+            Self::MicroBatch => [256, 512, 1024, 2048]
+                .into_iter()
+                .map(Step::Whole)
+                .collect(),
             Self::DraftDepth => [0, 2, 3, 5].into_iter().map(Step::Whole).collect(),
         }
     }
@@ -105,7 +111,9 @@ impl Step {
                 if part == 0 {
                     whole.to_string()
                 } else {
-                    format!("{whole}.{part:03}").trim_end_matches('0').to_owned()
+                    format!("{whole}.{part:03}")
+                        .trim_end_matches('0')
+                        .to_owned()
                 }
             }
         }

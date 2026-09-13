@@ -5,7 +5,11 @@ fn every_dial_is_either_an_engine_flag_or_a_request_field_never_both() {
     for dial in Dial::ALL {
         let flag = dial.flag().is_some();
         let field = dial.field().is_some();
-        assert!(flag != field, "{} must be exactly one of the two", dial.label());
+        assert!(
+            flag != field,
+            "{} must be exactly one of the two",
+            dial.label()
+        );
         assert_eq!(
             flag,
             dial.reloads_the_engine(),
@@ -61,7 +65,11 @@ fn an_empty_sweep_says_so_rather_than_reporting_zero_trials() {
         steps: Vec::new(),
         ..Sweep::default()
     };
-    assert!(sweep.said().starts_with("nothing to run"), "{}", sweep.said());
+    assert!(
+        sweep.said().starts_with("nothing to run"),
+        "{}",
+        sweep.said()
+    );
 }
 
 #[test]

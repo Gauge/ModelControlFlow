@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
-use mcf_checks::tiers::{Cadence, TIERS, ci_script};
+use mcf_checks::tiers::{TIERS, ci_script};
 use mcf_checks::workspace::root;
 
 const D10_DISCIPLINES: [&str; 10] = [

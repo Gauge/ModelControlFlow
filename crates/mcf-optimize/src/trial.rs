@@ -3,7 +3,7 @@ use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
-use mcf_record::json::{parse, Value};
+use mcf_record::json::{Value, parse};
 
 use crate::corpus::Set;
 use crate::dial::{Dial, Step};
@@ -87,10 +87,9 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
     connection
         .set_read_timeout(Some(endpoint.patience))
         .map_err(|error| unreachable(endpoint.port, &error.to_string()))?;
-    let bearer = endpoint
-        .key
-        .as_ref()
-        .map_or_else(String::new, |key| format!("Authorization: Bearer {key}\r\n"));
+    let bearer = endpoint.key.as_ref().map_or_else(String::new, |key| {
+        format!("Authorization: Bearer {key}\r\n")
+    });
     write!(
         connection,
         "POST /v1/chat/completions HTTP/1.1\r\nHost: localhost\r\nContent-Type: \
@@ -111,10 +110,15 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
         if read == 0 {
             break;
         }
-        pending.push_str(&String::from_utf8_lossy(held.get(..read).unwrap_or_default()));
+        pending.push_str(&String::from_utf8_lossy(
+            held.get(..read).unwrap_or_default(),
+        ));
         while let Some(at) = pending.find('\n') {
             let line = pending.get(..at).unwrap_or_default().trim().to_owned();
-            pending = pending.get(at.saturating_add(1)..).unwrap_or_default().to_owned();
+            pending = pending
+                .get(at.saturating_add(1)..)
+                .unwrap_or_default()
+                .to_owned();
             let Some(data) = line.strip_prefix("data:") else {
                 continue;
             };
@@ -123,14 +127,17 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
                 break 'reading;
             }
             let Ok(value) = parse(data) else { continue };
-            let Some(piece) = spoken(&value) else { continue };
+            let Some(piece) = spoken(&value) else {
+                continue;
+            };
             produced = produced.saturating_add(1);
             answer.push_str(&piece);
             let time_to_look = produced
                 .checked_rem(u64::try_from(CHECKED_EVERY).unwrap_or(1))
                 .is_some_and(|left| left == 0);
-            if let Some(found) =
-                (time_to_look && answer.len() > 1500).then(|| looping(&answer)).flatten()
+            if let Some(found) = (time_to_look && answer.len() > 1500)
+                .then(|| looping(&answer))
+                .flatten()
             {
                 ending = Ending::Looped;
                 why = Some(found);
@@ -193,7 +200,12 @@ pub fn blocks(said: &str) -> Vec<String> {
 }
 
 #[must_use]
-pub fn reading_of(asked: &Asked, said: &Said, milliseconds: u64, passed: &[(String, bool)]) -> Reading {
+pub fn reading_of(
+    asked: &Asked,
+    said: &Said,
+    milliseconds: u64,
+    passed: &[(String, bool)],
+) -> Reading {
     Reading {
         dial: asked.dial,
         step: asked.step,

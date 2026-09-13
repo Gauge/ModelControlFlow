@@ -1,4 +1,3 @@
-
 fn main() -> std::process::ExitCode {
     let Some(path) = std::env::args().nth(1) else {
         eprintln!("usage: write-fixture <path>");

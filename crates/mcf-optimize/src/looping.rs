@@ -6,7 +6,9 @@ const LOOKED_AT: usize = 4000;
 
 #[must_use]
 pub fn looping(said: &str) -> Option<String> {
-    let tail = said.get(said.len().saturating_sub(LOOKED_AT)..).unwrap_or(said);
+    let tail = said
+        .get(said.len().saturating_sub(LOOKED_AT)..)
+        .unwrap_or(said);
     if let Some(found) = a_line_over_and_over(tail) {
         return Some(found);
     }

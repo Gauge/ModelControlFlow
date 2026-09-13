@@ -1,4 +1,4 @@
-use super::{blocks, body, Asked, Endpoint, Said};
+use super::{Asked, Endpoint, Said, blocks, body};
 use crate::corpus::Set;
 use crate::dial::{Dial, Step};
 use crate::reading::Ending;
@@ -29,14 +29,20 @@ fn a_request_field_dial_travels_in_the_body() {
 fn an_engine_flag_dial_never_travels_in_the_body() {
     let held = body(&asked(Dial::ThinkingBudget, Step::Whole(2048)));
     for field in ["temperature", "top_p", "top_k", "reasoning_budget"] {
-        assert!(held.get(field).is_none(), "{field} is a launch flag, not a field");
+        assert!(
+            held.get(field).is_none(),
+            "{field} is a launch flag, not a field"
+        );
     }
 }
 
 #[test]
 fn the_body_asks_for_a_stream_and_refuses_the_prompt_cache() {
     let held = body(&asked(Dial::Temperature, Step::Thousandths(0)));
-    assert_eq!(held.get("stream"), Some(&mcf_record::json::Value::Bool(true)));
+    assert_eq!(
+        held.get("stream"),
+        Some(&mcf_record::json::Value::Bool(true))
+    );
     assert_eq!(
         held.get("cache_prompt"),
         Some(&mcf_record::json::Value::Bool(false)),
@@ -50,14 +56,22 @@ fn the_thinking_switches_ride_in_the_template_arguments() {
     let Some(switches) = held.get("chat_template_kwargs") else {
         panic!("the switches are sent");
     };
-    assert_eq!(switches.get("reasoning_effort").and_then(mcf_record::json::Value::as_text), Some("medium"));
+    assert_eq!(
+        switches
+            .get("reasoning_effort")
+            .and_then(mcf_record::json::Value::as_text),
+        Some("medium")
+    );
 }
 
 #[test]
 fn fenced_blocks_are_lifted_in_order_and_unfenced_prose_is_left_behind() {
     let said = "### SOLUTION 1\n```python\nfirst = 1\n```\nchatter\n### SOLUTION 2\n```\nsecond = \
                 2\n```\n";
-    assert_eq!(blocks(said), vec!["first = 1".to_owned(), "second = 2".to_owned()]);
+    assert_eq!(
+        blocks(said),
+        vec!["first = 1".to_owned(), "second = 2".to_owned()]
+    );
 }
 
 #[test]
@@ -70,7 +84,10 @@ fn an_unclosed_fence_yields_the_blocks_before_it_rather_than_failing() {
 fn an_endpoint_defaults_to_loopback_with_no_key() {
     let held = Endpoint::default();
     assert!(held.key.is_none(), "a key is supplied, never assumed");
-    assert!(held.patience.as_secs() >= 3600, "a long answer is not cut off");
+    assert!(
+        held.patience.as_secs() >= 3600,
+        "a long answer is not cut off"
+    );
 }
 
 #[test]

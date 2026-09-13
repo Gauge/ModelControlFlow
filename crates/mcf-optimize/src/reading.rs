@@ -164,7 +164,11 @@ impl Report {
                     reading
                         .tokens_an_answer()
                         .map_or_else(|| "—".to_owned(), |held| held.to_string()),
-                    reading.milliseconds.checked_div(1000).unwrap_or(0).to_string(),
+                    reading
+                        .milliseconds
+                        .checked_div(1000)
+                        .unwrap_or(0)
+                        .to_string(),
                     reading.ending.label().to_owned(),
                 ]
             })

@@ -11,7 +11,11 @@ fn a_repeated_line_is_a_loop() {
 
 #[test]
 fn a_short_cycle_at_the_end_is_a_loop_even_without_newlines() {
-    let said = format!("{}{}", "some genuine prose first. ", "abcabcabcabc".repeat(60));
+    let said = format!(
+        "{}{}",
+        "some genuine prose first. ",
+        "abcabcabcabc".repeat(60)
+    );
     assert!(looping(&said).is_some());
 }
 

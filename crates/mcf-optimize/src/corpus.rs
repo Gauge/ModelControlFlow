@@ -1,6 +1,6 @@
 use core::fmt::Write as _;
 
-use mcf_record::json::{parse, Value};
+use mcf_record::json::{Value, parse};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
@@ -57,11 +57,7 @@ impl Set {
         );
         for (at, task) in self.tasks.iter().enumerate() {
             let number = at.saturating_add(1);
-            let _written = writeln!(
-                said,
-                "### TASK {number} ({})\n{}\n",
-                task.name, task.asked
-            );
+            let _written = writeln!(said, "### TASK {number} ({})\n{}\n", task.name, task.asked);
         }
         said.push_str(
             "---\nOUTPUT FORMAT, follow exactly:\nFor each task output a header line \

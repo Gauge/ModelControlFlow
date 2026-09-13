@@ -241,18 +241,14 @@ impl Found {
             Self::Several(llamas) => llamas,
             Self::None => Vec::new(),
         };
-        held.into_iter()
-            .find(|llama| llama.component == wanted)
+        held.into_iter().find(|llama| llama.component == wanted)
     }
 
     #[must_use]
     pub fn components(&self) -> Vec<String> {
         match self {
             Self::One(llama) => vec![llama.component.clone()],
-            Self::Several(llamas) => llamas
-                .iter()
-                .map(|llama| llama.component.clone())
-                .collect(),
+            Self::Several(llamas) => llamas.iter().map(|llama| llama.component.clone()).collect(),
             Self::None => Vec::new(),
         }
     }
@@ -323,10 +319,7 @@ pub fn only_one(found: Found) -> Result<Option<ProvisionedLlama>, Failure> {
         Found::One(llama) => Ok(Some(llama)),
         Found::None => Ok(None),
         Found::Several(llamas) => {
-            let names: Vec<String> = llamas
-                .iter()
-                .map(|llama| llama.component.clone())
-                .collect();
+            let names: Vec<String> = llamas.iter().map(|llama| llama.component.clone()).collect();
             Err(Failure::new(
                 Category::ConfigConflict,
                 Attribution::User,
@@ -340,7 +333,10 @@ pub fn only_one(found: Found) -> Result<Option<ProvisionedLlama>, Failure> {
             .with_context("provisioned", names.join(", "))
             .with_context(
                 "what_to_do",
-                format!("name one: `mcf host <model> --engine {}`", names.join(" | ")),
+                format!(
+                    "name one: `mcf host <model> --engine {}`",
+                    names.join(" | ")
+                ),
             ))
         }
     }

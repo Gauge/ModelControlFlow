@@ -30,7 +30,9 @@ fn nothing_but_the_reader_constructs_a_number_the_record_cannot_carry() {
             if code.contains("ForeignNumber(") && !code.contains("Value::ForeignNumber(_)") {
                 found.push(format!("{relative}:{}", number.saturating_add(1)));
             }
-            if code.contains("exact_thousandths(") && !THE_ENGINE_REQUEST.contains(&relative.as_str()) {
+            if code.contains("exact_thousandths(")
+                && !THE_ENGINE_REQUEST.contains(&relative.as_str())
+            {
                 found.push(format!("{relative}:{}", number.saturating_add(1)));
             }
         }

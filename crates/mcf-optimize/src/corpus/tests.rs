@@ -1,4 +1,4 @@
-use super::{task_count, Set};
+use super::{Set, task_count};
 
 #[test]
 fn the_corpus_is_sixty_four_tasks_in_eight_sets() {
@@ -34,7 +34,11 @@ fn no_two_tasks_share_a_name() {
     let mut seen = std::collections::BTreeSet::new();
     for set in Set::all() {
         for task in &set.tasks {
-            assert!(seen.insert(task.name.clone()), "{} appears twice", task.name);
+            assert!(
+                seen.insert(task.name.clone()),
+                "{} appears twice",
+                task.name
+            );
         }
     }
     assert_eq!(seen.len(), 64);
