@@ -1,4 +1,4 @@
-use super::{Dial, Step, Sweep};
+use super::{Dial, Scale, Span, Step, Sweep};
 
 #[test]
 fn every_dial_is_either_an_engine_flag_or_a_request_field_never_both() {
@@ -87,4 +87,91 @@ fn each_dial_suggests_values_of_its_own_kind() {
             );
         }
     }
+}
+
+#[test]
+fn every_dial_offers_a_coarse_ladder_inside_its_own_span() {
+    for dial in Dial::ALL {
+        let span = dial.span();
+        let coarse = dial.coarse();
+        assert!(
+            coarse.len() >= 3,
+            "{} offers too few coarse points to halve between",
+            dial.label()
+        );
+        for step in &coarse {
+            let value = match *step {
+                Step::Whole(held) | Step::Thousandths(held) => held,
+            };
+            assert!(
+                span.holds(value),
+                "{} offers {value}, outside its own span",
+                dial.label()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_coarse_ladder_is_ordered_and_has_no_repeats() {
+    for dial in Dial::ALL {
+        let values: Vec<u32> = dial
+            .coarse()
+            .iter()
+            .map(|step| match *step {
+                Step::Whole(held) | Step::Thousandths(held) => held,
+            })
+            .collect();
+        let mut sorted = values.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(values, sorted, "{} repeats or misorders", dial.label());
+    }
+}
+
+#[test]
+fn a_step_carries_the_scale_its_dial_reads_in() {
+    for dial in Dial::ALL {
+        let made = dial.step_of(100);
+        match dial.scale() {
+            Scale::Whole => assert_eq!(made.whole(), Some(100)),
+            Scale::Thousandths => assert!(made.thousandths().is_some()),
+        }
+        assert!(
+            dial.coarse().iter().all(|step| matches!(
+                (step, made),
+                (Step::Whole(_), Step::Whole(_)) | (Step::Thousandths(_), Step::Thousandths(_))
+            )),
+            "{} mixes scales within one ladder",
+            dial.label()
+        );
+    }
+}
+
+#[test]
+fn a_span_rounds_to_something_it_could_actually_run() {
+    let span = Span::new(64, 4096, 16);
+    assert_eq!(
+        span.rounded(255),
+        256,
+        "255 is not a multiple of 16 above 64"
+    );
+    assert_eq!(span.rounded(0), 64, "below the floor is the floor");
+    assert_eq!(
+        span.rounded(99_999),
+        4096,
+        "above the ceiling is the ceiling"
+    );
+    assert_eq!(
+        span.rounded(1024),
+        1024,
+        "a value already on the grid stays"
+    );
+}
+
+#[test]
+fn rounding_counts_from_the_floor_not_from_zero() {
+    let span = Span::new(500, 1000, 10);
+    assert_eq!(span.rounded(953), 950);
+    assert_eq!(span.rounded(957), 960);
 }

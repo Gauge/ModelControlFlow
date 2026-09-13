@@ -1,4 +1,4 @@
-use super::{Ending, Reading, Report};
+use super::{Ending, Measure, Reading, Report};
 use crate::dial::{Dial, Step};
 
 fn reading(step: u32, set: usize, passed: u32, ending: Ending) -> Reading {
@@ -75,4 +75,77 @@ fn a_row_carries_one_cell_for_each_column() {
     for row in report.to_rows() {
         assert_eq!(row.len(), Report::COLUMNS.len());
     }
+}
+
+fn at(step: Step, produced: u64, milliseconds: u64, passed: u32) -> Reading {
+    Reading {
+        dial: Dial::MicroBatch,
+        step,
+        set: 1,
+        repeat: 1,
+        passed,
+        of: 8,
+        produced,
+        milliseconds,
+        ending: Ending::Answered,
+        per_task: Vec::new(),
+    }
+}
+
+#[test]
+fn the_fastest_and_the_most_correct_can_be_different_values() {
+    let mut report = Report::default();
+    report.record(at(Step::Whole(256), 1000, 1000, 2));
+    report.record(at(Step::Whole(512), 500, 1000, 8));
+    assert_eq!(
+        report.best_by(Measure::Speed).map(|held| held.step),
+        Some(Step::Whole(256)),
+        "256 produced twice the tokens in the same time"
+    );
+    assert_eq!(
+        report.best_by(Measure::Correctness).map(|held| held.step),
+        Some(Step::Whole(512)),
+        "512 got more of the tasks right"
+    );
+}
+
+#[test]
+fn a_value_that_only_ever_ran_away_is_not_the_best_at_anything() {
+    let mut report = Report::default();
+    let mut looped = at(Step::Whole(256), 100_000, 1000, 0);
+    looped.ending = Ending::Looped;
+    report.record(looped);
+    report.record(at(Step::Whole(512), 500, 1000, 4));
+    assert_eq!(
+        report.best_by(Measure::Speed).map(|held| held.step),
+        Some(Step::Whole(512)),
+        "a loop produces tokens quickly and none of them are an answer"
+    );
+}
+
+#[test]
+fn a_value_that_ran_away_once_out_of_several_still_counts() {
+    let mut report = Report::default();
+    let mut looped = at(Step::Whole(256), 1000, 1000, 0);
+    looped.ending = Ending::Looped;
+    report.record(looped);
+    report.record(at(Step::Whole(256), 1000, 1000, 8));
+    assert!(
+        report.best_by(Measure::Speed).is_some(),
+        "one runaway among several is a reading, not a disqualification"
+    );
+}
+
+#[test]
+fn an_empty_report_has_no_best_of_any_kind() {
+    let report = Report::default();
+    for measure in Measure::ALL {
+        assert!(report.best_by(measure).is_none());
+    }
+}
+
+#[test]
+fn only_one_of_the_two_measures_needs_a_model_s_code_to_be_run() {
+    assert!(!Measure::Speed.needs_the_answers_run());
+    assert!(Measure::Correctness.needs_the_answers_run());
 }

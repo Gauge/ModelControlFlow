@@ -1123,6 +1123,81 @@ fn base_configuration(paint: &mut Painter, desk: &Desk, area: Box, mut y: f32) -
     y + 12.0
 }
 
+fn how_it_searches(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    let dial = desk.optimizing.sweep.dial;
+    let ways: Vec<(String, bool)> = mcf_optimize::hunt::Way::ALL
+        .iter()
+        .map(|way| (way.label().to_owned(), *way == desk.optimizing.way))
+        .collect();
+    let (below, picked) = chips(paint, mouse, area, y, &ways);
+    if let Some(at) = picked {
+        act = Some(Act::SweepWay(at));
+    }
+    y = below;
+
+    let automatic = desk.optimizing.way == mcf_optimize::hunt::Way::Halving;
+    let span = dial.span();
+    let said = if automatic {
+        format!(
+            "starts at {}, then halves the gap around whatever wins, down to steps of {}",
+            dial.coarse()
+                .iter()
+                .map(|step| step.said())
+                .collect::<Vec<_>>()
+                .join(", "),
+            dial.step_of(span.finest).said()
+        )
+    } else {
+        format!(
+            "the values ticked below, and nothing else — anywhere from {} to {}",
+            dial.step_of(span.floor).said(),
+            dial.step_of(span.ceiling).said()
+        )
+    };
+    for line in paint.wrap(&said, Weight::Regular, size::SMALL, area.w - 20.0) {
+        paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    y += 10.0;
+
+    let measures: Vec<(String, bool)> = mcf_optimize::reading::Measure::ALL
+        .iter()
+        .map(|measure| {
+            (
+                measure.label().to_owned(),
+                *measure == desk.optimizing.measure,
+            )
+        })
+        .collect();
+    let (below, picked) = chips(paint, mouse, area, y, &measures);
+    if let Some(at) = picked {
+        act = Some(Act::SweepMeasure(at));
+    }
+    y = below;
+    if desk.optimizing.measure.needs_the_answers_run() {
+        for line in paint.wrap(
+            "Nothing marks these answers yet: a model's own code has to run somewhere MCF              controls, and that container is not built. Every reading is still recorded, and              the score column stays at zero until it is.",
+            Weight::Regular,
+            size::SMALL,
+            area.w - 20.0,
+        ) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
+            y += 16.0;
+        }
+        y += 8.0;
+    }
+
+    (y, act)
+}
+
 fn setting_to_optimize(
     paint: &mut Painter,
     desk: &Desk,
@@ -1162,6 +1237,9 @@ fn setting_to_optimize(
     };
     paint.say_at(area.x, y, &how, Weight::Regular, size::SMALL, ink.faint);
     y += 24.0;
+    let (below, chosen) = how_it_searches(paint, desk, mouse, area, y);
+    act = act.or(chosen);
+    y = below;
     let values: Vec<(String, bool)> = dial
         .suggested()
         .iter()
@@ -1176,7 +1254,71 @@ fn setting_to_optimize(
     if let Some(at) = picked {
         act = Some(Act::SweepValue(at));
     }
-    (below, act)
+    y = below + 6.0;
+
+    let (below, typed) = a_value_of_my_own(paint, desk, mouse, area, y);
+    (below, act.or(typed))
+}
+
+fn a_value_of_my_own(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    let dial = desk.optimizing.sweep.dial;
+    paint.say_at(
+        area.x,
+        y + 6.0,
+        "Or a value of my own",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    let field_at = Box::new(area.x + 160.0, y, 120.0, 28.0);
+    let touched = ui::field(
+        paint,
+        mouse,
+        field_at,
+        &desk.optimizing.custom,
+        dial.step_of(dial.span().finest).said().as_str(),
+        desk.optimizing.custom_focused,
+    );
+    if touched != ui::Touched::No {
+        act = Some(Act::CustomValue(touched));
+    }
+    if ui::button(
+        paint,
+        mouse,
+        Box::new(area.x + 292.0, y, 80.0, 28.0),
+        "Add",
+        Kind::Ordinary,
+    ) {
+        act = Some(Act::AddCustom);
+    }
+    let unit = dial.unit();
+    if !unit.is_empty() {
+        paint.say_at(
+            area.x + 382.0,
+            y + 6.0,
+            unit,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    y += 34.0;
+    if let Some(why) = &desk.optimizing.custom_refused {
+        for line in paint.wrap(why, Weight::Regular, size::SMALL, area.w - 20.0) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
+            y += 16.0;
+        }
+        y += 4.0;
+    }
+    (y, act)
 }
 
 fn test_set(
@@ -1225,24 +1367,13 @@ fn test_set(
     (y + 44.0, act)
 }
 
-fn sweep_report(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    area: Box,
-    mut y: f32,
-) -> Option<Act> {
+fn run_row(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, y: f32) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
-    y = section(
-        paint,
-        area,
-        y,
-        "Report",
-        "one row for every prompt run, exactly as it was measured",
-    );
     let label = if desk.optimizing.running {
         "Stop".to_owned()
+    } else if desk.optimizing.known > 0 {
+        "Carry on".to_owned()
     } else {
         "Run sweep".to_owned()
     };
@@ -1261,15 +1392,55 @@ fn sweep_report(
             Box::new(button.right() + 14.0, y + 13.0, 180.0, 6.0),
             desk.optimizing.fraction(),
         );
-        paint.say_at(
-            button.right() + 206.0,
-            y + 9.0,
-            &format!("{} trials left", desk.optimizing.left()),
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
     }
+    let doing = desk.optimizing.run.as_ref().map_or_else(
+        || desk.optimizing.standing(),
+        mcf_optimize::running::Running::said,
+    );
+    let at = if desk.optimizing.running {
+        button.right() + 206.0
+    } else {
+        button.right() + 14.0
+    };
+    let shown = paint.elide(
+        &doing,
+        Weight::Regular,
+        size::SMALL,
+        area.right() - at - 130.0,
+    );
+    paint.say_at(at, y + 9.0, &shown, Weight::Regular, size::SMALL, ink.faint);
+    if !desk.optimizing.running && desk.optimizing.known > 0 {
+        let (pressed, _box) = ui::fitted(
+            paint,
+            mouse,
+            (area.right() - 120.0, y),
+            "Forget them",
+            Kind::Quiet,
+        );
+        if pressed {
+            act = Some(Act::ForgetReadings);
+        }
+    }
+    act
+}
+
+fn sweep_report(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    y = section(
+        paint,
+        area,
+        y,
+        "Report",
+        "one row for every prompt run, exactly as it was measured",
+    );
+    act = act.or(run_row(paint, desk, mouse, area, y));
     if let Some(why) = &desk.optimizing.refused {
         let shown = paint.elide(why, Weight::Regular, size::SMALL, area.w - 20.0);
         paint.say_at(
@@ -1283,11 +1454,32 @@ fn sweep_report(
     }
     y += 52.0;
     let rows = desk.optimizing.report.to_rows();
+    if let Some(best) = desk.optimizing.report.best_by(desk.optimizing.measure) {
+        let said = match desk.optimizing.measure {
+            mcf_optimize::reading::Measure::Speed => format!(
+                "Best so far: {} at {} tok/s over {} trial(s)",
+                best.step.said(),
+                best.tokens_a_second()
+                    .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}")),
+                best.trials
+            ),
+            mcf_optimize::reading::Measure::Correctness => format!(
+                "Best so far: {} at {}/{} over {} trial(s)",
+                best.step.said(),
+                best.passed,
+                best.of,
+                best.trials
+            ),
+        };
+        paint.say_at(area.x, y, &said, Weight::Bold, size::SMALL, ink.accent);
+        y += 22.0;
+    }
     if rows.is_empty() {
         paint.say_at(
             area.x,
             y,
-            "No rows yet. A sweep writes one row per prompt as it finishes.",
+            "No rows yet. Every reading is written down as it finishes, so a sweep stopped \
+             halfway carries on from where it stopped.",
             Weight::Regular,
             size::SMALL,
             ink.faint,

@@ -1,5 +1,9 @@
 pub mod corpus;
+pub mod course;
 pub mod dial;
+pub mod hunt;
+pub mod ledger;
 pub mod looping;
 pub mod reading;
+pub mod running;
 pub mod trial;

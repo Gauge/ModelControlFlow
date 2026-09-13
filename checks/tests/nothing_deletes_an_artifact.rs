@@ -17,6 +17,16 @@ const DECLARED: &[Deletes] = &[
                it acquired (B-367, A27)",
     },
     Deletes {
+        file: "crates/mcf-desk/src/lib.rs",
+        calls: 1,
+        what: "the optimizer's own record of readings, when somebody asks the window to \
+               forget them. What goes is a file MCF wrote itself, one line per measurement \
+               MCF took, kept so a sweep interrupted halfway can carry on instead of starting \
+               over. It is nobody's copy of anything and no model file is touched; forgetting \
+               it costs only the time to measure again, which is exactly what the person \
+               asking has decided to spend (A27, §3.11)",
+    },
+    Deletes {
         file: "crates/mcf-desk/build.rs",
         calls: 1,
         what: "a stale `libmcffont.a` in this build's own output directory, before the \

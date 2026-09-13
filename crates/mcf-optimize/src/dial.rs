@@ -50,6 +50,47 @@ impl Dial {
     }
 
     #[must_use]
+    pub const fn scale(self) -> Scale {
+        match self {
+            Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth | Self::TopK => Scale::Whole,
+            Self::Temperature | Self::TopP => Scale::Thousandths,
+        }
+    }
+
+    #[must_use]
+    pub const fn span(self) -> Span {
+        match self {
+            Self::ThinkingBudget => Span::new(0, 32_768, 256),
+            Self::Temperature => Span::new(0, 1000, 25),
+            Self::TopP => Span::new(500, 1000, 10),
+            Self::TopK => Span::new(0, 200, 5),
+            Self::MicroBatch => Span::new(64, 8192, 16),
+            Self::DraftDepth => Span::new(0, 8, 1),
+        }
+    }
+
+    #[must_use]
+    pub fn coarse(self) -> Vec<Step> {
+        let held: &[u32] = match self {
+            Self::ThinkingBudget => &[0, 4096, 8192, 16_384, 32_768],
+            Self::Temperature => &[0, 250, 500, 750, 1000],
+            Self::TopP => &[500, 625, 750, 875, 1000],
+            Self::TopK => &[0, 50, 100, 150, 200],
+            Self::MicroBatch => &[64, 512, 1024, 2048, 4096],
+            Self::DraftDepth => &[0, 2, 4, 6, 8],
+        };
+        held.iter().map(|held| self.step_of(*held)).collect()
+    }
+
+    #[must_use]
+    pub const fn step_of(self, value: u32) -> Step {
+        match self.scale() {
+            Scale::Whole => Step::Whole(value),
+            Scale::Thousandths => Step::Thousandths(value),
+        }
+    }
+
+    #[must_use]
     pub fn suggested(self) -> Vec<Step> {
         match self {
             Self::ThinkingBudget => [0, 512, 1024, 2048, 4096, 8192]
@@ -91,6 +132,56 @@ impl Dial {
             Self::TopK => Some("top_k"),
             Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth => None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scale {
+    Whole,
+    Thousandths,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub floor: u32,
+    pub ceiling: u32,
+    pub finest: u32,
+}
+
+impl Span {
+    #[must_use]
+    pub const fn new(floor: u32, ceiling: u32, finest: u32) -> Self {
+        Self {
+            floor,
+            ceiling,
+            finest,
+        }
+    }
+
+    #[must_use]
+    pub const fn holds(self, value: u32) -> bool {
+        value >= self.floor && value <= self.ceiling
+    }
+
+    #[must_use]
+    pub const fn clamped(self, value: u32) -> u32 {
+        if value < self.floor {
+            self.floor
+        } else if value > self.ceiling {
+            self.ceiling
+        } else {
+            value
+        }
+    }
+
+    #[must_use]
+    pub fn rounded(self, value: u32) -> u32 {
+        let finest = if self.finest == 0 { 1 } else { self.finest };
+        let from = self.floor;
+        let over = value.saturating_sub(from);
+        let half = finest.checked_div(2).unwrap_or(0);
+        let steps = over.saturating_add(half).checked_div(finest).unwrap_or(0);
+        self.clamped(from.saturating_add(steps.saturating_mul(finest)))
     }
 }
 

@@ -68,6 +68,38 @@ impl Reading {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Measure {
+    #[default]
+    Speed,
+    Correctness,
+}
+
+impl Measure {
+    pub const ALL: [Self; 2] = [Self::Speed, Self::Correctness];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Speed => "Fastest — tokens a second",
+            Self::Correctness => "Most correct — tasks passed",
+        }
+    }
+
+    #[must_use]
+    pub const fn short(self) -> &'static str {
+        match self {
+            Self::Speed => "tok/s",
+            Self::Correctness => "passed",
+        }
+    }
+
+    #[must_use]
+    pub const fn needs_the_answers_run(self) -> bool {
+        matches!(self, Self::Correctness)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Report {
     pub readings: Vec<Reading>,
@@ -99,6 +131,27 @@ impl Summary {
             return None;
         }
         self.produced.checked_div(u64::from(self.passed))
+    }
+
+    #[must_use]
+    pub fn tokens_a_second(&self) -> Option<f64> {
+        if self.milliseconds == 0 {
+            return None;
+        }
+        let produced = u32::try_from(self.produced).ok()?;
+        let millis = u32::try_from(self.milliseconds).ok()?;
+        Some(f64::from(produced) * 1000.0 / f64::from(millis))
+    }
+
+    #[must_use]
+    pub fn scored(&self, measure: Measure) -> Option<f64> {
+        if self.runaways > 0 && self.trials == self.runaways {
+            return None;
+        }
+        match measure {
+            Measure::Speed => self.tokens_a_second(),
+            Measure::Correctness => self.share(),
+        }
     }
 }
 
@@ -137,14 +190,22 @@ impl Report {
 
     #[must_use]
     pub fn best(&self) -> Option<Summary> {
-        self.by_step()
-            .into_iter()
-            .max_by(|one, two| match (one.share(), two.share()) {
-                (Some(first), Some(second)) => first
-                    .partial_cmp(&second)
-                    .unwrap_or(core::cmp::Ordering::Equal),
-                _ => core::cmp::Ordering::Equal,
-            })
+        self.best_by(Measure::Correctness)
+    }
+
+    #[must_use]
+    pub fn best_by(&self, measure: Measure) -> Option<Summary> {
+        let mut held: Option<Summary> = None;
+        for summary in self.by_step() {
+            let Some(score) = summary.scored(measure) else {
+                continue;
+            };
+            let better = held.as_ref().and_then(|best| best.scored(measure));
+            if better.is_none_or(|best| score > best) {
+                held = Some(summary);
+            }
+        }
+        held
     }
 
     #[must_use]

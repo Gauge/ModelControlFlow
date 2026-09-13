@@ -3158,6 +3158,11 @@ impl Daemon {
                 "socket",
                 Value::text(self.places.socket.display().to_string()),
             ),
+            ("home", Value::text(self.mcf_home().display().to_string())),
+            (
+                "models",
+                Value::text(self.places.models.display().to_string()),
+            ),
             (
                 "recovered",
                 Value::map([

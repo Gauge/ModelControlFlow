@@ -507,13 +507,21 @@ impl Tab {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Optimizing {
     pub sweep: mcf_optimize::dial::Sweep,
     pub report: mcf_optimize::reading::Report,
     pub running: bool,
     pub done: usize,
     pub refused: Option<String>,
+    pub way: mcf_optimize::hunt::Way,
+    pub measure: mcf_optimize::reading::Measure,
+    pub custom: crate::typing::Typing,
+    pub custom_focused: bool,
+    pub custom_refused: Option<String>,
+    pub known: usize,
+    pub last_said: Option<String>,
+    pub run: Option<mcf_optimize::running::Running>,
 }
 
 impl Optimizing {
@@ -564,12 +572,148 @@ impl Optimizing {
         }
     }
 
+    #[must_use]
+    pub fn standing(&self) -> String {
+        if let Some(said) = &self.last_said {
+            return said.clone();
+        }
+        if self.known == 0 {
+            return "nothing measured for this base yet".to_owned();
+        }
+        format!(
+            "{} reading(s) already recorded for this configuration",
+            self.known
+        )
+    }
+
+    pub fn pick_way(&mut self, at: usize) {
+        if let Some(way) = mcf_optimize::hunt::Way::ALL.get(at) {
+            self.way = *way;
+            self.refused = None;
+        }
+    }
+
+    pub fn pick_measure(&mut self, at: usize) {
+        if let Some(measure) = mcf_optimize::reading::Measure::ALL.get(at) {
+            self.measure = *measure;
+            self.refused = None;
+        }
+    }
+
+    pub fn touch_the_custom(&mut self, touched: crate::ui::Touched) {
+        if touched != crate::ui::Touched::No {
+            self.custom_focused = true;
+            self.custom_refused = None;
+        }
+        match touched {
+            crate::ui::Touched::No => {}
+            crate::ui::Touched::At(at) => self.custom.place(at, false),
+            crate::ui::Touched::Word(at) => self.custom.word_at(at),
+            crate::ui::Touched::DraggedTo(at) => self.custom.place(at, true),
+        }
+    }
+
+    pub fn add_what_was_typed(&mut self) {
+        self.custom_refused = None;
+        let typed = self.custom.trim().to_owned();
+        if typed.is_empty() {
+            self.custom_refused = Some("type a value first".to_owned());
+            return;
+        }
+        let dial = self.sweep.dial;
+        let Some(step) = read_a_value(dial, &typed) else {
+            self.custom_refused = Some(format!(
+                "{typed:?} is not a value {} takes",
+                dial.label().to_lowercase()
+            ));
+            return;
+        };
+        let span = dial.span();
+        let held = match step {
+            mcf_optimize::dial::Step::Whole(held) | mcf_optimize::dial::Step::Thousandths(held) => {
+                held
+            }
+        };
+        if !span.holds(held) {
+            self.custom_refused = Some(format!(
+                "{typed} is outside what this dial reaches — {} to {}",
+                dial.step_of(span.floor).said(),
+                dial.step_of(span.ceiling).said()
+            ));
+            return;
+        }
+        if self.sweep.steps.contains(&step) {
+            self.custom_refused = Some(format!("{} is already in the list", step.said()));
+            return;
+        }
+        self.sweep.steps.push(step);
+        self.sweep.steps.sort_by_key(|held| match *held {
+            mcf_optimize::dial::Step::Whole(value)
+            | mcf_optimize::dial::Step::Thousandths(value) => value,
+        });
+        self.custom.clear();
+        self.way = mcf_optimize::hunt::Way::ByHand;
+    }
+
     pub fn cycle_repeats(&mut self) {
         self.sweep.repeats = match self.sweep.repeats {
             1 => 2,
             2 => 3,
             _ => 1,
         };
+    }
+}
+
+const SWEEP_CEILING: u32 = 16_384;
+
+#[must_use]
+pub fn port_of(address: &str) -> Option<u16> {
+    address
+        .rsplit(':')
+        .next()?
+        .trim_end_matches('/')
+        .parse()
+        .ok()
+}
+
+#[must_use]
+pub fn read_a_value(
+    dial: mcf_optimize::dial::Dial,
+    typed: &str,
+) -> Option<mcf_optimize::dial::Step> {
+    let typed = typed.trim().replace([',', '_'], "");
+    match dial.scale() {
+        mcf_optimize::dial::Scale::Whole => typed
+            .parse::<u32>()
+            .ok()
+            .map(mcf_optimize::dial::Step::Whole),
+        mcf_optimize::dial::Scale::Thousandths => {
+            let (whole, part) = match typed.split_once('.') {
+                Some((before, after)) => (before, after),
+                None => (typed.as_str(), ""),
+            };
+            let whole: u32 = if whole.is_empty() {
+                0
+            } else {
+                whole.parse().ok()?
+            };
+            if !part.chars().all(|held| held.is_ascii_digit()) || part.len() > 3 {
+                return None;
+            }
+            let mut thousandths = part.to_owned();
+            while thousandths.len() < 3 {
+                thousandths.push('0');
+            }
+            let part: u32 = if thousandths.is_empty() {
+                0
+            } else {
+                thousandths.parse().ok()?
+            };
+            whole
+                .checked_mul(1000)?
+                .checked_add(part)
+                .map(mcf_optimize::dial::Step::Thousandths)
+        }
     }
 }
 
@@ -1303,6 +1447,11 @@ pub enum Act {
     Tab(Tab),
     Dial(usize),
     SweepValue(usize),
+    SweepWay(usize),
+    SweepMeasure(usize),
+    CustomValue(crate::ui::Touched),
+    AddCustom,
+    ForgetReadings,
     TestSet(usize),
     Repeats,
     Sweep,
@@ -1465,6 +1614,7 @@ pub struct Desk {
     pub queued: std::collections::VecDeque<Card>,
     pub queued_of: usize,
     pub daemon_build: Option<String>,
+    pub home: Option<std::path::PathBuf>,
     pub settings: Option<mcf_serve::hosting::Hosting>,
     pub recommended: Option<mcf_serve::hosting::Hosting>,
     pub no_settings: Option<String>,
@@ -1529,6 +1679,7 @@ impl Desk {
             queued: std::collections::VecDeque::new(),
             queued_of: 0,
             daemon_build: None,
+            home: None,
             settings: None,
             recommended: None,
             no_settings: None,
@@ -1561,7 +1712,8 @@ impl Desk {
 
     #[must_use]
     pub fn takes_typing(&self) -> bool {
-        self.removing.as_ref().is_some_and(|held| !held.finished())
+        self.typing_into_a_value()
+            || self.removing.as_ref().is_some_and(|held| !held.finished())
             || matches!(self.page, Page::Adding | Page::Hosting | Page::Models)
             || (matches!(self.page, Page::Host) && self.editing.is_some())
     }
@@ -1595,6 +1747,12 @@ impl Desk {
     }
 
     pub fn stopped_typing(&mut self) {
+        if self.typing_into_a_value() {
+            self.optimizing.custom_focused = false;
+            self.optimizing.custom.clear();
+            self.optimizing.custom_refused = None;
+            return;
+        }
         if self.removing.is_some() {
             self.removing = None;
             return;
@@ -1611,7 +1769,15 @@ impl Desk {
         self.typing().none();
     }
 
+    #[must_use]
+    pub fn typing_into_a_value(&self) -> bool {
+        self.tab == Tab::Optimize && self.optimizing.custom_focused
+    }
+
     pub fn typing(&mut self) -> &mut crate::typing::Typing {
+        if self.typing_into_a_value() {
+            return &mut self.optimizing.custom;
+        }
         if let Some(removing) = self.removing.as_mut().filter(|held| !held.finished()) {
             return &mut removing.reason;
         }
@@ -1631,6 +1797,9 @@ impl Desk {
 
     #[must_use]
     pub fn typing_now(&self) -> &crate::typing::Typing {
+        if self.typing_into_a_value() {
+            return &self.optimizing.custom;
+        }
         if let Some(removing) = self.removing.as_ref().filter(|held| !held.finished()) {
             return &removing.reason;
         }
@@ -1653,6 +1822,10 @@ impl Desk {
     }
 
     pub fn entered(&mut self) {
+        if self.typing_into_a_value() {
+            self.optimizing.add_what_was_typed();
+            return;
+        }
         match self.page {
             Page::Models if self.editing.is_some() => self.apply_edit(),
             Page::Models => {
@@ -1737,20 +1910,23 @@ impl Desk {
         true
     }
 
+    fn go(&mut self, page: Page) {
+        if page == self.page {
+            return;
+        }
+        self.scrolls.clear();
+        if page.section() == Page::Hosting {
+            self.sample();
+        }
+        if matches!(page, Page::Anatomy | Page::Vocabulary) {
+            self.read_anatomy();
+        }
+        self.page = page;
+    }
+
     pub fn act(&mut self, act: Act) {
         match act {
-            Act::Go(page) => {
-                if page != self.page {
-                    self.scrolls.clear();
-                    if page.section() == Page::Hosting {
-                        self.sample();
-                    }
-                    if matches!(page, Page::Anatomy | Page::Vocabulary) {
-                        self.read_anatomy();
-                    }
-                    self.page = page;
-                }
-            }
+            Act::Go(page) => self.go(page),
             Act::LookUp => self.look_up(),
             Act::Download { reference, file } => self.download(&reference, &file),
             Act::HostAgain => self.host_again(),
@@ -1761,6 +1937,11 @@ impl Desk {
             Act::Tab(_)
             | Act::Dial(_)
             | Act::SweepValue(_)
+            | Act::SweepWay(_)
+            | Act::SweepMeasure(_)
+            | Act::CustomValue(_)
+            | Act::AddCustom
+            | Act::ForgetReadings
             | Act::TestSet(_)
             | Act::Repeats
             | Act::Sweep
@@ -2820,15 +3001,112 @@ impl Desk {
         });
     }
 
+    #[must_use]
+    pub fn ledger_path(&self) -> Option<std::path::PathBuf> {
+        self.home
+            .as_ref()
+            .map(|home| mcf_optimize::ledger::Ledger::beside(home))
+    }
+
+    pub fn forget_readings(&mut self) {
+        self.optimizing.refused = None;
+        let Some(path) = self.ledger_path() else {
+            return;
+        };
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                self.optimizing.known = 0;
+                self.optimizing.report = mcf_optimize::reading::Report::default();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.optimizing.known = 0;
+            }
+            Err(error) => {
+                self.optimizing.refused = Some(format!(
+                    "the record at {} could not be cleared: {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    #[must_use]
+    fn base_for_a_sweep(&self) -> Option<mcf_optimize::ledger::Under> {
+        let hosted = self.hosted.as_ref()?;
+        let settings = self.settings.as_ref()?;
+        let bytes = self
+            .models
+            .iter()
+            .find(|held| held.path == hosted.model)
+            .and_then(|held| held.bytes)
+            .unwrap_or(0);
+        Some(mcf_optimize::ledger::Under {
+            model: hosted.model.clone(),
+            model_bytes: bytes,
+            engine: settings.engine.clone(),
+            commit: self.daemon_build.clone().unwrap_or_default(),
+            context: hosted.context.unwrap_or(settings.context),
+            batch: settings.batch,
+            ubatch: settings.ubatch,
+            cache: format!("{:?}", hosted.cache),
+            flash_attention: settings.flash_attention,
+            draft_head: settings.started.draft_head,
+            draft_depth: settings.started.drafted,
+            thinking_budget: settings.started.thinking,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            corpus: mcf_optimize::ledger::CORPUS,
+        })
+    }
+
+    pub fn read_the_ledger(&mut self) {
+        let Some(path) = self.ledger_path() else {
+            return;
+        };
+        let Ok(ledger) = mcf_optimize::ledger::Ledger::open(&path) else {
+            return;
+        };
+        let Some(under) = self.base_for_a_sweep() else {
+            self.optimizing.known = 0;
+            return;
+        };
+        let against = ledger.against(&under, self.optimizing.sweep.dial);
+        self.optimizing.known = against.len();
+        let mut report = mcf_optimize::reading::Report::default();
+        for row in against {
+            report.record(row.reading.clone());
+        }
+        self.optimizing.report = report;
+    }
+
+    fn choosing_values(&mut self, act: &Act) {
+        match *act {
+            Act::SweepWay(at) => self.optimizing.pick_way(at),
+            Act::SweepMeasure(at) => self.optimizing.pick_measure(at),
+            Act::CustomValue(touched) => self.optimizing.touch_the_custom(touched),
+            Act::AddCustom => self.optimizing.add_what_was_typed(),
+            Act::ForgetReadings => self.forget_readings(),
+            _ => {}
+        }
+    }
+
     fn start_or_stop_sweeping(&mut self) {
-        if self.optimizing.running {
+        if let Some(run) = self.optimizing.run.as_ref() {
+            run.stop();
             self.optimizing.running = false;
             return;
         }
         self.optimizing.refused = None;
-        if self.optimizing.sweep.steps.is_empty() || self.optimizing.sweep.sets.is_empty() {
+        let by_hand = self.optimizing.way == mcf_optimize::hunt::Way::ByHand;
+        if by_hand && self.optimizing.sweep.steps.is_empty() {
             self.optimizing.refused =
-                Some("choose at least one value and one test set before running".to_owned());
+                Some("choose at least one value, or let the automatic search pick them".to_owned());
+            return;
+        }
+        if self.optimizing.sweep.sets.is_empty() {
+            self.optimizing.refused =
+                Some("choose at least one test set before running".to_owned());
             return;
         }
         let Some(hosted) = self.hosted.as_ref() else {
@@ -2841,9 +3119,87 @@ impl Desk {
                 Some("the held model is not answering on an address yet".to_owned());
             return;
         }
+        let Some(port) = port_of(&hosted.address) else {
+            self.optimizing.refused = Some(format!(
+                "the held model's address names no port: {}",
+                hosted.address
+            ));
+            return;
+        };
+        let Some(under) = self.base_for_a_sweep() else {
+            self.optimizing.refused =
+                Some("the held model's settings have not been read yet".to_owned());
+            return;
+        };
+        let Some(path) = self.ledger_path() else {
+            self.optimizing.refused = Some(
+                "MCF does not know where to write readings down, and a sweep nobody records is \
+                 one that has to be run again"
+                    .to_owned(),
+            );
+            return;
+        };
+        let ledger = match mcf_optimize::ledger::Ledger::open(&path) {
+            Ok(ledger) => ledger,
+            Err(failure) => {
+                self.optimizing.refused = Some(failure.to_string());
+                return;
+            }
+        };
+        self.optimizing.known = ledger.against(&under, self.optimizing.sweep.dial).len();
+        let course = mcf_optimize::course::Course::laid_out(
+            under.clone(),
+            self.optimizing.way,
+            self.optimizing.sweep.dial,
+            &self.optimizing.sweep.steps,
+            &self.optimizing.sweep.sets,
+            self.optimizing.sweep.repeats,
+            self.optimizing.measure,
+        );
+        let orders = mcf_optimize::running::Orders {
+            endpoint: mcf_optimize::trial::Endpoint {
+                port,
+                key: None,
+                patience: std::time::Duration::from_secs(7200),
+            },
+            under,
+            dial: self.optimizing.sweep.dial,
+            ceiling: SWEEP_CEILING,
+            thinking: None,
+            effort: None,
+        };
         self.optimizing.report = mcf_optimize::reading::Report::default();
         self.optimizing.done = 0;
+        self.optimizing.last_said = None;
+        self.optimizing.run = Some(mcf_optimize::running::Running::begun(
+            orders,
+            course,
+            ledger,
+            || mcf_core::time::Timestamp::now().to_string(),
+        ));
         self.optimizing.running = true;
+    }
+
+    pub fn hear_the_sweep(&mut self) -> bool {
+        let Some(run) = self.optimizing.run.as_mut() else {
+            return false;
+        };
+        let moved = run.hear();
+        if !moved {
+            return false;
+        }
+        self.optimizing.done = run.taken.saturating_add(run.skipped);
+        self.optimizing.known = run.skipped;
+        self.optimizing.report = run.report.clone();
+        if let Some(why) = run.refused.clone() {
+            self.optimizing.refused = Some(why);
+        }
+        if run.finished {
+            self.optimizing.last_said = Some(run.said());
+            self.optimizing.running = false;
+            self.optimizing.run = None;
+        }
+        true
     }
 
     fn dialling(&mut self, act: &Act) -> bool {
@@ -2851,8 +3207,14 @@ impl Desk {
             Act::Dial(at) => {
                 self.open = None;
                 self.optimizing.pick_dial(at);
+                self.read_the_ledger();
             }
             Act::SweepValue(at) => self.optimizing.toggle_value(at),
+            Act::SweepWay(_)
+            | Act::SweepMeasure(_)
+            | Act::CustomValue(_)
+            | Act::AddCustom
+            | Act::ForgetReadings => self.choosing_values(act),
             Act::TestSet(number) => self.optimizing.toggle_set(number),
             Act::Repeats => self.optimizing.cycle_repeats(),
             Act::Sweep => self.start_or_stop_sweeping(),
@@ -3309,10 +3671,16 @@ impl Desk {
     pub fn read_build(&mut self) {
         if let Ok(answer) = ask_within(&self.socket, &Request::Status, POLL)
             && answer.served
-            && let Some(build) = answer.body.get("build")
         {
-            let text = |key: &str| build.get(key).and_then(Value::as_text).unwrap_or_default();
-            self.daemon_build = Some(said_of(text("version"), text("revision")));
+            if let Some(build) = answer.body.get("build") {
+                let text = |key: &str| build.get(key).and_then(Value::as_text).unwrap_or_default();
+                self.daemon_build = Some(said_of(text("version"), text("revision")));
+            }
+            self.home = answer
+                .body
+                .get("home")
+                .and_then(Value::as_text)
+                .map(std::path::PathBuf::from);
         }
     }
 
@@ -3619,6 +3987,10 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         }
 
         if desk.hear() {
+            acted = true;
+        }
+
+        if desk.hear_the_sweep() {
             acted = true;
         }
 
