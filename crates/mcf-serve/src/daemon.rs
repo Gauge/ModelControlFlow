@@ -57,6 +57,25 @@ fn refuse_an_unending_request(writer: &mut &UnixStream) {
     let _shutdown = writer.shutdown(std::net::Shutdown::Read);
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct HeaderRead {
+    bytes: u64,
+    changed: Option<std::time::SystemTime>,
+    header: Option<std::sync::Arc<mcf_standin::gguf::Model>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RunsRead {
+    bytes: u64,
+    changed: Option<std::time::SystemTime>,
+    engines: usize,
+    said: Value,
+}
+
+fn how_the_file_stands(path: &std::path::Path) -> (u64, Option<std::time::SystemTime>) {
+    std::fs::metadata(path).map_or((0, None), |meta| (meta.len(), meta.modified().ok()))
+}
+
 pub(crate) fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
     use std::io::Read as _;
     let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
@@ -784,6 +803,8 @@ pub struct Daemon {
     cross_checks: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
     last_settings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
     readings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Vec<Value>>>,
+    headers: std::sync::Mutex<std::collections::BTreeMap<PathBuf, HeaderRead>>,
+    what_it_runs: std::sync::Mutex<std::collections::BTreeMap<PathBuf, RunsRead>>,
     holding: std::sync::Mutex<Option<Holding>>,
     places: Places,
     engines: std::sync::Mutex<Vec<(crate::engines::Engine, Vec<crate::engines::Device>)>>,
@@ -890,6 +911,8 @@ impl Daemon {
                 EntryKind::CrossChecked,
             )),
             readings: std::sync::Mutex::new(all_readings(&places.journal, None)),
+            headers: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            what_it_runs: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             last_settings: std::sync::Mutex::new(newest_hosted(&places.journal)),
             holding: std::sync::Mutex::new(None),
             places,
@@ -910,7 +933,16 @@ impl Daemon {
             started,
             daemon.recovered_as_value(),
         );
+        daemon.read_the_store_ahead();
         Ok(daemon)
+    }
+
+    fn read_the_store_ahead(&self) {
+        if let Ok(holding) = mcf_hub::store::held(&self.places.models) {
+            for held in holding {
+                let _warmed = self.runs(&held.path, held.bytes);
+            }
+        }
     }
 
     fn note(&self, kind: EntryKind, at: Timestamp, body: Value) -> Option<EntryId> {
@@ -1014,10 +1046,62 @@ impl Daemon {
             .engines
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = found;
+        if let Ok(mut kept) = self.what_it_runs.lock() {
+            kept.clear();
+        }
+    }
+
+    fn header_kept(&self, path: &std::path::Path) -> Option<std::sync::Arc<mcf_standin::gguf::Model>> {
+        let (size, changed) = how_the_file_stands(path);
+        if let Ok(kept) = self.headers.lock()
+            && let Some(held) = kept.get(path)
+            && held.bytes == size
+            && held.changed == changed
+        {
+            return held.header.clone();
+        }
+        let header = header_of(path).map(std::sync::Arc::new);
+        if let Ok(mut kept) = self.headers.lock() {
+            kept.insert(
+                path.to_path_buf(),
+                HeaderRead {
+                    bytes: size,
+                    changed,
+                    header: header.clone(),
+                },
+            );
+        }
+        header
     }
 
     fn runs(&self, path: &std::path::Path, bytes: u64) -> Value {
-        let Some(file) = header_of(path) else {
+        let (size, changed) = how_the_file_stands(path);
+        let engines = self.engines_held().len();
+        if let Ok(kept) = self.what_it_runs.lock()
+            && let Some(held) = kept.get(path)
+            && held.bytes == size
+            && held.changed == changed
+            && held.engines == engines
+        {
+            return held.said.clone();
+        }
+        let said = self.runs_afresh(path, bytes);
+        if let Ok(mut kept) = self.what_it_runs.lock() {
+            kept.insert(
+                path.to_path_buf(),
+                RunsRead {
+                    bytes: size,
+                    changed,
+                    engines,
+                    said: said.clone(),
+                },
+            );
+        }
+        said
+    }
+
+    fn runs_afresh(&self, path: &std::path::Path, bytes: u64) -> Value {
+        let Some(file) = self.header_kept(path) else {
             return Value::map([
                 ("known", Value::Bool(false)),
                 ("why", Value::text("MCF could not read this file's header")),
