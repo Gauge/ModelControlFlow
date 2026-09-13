@@ -2656,6 +2656,25 @@ fn configure_foot(
         }
         x += drawn.w + 12.0;
     }
+    let saved = desk
+        .last_settings
+        .as_ref()
+        .is_some_and(|(last, _)| settings.differs_from(last).is_empty());
+    let (remember, drawn) = ui::fitted(
+        paint,
+        mouse,
+        (x, y),
+        if saved {
+            "Saved"
+        } else {
+            "Save for this model"
+        },
+        Kind::Quiet,
+    );
+    if remember && !saved {
+        act = Some(Act::RememberSettings);
+    }
+    x += drawn.w + 12.0;
     let waits = desk.needs_engine.is_some();
     let too_big = held.does_not_fit.is_some();
     let (host, _) = ui::fitted(

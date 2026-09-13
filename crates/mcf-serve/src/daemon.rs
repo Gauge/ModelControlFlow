@@ -653,7 +653,10 @@ fn newest_hosted(journal: &Path) -> std::collections::BTreeMap<PathBuf, Value> {
         return newest;
     };
     for located in index.entries() {
-        if located.kind() != EntryKind::ModelHosted {
+        if !matches!(
+            located.kind(),
+            EntryKind::ModelHosted | EntryKind::ModelConfigured
+        ) {
             continue;
         }
         let Ok(entry) = index.read(located) else {
@@ -1476,6 +1479,7 @@ impl Daemon {
             | Request::Anatomy { .. }
             | Request::Removal { .. }
             | Request::Remove { .. }
+            | Request::Remember { .. }
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => None,
@@ -1675,6 +1679,7 @@ impl Daemon {
             | Request::Anatomy { .. }
             | Request::Removal { .. }
             | Request::Remove { .. }
+            | Request::Remember { .. }
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => {}
@@ -1816,6 +1821,7 @@ impl Daemon {
             ),
             Request::Settings { model } => (self.settings_for(model), None),
             Request::Anatomy { model } => (self.anatomy_of(model), None),
+            Request::Remember { model, settings } => (self.remember(model, settings), None),
             Request::Removal { model } => (self.removal(model), None),
             Request::Remove {
                 model,
@@ -2451,6 +2457,55 @@ impl Daemon {
         }
         mcf_hub::store::preview(&mcf_hub::store::the_whole_of(&path), &self.shelf())
             .map_err(|failure| Answer::refused(&failure))
+    }
+
+    fn remember(&self, named: &str, asked: &Value) -> Answer {
+        let (recommended, path) = match self.recommend(named) {
+            Ok(held) => (held.settings, held.path),
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let settings = crate::hosting::Hosting::from_value(asked, &recommended);
+        let at = Timestamp::now();
+        let recorded = self.note(
+            EntryKind::ModelConfigured,
+            at,
+            Value::map([
+                ("model", Value::text(path.display().to_string())),
+                ("settings", settings.to_value()),
+                ("recommended", recommended.to_value()),
+                (
+                    "changed",
+                    Value::List(
+                        settings
+                            .differs_from(&recommended)
+                            .into_iter()
+                            .map(Value::text)
+                            .collect(),
+                    ),
+                ),
+            ]),
+        );
+        if recorded.is_none() {
+            return Answer::refused(&crate::control::refused(
+                "a settings choice MCF could record, because one it cannot record is one it \
+                 cannot give back",
+                named,
+            ));
+        }
+        if let Ok(mut held) = self.last_settings.lock() {
+            let _replaced = held.insert(
+                path.clone(),
+                Value::map([
+                    ("settings", settings.to_value()),
+                    ("since", mcf_record::encode::timestamp(at)),
+                ]),
+            );
+        }
+        Answer::served(Value::map([
+            ("model", Value::text(path.display().to_string())),
+            ("settings", settings.to_value()),
+            ("since", Value::text(at.to_string())),
+        ]))
     }
 
     fn removal(&self, named: &str) -> Answer {

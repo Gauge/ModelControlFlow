@@ -111,6 +111,7 @@ enum Request<'a> {
     Host {
         model: &'a str,
         changes: Vec<(String, mcf_record::json::Value)>,
+        remember: bool,
     },
     Hosted,
     Unhost,
@@ -321,7 +322,11 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             needs: "<model>",
         },
         ["host", model, rest @ ..] => match host_options(rest) {
-            Ok(changes) => Request::Host { model, changes },
+            Ok((changes, remember)) => Request::Host {
+                model,
+                changes,
+                remember,
+            },
             Err(argument) => Request::UnexpectedArgument {
                 command: "host",
                 argument,
@@ -533,9 +538,18 @@ fn export(to: &std::path::Path) -> Response {
 
 type Change = (String, mcf_record::json::Value);
 
-fn host_options(rest: &[&str]) -> Result<Vec<Change>, &'static str> {
+fn thousandths(said: Option<&str>) -> Result<mcf_record::json::Value, &'static str> {
+    let held: mcf_core::configuration::Thousandths = said
+        .ok_or("a sampling setting with no value")?
+        .parse()
+        .map_err(|()| "a sampling setting whose value is not a number like 0.2")?;
+    Ok(mcf_record::json::Value::Integer(i64::from(held.0)))
+}
+
+fn host_options(rest: &[&str]) -> Result<(Vec<Change>, bool), &'static str> {
     use mcf_record::json::Value;
     let mut changes = Vec::new();
+    let mut remember = false;
     let mut at = 0;
     while at < rest.len() {
         let Some(flag) = rest.get(at) else { break };
@@ -547,13 +561,18 @@ fn host_options(rest: &[&str]) -> Result<Vec<Change>, &'static str> {
                 .map_err(|_| "a setting whose value is not a number")?;
             Ok((name.to_owned(), Value::Integer(held)))
         };
+        if *flag == "--remember" {
+            remember = true;
+            at += 1;
+            continue;
+        }
         let Some(change) = one_setting(flag, said, &number)? else {
             return Err("a setting mcf host does not take");
         };
         changes.push(change);
         at += 2;
     }
-    Ok(changes)
+    Ok((changes, remember))
 }
 
 #[allow(
@@ -701,6 +720,13 @@ fn one_setting(
         "--trained-window" => number("trained")?,
         "--lift-ceiling" => number("lift")?,
         "--thinking-budget" => number("thinking")?,
+        "--thinking-level" => (
+            "effort".to_owned(),
+            Value::text(said.ok_or("--thinking-level with no level")?),
+        ),
+        "--temperature" => ("temperature".to_owned(), thousandths(said)?),
+        "--top-p" => ("top_p".to_owned(), thousandths(said)?),
+        "--top-k" => number("top_k")?,
         _ => return Ok(None),
     }))
 }
@@ -1159,7 +1185,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Explain { model, json: false } => explain::run(model),
         Request::Explain { model, json: true } => explain::json(model),
         Request::Settings { model, at, held_as } => hosting::settings(model, *at, *held_as),
-        Request::Host { model, changes } => hosting::host(model, changes),
+        Request::Host {
+            model,
+            changes,
+            remember,
+        } => hosting::host(model, changes, *remember),
         Request::Ask {
             model,
             prompt,

@@ -1603,6 +1603,7 @@ pub enum Act {
     SetWindow(u64),
     Cycle(usize),
     Recommended,
+    RememberSettings,
     LastSettings,
     HostIt,
     Build(String),
@@ -2115,6 +2116,7 @@ impl Desk {
             }
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
+            Act::RememberSettings => self.remember_settings(),
             Act::LastSettings => {
                 if let Some((last, _)) = &self.last_settings {
                     self.settings = Some(last.clone());
@@ -2191,6 +2193,9 @@ impl Desk {
                         Some((held, since))
                     });
                 self.recommended = recommended;
+                if let Some((saved, _)) = self.last_settings.as_ref() {
+                    self.settings = Some(saved.clone());
+                }
                 self.declared = answer
                     .body
                     .get("declares")
@@ -2334,6 +2339,36 @@ impl Desk {
             .as_ref()
             .and_then(|answer| answer.body.get("last"))
             .and_then(LastHold::from_value);
+    }
+
+    pub fn remember_settings(&mut self) {
+        self.apply_edit();
+        if let Some(why) = &self.edit_refused {
+            self.host_refused = Some(why.clone());
+            return;
+        }
+        self.host_refused = None;
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            return;
+        };
+        let Some(settings) = self.settings.clone() else {
+            return;
+        };
+        let asked = Request::Remember {
+            model: held.path.clone(),
+            settings: settings.to_request(),
+        };
+        match ask(&self.socket, &asked) {
+            Ok(answer) if answer.served => {
+                self.freed = Some(format!(
+                    "Saved for {} — these settings come back the next time it is chosen",
+                    held.name
+                ));
+                self.read_settings();
+            }
+            Ok(answer) => self.host_refused = Some(refused_because(&answer.body)),
+            Err(why) => self.host_refused = Some(why),
+        }
     }
 
     pub fn host_it(&mut self) {

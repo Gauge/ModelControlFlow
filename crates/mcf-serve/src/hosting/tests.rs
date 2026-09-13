@@ -237,3 +237,46 @@ fn a_hold_asked_for_carries_its_key_and_the_record_does_not() {
         "the record's form keeps the key out"
     );
 }
+
+#[test]
+fn the_sampling_a_hold_was_given_survives_being_written_down_and_read_back() {
+    let recommended = on_a_card();
+    let mut chosen = recommended.clone();
+    chosen.started.temperature = Some(mcf_core::configuration::Thousandths(200));
+    chosen.started.top_p = Some(mcf_core::configuration::Thousandths(950));
+    chosen.started.top_k = Some(40);
+    chosen.started.effort = Some("low".to_owned());
+    let back = Hosting::from_value(&chosen.to_value(), &recommended);
+    assert_eq!(back.started.temperature, chosen.started.temperature);
+    assert_eq!(back.started.top_p, chosen.started.top_p);
+    assert_eq!(back.started.top_k, chosen.started.top_k);
+    assert_eq!(back.started.effort, chosen.started.effort);
+}
+
+#[test]
+fn sampling_a_person_chose_reaches_the_engine_on_its_command_line() {
+    let mut chosen = on_a_card();
+    chosen.started.temperature = Some(mcf_core::configuration::Thousandths(200));
+    chosen.started.top_p = Some(mcf_core::configuration::Thousandths(950));
+    chosen.started.top_k = Some(40);
+    let said = chosen.started.arguments();
+    for (flag, value) in [("--temp", "0.200"), ("--top-p", "0.950"), ("--top-k", "40")] {
+        let at = said
+            .iter()
+            .position(|held| held == flag)
+            .unwrap_or_else(|| panic!("{flag} is written: {said:?}"));
+        assert_eq!(
+            said.get(at.saturating_add(1)).map(String::as_str),
+            Some(value)
+        );
+    }
+}
+
+#[test]
+fn sampling_nobody_chose_writes_no_flags_and_leaves_the_engine_its_own() {
+    let plain = on_a_card();
+    let said = plain.started.arguments();
+    for flag in ["--temp", "--top-p", "--top-k", "--reasoning-effort"] {
+        assert!(!said.iter().any(|held| held == flag), "{flag} in {said:?}");
+    }
+}

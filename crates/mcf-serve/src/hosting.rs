@@ -1313,6 +1313,28 @@ impl Hosting {
                     .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
             ),
             (
+                "effort",
+                self.started.effort.clone().map_or(Value::Null, Value::text),
+            ),
+            (
+                "temperature",
+                self.started
+                    .temperature
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held.0))),
+            ),
+            (
+                "top_p",
+                self.started
+                    .top_p
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held.0))),
+            ),
+            (
+                "top_k",
+                self.started
+                    .top_k
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
+            ),
+            (
                 "rope_scaling",
                 self.started
                     .rope

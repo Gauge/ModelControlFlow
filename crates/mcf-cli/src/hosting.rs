@@ -27,7 +27,7 @@ pub(crate) fn settings(
     )
 }
 
-pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
+pub(crate) fn host(model: &str, changes: &[(String, Value)], remember: bool) -> Response {
     let mut changes: Vec<(String, Value)> = changes.to_vec();
     if let Some(at) = changes.iter().position(|(name, _)| name == "on") {
         let (_, wanted) = changes.remove(at);
@@ -76,6 +76,25 @@ pub(crate) fn host(model: &str, changes: &[(String, Value)]) -> Response {
                 .map(|(name, value)| (name.as_str(), value.clone())),
         )
     };
+    if remember {
+        return match ask(&Request::Remember {
+            model: model.to_owned(),
+            settings: settings.clone(),
+        }) {
+            Ok(body) => Response {
+                text: format!(
+                    "saved for {}\n  these settings are what MCF opens this model with from now \
+                     on, and `mcf host {model}` holds it under them",
+                    body.get("model").and_then(Value::as_text).unwrap_or(model)
+                ),
+                served: true,
+            },
+            Err(text) => Response {
+                text,
+                served: false,
+            },
+        };
+    }
     match hold(model, &settings) {
         Ok(body) => Response {
             text: hosting(&body),

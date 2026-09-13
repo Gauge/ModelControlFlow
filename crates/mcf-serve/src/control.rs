@@ -83,6 +83,10 @@ pub enum Request {
         model: String,
         settings: Value,
     },
+    Remember {
+        model: String,
+        settings: Value,
+    },
     Hosted,
     Unhost,
     Anatomy {
@@ -286,6 +290,11 @@ impl Request {
                 ("model", Value::text(model.clone())),
                 ("settings", settings.clone()),
             ]),
+            Self::Remember { model, settings } => Value::map([
+                ("ask", Value::text("remember")),
+                ("model", Value::text(model.clone())),
+                ("settings", settings.clone()),
+            ]),
             Self::Removal { model } => Value::map([
                 ("ask", Value::text("removal")),
                 ("model", Value::text(model.clone())),
@@ -417,6 +426,14 @@ impl Request {
                     .get("model")
                     .and_then(Value::as_text)
                     .ok_or_else(|| refused("a hosting request naming no model", line))?
+                    .to_owned(),
+                settings: value.get("settings").cloned().unwrap_or(Value::Null),
+            }),
+            Some("remember") => Ok(Self::Remember {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a settings request naming no model", line))?
                     .to_owned(),
                 settings: value.get("settings").cloned().unwrap_or(Value::Null),
             }),

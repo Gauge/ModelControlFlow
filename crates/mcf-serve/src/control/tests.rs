@@ -204,3 +204,39 @@ fn a_removal_with_no_reason_on_the_wire_reads_as_no_reason_not_as_one() {
     assert!(reason.is_empty(), "the daemon refuses it later, by name");
     assert!(!purge, "nothing is deleted unless it was asked for");
 }
+
+#[test]
+fn a_settings_choice_to_remember_survives_the_wire() {
+    let asked = Request::Remember {
+        model: "a-model.gguf".to_owned(),
+        settings: mcf_record::json::Value::map([(
+            "context",
+            mcf_record::json::Value::Integer(32_768),
+        )]),
+    };
+    let back = Request::read(&asked.to_line()).expect("a choice is readable");
+    assert_eq!(back, asked);
+}
+
+#[test]
+fn remembering_and_hosting_are_different_asks() {
+    let model = "a-model.gguf".to_owned();
+    let settings = mcf_record::json::Value::Null;
+    let remember = Request::Remember {
+        model: model.clone(),
+        settings: settings.clone(),
+    };
+    let host = Request::Host { model, settings };
+    assert_ne!(remember.to_line(), host.to_line());
+    assert!(remember.to_line().contains("\"remember\""));
+}
+
+#[test]
+fn a_choice_to_remember_naming_no_model_is_refused() {
+    let line = mcf_record::json::Value::map([
+        ("protocol", mcf_record::json::Value::Integer(1)),
+        ("ask", mcf_record::json::Value::text("remember")),
+    ])
+    .to_line();
+    assert!(Request::read(&line).is_err());
+}
