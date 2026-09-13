@@ -724,7 +724,7 @@ impl Hosting {
                 },
             },
             Setting {
-                name: "put it on",
+                name: "where it runs",
                 value: layers(self.gpu_layers),
                 recommended: layers(against.gpu_layers),
                 because: "where the model goes: the whole of it on the card is several times \
@@ -735,16 +735,19 @@ impl Hosting {
                 name: "engine",
                 value: self.engine.clone(),
                 recommended: against.engine.clone(),
-                because: "which build MCF starts. They differ in what they can compute on",
+                because: "which build of the engine MCF starts. Builds differ in what hardware \
+                          they can compute on, so this decides what a card can be used for",
             },
             Setting {
                 name: "device",
                 value: self.device.clone(),
                 recommended: against.device.clone(),
-                because: "what it runs on",
+                because: "the card or processor this hold runs on, as the engine names it. \
+                          Where a machine has more than one, this is the one the model is put \
+                          on unless the split settings say otherwise",
             },
             Setting {
-                name: "spread over",
+                name: "cards to spread over",
                 value: spread(&self.tensor_split),
                 recommended: spread(&against.tensor_split),
                 because: "a model too large for any one card is divided across several, in \
@@ -758,7 +761,7 @@ impl Hosting {
                 because: "how many processor threads the engine uses",
             },
             Setting {
-                name: "batch size",
+                name: "prompt batch",
                 value: self.batch.to_string(),
                 recommended: against.batch.to_string(),
                 because: "how many tokens of a prompt are read at once",
@@ -770,7 +773,7 @@ impl Hosting {
                 because: "an attention kernel that reads less memory for the same answer",
             },
             Setting {
-                name: "cache on the processor",
+                name: "cache in system memory",
                 value: yes_no(self.spread.cache_on_processor),
                 recommended: yes_no(against.spread.cache_on_processor),
                 because: "hold the conversation in system memory rather than on the card. \
@@ -836,7 +839,7 @@ impl Hosting {
                           a placement none of the settings above expresses",
             },
             Setting {
-                name: "reuse a prefix",
+                name: "prefix reuse",
                 value: self.reuse.cache_reuse.to_string(),
                 recommended: against.reuse.cache_reuse.to_string(),
                 because: "the smallest run of tokens the engine will recover from what it \
@@ -900,7 +903,7 @@ impl Hosting {
                 because: "how far apart those places are put",
             },
             Setting {
-                name: "kept from the front",
+                name: "tokens kept in front",
                 value: match self.reuse.keep {
                     -1 => "all of it".to_owned(),
                     held => format!("{} tokens", grouped(held.unsigned_abs())),
@@ -912,14 +915,14 @@ impl Hosting {
                 because: "how much of the opening of a conversation survives a context shift",
             },
             Setting {
-                name: "per conversation",
+                name: "window per conversation",
                 value: format!("{} tokens", grouped(self.per_conversation())),
                 recommended: format!("{} tokens", grouped(against.per_conversation())),
                 because: "the window one conversation actually gets: the whole of it on one \
                           slot, and its share where more were asked for",
             },
             Setting {
-                name: "slots",
+                name: "conversations at once",
                 value: self.slots.to_string(),
                 recommended: against.slots.to_string(),
                 because: "how many conversations the engine holds at once. The window is the \
@@ -938,15 +941,15 @@ impl Hosting {
                           engine reads it no other way",
             },
             Setting {
-                name: "keep resident",
+                name: "memory lock",
                 value: yes_no(self.keep_resident),
                 recommended: yes_no(against.keep_resident),
-                because: "hold the model's pages in memory rather than letting them page out. \
-                          This is the plain form of `loading`, and asking for it while loading \
-                          is left alone reads the file mapped and holds it",
+                because: "keep the weights in memory rather than letting the system page them \
+                          out to disk. It stops a long pause the first time a paged-out model \
+                          is asked for, and it needs the memory to be free to begin with",
             },
             Setting {
-                name: "answers",
+                name: "answer kind",
                 value: self.answers.as_str().to_owned(),
                 recommended: against.answers.as_str().to_owned(),
                 because: "what the endpoint serves. The same engine and the same file will \
@@ -961,7 +964,7 @@ impl Hosting {
                           answers embeddings",
             },
             Setting {
-                name: "named to callers as",
+                name: "name callers use",
                 value: self
                     .alias
                     .clone()
@@ -988,7 +991,7 @@ impl Hosting {
                 because: "low-rank adapters applied over the weights, each a file beside them",
             },
             Setting {
-                name: "who sizes the hold",
+                name: "who sizes it",
                 value: "MCF".to_owned(),
                 recommended: "MCF".to_owned(),
                 because: "the engine can adjust settings it was not given, to fit the devices \
@@ -997,7 +1000,7 @@ impl Hosting {
                           is how a reported figure and a real one come apart",
             },
             Setting {
-                name: "loading",
+                name: "how it loads",
                 value: self.loading.as_str().to_owned(),
                 recommended: against.loading.as_str().to_owned(),
                 because: "how the weights are read from the file: mapped, held in memory, \
@@ -1013,7 +1016,7 @@ impl Hosting {
                           rather than all held: less memory for a slower first pass",
             },
             Setting {
-                name: "batch read at once",
+                name: "micro-batch",
                 value: self.ubatch.to_string(),
                 recommended: against.ubatch.to_string(),
                 because: "how much of a batch the engine actually computes in one pass. The \
@@ -1027,6 +1030,37 @@ impl Hosting {
                 recommended: against.threads_batch.to_string(),
                 because: "how many processor threads read a prompt, which the engine counts \
                           separately from the threads that generate",
+            },
+            Setting {
+                name: "thinking budget",
+                value: self.started.thinking.map_or_else(
+                    || "unrestricted".to_owned(),
+                    |held| format!("{held} tokens"),
+                ),
+                recommended: against.started.thinking.map_or_else(
+                    || "unrestricted".to_owned(),
+                    |held| format!("{held} tokens"),
+                ),
+                because: "how many tokens a model may spend thinking before the engine closes \
+                          the thinking off and makes it answer. Zero ends it at once. This is \
+                          counted by the engine rather than asked of the model, so it holds \
+                          whatever the model would rather do — but it needs a model whose \
+                          template marks where thinking starts and ends, and does nothing for \
+                          one that has no thinking at all",
+            },
+            Setting {
+                name: "draft depth",
+                value: self.started.drafted.map_or_else(
+                    || "the engine's own".to_owned(),
+                    |held| format!("{held} tokens"),
+                ),
+                recommended: against.started.drafted.map_or_else(
+                    || "the engine's own".to_owned(),
+                    |held| format!("{held} tokens"),
+                ),
+                because: "how many tokens the draft head guesses ahead before the model checks \
+                          them. Guessing further wins more when the guesses are right and costs \
+                          more when they are wrong",
             },
             Setting {
                 name: "reachable from the network",

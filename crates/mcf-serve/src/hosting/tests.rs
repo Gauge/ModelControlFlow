@@ -77,7 +77,7 @@ fn a_setting_that_was_moved_says_so() {
     let moved = chosen.differs_from(&recommended);
     assert_eq!(moved.len(), 3, "{moved:?}");
     assert!(
-        moved.iter().any(|said| said.contains("put it on")),
+        moved.iter().any(|said| said.contains("where it runs")),
         "{moved:?}"
     );
     assert!(
@@ -97,8 +97,12 @@ fn a_setting_that_was_moved_says_so() {
     );
     let moved = shared.differs_from(&recommended);
     assert!(
-        moved.iter().any(|said| said.contains("slots"))
-            && moved.iter().any(|said| said.contains("per conversation")),
+        moved
+            .iter()
+            .any(|said| said.contains("conversations at once"))
+            && moved
+                .iter()
+                .any(|said| said.contains("window per conversation")),
         "asking for more slots divides the window and says so: {moved:?}"
     );
 }

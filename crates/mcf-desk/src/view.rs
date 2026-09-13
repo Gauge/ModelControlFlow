@@ -1782,6 +1782,28 @@ fn contents_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act
 }
 
+enum Control {
+    Pick(Picker, String),
+    Words(crate::Field, String, &'static str),
+    Number(crate::Field, String),
+    Flip(crate::Switch, bool),
+}
+
+fn a_section(paint: &mut Painter, area: Box, y: f32, heading: &str) -> f32 {
+    let ink = paint.ink;
+    let top = y + 10.0;
+    paint.rule((area.x, top), (area.right(), top), ink.line, 140);
+    paint.say_at(
+        area.x,
+        top + 10.0,
+        heading,
+        Weight::Bold,
+        size::SMALL,
+        ink.accent,
+    );
+    top + 34.0
+}
+
 struct Row {
     name: &'static str,
     because: &'static str,
@@ -1834,29 +1856,38 @@ fn configure_tab(
     let because_of = |name: &str| {
         listed
             .iter()
-            .find(|setting| setting.name == name)
+            .find(|setting| setting.name.eq_ignore_ascii_case(name))
             .map_or("", |setting| setting.because)
     };
     let recommended_for = |name: &str| {
         listed
             .iter()
-            .find(|setting| setting.name == name)
+            .find(|setting| setting.name.eq_ignore_ascii_case(name))
             .filter(|setting| setting.value != setting.recommended)
             .map(|setting| setting.recommended.clone())
     };
     let column = area.x + label_column_of(area.w, 190.0);
     let control = (area.w - 190.0).max(120.0);
     let mut act = None;
-    let mut hovered: Option<&'static str> = None;
+    let mut hovered: Option<(&'static str, f32)> = None;
     let mut menu: Option<(Picker, Box)> = None;
 
-    let label = |paint: &mut Painter, y: f32, row: Row, hovered: &mut Option<&'static str>| {
-        let hit = Box::new(area.x, y - 4.0, area.w, 26.0);
-        if mouse.over(hit) {
-            *hovered = Some(row.because);
-        }
-        paint.say_at(area.x, y, row.name, Weight::Regular, size::BODY, ink.quiet);
-    };
+    let label =
+        |paint: &mut Painter, y: f32, row: Row, hovered: &mut Option<(&'static str, f32)>| {
+            let hit = Box::new(area.x, y - 4.0, area.w, 26.0);
+            if mouse.over(hit) && !row.because.is_empty() {
+                *hovered = Some((row.because, y));
+            }
+            let over = mouse.over(hit);
+            paint.say_at(
+                area.x,
+                y,
+                row.name,
+                Weight::Regular,
+                size::BODY,
+                if over { ink.ink } else { ink.quiet },
+            );
+        };
     let recommends = |paint: &mut Painter, y: &mut f32, name: &str| {
         if let Some(was) = recommended_for(name) {
             paint.say_at(
@@ -1952,6 +1983,7 @@ fn configure_tab(
         }
         y += 34.0;
     }
+    y = a_section(paint, area, y, "The model");
     label(
         paint,
         y,
@@ -1979,11 +2011,12 @@ fn configure_tab(
     y += 34.0;
     recommends(paint, &mut y, "put it on");
 
+    y = a_section(paint, area, y, "Context and cache");
     label(
         paint,
         y,
         Row {
-            name: "Context length",
+            name: "Context window",
             because: because_of("context window"),
         },
         &mut hovered,
@@ -2039,221 +2072,257 @@ fn configure_tab(
     y += 34.0;
     recommends(paint, &mut y, "cache width");
 
-    for (name, picker, shown) in [
+    let pick = |held: Picker, shown: String| Control::Pick(held, shown);
+    let words =
+        |field: crate::Field, now: String, empty: &'static str| Control::Words(field, now, empty);
+    let number = |field: crate::Field, now: String| Control::Number(field, now);
+    let flip = |held: crate::Switch, on: bool| Control::Flip(held, on);
+    let sections: Vec<(&'static str, Vec<(&'static str, Control)>)> = vec![
         (
-            "Split mode",
-            Picker::SplitMode,
-            settings.spread.split.as_str().to_owned(),
+            "Where it runs",
+            vec![
+                (
+                    "Split mode",
+                    pick(Picker::SplitMode, settings.spread.split.as_str().to_owned()),
+                ),
+                (
+                    "Experts",
+                    pick(Picker::Experts, settings.spread.experts.said()),
+                ),
+                (
+                    "Main device",
+                    number(
+                        crate::Field::MainDevice,
+                        settings.spread.main_device.to_string(),
+                    ),
+                ),
+                (
+                    "Devices",
+                    words(
+                        crate::Field::Devices,
+                        settings.spread.devices.clone().unwrap_or_default(),
+                        "every one MCF found",
+                    ),
+                ),
+                (
+                    "Dense layers on the processor",
+                    number(
+                        crate::Field::DenseLayersOnCpu,
+                        settings.spread.ffn_layers_on_processor.to_string(),
+                    ),
+                ),
+                (
+                    "Tensors placed by hand",
+                    words(
+                        crate::Field::OverrideTensors,
+                        settings.spread.override_tensors.clone().unwrap_or_default(),
+                        "none",
+                    ),
+                ),
+                (
+                    "Cache in system memory",
+                    flip(
+                        crate::Switch::CacheOnProcessor,
+                        settings.spread.cache_on_processor,
+                    ),
+                ),
+                (
+                    "Memory lock",
+                    flip(crate::Switch::KeepResident, settings.keep_resident),
+                ),
+                (
+                    "How it loads",
+                    pick(Picker::Loading, settings.loading.as_str().to_owned()),
+                ),
+                (
+                    "Large tensors",
+                    pick(Picker::LargeTensors, settings.lazily.as_str().to_owned()),
+                ),
+            ],
         ),
-        ("Experts", Picker::Experts, settings.spread.experts.said()),
         (
-            "Answers",
-            Picker::Answers,
-            settings.answers.as_str().to_owned(),
+            "Speed",
+            vec![
+                (
+                    "Prompt batch",
+                    number(crate::Field::Batch, settings.batch.to_string()),
+                ),
+                (
+                    "Micro-batch",
+                    number(crate::Field::Ubatch, settings.ubatch.to_string()),
+                ),
+                (
+                    "Threads",
+                    number(crate::Field::Threads, settings.threads.to_string()),
+                ),
+                (
+                    "Threads for reading a prompt",
+                    number(
+                        crate::Field::ThreadsBatch,
+                        settings.threads_batch.to_string(),
+                    ),
+                ),
+                (
+                    "Flash attention",
+                    flip(crate::Switch::FlashAttention, settings.flash_attention),
+                ),
+            ],
         ),
         (
-            "Pooling",
-            Picker::Pooling,
-            settings.pooling.as_str().to_owned(),
+            "Thinking",
+            vec![
+                (
+                    "Thinking budget",
+                    number(
+                        crate::Field::ThinkingBudget,
+                        settings
+                            .started
+                            .thinking
+                            .map_or_else(String::new, |held| held.to_string()),
+                    ),
+                ),
+                (
+                    "Draft depth",
+                    number(
+                        crate::Field::DraftDepth,
+                        settings
+                            .started
+                            .drafted
+                            .map_or_else(String::new, |held| held.to_string()),
+                    ),
+                ),
+            ],
         ),
         (
-            "Loading",
-            Picker::Loading,
-            settings.loading.as_str().to_owned(),
+            "Reuse between messages",
+            vec![
+                (
+                    "Prompt cache",
+                    flip(crate::Switch::PromptCache, settings.reuse.prompt_cache),
+                ),
+                (
+                    "Prompt cache memory",
+                    number(
+                        crate::Field::PromptCacheMib,
+                        settings.reuse.prompt_cache_mib.to_string(),
+                    ),
+                ),
+                (
+                    "Prefix reuse",
+                    number(
+                        crate::Field::CacheReuse,
+                        settings.reuse.cache_reuse.to_string(),
+                    ),
+                ),
+                (
+                    "Keep idle slots",
+                    flip(crate::Switch::IdleSlots, settings.reuse.idle_slots),
+                ),
+                (
+                    "Checkpoints",
+                    number(
+                        crate::Field::Checkpoints,
+                        settings.reuse.checkpoints.to_string(),
+                    ),
+                ),
+                (
+                    "Checkpoint spacing",
+                    number(
+                        crate::Field::CheckpointSpacing,
+                        settings.reuse.checkpoint_min_step.to_string(),
+                    ),
+                ),
+                (
+                    "Context shift",
+                    flip(crate::Switch::ContextShift, settings.reuse.context_shift),
+                ),
+                (
+                    "Tokens kept in front",
+                    number(crate::Field::Keep, settings.reuse.keep.to_string()),
+                ),
+            ],
         ),
         (
-            "Large tensors",
-            Picker::LargeTensors,
-            settings.lazily.as_str().to_owned(),
+            "Serving",
+            vec![
+                (
+                    "Name callers use",
+                    words(
+                        crate::Field::Alias,
+                        settings.alias.clone().unwrap_or_default(),
+                        "its file, without the suffix",
+                    ),
+                ),
+                (
+                    "Conversations at once",
+                    number(crate::Field::Slots, settings.slots.to_string()),
+                ),
+                (
+                    "Port",
+                    number(crate::Field::Port, settings.port.to_string()),
+                ),
+                (
+                    "Reachable from the network",
+                    flip(crate::Switch::Open, settings.open),
+                ),
+                (
+                    "Answer kind",
+                    pick(Picker::Answers, settings.answers.as_str().to_owned()),
+                ),
+                (
+                    "Pooling",
+                    pick(Picker::Pooling, settings.pooling.as_str().to_owned()),
+                ),
+            ],
         ),
-    ] {
-        label(
-            paint,
-            y,
-            Row {
-                name,
-                because: because_of(name),
-            },
-            &mut hovered,
-        );
-        let box_of = Box::new(column, y - 6.0, 210.0, 28.0);
-        let open = desk.open == Some(picker);
-        if ui::picker(paint, mouse, box_of, &shown, open) {
-            act = Some(Act::Open(picker));
+    ];
+    for (heading, rows) in sections {
+        y = a_section(paint, area, y, heading);
+        for (name, control) in rows {
+            label(
+                paint,
+                y,
+                Row {
+                    name,
+                    because: because_of(name),
+                },
+                &mut hovered,
+            );
+            match control {
+                Control::Pick(picker, shown) => {
+                    let box_of = Box::new(column, y - 6.0, 210.0, 28.0);
+                    let open = desk.open == Some(picker);
+                    if ui::picker(paint, mouse, box_of, &shown, open) {
+                        act = Some(Act::Open(picker));
+                    }
+                    if open {
+                        menu = Some((picker, box_of));
+                    }
+                }
+                Control::Words(field, now, empty) => {
+                    let (touched, _) = typed_in(paint, mouse, y, field, now, empty);
+                    if touched != ui::Touched::No {
+                        act = Some(Act::Edit(field, touched));
+                    }
+                }
+                Control::Number(field, now) => {
+                    let (touched, _) = typed_in(paint, mouse, y, field, now, "");
+                    if touched != ui::Touched::No {
+                        act = Some(Act::Edit(field, touched));
+                    }
+                }
+                Control::Flip(which, on) => {
+                    if switch(paint, mouse, y, on) {
+                        act = Some(Act::Switch(which));
+                    }
+                }
+            }
+            y += 34.0;
+            recommends(paint, &mut y, name);
         }
-        if open {
-            menu = Some((picker, box_of));
-        }
-        y += 34.0;
-        recommends(paint, &mut y, name);
     }
 
-    for (name, field, now, empty) in [
-        (
-            "Named to callers as",
-            crate::Field::Alias,
-            settings.alias.clone().unwrap_or_default(),
-            "its file, without the suffix",
-        ),
-        (
-            "Devices",
-            crate::Field::Devices,
-            settings.spread.devices.clone().unwrap_or_default(),
-            "every one MCF found",
-        ),
-        (
-            "Tensors placed by hand",
-            crate::Field::OverrideTensors,
-            settings.spread.override_tensors.clone().unwrap_or_default(),
-            "none",
-        ),
-    ] {
-        label(
-            paint,
-            y,
-            Row {
-                name,
-                because: because_of(name),
-            },
-            &mut hovered,
-        );
-        let (touched, _) = typed_in(paint, mouse, y, field, now, empty);
-        if touched != ui::Touched::No {
-            act = Some(Act::Edit(field, touched));
-        }
-        y += 34.0;
-        recommends(paint, &mut y, name);
-    }
-
-    for (name, field, now) in [
-        (
-            "Threads",
-            crate::Field::Threads,
-            settings.threads.to_string(),
-        ),
-        (
-            "Batch size",
-            crate::Field::Batch,
-            settings.batch.to_string(),
-        ),
-        (
-            "Batch read at once",
-            crate::Field::Ubatch,
-            settings.ubatch.to_string(),
-        ),
-        (
-            "Threads for reading a prompt",
-            crate::Field::ThreadsBatch,
-            settings.threads_batch.to_string(),
-        ),
-        ("Slots", crate::Field::Slots, settings.slots.to_string()),
-        (
-            "Dense layers on the processor",
-            crate::Field::DenseLayersOnCpu,
-            settings.spread.ffn_layers_on_processor.to_string(),
-        ),
-        (
-            "Main device",
-            crate::Field::MainDevice,
-            settings.spread.main_device.to_string(),
-        ),
-        (
-            "Reuse a prefix",
-            crate::Field::CacheReuse,
-            settings.reuse.cache_reuse.to_string(),
-        ),
-        (
-            "Prompt cache memory",
-            crate::Field::PromptCacheMib,
-            settings.reuse.prompt_cache_mib.to_string(),
-        ),
-        (
-            "Checkpoints",
-            crate::Field::Checkpoints,
-            settings.reuse.checkpoints.to_string(),
-        ),
-        (
-            "Checkpoint spacing",
-            crate::Field::CheckpointSpacing,
-            settings.reuse.checkpoint_min_step.to_string(),
-        ),
-        (
-            "Kept from the front",
-            crate::Field::Keep,
-            settings.reuse.keep.to_string(),
-        ),
-        ("Port", crate::Field::Port, settings.port.to_string()),
-    ] {
-        label(
-            paint,
-            y,
-            Row {
-                name,
-                because: because_of(name),
-            },
-            &mut hovered,
-        );
-        let (touched, _) = typed_in(paint, mouse, y, field, now, "");
-        if touched != ui::Touched::No {
-            act = Some(Act::Edit(field, touched));
-        }
-        y += 34.0;
-        recommends(paint, &mut y, name);
-    }
-
-    for (name, which, on) in [
-        (
-            "Cache on the processor",
-            crate::Switch::CacheOnProcessor,
-            settings.spread.cache_on_processor,
-        ),
-        (
-            "Prompt cache",
-            crate::Switch::PromptCache,
-            settings.reuse.prompt_cache,
-        ),
-        (
-            "Keep idle slots",
-            crate::Switch::IdleSlots,
-            settings.reuse.idle_slots,
-        ),
-        (
-            "Context shift",
-            crate::Switch::ContextShift,
-            settings.reuse.context_shift,
-        ),
-        (
-            "Flash attention",
-            crate::Switch::FlashAttention,
-            settings.flash_attention,
-        ),
-        (
-            "Memory lock",
-            crate::Switch::KeepResident,
-            settings.keep_resident,
-        ),
-        (
-            "Reachable from the network",
-            crate::Switch::Open,
-            settings.open,
-        ),
-    ] {
-        label(
-            paint,
-            y,
-            Row {
-                name,
-                because: because_of(name),
-            },
-            &mut hovered,
-        );
-        if switch(paint, mouse, y, on) {
-            act = Some(Act::Switch(which));
-        }
-        y += 30.0;
-        recommends(paint, &mut y, name);
-    }
-
+    y = a_section(paint, area, y, "Keys and extras");
     label(
         paint,
         y,
@@ -2313,6 +2382,7 @@ fn configure_tab(
         ),
     }
     y += 30.0;
+    y = a_section(paint, area, y, "Stretching the context");
     label(
         paint,
         y,
@@ -2422,10 +2492,12 @@ fn configure_tab(
         Box::new(area.x, y, area.w, area.bottom() - y),
         held,
         settings,
-        hovered,
     );
     if let Some(pressed) = pressed {
         act = Some(pressed);
+    }
+    if let Some((because, at)) = hovered {
+        an_info_box(paint, Box::new(area.x, at, area.w, 0.0), because);
     }
     if let Some((picker, at)) = menu
         && let Some(picked) = configure_menu(paint, desk, mouse, picker, at)
@@ -2435,6 +2507,24 @@ fn configure_tab(
     act
 }
 
+fn an_info_box(paint: &mut Painter, beside: Box, because: &str) {
+    let ink = paint.ink;
+    let wide = beside.w.clamp(200.0, 380.0);
+    let lines = paint.wrap(because, Weight::Regular, size::SMALL, wide - 24.0);
+    let shown: Vec<&String> = lines.iter().take(6).collect();
+    let tall = 16.0 + 15.0 * shown.len() as f32;
+    let left = (beside.x + beside.w - wide).max(beside.x);
+    let top = beside.y + 22.0;
+    let where_ = Box::new(left, top, wide, tall);
+    paint.wash(Box::new(left + 2.0, top + 3.0, wide, tall), ink.sunk, 120);
+    paint.edge(where_, ui::RADIUS, ink.accent, ink.card);
+    let mut y = top + 9.0;
+    for line in shown {
+        paint.say_at(left + 12.0, y, line, Weight::Regular, size::SMALL, ink.ink);
+        y += 15.0;
+    }
+}
+
 fn configure_foot(
     paint: &mut Painter,
     desk: &Desk,
@@ -2442,24 +2532,10 @@ fn configure_foot(
     area: Box,
     held: &Model,
     settings: &mcf_serve::hosting::Hosting,
-    hovered: Option<&'static str>,
 ) -> (Option<Act>, f32) {
     let ink = paint.ink;
     let mut y = area.y + 6.0;
     let mut act = None;
-    if let Some(because) = hovered {
-        for line in paint
-            .wrap(because, Weight::Regular, size::SMALL, area.w)
-            .iter()
-            .take(2)
-        {
-            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.quiet);
-            y += 16.0;
-        }
-    } else {
-        y += 16.0;
-    }
-    y += 6.0;
     if let Some((said, fits)) = crate::will_take(held, settings, &desk.placements) {
         let shown = paint.elide(&said, Weight::Bold, size::BODY, area.w);
         paint.say_at(

@@ -1493,6 +1493,8 @@ pub enum Field {
     Port,
     ApiKey,
     RopeFactor,
+    ThinkingBudget,
+    DraftDepth,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3597,6 +3599,14 @@ impl Desk {
                 .started
                 .factor
                 .map_or_else(String::new, |factor| factor.to_string()),
+            Field::ThinkingBudget => settings
+                .started
+                .thinking
+                .map_or_else(String::new, |held| held.to_string()),
+            Field::DraftDepth => settings
+                .started
+                .drafted
+                .map_or_else(String::new, |held| held.to_string()),
         };
         self.editing = Some((field, crate::typing::Typing::of(now)));
         self.touch(touched);
@@ -3743,6 +3753,39 @@ impl Desk {
                             None
                         }
                         _ => not_a_number("the rope factor"),
+                    }
+                }
+            }
+            Field::ThinkingBudget => {
+                if typed.is_empty() {
+                    settings.started.thinking = None;
+                    None
+                } else {
+                    match typed.parse::<u32>() {
+                        Ok(budget) => {
+                            settings.started.thinking = Some(budget);
+                            None
+                        }
+                        Err(_) => not_a_number("the thinking budget"),
+                    }
+                }
+            }
+            Field::DraftDepth => {
+                if typed.is_empty() {
+                    settings.started.drafted = None;
+                    None
+                } else {
+                    match typed.parse::<u32>() {
+                        Ok(depth) if depth >= 1 => {
+                            settings.started.drafted = Some(depth);
+                            None
+                        }
+                        Ok(_) => Some(
+                            "a draft depth of nothing is the draft head turned off, which is \
+                             the switch above"
+                                .to_owned(),
+                        ),
+                        Err(_) => not_a_number("the draft depth"),
                     }
                 }
             }
