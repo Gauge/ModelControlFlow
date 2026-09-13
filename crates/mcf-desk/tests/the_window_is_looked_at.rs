@@ -764,7 +764,7 @@ fn the_price_of_a_window_is_shown_where_it_is_chosen() {
     unpriced.models[0].cache_per_token = None;
     unpriced.models[0].cache_elements_per_token = None;
 
-    let tall = (1180, 1900);
+    let tall = (1180, 3600);
     let with = drawn_sized(&priced, DAY, "window-priced", tall);
     let without = drawn_sized(&unpriced, DAY, "window-unpriced", tall);
     if with.width < 2 || without.width < 2 {

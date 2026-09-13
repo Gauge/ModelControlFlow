@@ -276,10 +276,20 @@ fn the_corpus_the_tab_offers_is_the_whole_sixty_four() {
 }
 
 fn dial_at(desk: &Desk, wanted: Dial) -> usize {
-    desk.dials_worth_offering()
+    desk.dials_offered()
         .iter()
         .position(|dial| *dial == wanted)
         .unwrap_or(0)
+}
+
+fn reading_no_level() -> Desk {
+    let mut desk = desk();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template("{{ messages }}<think>a</think>"),
+        draft_head: Some(1),
+        ..mcf_serve::declared::Declared::default()
+    });
+    desk
 }
 
 fn reading_a_level() -> Desk {
@@ -364,18 +374,93 @@ fn every_dial_offered_is_one_the_engine_enforces() {
 }
 
 #[test]
-fn a_model_whose_template_reads_no_level_is_not_offered_one() {
-    let desk = desk();
+fn every_dial_is_offered_whatever_the_model_is() {
+    for held in [desk(), reading_a_level()] {
+        assert_eq!(
+            held.dials_offered().len(),
+            Dial::ALL.len(),
+            "a setting that is missing looks like a setting MCF does not have; one that is \
+             there and says why it cannot run tells you something about the model"
+        );
+    }
+}
+
+#[test]
+fn a_model_that_reads_no_level_says_why_the_dial_would_do_nothing() {
+    let desk = reading_no_level();
+    let why = desk
+        .why_the_dial_does_nothing(Dial::ThinkingLevel)
+        .unwrap_or_default();
+    assert!(why.contains("reads no thinking level"), "{why}");
+}
+
+#[test]
+fn a_model_that_reads_a_level_has_nothing_to_explain() {
+    let desk = reading_a_level();
     assert!(
-        !desk.dials_worth_offering().contains(&Dial::ThinkingLevel),
-        "setting a level on a model that never reads it would change nothing at all"
+        desk.why_the_dial_does_nothing(Dial::ThinkingLevel)
+            .is_none()
     );
 }
 
 #[test]
+fn a_sweep_of_a_dial_that_would_do_nothing_is_refused_before_a_model_is_held() {
+    let mut desk = reading_no_level();
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
+    desk.act(Act::Sweep);
+    assert!(!desk.optimizing.running);
+    let why = desk.optimizing.refused.clone().unwrap_or_default();
+    assert!(
+        why.contains("never looks at it"),
+        "the refusal says what is wrong with the model rather than with the request: {why}"
+    );
+}
+
+#[test]
+fn a_budget_is_refused_for_a_model_whose_template_marks_no_thinking() {
+    let mut desk = desk();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template("{{ messages }}"),
+        ..mcf_serve::declared::Declared::default()
+    });
+    let why = desk
+        .why_the_dial_does_nothing(Dial::ThinkingBudget)
+        .unwrap_or_default();
+    assert!(
+        why.contains("nothing to count"),
+        "the engine builds no budget sampler without a thinking section: {why}"
+    );
+}
+
+#[test]
+fn a_budget_is_offered_for_a_model_that_does_mark_its_thinking() {
+    let mut desk = desk();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template("<think>a</think>"),
+        ..mcf_serve::declared::Declared::default()
+    });
+    assert!(
+        desk.why_the_dial_does_nothing(Dial::ThinkingBudget)
+            .is_none()
+    );
+}
+
+#[test]
+fn a_draft_depth_is_refused_for_a_file_that_carries_no_draft_head() {
+    let mut desk = reading_no_level();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template("<think>a</think>"),
+        ..mcf_serve::declared::Declared::default()
+    });
+    let why = desk
+        .why_the_dial_does_nothing(Dial::DraftDepth)
+        .unwrap_or_default();
+    assert!(why.contains("no draft head"), "{why}");
+}
+#[test]
 fn a_model_whose_template_reads_a_level_is_offered_it() {
     let desk = reading_a_level();
-    assert!(desk.dials_worth_offering().contains(&Dial::ThinkingLevel));
+    assert!(desk.dials_offered().contains(&Dial::ThinkingLevel));
     assert_eq!(
         desk.levels_of_the_model(),
         vec![
@@ -433,16 +518,18 @@ fn a_level_this_model_does_not_take_is_refused_even_though_another_model_would()
 }
 
 #[test]
-fn moving_to_a_model_that_reads_no_level_moves_off_the_level_dial() {
+fn the_level_dial_stays_chosen_even_when_a_model_cannot_use_it() {
     let mut desk = reading_a_level();
     desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
     assert_eq!(desk.optimizing.sweep.dial, Dial::ThinkingLevel);
     desk.declared = Some(mcf_serve::declared::Declared::default());
     desk.optimizing.named = desk.levels_of_the_model();
-    assert!(
-        !desk.dials_worth_offering().contains(&Dial::ThinkingLevel),
-        "the new model reads no level, so the dial is not among those offered"
+    assert_eq!(
+        desk.optimizing.sweep.dial,
+        Dial::ThinkingLevel,
+        "moving to another model must not silently pick a different setting to measure"
     );
+    assert!(desk.dials_offered().contains(&Dial::ThinkingLevel));
 }
 
 #[test]

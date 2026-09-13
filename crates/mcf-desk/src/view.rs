@@ -1039,19 +1039,25 @@ fn model_page(
 
 fn section(paint: &mut Painter, area: Box, y: f32, title: &str, because: &str) -> f32 {
     let ink = paint.ink;
-    paint.say_at(area.x, y, title, Weight::Bold, size::BODY, ink.ink);
-    let titled = paint.measure(title, Weight::Bold, size::BODY);
-    let room = area.w - titled - 18.0;
-    let shown = paint.elide(because, Weight::Regular, size::SMALL, room.max(20.0));
+    let below = a_section(paint, area, y, title);
+    if because.is_empty() {
+        return below;
+    }
+    let shown = paint.elide(
+        because,
+        Weight::Regular,
+        size::SMALL,
+        (area.w - 20.0).max(40.0),
+    );
     paint.say_at(
-        area.x + titled + 12.0,
-        y + 2.0,
+        area.x,
+        below - 6.0,
         &shown,
         Weight::Regular,
         size::SMALL,
         ink.faint,
     );
-    y + 26.0
+    below + 14.0
 }
 
 fn chips(
@@ -1249,10 +1255,18 @@ fn setting_to_optimize(
         "Setting to optimize",
         "one dial moves, everything above stays where it is",
     );
-    let offered = desk.dials_worth_offering();
+    let offered = desk.dials_offered();
     let dials: Vec<(String, bool)> = offered
         .iter()
-        .map(|dial| (dial.label().to_owned(), *dial == desk.optimizing.sweep.dial))
+        .map(|dial| {
+            let idle = desk.why_the_dial_does_nothing(*dial).is_some();
+            let label = if idle {
+                format!("{} ·", dial.label())
+            } else {
+                dial.label().to_owned()
+            };
+            (label, *dial == desk.optimizing.sweep.dial)
+        })
         .collect();
     let (below, picked) = chips(paint, mouse, area, y, &dials);
     if let Some(at) = picked {
@@ -1260,7 +1274,9 @@ fn setting_to_optimize(
     }
     y = below;
     let dial = desk.optimizing.sweep.dial;
-    let how = if dial.is_named_by_the_model() {
+    let how = if let Some(why) = desk.why_the_dial_does_nothing(dial) {
+        why
+    } else if dial.is_named_by_the_model() {
         desk.declared
             .as_ref()
             .map_or_else(String::new, |held| held.thinking.said())
@@ -1275,8 +1291,16 @@ fn setting_to_optimize(
             dial.field().unwrap_or("")
         )
     };
+    let idle = desk.why_the_dial_does_nothing(dial).is_some();
     for line in paint.wrap(&how, Weight::Regular, size::SMALL, area.w - 20.0) {
-        paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
+        paint.say_at(
+            area.x,
+            y,
+            &line,
+            Weight::Regular,
+            size::SMALL,
+            if idle { ink.warn } else { ink.faint },
+        );
         y += 16.0;
     }
     y += 10.0;
@@ -1446,7 +1470,10 @@ fn run_row(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, y: f32) -
     } else {
         "Run sweep".to_owned()
     };
-    let kind = if desk.optimizing.running {
+    let idle = desk
+        .why_the_dial_does_nothing(desk.optimizing.sweep.dial)
+        .is_some();
+    let kind = if desk.optimizing.running || idle {
         Kind::Ordinary
     } else {
         Kind::Primary
@@ -1783,6 +1810,7 @@ fn contents_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
 }
 
 enum Control {
+    Idle(String),
     Pick(Picker, String),
     Words(crate::Field, String, &'static str),
     Number(crate::Field, String),
@@ -2182,6 +2210,24 @@ fn configure_tab(
                     ),
                 ),
                 (
+                    "Thinking level",
+                    if desk.levels_of_the_model().is_empty() {
+                        Control::Idle(
+                            "this model's template reads no level, so one would change nothing"
+                                .to_owned(),
+                        )
+                    } else {
+                        pick(
+                            Picker::ThinkingLevel,
+                            settings
+                                .started
+                                .effort
+                                .clone()
+                                .unwrap_or_else(|| "the model's own".to_owned()),
+                        )
+                    },
+                ),
+                (
                     "Draft depth",
                     number(
                         crate::Field::DraftDepth,
@@ -2278,7 +2324,7 @@ fn configure_tab(
     ];
     for (heading, rows) in sections {
         y = a_section(paint, area, y, heading);
-        for (name, control) in rows {
+        for (name, shape) in rows {
             label(
                 paint,
                 y,
@@ -2288,7 +2334,11 @@ fn configure_tab(
                 },
                 &mut hovered,
             );
-            match control {
+            match shape {
+                Control::Idle(said) => {
+                    let shown = paint.elide(&said, Weight::Regular, size::SMALL, control - 8.0);
+                    paint.say_at(column, y, &shown, Weight::Regular, size::SMALL, ink.faint);
+                }
                 Control::Pick(picker, shown) => {
                     let box_of = Box::new(column, y - 6.0, 210.0, 28.0);
                     let open = desk.open == Some(picker);

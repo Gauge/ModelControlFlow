@@ -2193,12 +2193,6 @@ impl Desk {
                     .get("declares")
                     .map(mcf_serve::declared::Declared::from_value);
                 self.optimizing.named = self.levels_of_the_model();
-                if self.optimizing.sweep.dial.is_named_by_the_model()
-                    && self.optimizing.named.is_empty()
-                {
-                    self.optimizing
-                        .pick_dial_among(0, &self.dials_worth_offering());
-                }
                 self.placements = answer
                     .body
                     .get("placements")
@@ -3172,12 +3166,40 @@ impl Desk {
     }
 
     #[must_use]
-    pub fn dials_worth_offering(&self) -> Vec<mcf_optimize::dial::Dial> {
-        let levels = self.levels_of_the_model();
-        mcf_optimize::dial::Dial::ALL
-            .into_iter()
-            .filter(|dial| !dial.is_named_by_the_model() || !levels.is_empty())
-            .collect()
+    pub fn dials_offered(&self) -> Vec<mcf_optimize::dial::Dial> {
+        mcf_optimize::dial::Dial::ALL.into_iter().collect()
+    }
+
+    /// Why this dial would change nothing for the model in front of us, if it would not.
+    #[must_use]
+    pub fn why_the_dial_does_nothing(&self, dial: mcf_optimize::dial::Dial) -> Option<String> {
+        let thinking = self.declared.as_ref().map(|held| &held.thinking)?;
+        match dial {
+            mcf_optimize::dial::Dial::ThinkingLevel if thinking.levels.is_empty() => Some(
+                "this model's chat template reads no thinking level, so asking for one would \
+                 put a word in front of a model that never looks at it"
+                    .to_owned(),
+            ),
+            mcf_optimize::dial::Dial::ThinkingBudget if !thinking.section => Some(
+                "this model's chat template marks no thinking section, so the engine has \
+                 nothing to count and nothing to cut off — a budget would be written down and \
+                 never applied"
+                    .to_owned(),
+            ),
+            mcf_optimize::dial::Dial::DraftDepth
+                if self
+                    .declared
+                    .as_ref()
+                    .is_none_or(|held| held.draft_head.is_none()) =>
+            {
+                Some(
+                    "this model file carries no draft head, so there is nothing to draft ahead \
+                     with"
+                        .to_owned(),
+                )
+            }
+            _ => None,
+        }
     }
 
     #[must_use]
@@ -3300,6 +3322,10 @@ impl Desk {
             return;
         }
         self.optimizing.refused = None;
+        if let Some(why) = self.why_the_dial_does_nothing(self.optimizing.sweep.dial) {
+            self.optimizing.refused = Some(why);
+            return;
+        }
         let by_hand = self.optimizing.way == mcf_optimize::hunt::Way::ByHand;
         if exactly.is_none() && by_hand && self.optimizing.sweep.steps.is_empty() {
             self.optimizing.refused =
@@ -3417,7 +3443,7 @@ impl Desk {
         match *act {
             Act::Dial(at) => {
                 self.open = None;
-                let offered = self.dials_worth_offering();
+                let offered = self.dials_offered();
                 let levels = self.levels_of_the_model();
                 self.optimizing.pick_dial_among(at, &offered);
                 if self.optimizing.sweep.dial.is_named_by_the_model() {
