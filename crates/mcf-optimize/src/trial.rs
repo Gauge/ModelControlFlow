@@ -15,6 +15,12 @@ const READ_AT_A_TIME: usize = 8192;
 const CHECKED_EVERY: usize = 200;
 const KEPT_OF_THE_REPLY: usize = 4096;
 
+/// What a speed trial asks for. It is never read: only the tokens that come back are.
+pub const TO_BE_TIMED: &str =
+    "Count upwards from one, one number a line, and keep going without stopping.";
+
+pub const TOKENS_TIMED: u32 = 2048;
+
 #[derive(Debug, Clone)]
 pub struct Endpoint {
     pub port: u16,
@@ -40,6 +46,7 @@ pub struct Asked {
     pub repeat: u8,
     pub ceiling: u32,
     pub named: Vec<String>,
+    pub timing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,13 +64,23 @@ pub fn body(asked: &Asked) -> Value {
             "messages",
             Value::List(vec![Value::map([
                 ("role", Value::text("user")),
-                ("content", Value::text(asked.set.asked())),
+                (
+                    "content",
+                    Value::text(if asked.timing {
+                        TO_BE_TIMED.to_owned()
+                    } else {
+                        asked.set.asked()
+                    }),
+                ),
             ])]),
         ),
         ("max_tokens", Value::Integer(i64::from(asked.ceiling))),
         ("stream", Value::Bool(true)),
         ("cache_prompt", Value::Bool(false)),
     ];
+    if asked.timing {
+        fields.push(("ignore_eos", Value::Bool(true)));
+    }
     if let Some(field) = asked.dial.field() {
         if asked.dial.is_named_by_the_model() {
             let said = asked.dial.said_among(asked.step, &asked.named);
@@ -183,9 +200,10 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
             };
             produced = produced.saturating_add(1);
             answer.push_str(&piece);
-            let time_to_look = produced
-                .checked_rem(u64::try_from(CHECKED_EVERY).unwrap_or(1))
-                .is_some_and(|left| left == 0);
+            let time_to_look = !asked.timing
+                && produced
+                    .checked_rem(u64::try_from(CHECKED_EVERY).unwrap_or(1))
+                    .is_some_and(|left| left == 0);
             if let Some(found) = (time_to_look && answer.len() > 1500)
                 .then(|| looping(&answer))
                 .flatten()
@@ -196,7 +214,10 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
             }
         }
     }
-    if ending == Ending::Answered && produced >= u64::from(asked.ceiling).saturating_sub(4) {
+    if !asked.timing
+        && ending == Ending::Answered
+        && produced >= u64::from(asked.ceiling).saturating_sub(4)
+    {
         ending = Ending::Filled;
     }
     if produced == 0 {

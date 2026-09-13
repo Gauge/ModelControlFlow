@@ -680,3 +680,49 @@ fn forgetting_a_row_while_a_sweep_is_going_says_why_it_will_not() {
         "taking a reading out from under a sweep that is reading it would be a mess: {why}"
     );
 }
+
+#[test]
+fn choosing_a_setting_that_only_changes_speed_ranks_by_speed() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::MicroBatch)));
+    assert_eq!(
+        desk.optimizing.measure,
+        mcf_optimize::reading::Measure::Speed,
+        "a micro-batch cannot change an answer, so correctness has nothing to say"
+    );
+    assert_eq!(
+        desk.optimizing.sweep.sets,
+        vec![1],
+        "and the tasks are not run at all, so eight sets of them is eight times nothing"
+    );
+    assert_eq!(desk.optimizing.sweep.repeats, 1);
+}
+
+#[test]
+fn asking_for_correctness_on_a_speed_setting_is_refused_with_the_reason() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::MicroBatch)));
+    let correctness = mcf_optimize::reading::Measure::ALL
+        .iter()
+        .position(|held| *held == mcf_optimize::reading::Measure::Correctness)
+        .unwrap_or(0);
+    desk.act(Act::SweepMeasure(correctness));
+    assert_eq!(
+        desk.optimizing.measure,
+        mcf_optimize::reading::Measure::Speed,
+        "it stays where it was"
+    );
+    let why = desk.optimizing.refused.clone().unwrap_or_default();
+    assert!(why.contains("only how fast"), "{why}");
+}
+
+#[test]
+fn choosing_a_setting_that_changes_answers_leaves_the_ranking_alone() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingBudget)));
+    assert_eq!(
+        desk.optimizing.measure,
+        mcf_optimize::reading::Measure::Correctness
+    );
+    assert_eq!(desk.optimizing.sweep.sets.len(), 8);
+}

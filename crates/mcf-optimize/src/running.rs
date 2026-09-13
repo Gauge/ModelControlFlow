@@ -190,8 +190,13 @@ fn sweeping(mut doing: Doing) {
             dial: doing.dial,
             step: spot.step,
             repeat: spot.repeat,
-            ceiling: doing.ceiling,
+            ceiling: if doing.dial.only_changes_speed() {
+                crate::trial::TOKENS_TIMED
+            } else {
+                doing.ceiling
+            },
             named: doing.named.clone(),
+            timing: doing.dial.only_changes_speed(),
         };
         let began = Instant::now();
         let said = match answered(&mut doing, &asked, spot.step) {
@@ -204,7 +209,8 @@ fn sweeping(mut doing: Doing) {
         };
         held_at = Some(spot.step);
         let milliseconds = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let (judged, unmarked) = judged_by(doing.mark, &doing.room, spot, &asked.set.tasks, &said);
+        let marking = doing.mark && !doing.dial.only_changes_speed();
+        let (judged, unmarked) = judged_by(marking, &doing.room, spot, &asked.set.tasks, &said);
         if let Some(why) = unmarked
             && doing.send.send(Heard::Stopped(why)).is_err()
         {

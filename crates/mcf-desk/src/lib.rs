@@ -597,6 +597,14 @@ impl Optimizing {
     }
 
     pub fn pick_measure(&mut self, at: usize) {
+        if self.sweep.dial.only_changes_speed() {
+            self.refused = Some(format!(
+                "{} cannot change what a model answers, only how fast it answers it, so there \
+                 is nothing for correctness to say about it",
+                self.sweep.dial.label()
+            ));
+            return;
+        }
         if let Some(measure) = mcf_optimize::reading::Measure::ALL.get(at) {
             self.measure = *measure;
             self.refused = None;
@@ -3469,6 +3477,18 @@ impl Desk {
                 self.optimizing.measure,
             ),
         };
+        self.begin(under, course, ledger, model, settings, &path);
+    }
+
+    fn begin(
+        &mut self,
+        under: mcf_optimize::ledger::Under,
+        course: mcf_optimize::course::Course,
+        ledger: mcf_optimize::ledger::Ledger,
+        model: String,
+        settings: mcf_serve::hosting::Hosting,
+        path: &std::path::Path,
+    ) {
         let orders = mcf_optimize::running::Orders {
             endpoint: mcf_optimize::trial::Endpoint {
                 port: 0,
@@ -3479,7 +3499,8 @@ impl Desk {
             dial: self.optimizing.sweep.dial,
             ceiling: SWEEP_CEILING,
             named: self.levels_of_the_model(),
-            mark: self.optimizing.measure.needs_the_answers_run(),
+            mark: self.optimizing.measure.needs_the_answers_run()
+                && !self.optimizing.sweep.dial.only_changes_speed(),
             ready_within: HOLDING_PATIENCE,
             room: path
                 .parent()
@@ -3530,6 +3551,11 @@ impl Desk {
                 let offered = self.dials_offered();
                 let levels = self.levels_of_the_model();
                 self.optimizing.pick_dial_among(at, &offered);
+                if self.optimizing.sweep.dial.only_changes_speed() {
+                    self.optimizing.measure = mcf_optimize::reading::Measure::Speed;
+                    self.optimizing.sweep.sets = vec![1];
+                    self.optimizing.sweep.repeats = 1;
+                }
                 if self.optimizing.sweep.dial.is_named_by_the_model() {
                     self.optimizing.way = mcf_optimize::hunt::Way::ByHand;
                     self.optimizing.sweep.steps = (0..levels.len())

@@ -145,6 +145,14 @@ impl Dial {
         }
     }
 
+    /// A setting that cannot change what a model answers, only how fast it answers it.
+    /// A micro-batch changes how the prompt is fed through, and a draft head's guesses are
+    /// checked against the model itself, so both leave the tokens identical.
+    #[must_use]
+    pub const fn only_changes_speed(self) -> bool {
+        matches!(self, Self::MicroBatch | Self::DraftDepth)
+    }
+
     #[must_use]
     pub const fn is_named_by_the_model(self) -> bool {
         matches!(self, Self::ThinkingLevel)

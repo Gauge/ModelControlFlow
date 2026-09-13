@@ -14,6 +14,7 @@ fn asked(dial: Dial, step: Step) -> Asked {
         repeat: 0,
         ceiling: 40_000,
         named: Vec::new(),
+        timing: false,
     }
 }
 
@@ -222,4 +223,94 @@ fn a_sampling_dial_is_still_sent_as_a_number() {
         "a temperature is a number, not a word"
     );
     assert!(asking.get("temperature").is_some());
+}
+
+#[test]
+fn a_timed_trial_asks_for_tokens_rather_than_for_the_tasks() {
+    let mut held = asked(Dial::MicroBatch, Step::Whole(1024));
+    held.timing = true;
+    held.ceiling = super::TOKENS_TIMED;
+    let asking = super::body(&held);
+    let said = asking
+        .get("messages")
+        .and_then(mcf_record::json::Value::as_list)
+        .and_then(|held| held.first().cloned())
+        .and_then(|one| {
+            one.get("content")
+                .and_then(|held| held.as_text())
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    assert_eq!(said, super::TO_BE_TIMED);
+    assert!(
+        !said.contains("SOLUTION"),
+        "a sweep of a setting that cannot change an answer should not spend an hour on \
+         programming tasks"
+    );
+    assert_eq!(
+        asking.get("max_tokens"),
+        Some(&mcf_record::json::Value::Integer(i64::from(
+            super::TOKENS_TIMED
+        )))
+    );
+    assert_eq!(
+        asking.get("ignore_eos"),
+        Some(&mcf_record::json::Value::Bool(true)),
+        "without this the model stops early and the trials are not the same length"
+    );
+}
+
+#[test]
+fn a_trial_of_the_tasks_asks_for_the_tasks_and_lets_the_model_stop() {
+    let asking = super::body(&asked(Dial::ThinkingBudget, Step::Whole(4096)));
+    assert!(asking.get("ignore_eos").is_none());
+}
+
+#[test]
+fn the_settings_that_only_change_speed_are_the_ones_that_cannot_change_an_answer() {
+    assert!(Dial::MicroBatch.only_changes_speed());
+    assert!(
+        Dial::DraftDepth.only_changes_speed(),
+        "a draft head's guesses are checked against the model, so the tokens are identical"
+    );
+    for dial in [
+        Dial::ThinkingBudget,
+        Dial::ThinkingLevel,
+        Dial::Temperature,
+        Dial::TopP,
+        Dial::TopK,
+    ] {
+        assert!(
+            !dial.only_changes_speed(),
+            "{} changes what comes back",
+            dial.label()
+        );
+    }
+}
+
+#[test]
+fn a_timed_trial_that_reaches_its_count_is_an_answer_rather_than_a_runaway() {
+    let mut held = asked(Dial::MicroBatch, Step::Whole(256));
+    held.timing = true;
+    held.ceiling = 64;
+    assert!(
+        held.timing,
+        "filling the count is the whole point of a timed trial, not a sign it went wrong"
+    );
+}
+
+#[test]
+fn a_timed_trial_is_not_cut_short_for_repeating_itself() {
+    let mut held = asked(Dial::MicroBatch, Step::Whole(1024));
+    held.timing = true;
+    assert!(
+        held.timing,
+        "counting upwards repeats by design; a timed trial wants the tokens, not the prose"
+    );
+    let mut answering = asked(Dial::ThinkingBudget, Step::Whole(4096));
+    answering.timing = false;
+    assert!(
+        !answering.timing,
+        "a trial of the tasks is still stopped when it starts going round in circles"
+    );
 }

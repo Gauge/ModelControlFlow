@@ -1276,6 +1276,13 @@ fn setting_to_optimize(
     let dial = desk.optimizing.sweep.dial;
     let how = if let Some(why) = desk.why_the_dial_does_nothing(dial) {
         why
+    } else if dial.only_changes_speed() {
+        format!(
+            "{} cannot change what a model answers, only how fast — so a trial asks for {} \
+             tokens and times them rather than running the tasks.",
+            dial.flag().unwrap_or(dial.label()),
+            mcf_optimize::trial::TOKENS_TIMED
+        )
     } else if dial.is_named_by_the_model() {
         desk.declared
             .as_ref()
@@ -1774,9 +1781,11 @@ fn optimize_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     let (below, picked) = setting_to_optimize(paint, desk, mouse, area, y);
     act = act.or(picked);
     y = below;
-    let (below, picked) = test_set(paint, desk, mouse, area, y);
-    act = act.or(picked);
-    y = below;
+    if !desk.optimizing.sweep.dial.only_changes_speed() {
+        let (below, picked) = test_set(paint, desk, mouse, area, y);
+        act = act.or(picked);
+        y = below;
+    }
     act.or(sweep_report(paint, desk, mouse, area, y))
 }
 
