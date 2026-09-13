@@ -413,3 +413,82 @@ fn a_search_by_hand_that_simply_ran_out_says_nothing_about_settling() {
         "a list of values that has been worked through is not a search that gave up"
     );
 }
+
+#[test]
+fn a_course_over_chosen_readings_runs_those_and_nothing_beside_them() {
+    let scratch = Scratch::new("exactly");
+    let ledger = scratch.ledger();
+    let wanted = vec![
+        At {
+            dial: Dial::MicroBatch,
+            step: Step::Whole(256),
+            set: 3,
+            repeat: 2,
+        },
+        At {
+            dial: Dial::MicroBatch,
+            step: Step::Whole(1024),
+            set: 7,
+            repeat: 1,
+        },
+    ];
+    let mut course = Course::over(under(), &wanted, Measure::Speed);
+    let mut report = Report::default();
+    let taken = drain(&mut course, &ledger, &mut report);
+    assert_eq!(
+        taken, wanted,
+        "picking one take of one set is a request for that take of that set, not for every \
+         take up to it"
+    );
+    assert!(course.is_exactly());
+}
+
+#[test]
+fn a_course_over_chosen_readings_never_opens_a_round_of_its_own() {
+    let scratch = Scratch::new("exactly-no-hunt");
+    let ledger = scratch.ledger();
+    let wanted = vec![At {
+        dial: Dial::MicroBatch,
+        step: Step::Whole(256),
+        set: 1,
+        repeat: 1,
+    }];
+    let mut course = Course::over(under(), &wanted, Measure::Speed);
+    let mut report = Report::default();
+    let taken = drain(&mut course, &ledger, &mut report);
+    assert_eq!(taken.len(), 1);
+    assert_eq!(
+        course.laid(),
+        1,
+        "one reading asked for is one trial laid out"
+    );
+}
+
+#[test]
+fn a_chosen_reading_still_in_the_record_is_skipped_rather_than_run_twice() {
+    let scratch = Scratch::new("exactly-known");
+    let mut ledger = scratch.ledger();
+    let spot = At {
+        dial: Dial::MicroBatch,
+        step: Step::Whole(256),
+        set: 1,
+        repeat: 1,
+    };
+    ledger
+        .record(
+            &under(),
+            spot,
+            &reading(Step::Whole(256), 1, 1, 4),
+            "before",
+        )
+        .expect("written");
+    let mut course = Course::over(under(), &[spot], Measure::Speed);
+    let mut report = Report::default();
+    let taken = drain(&mut course, &ledger, &mut report);
+    assert!(
+        taken.is_empty(),
+        "forgetting the old reading is what makes a rerun a rerun; the course does not \
+         second-guess the record"
+    );
+    assert_eq!(course.skipped(), 1);
+}

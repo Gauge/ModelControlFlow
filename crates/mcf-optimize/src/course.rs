@@ -19,6 +19,7 @@ pub struct Course {
     repeats: u8,
     measure: Measure,
     stopped: Option<String>,
+    exactly: Option<Vec<At>>,
     at: usize,
     handed: Vec<At>,
     taken: usize,
@@ -53,11 +54,24 @@ impl Course {
             repeats: repeats.max(1),
             measure,
             stopped: None,
+            exactly: None,
             at: 0,
             handed: Vec::new(),
             taken: 0,
             skipped: 0,
         }
+    }
+
+    #[must_use]
+    pub fn over(under: Under, spots: &[At], measure: Measure) -> Self {
+        let mut held = Self::laid_out(under, Way::ByHand, Dial::default(), &[], &[], 1, measure);
+        held.exactly = Some(spots.to_vec());
+        held
+    }
+
+    #[must_use]
+    pub fn is_exactly(&self) -> bool {
+        self.exactly.is_some()
     }
 
     #[must_use]
@@ -114,6 +128,9 @@ impl Course {
 
     #[must_use]
     pub fn laid(&self) -> usize {
+        if let Some(exactly) = self.exactly.as_ref() {
+            return exactly.len();
+        }
         self.steps
             .len()
             .saturating_mul(self.sets.len())
@@ -131,6 +148,9 @@ impl Course {
     }
 
     fn spot(&self, at: usize, dial: Dial) -> Option<At> {
+        if let Some(exactly) = self.exactly.as_ref() {
+            return exactly.get(at).copied();
+        }
         let per_step = self.sets.len().saturating_mul(usize::from(self.repeats));
         if per_step == 0 {
             return None;
@@ -174,6 +194,9 @@ impl Course {
     }
 
     fn open_another_round(&mut self, dial: Dial, ledger: &Ledger, report: &Report) -> bool {
+        if self.exactly.is_some() {
+            return false;
+        }
         let measure = self.measure;
         let Some(hunt) = self.hunt.as_mut() else {
             return false;
@@ -214,6 +237,13 @@ impl Course {
 
     #[must_use]
     pub fn said(&self) -> String {
+        if let Some(exactly) = self.exactly.as_ref() {
+            return format!(
+                "running {} chosen reading(s) again — {} taken",
+                exactly.len(),
+                self.taken
+            );
+        }
         let way = self.way.short();
         match self.hunt.as_ref() {
             Some(hunt) => format!(

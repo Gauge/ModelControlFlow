@@ -326,30 +326,23 @@ fn several_rows_can_be_picked_at_once() {
 }
 
 #[test]
-fn running_the_picked_rows_again_asks_for_exactly_those_values_sets_and_repeats() {
+fn running_picked_readings_again_leaves_the_sweep_alone() {
     let mut desk = desk();
-    for spot in [a_spot(0, 3, 1), a_spot(8192, 1, 2), a_spot(0, 1, 1)] {
+    let steps = desk.optimizing.sweep.steps.clone();
+    let sets = desk.optimizing.sweep.sets.clone();
+    let repeats = desk.optimizing.sweep.repeats;
+    for spot in [a_spot(0, 3, 1), a_spot(8192, 1, 2)] {
         desk.act(Act::PickRow(spot));
     }
     desk.act(Act::RerunPicked);
     assert_eq!(
-        desk.optimizing.sweep.steps,
-        vec![Step::Whole(0), Step::Whole(8192)],
-        "each value once, in order"
+        desk.optimizing.sweep.steps, steps,
+        "running two readings again is not a new sweep, and must not rewrite the one set up"
     );
-    assert_eq!(desk.optimizing.sweep.sets, vec![1, 3]);
-    assert_eq!(desk.optimizing.sweep.repeats, 2);
-    assert_eq!(
-        desk.optimizing.way,
-        mcf_optimize::hunt::Way::ByHand,
-        "picking rows is choosing values by hand"
-    );
-    assert!(
-        desk.optimizing.picked.is_empty(),
-        "the picks are spent once they are acted on"
-    );
+    assert_eq!(desk.optimizing.sweep.sets, sets);
+    assert_eq!(desk.optimizing.sweep.repeats, repeats);
+    assert!(desk.optimizing.picked.is_empty());
 }
-
 #[test]
 fn running_nothing_again_does_nothing() {
     let mut desk = desk();
@@ -465,5 +458,52 @@ fn the_level_a_sweep_sends_is_the_word_and_the_record_keeps_the_word_too() {
         Dial::ThinkingLevel.read_among("LOW", &named),
         Some(Step::Whole(1)),
         "and typing it back in capitals finds the same level"
+    );
+}
+
+#[test]
+fn opening_the_tab_reads_what_was_already_measured() {
+    let mut desk = desk();
+    desk.optimizing.rows.push(mcf_optimize::ledger::Row {
+        recorded: "before".to_owned(),
+        under: mcf_optimize::ledger::Under::default(),
+        at: a_spot(4096, 1, 1),
+        reading: mcf_optimize::reading::Reading {
+            dial: Dial::ThinkingBudget,
+            step: Step::Whole(4096),
+            set: 1,
+            repeat: 1,
+            passed: 4,
+            of: 8,
+            produced: 10,
+            milliseconds: 10,
+            ending: mcf_optimize::reading::Ending::Answered,
+            per_task: Vec::new(),
+        },
+    });
+    desk.act(Act::Tab(mcf_desk::Tab::Optimize));
+    assert!(
+        desk.optimizing.rows.is_empty(),
+        "opening the tab goes back to the record rather than showing whatever was left over"
+    );
+}
+
+#[test]
+fn running_one_picked_reading_again_asks_for_that_take_of_that_set_only() {
+    let mut desk = desk();
+    desk.act(Act::PickRow(a_spot(8192, 5, 3)));
+    desk.act(Act::RerunPicked);
+    assert!(
+        desk.optimizing.picked.is_empty(),
+        "the pick is spent once it has been acted on"
+    );
+    assert_eq!(
+        desk.optimizing.sweep.repeats, 1,
+        "picking take three of set five must not quietly ask for takes one and two as well"
+    );
+    assert_eq!(
+        desk.optimizing.sweep.sets,
+        (1..=8).collect::<Vec<usize>>(),
+        "an exact rerun does not narrow the sweep to the set that was picked"
     );
 }

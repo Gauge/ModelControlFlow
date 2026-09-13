@@ -1158,6 +1158,7 @@ pub enum Picker {
     Placement,
     Rope,
     Quantization,
+    ThinkingLevel,
     Architecture,
     Fits,
     Size,
@@ -1584,6 +1585,7 @@ pub enum Act {
     Switch(Switch),
     Place(usize),
     Rope(usize),
+    ThinkingLevel(usize),
     Cache(usize),
     SplitMode(usize),
     Loading(usize),
@@ -2071,6 +2073,7 @@ impl Desk {
             | Act::Switch(_)
             | Act::Place(_)
             | Act::Rope(_)
+            | Act::ThinkingLevel(_)
             | Act::Cache(_)
             | Act::SplitMode(_)
             | Act::Loading(_)
@@ -2202,6 +2205,7 @@ impl Desk {
                     .and_then(Value::as_list)
                     .map(|listed| listed.iter().filter_map(Placement::from_value).collect())
                     .unwrap_or_default();
+                self.read_the_ledger();
             }
             Ok(answer) => {
                 self.no_settings = Some(refused_because(&answer.body));
@@ -3263,28 +3267,13 @@ impl Desk {
             return;
         }
         let picked = self.optimizing.picked.clone();
-        let mut steps: Vec<mcf_optimize::dial::Step> = picked.iter().map(|at| at.step).collect();
-        steps.sort_by_key(|step| match *step {
-            mcf_optimize::dial::Step::Whole(held) | mcf_optimize::dial::Step::Thousandths(held) => {
-                held
-            }
-        });
-        steps.dedup();
-        let mut sets: Vec<usize> = picked.iter().map(|at| at.set).collect();
-        sets.sort_unstable();
-        sets.dedup();
-        let repeats = picked.iter().map(|at| at.repeat).max().unwrap_or(1);
-        self.optimizing.way = mcf_optimize::hunt::Way::ByHand;
-        self.optimizing.sweep.steps = steps;
-        self.optimizing.sweep.sets = sets;
-        self.optimizing.sweep.repeats = repeats;
         self.optimizing.picked.clear();
         if let Some(why) = self.forget_these(&picked) {
             self.optimizing.refused = Some(why);
             return;
         }
         self.read_the_ledger();
-        self.start_or_stop_sweeping();
+        self.sweeping_over(Some(&picked));
     }
 
     fn forget_these(&mut self, picked: &[mcf_optimize::ledger::At]) -> Option<String> {
@@ -3301,6 +3290,10 @@ impl Desk {
     }
 
     fn start_or_stop_sweeping(&mut self) {
+        self.sweeping_over(None);
+    }
+
+    fn sweeping_over(&mut self, exactly: Option<&[mcf_optimize::ledger::At]>) {
         if let Some(run) = self.optimizing.run.as_ref() {
             run.stop();
             self.optimizing.running = false;
@@ -3308,12 +3301,12 @@ impl Desk {
         }
         self.optimizing.refused = None;
         let by_hand = self.optimizing.way == mcf_optimize::hunt::Way::ByHand;
-        if by_hand && self.optimizing.sweep.steps.is_empty() {
+        if exactly.is_none() && by_hand && self.optimizing.sweep.steps.is_empty() {
             self.optimizing.refused =
                 Some("choose at least one value, or let the automatic search pick them".to_owned());
             return;
         }
-        if self.optimizing.sweep.sets.is_empty() {
+        if exactly.is_none() && self.optimizing.sweep.sets.is_empty() {
             self.optimizing.refused =
                 Some("choose at least one test set before running".to_owned());
             return;
@@ -3352,15 +3345,20 @@ impl Desk {
             }
         };
         self.optimizing.known = ledger.against(&under, self.optimizing.sweep.dial).len();
-        let course = mcf_optimize::course::Course::laid_out(
-            under.clone(),
-            self.optimizing.way,
-            self.optimizing.sweep.dial,
-            &self.optimizing.sweep.steps,
-            &self.optimizing.sweep.sets,
-            self.optimizing.sweep.repeats,
-            self.optimizing.measure,
-        );
+        let course = match exactly {
+            Some(spots) => {
+                mcf_optimize::course::Course::over(under.clone(), spots, self.optimizing.measure)
+            }
+            None => mcf_optimize::course::Course::laid_out(
+                under.clone(),
+                self.optimizing.way,
+                self.optimizing.sweep.dial,
+                &self.optimizing.sweep.steps,
+                &self.optimizing.sweep.sets,
+                self.optimizing.sweep.repeats,
+                self.optimizing.measure,
+            ),
+        };
         let orders = mcf_optimize::running::Orders {
             endpoint: mcf_optimize::trial::Endpoint {
                 port: 0,
@@ -3448,19 +3446,32 @@ impl Desk {
         true
     }
 
+    fn open_the_tab(&mut self, tab: Tab) {
+        self.apply_edit();
+        self.tab = tab;
+        self.open = None;
+        if tab == Tab::Contents && self.anatomy.is_none() {
+            self.read_anatomy();
+        }
+        if tab == Tab::Optimize {
+            self.read_the_ledger();
+        }
+    }
+
+    fn pick_a_level(&mut self, at: usize) {
+        self.open = None;
+        let named = self.levels_of_the_model();
+        if let Some(settings) = self.settings.as_mut() {
+            settings.started.effort = at.checked_sub(1).and_then(|at| named.get(at)).cloned();
+        }
+    }
+
     fn configure(&mut self, act: &Act) {
         if self.dialling(act) {
             return;
         }
         match *act {
-            Act::Tab(tab) => {
-                self.apply_edit();
-                self.tab = tab;
-                self.open = None;
-                if tab == Tab::Contents && self.anatomy.is_none() {
-                    self.read_anatomy();
-                }
-            }
+            Act::Tab(tab) => self.open_the_tab(tab),
             Act::Edit(field, touched) => self.edit(field, touched),
             Act::Switch(switch) => {
                 self.apply_edit();
@@ -3537,6 +3548,7 @@ impl Desk {
                 }
                 self.open = None;
             }
+            Act::ThinkingLevel(at) => self.pick_a_level(at),
             Act::Rope(at) => {
                 self.apply_edit();
                 if let Some(settings) = self.settings.as_mut() {

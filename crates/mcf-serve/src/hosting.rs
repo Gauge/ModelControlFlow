@@ -1049,6 +1049,23 @@ impl Hosting {
                           one that has no thinking at all",
             },
             Setting {
+                name: "thinking level",
+                value: self
+                    .started
+                    .effort
+                    .clone()
+                    .unwrap_or_else(|| "the model's own".to_owned()),
+                recommended: against
+                    .started
+                    .effort
+                    .clone()
+                    .unwrap_or_else(|| "the model's own".to_owned()),
+                because: "how hard to ask the model to think. This is a word MCF puts in the \
+                          prompt through the model's own template, so it is a request rather \
+                          than a cap the engine enforces, and the words on offer are the ones \
+                          that model's template accepts",
+            },
+            Setting {
                 name: "draft depth",
                 value: self.started.drafted.map_or_else(
                     || "the engine's own".to_owned(),

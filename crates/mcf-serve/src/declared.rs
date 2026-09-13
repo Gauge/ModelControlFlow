@@ -167,6 +167,7 @@ pub struct Started {
     pub lift: Option<u64>,
     pub architecture: Option<String>,
     pub thinking: Option<u32>,
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,6 +208,7 @@ impl Started {
             || self.trained.is_some()
             || self.lift.is_some()
             || self.thinking.is_some()
+            || self.effort.is_some()
     }
 
     #[must_use]
@@ -218,6 +220,7 @@ impl Started {
             && self.trained == other.trained
             && self.lift == other.lift
             && self.thinking == other.thinking
+            && self.effort == other.effort
     }
 
     #[must_use]
@@ -250,6 +253,10 @@ impl Started {
         if let Some(thinking) = self.thinking {
             out.push("--reasoning-budget".to_owned());
             out.push(thinking.to_string());
+        }
+        if let Some(effort) = &self.effort {
+            out.push("--reasoning-effort".to_owned());
+            out.push(effort.clone());
         }
         out
     }
@@ -333,6 +340,12 @@ impl Started {
                     .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
             ),
             (
+                "effort",
+                self.effort
+                    .as_ref()
+                    .map_or(Value::Null, |held| Value::text(held.clone())),
+            ),
+            (
                 "window",
                 self.window.map_or(Value::Null, |window| {
                     Value::Integer(i64::try_from(window).unwrap_or(i64::MAX))
@@ -371,6 +384,10 @@ impl Started {
                 .and_then(|held| u64::try_from(held).ok()),
             architecture: value
                 .get("architecture")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
+            effort: value
+                .get("effort")
                 .and_then(Value::as_text)
                 .map(str::to_owned),
             thinking: value

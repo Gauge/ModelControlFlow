@@ -2718,6 +2718,19 @@ fn configure_menu(
             });
             ui::options(paint, mouse, at, &labels, now).map(Act::Cache)
         }
+        Picker::ThinkingLevel => {
+            let mut labels = vec!["the model's own".to_owned()];
+            labels.extend(desk.levels_of_the_model());
+            let now = desk.settings.as_ref().map(|settings| {
+                settings.started.effort.as_ref().map_or(0, |held| {
+                    desk.levels_of_the_model()
+                        .iter()
+                        .position(|named| named == held)
+                        .map_or(0, |at| at.saturating_add(1))
+                })
+            });
+            ui::options(paint, mouse, at, &labels, now).map(Act::ThinkingLevel)
+        }
         Picker::Rope => {
             let labels: Vec<String> = (0..crate::ROPE_CHOICES.len())
                 .map(|at| rope_label(at).to_owned())
@@ -3431,6 +3444,7 @@ fn open_menu(
         }
         Picker::Placement
         | Picker::Rope
+        | Picker::ThinkingLevel
         | Picker::Cache
         | Picker::SplitMode
         | Picker::Loading

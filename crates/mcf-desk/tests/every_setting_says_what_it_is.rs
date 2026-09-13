@@ -27,6 +27,7 @@ const SHOWN: &[&str] = &[
     "Threads for reading a prompt",
     "Flash attention",
     "Thinking budget",
+    "Thinking level",
     "Draft depth",
     "Prompt cache",
     "Prompt cache memory",
@@ -124,4 +125,43 @@ fn a_setting_named_in_the_window_matches_the_one_the_record_names() {
             "{name:?} is drawn by the window and known to nothing else"
         );
     }
+}
+
+#[test]
+fn the_thinking_level_is_a_setting_a_person_can_choose_before_hosting() {
+    let because = because_of("Thinking level").expect("the level explains itself");
+    assert!(
+        because.contains("request") || because.contains("template"),
+        "the level is asked of the model rather than enforced, and saying so is the point: \
+         {because}"
+    );
+}
+
+#[test]
+fn the_level_reaches_the_engine_as_a_flag_of_its_own() {
+    let started = mcf_serve::declared::Started {
+        effort: Some("high".to_owned()),
+        ..mcf_serve::declared::Started::default()
+    };
+    let said = started.arguments();
+    let at = said
+        .iter()
+        .position(|held| held == "--reasoning-effort")
+        .expect("the flag is written");
+    assert_eq!(
+        said.get(at.saturating_add(1)).map(String::as_str),
+        Some("high")
+    );
+}
+
+#[test]
+fn no_level_asked_for_means_no_flag_written() {
+    let started = mcf_serve::declared::Started::default();
+    assert!(
+        !started
+            .arguments()
+            .iter()
+            .any(|held| held == "--reasoning-effort"),
+        "leaving it alone leaves the model's own default alone"
+    );
 }
