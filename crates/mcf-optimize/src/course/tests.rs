@@ -222,9 +222,7 @@ fn an_automatic_course_opens_where_its_setting_says_to_start() {
     );
     assert_eq!(
         climbing.steps(),
-        vec![Step::Whole(
-            Dial::MicroBatch.climbs_from().unwrap_or_default()
-        )],
+        vec![Step::Whole(Dial::MicroBatch.climbs_from())],
         "a setting that climbs opens on one rung and doubles from there"
     );
     assert!(climbing.hunt().is_some());
@@ -240,8 +238,8 @@ fn an_automatic_course_opens_where_its_setting_says_to_start() {
     );
     assert_eq!(
         laddered.steps(),
-        Dial::TopK.coarse(),
-        "one that does not climb opens on the ends of its span and the middle"
+        vec![Step::Whole(Dial::TopK.climbs_from())],
+        "and so does every other setting, from wherever it is off"
     );
     let _unused = scratch.at();
 }

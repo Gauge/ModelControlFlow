@@ -92,42 +92,46 @@ fn each_dial_suggests_values_of_its_own_kind() {
 }
 
 #[test]
-fn every_dial_offers_a_coarse_ladder_inside_its_own_span() {
+fn every_dial_starts_its_climb_inside_its_own_span() {
     for dial in Dial::ALL {
         let span = dial.span();
-        let coarse = dial.coarse();
+        let from = dial.climbs_from();
         assert!(
-            coarse.len() >= 3,
-            "{} offers too few coarse points to halve between",
+            span.holds(from),
+            "{} starts climbing at {from}, outside its own span",
             dial.label()
         );
-        for step in &coarse {
-            let value = match *step {
-                Step::Whole(held) | Step::Thousandths(held) => held,
-            };
-            assert!(
-                span.holds(value),
-                "{} offers {value}, outside its own span",
-                dial.label()
-            );
-        }
     }
 }
 
 #[test]
-fn a_coarse_ladder_is_ordered_and_has_no_repeats() {
+fn a_climb_goes_up_every_rung_and_stops_at_the_top() {
     for dial in Dial::ALL {
-        let values: Vec<u32> = dial
-            .coarse()
-            .iter()
-            .map(|step| match *step {
-                Step::Whole(held) | Step::Thousandths(held) => held,
-            })
-            .collect();
-        let mut sorted = values.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(values, sorted, "{} repeats or misorders", dial.label());
+        let span = dial.span();
+        let mut at = dial.climbs_from();
+        let mut rungs = 1;
+        while at < span.ceiling {
+            let next = dial.climbs_to(at);
+            assert!(
+                next > at,
+                "{} does not get above {at}, so a climb would stand still there",
+                dial.label()
+            );
+            assert!(
+                span.holds(next),
+                "{} climbs from {at} to {next}, outside its own span",
+                dial.label()
+            );
+            at = next;
+            rungs += 1;
+            assert!(rungs < 64, "{} never reaches its ceiling", dial.label());
+        }
+        assert_eq!(
+            at,
+            span.ceiling,
+            "{} climbs to {at} and stops short of its own ceiling",
+            dial.label()
+        );
     }
 }
 
@@ -140,11 +144,11 @@ fn a_step_carries_the_scale_its_dial_reads_in() {
             Scale::Thousandths => assert!(made.thousandths().is_some()),
         }
         assert!(
-            dial.coarse().iter().all(|step| matches!(
-                (step, made),
+            matches!(
+                (dial.step_of(dial.climbs_from()), made),
                 (Step::Whole(_), Step::Whole(_)) | (Step::Thousandths(_), Step::Thousandths(_))
-            )),
-            "{} mixes scales within one ladder",
+            ),
+            "{} mixes scales within one search",
             dial.label()
         );
     }

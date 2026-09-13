@@ -72,50 +72,37 @@ impl Dial {
             Self::Temperature => Span::new(0, 1000, 25),
             Self::TopP => Span::new(500, 1000, 10),
             Self::TopK => Span::new(0, 200, 5),
-            Self::MicroBatch => Span::new(64, 8192, 256),
+            Self::MicroBatch => Span::new(64, 32_768, 256),
             Self::DraftDepth => Span::new(0, 8, 1),
         }
     }
 
-    /// Where an automatic search starts climbing, for a setting whose useful values are
-    /// spread over powers of two. A search of one of these starts small and doubles, and
-    /// only closes in once a value comes back worse than the one below it: doubling covers
-    /// the whole span in a handful of trials, and until something gets worse there is no
-    /// reason to believe the best is anywhere but further up.
-    ///
-    /// Nothing for a setting whose span is a short run of numbers, or one where the value
-    /// that turns it off sits at the bottom and would be climbed straight past. Those start
-    /// on the ladder below instead.
+    /// Where an automatic search starts climbing. The bottom of the span for most
+    /// settings, so that the value which turns the setting off is the first thing tried;
+    /// a micro-batch starts higher, because a pass smaller than this is slower than it is
+    /// worth holding the model again to measure.
     #[must_use]
-    pub const fn climbs_from(self) -> Option<u32> {
+    pub const fn climbs_from(self) -> u32 {
         match self {
-            Self::MicroBatch => Some(256),
+            Self::MicroBatch => 256,
             Self::ThinkingBudget
             | Self::ThinkingLevel
             | Self::Temperature
             | Self::TopP
             | Self::TopK
-            | Self::DraftDepth => None,
+            | Self::DraftDepth => self.span().floor,
         }
     }
 
-    /// Where an automatic search starts when it does not climb: the two ends of the span
-    /// and the middle of it, and nothing else. Three readings say which end of the span is
-    /// worth having, which is all a first round is for — the halving that follows spends
-    /// its trials near whichever one won rather than on a grid laid out before anything
-    /// was known.
+    /// The rung above this one. Doubling, except from nothing, where there is nothing to
+    /// double and the finest step the setting takes is the next thing up.
     #[must_use]
-    pub fn coarse(self) -> Vec<Step> {
-        let held: &[u32] = match self {
-            Self::ThinkingBudget => &[0, 16_384, 32_768],
-            Self::ThinkingLevel => &[0, 1, 2],
-            Self::Temperature => &[0, 500, 1000],
-            Self::TopP => &[500, 750, 1000],
-            Self::TopK => &[0, 100, 200],
-            Self::MicroBatch => &[256, 2048, 8192],
-            Self::DraftDepth => &[0, 4, 8],
-        };
-        held.iter().map(|held| self.step_of(*held)).collect()
+    pub fn climbs_to(self, from: u32) -> u32 {
+        let span = self.span();
+        if from == 0 {
+            return span.clamped(span.finest);
+        }
+        span.clamped(from.saturating_mul(2))
     }
 
     #[must_use]

@@ -60,24 +60,13 @@ pub struct Hunt {
 impl Hunt {
     #[must_use]
     pub fn started(dial: Dial) -> Self {
-        if let Some(from) = dial.climbs_from() {
-            return Self {
-                dial,
-                phase: Phase::Climbing,
-                gap: dial.span().finest,
-                round: 1,
-                asked: vec![dial.span().clamped(from)],
-                settled: false,
-            };
-        }
-        let coarse = values_of(&dial.coarse());
-        let gap = widest_gap(&coarse).max(dial.span().finest);
+        let span = dial.span();
         Self {
             dial,
-            phase: Phase::Closing,
-            gap,
+            phase: Phase::Climbing,
+            gap: span.finest,
             round: 1,
-            asked: coarse,
+            asked: vec![span.clamped(dial.climbs_from())],
             settled: false,
         }
     }
@@ -122,7 +111,7 @@ impl Hunt {
 
     /// What to run next, given everything measured so far. While it is climbing that is the
     /// last value doubled, until one comes back worse than the one below it; from then on it
-    /// is whatever sits half a gap either side of the best.
+    /// is the halfway point between the best and each of the two values beside it.
     pub fn stepped_on(
         &mut self,
         best: Step,
@@ -137,13 +126,6 @@ impl Hunt {
                 return self.climbed();
             }
             self.phase = Phase::Closing;
-            self.gap = self
-                .asked
-                .last()
-                .copied()
-                .unwrap_or(0)
-                .saturating_sub(one_value(best))
-                .max(self.dial.span().finest);
         }
         self.closed_in_on(best, already)
     }
@@ -171,15 +153,13 @@ impl Hunt {
         score_of(highest).is_none_or(|now| now < before)
     }
 
-    /// The next rung: the last value doubled, or nothing left once the span runs out.
+    /// The next rung up, or nothing left once the span runs out. A climb that reaches the
+    /// top without anything getting worse is finished where it stands: bigger was better
+    /// every time it was asked, so the biggest is the answer and there is no peak to close
+    /// in on.
     fn climbed(&mut self) -> Vec<Step> {
-        let span = self.dial.span();
-        let highest = self.asked.last().copied().unwrap_or(span.floor);
-        if highest >= span.ceiling {
-            self.settled = true;
-            return Vec::new();
-        }
-        let next = span.rounded(highest.saturating_mul(2));
+        let highest = self.asked.last().copied().unwrap_or(self.dial.span().floor);
+        let next = self.dial.climbs_to(highest);
         if next <= highest || self.asked.contains(&next) {
             self.settled = true;
             return Vec::new();
@@ -189,36 +169,56 @@ impl Hunt {
         vec![self.dial.step_of(next)]
     }
 
+    /// Halfway between the best and the value beside it, on each side. The two values
+    /// beside the peak are the ones that bracket it: nothing outside them can be the answer
+    /// once they have both come back worse, so each round cuts the bracket in half. A side
+    /// whose neighbour is already closer than the setting can be set falls away, and when
+    /// both have, the search is done.
     fn closed_in_on(&mut self, best: Step, already: &[Step]) -> Vec<Step> {
-        if self.settled {
+        let span = self.dial.span();
+        let peak = one_value(best);
+        let mut seen: Vec<u32> = self
+            .asked
+            .iter()
+            .copied()
+            .chain(already.iter().copied().map(one_value))
+            .collect();
+        seen.sort_unstable();
+        seen.dedup();
+        let below = seen.iter().rev().find(|held| **held < peak).copied();
+        let above = seen.iter().find(|held| **held > peak).copied();
+        let mut next = Vec::new();
+        let mut widest = 0;
+        for (away, halfway) in [
+            below.map(|held| {
+                let away = peak.saturating_sub(held);
+                (away, peak.saturating_sub(away.div_euclid(2)))
+            }),
+            above.map(|held| {
+                let away = held.saturating_sub(peak);
+                (away, peak.saturating_add(away.div_euclid(2)))
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            widest = widest.max(away);
+            if away < span.finest {
+                continue;
+            }
+            let landed = span.rounded(halfway);
+            if landed == peak || next.contains(&landed) || seen.contains(&landed) {
+                continue;
+            }
+            next.push(landed);
+        }
+        if next.is_empty() {
+            self.settled = true;
+            self.gap = widest;
             return Vec::new();
         }
-        let span = self.dial.span();
-        let middle = one_value(best);
-        let seen: Vec<u32> = already.iter().copied().map(one_value).collect();
-        let mut next = Vec::new();
-        while next.is_empty() {
-            let halved = self.gap.checked_div(2).unwrap_or(0);
-            if halved < span.finest {
-                self.settled = true;
-                return Vec::new();
-            }
-            self.gap = halved;
-            self.round = self.round.saturating_add(1);
-            for beside in [
-                middle.saturating_sub(self.gap),
-                middle.saturating_add(self.gap),
-            ] {
-                let landed = span.rounded(beside);
-                if landed == middle || next.contains(&landed) {
-                    continue;
-                }
-                if seen.contains(&landed) || self.asked.contains(&landed) {
-                    continue;
-                }
-                next.push(landed);
-            }
-        }
+        self.gap = widest;
+        self.round = self.round.saturating_add(1);
         next.sort_unstable();
         for held in &next {
             self.asked.push(*held);
@@ -232,8 +232,8 @@ impl Hunt {
         if self.settled {
             if self.phase == Phase::Climbing {
                 return format!(
-                    "settled after {} round(s): nothing above {} got worse, so the top of the \
-                     span is the answer",
+                    "settled after {} round(s): nothing above {} came back worse, so the top \
+                     of the span is the answer",
                     self.round,
                     self.dial
                         .step_of(self.asked.last().copied().unwrap_or(0))
@@ -241,9 +241,10 @@ impl Hunt {
                 );
             }
             return format!(
-                "settled after {} round(s): no gap left to halve above {}",
+                "settled after {} round(s): the values either side of the best are within {} \
+                 of it, which is as fine as this setting goes",
                 self.round,
-                self.dial.span().finest
+                self.dial.step_of(self.dial.span().finest).said()
             );
         }
         if self.phase == Phase::Climbing {
@@ -254,9 +255,9 @@ impl Hunt {
             );
         }
         format!(
-            "round {}, closing in {} at a time — {} value(s) tried so far",
+            "round {}, halving a bracket {} wide — {} value(s) tried so far",
             self.round,
-            self.gap,
+            self.dial.step_of(self.gap).said(),
             self.asked.len()
         )
     }
@@ -266,24 +267,6 @@ const fn one_value(step: Step) -> u32 {
     match step {
         Step::Whole(held) | Step::Thousandths(held) => held,
     }
-}
-
-fn values_of(steps: &[Step]) -> Vec<u32> {
-    let mut held: Vec<u32> = steps.iter().copied().map(one_value).collect();
-    held.sort_unstable();
-    held.dedup();
-    held
-}
-
-fn widest_gap(sorted: &[u32]) -> u32 {
-    sorted
-        .windows(2)
-        .filter_map(|pair| {
-            let (one, two) = (pair.first()?, pair.get(1)?);
-            Some(two.saturating_sub(*one))
-        })
-        .max()
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

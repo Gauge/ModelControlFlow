@@ -30,7 +30,12 @@ pub const TOKENS_TIMED: u32 = 1024;
 /// tokens, with one token asked for back. A micro-batch is how many prompt tokens go through
 /// the device in one pass, so reading a prompt is the work it changes and writing an answer
 /// is not.
-pub const TOKENS_PREFILLED: u32 = 8192;
+///
+/// It has to be at least as long as the largest micro-batch a search will try. A pass takes
+/// as much of the prompt as it can hold, so a micro-batch above the length of the prompt is
+/// the same one pass as a micro-batch equal to it, and a search that cannot tell those two
+/// apart climbs to the top of its span and calls that the answer.
+pub const TOKENS_PREFILLED: u32 = 32_768;
 
 /// Room left at the end of the window so a prompt this long still has somewhere to answer.
 const KEPT_FOR_AN_ANSWER: u64 = 512;

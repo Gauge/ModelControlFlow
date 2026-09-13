@@ -13,7 +13,8 @@ fn values(steps: &[Step]) -> Vec<u32> {
 }
 
 /// Drives a hunt the way a sweep does: every value it asks for is measured, and the whole
-/// picture so far goes back to it each round.
+/// picture so far goes back to it each round. What comes out is the hunt and every value it
+/// ever asked for, in the order it asked.
 fn hunted(dial: Dial, score: impl Fn(u32) -> Option<f64>) -> (Hunt, Vec<u32>) {
     let mut hunt = Hunt::started(dial);
     let mut run: Vec<Step> = hunt.asked();
@@ -34,14 +35,7 @@ fn hunted(dial: Dial, score: impl Fn(u32) -> Option<f64>) -> (Hunt, Vec<u32>) {
         }
         run.extend(next);
     }
-    let mut held = values(&run);
-    held.sort_unstable();
-    (hunt, held)
-}
-
-/// Bigger is always better, right to the top of the span.
-fn rising(value: u32) -> Option<f64> {
-    (value > 0).then(|| f64::from(value))
+    (hunt, values(&run))
 }
 
 /// Better up to a point and worse after it, which is what a real setting does.
@@ -50,25 +44,51 @@ fn peaking_at(peak: u32) -> impl Fn(u32) -> Option<f64> {
 }
 
 #[test]
-fn a_search_of_a_setting_that_climbs_opens_on_one_value_and_nothing_else() {
-    let hunt = Hunt::started(Dial::MicroBatch);
+fn every_automatic_search_opens_on_one_value_and_doubles_from_there() {
+    for dial in Dial::ALL {
+        let hunt = Hunt::started(dial);
+        assert_eq!(
+            values(&hunt.asked()),
+            vec![dial.climbs_from()],
+            "{} lays out a grid before it has measured anything",
+            dial.label()
+        );
+        assert_eq!(hunt.phase(), Phase::Climbing, "{}", dial.label());
+        assert_eq!(hunt.round(), 1);
+        assert!(!hunt.settled());
+    }
+}
+
+#[test]
+fn a_search_starts_where_the_setting_is_off_so_that_off_is_tried_at_all() {
+    for dial in [
+        Dial::ThinkingBudget,
+        Dial::Temperature,
+        Dial::TopK,
+        Dial::DraftDepth,
+    ] {
+        assert_eq!(
+            dial.climbs_from(),
+            dial.span().floor,
+            "{} turns off at the bottom of its span, and a search that started above it \
+             would never try it",
+            dial.label()
+        );
+    }
     assert_eq!(
-        values(&hunt.asked()),
-        vec![256],
-        "there is nothing to learn from a ladder laid out before anything was measured, so \
-         a climb starts on one rung"
+        Dial::MicroBatch.climbs_from(),
+        256,
+        "a pass smaller than this is slower than it is worth holding the model again to \
+         measure"
     );
-    assert_eq!(hunt.phase(), Phase::Climbing);
-    assert_eq!(hunt.round(), 1);
-    assert!(!hunt.settled());
 }
 
 #[test]
 fn a_climb_doubles_and_keeps_doubling_while_each_value_beats_the_one_below_it() {
-    let (hunt, run) = hunted(Dial::MicroBatch, rising);
+    let (hunt, run) = hunted(Dial::MicroBatch, |value| Some(f64::from(value)));
     assert_eq!(
         run,
-        vec![256, 512, 1024, 2048, 4096, 8192],
+        vec![256, 512, 1024, 2048, 4096, 8192, 16_384, 32_768],
         "nothing ever came back worse, so there was never anything to close in on and the \
          top of the span is the answer"
     );
@@ -77,22 +97,74 @@ fn a_climb_doubles_and_keeps_doubling_while_each_value_beats_the_one_below_it() 
 }
 
 #[test]
-fn a_climb_starts_halving_the_first_time_a_value_comes_back_worse_and_not_before() {
-    let (hunt, run) = hunted(Dial::MicroBatch, peaking_at(1024));
+fn doubling_from_nothing_is_the_finest_step_the_setting_takes() {
+    let (_, run) = hunted(Dial::TopK, |value| Some(f64::from(value)));
+    assert_eq!(
+        run.first().copied(),
+        Some(0),
+        "nothing is where it starts, and twice nothing is still nothing"
+    );
+    assert_eq!(
+        run.get(1).copied(),
+        Some(Dial::TopK.span().finest),
+        "so the rung above nothing is the smallest step there is: {run:?}"
+    );
+    for pair in run.windows(2).skip(1) {
+        let (below, above) = (pair[0], pair[1]);
+        assert!(
+            above == below.saturating_mul(2) || above == Dial::TopK.span().ceiling,
+            "every rung after that is a doubling, or the top of the span: {run:?}"
+        );
+    }
+}
+
+#[test]
+fn the_first_round_after_the_turn_is_halfway_to_each_value_beside_the_peak() {
+    let (_, run) = hunted(Dial::MicroBatch, peaking_at(2048));
+    assert_eq!(
+        run.get(..5),
+        Some([256, 512, 1024, 2048, 4096].as_slice()),
+        "it doubles until 4096 comes back worse than 2048: {run:?}"
+    );
+    assert_eq!(
+        run.get(5..7),
+        Some([1536, 3072].as_slice()),
+        "then the first round after the turn is 2048 - (2048 - 1024) / 2 below and \
+         2048 + (4096 - 2048) / 2 above, and nothing else: {run:?}"
+    );
+}
+
+#[test]
+fn halving_cuts_the_bracket_the_two_values_beside_the_peak_make() {
+    let (hunt, run) = hunted(Dial::MicroBatch, peaking_at(2048));
     assert_eq!(hunt.phase(), Phase::Closing);
     assert!(hunt.settled());
-    for rung in [256, 512, 1024, 2048] {
-        assert!(run.contains(&rung), "the climb up to the turn: {run:?}");
+    let climb: Vec<u32> = vec![256, 512, 1024, 2048, 4096];
+    for rung in &climb {
+        assert!(run.contains(rung), "the climb up to the turn: {run:?}");
     }
     assert!(
-        !run.contains(&4096) && !run.contains(&8192),
-        "2048 came back worse than 1024, so there was no reason to go on doubling: {run:?}"
+        !run.contains(&8192),
+        "4096 came back worse than 2048, so there was no reason to go on doubling: {run:?}"
     );
     assert!(
-        run.iter().any(|held| (1024..2048).contains(held)),
-        "the best is somewhere between the last rung that improved and the one that did \
-         not, and that is where the halving looks: {run:?}"
+        run.contains(&3072) && run.contains(&1536),
+        "halfway to 4096 above and halfway to 1024 below are the first two it asks for, \
+         which is peak + (beyond - peak) / 2 and peak - (peak - before) / 2: {run:?}"
     );
+    let mut closing: Vec<u32> = run
+        .iter()
+        .copied()
+        .filter(|held| !climb.contains(held))
+        .collect();
+    closing.sort_unstable();
+    for held in &closing {
+        assert!(
+            (1024..=4096).contains(held),
+            "nothing outside the bracket can be the answer once both sides came back \
+             worse, so nothing outside it is asked for: {closing:?}"
+        );
+    }
 }
 
 #[test]
@@ -108,53 +180,36 @@ fn a_value_that_could_not_be_measured_ends_the_climb_rather_than_being_climbed_p
 }
 
 #[test]
-fn a_climb_asks_for_no_value_twice_and_settles_rather_than_going_on_forever() {
+fn a_search_settles_without_asking_for_any_value_twice_or_stepping_outside_its_span() {
     for dial in Dial::ALL {
-        let (hunt, run) = hunted(dial, peaking_at(one(dial.coarse()[1])));
-        assert!(hunt.settled(), "{} does not settle", dial.label());
-        let mut seen = run.clone();
-        seen.dedup();
-        assert_eq!(
-            seen,
-            run,
-            "{} asked for a value twice: {run:?}",
-            dial.label()
-        );
-        for value in &run {
+        let span = dial.span();
+        for aim in [span.floor, dial.climbs_from(), span.ceiling] {
+            let (hunt, run) = hunted(dial, peaking_at(aim));
             assert!(
-                dial.span().holds(*value),
-                "{} proposed {value}, outside its own span",
+                hunt.settled(),
+                "{} aiming at {aim} does not settle: {run:?}",
                 dial.label()
             );
+            let mut seen = run.clone();
+            seen.sort_unstable();
+            seen.dedup();
+            assert_eq!(
+                seen.len(),
+                run.len(),
+                "{} aiming at {aim} asked for a value twice: {run:?}",
+                dial.label()
+            );
+            for value in &run {
+                assert!(
+                    span.holds(*value),
+                    "{} proposed {value} aiming at {aim}, outside {} to {}",
+                    dial.label(),
+                    span.floor,
+                    span.ceiling
+                );
+            }
         }
     }
-}
-
-#[test]
-fn the_opening_gap_of_a_setting_that_does_not_climb_is_the_widest_its_ladder_leaves() {
-    let hunt = Hunt::started(Dial::TopK);
-    assert_eq!(hunt.phase(), Phase::Closing);
-    assert_eq!(values(&hunt.asked()), values(&Dial::TopK.coarse()));
-    assert_eq!(
-        hunt.gap(),
-        100,
-        "the ladder is the two ends and the middle, so 100 either side is the widest gap it \
-         leaves and that is what halving starts from"
-    );
-}
-
-#[test]
-fn closing_in_asks_either_side_of_the_best_at_half_the_gap() {
-    let mut hunt = Hunt::started(Dial::TopK);
-    let ladder = Dial::TopK.coarse();
-    let scored: Vec<(Step, Option<f64>)> = ladder.iter().map(|step| (*step, Some(1.0))).collect();
-    let next = hunt.stepped_on(Step::Whole(100), &scored, &ladder);
-    assert_eq!(
-        values(&next),
-        vec![50, 150],
-        "half of 100 either side of the ladder's middle is somewhere new in both directions"
-    );
-    assert_eq!(hunt.gap(), 50);
 }
 
 #[test]
@@ -166,34 +221,15 @@ fn a_settled_hunt_asks_for_nothing_more() {
     assert!(hunt.stepped_on(Step::Whole(4), &scored, &steps).is_empty());
 }
 
-#[test]
-fn a_search_never_proposes_below_the_floor_or_above_the_ceiling() {
-    for dial in Dial::ALL {
-        let span = dial.span();
-        for aim in [span.floor, span.ceiling] {
-            let (_, run) = hunted(dial, peaking_at(aim));
-            for value in run {
-                assert!(
-                    span.holds(value),
-                    "{} proposed {value} while aiming at {aim}, outside {} to {}",
-                    dial.label(),
-                    span.floor,
-                    span.ceiling
-                );
-            }
-        }
-    }
-}
-
 /// What an automatic search asks for, end to end, counted rather than guessed at. Every
 /// value of a setting that reloads the engine costs a held model as well as a trial, so
 /// this count is the sweep's running time, and it is the thing a rough search is rough for.
 #[test]
 fn an_automatic_search_of_any_setting_asks_for_few_enough_values_to_sit_through() {
-    const AT_MOST: usize = 16;
+    const AT_MOST: usize = 20;
     for dial in Dial::ALL {
         let span = dial.span();
-        for aim in [span.floor, one(dial.coarse()[1]), span.ceiling] {
+        for aim in [span.floor, dial.climbs_from(), span.ceiling] {
             let (_, run) = hunted(dial, peaking_at(aim));
             assert!(
                 run.len() <= AT_MOST,
@@ -207,6 +243,17 @@ fn an_automatic_search_of_any_setting_asks_for_few_enough_values_to_sit_through(
     assert_eq!(
         TIMES_TIMED, 1,
         "and a timed value is measured once, so for those the value count is the trial count"
+    );
+}
+
+#[test]
+fn a_micro_batch_search_can_reach_past_the_prompt_it_is_timed_over_only_if_the_prompt_grows() {
+    assert!(
+        crate::trial::TOKENS_PREFILLED >= Dial::MicroBatch.span().ceiling,
+        "a pass takes as much of the prompt as it can hold, so every micro-batch at or \
+         above the length of the prompt is the same single pass. A span that reaches past \
+         the prompt is a span whose top values cannot be told apart, and a climb that \
+         cannot tell them apart never finds a peak — it runs out of span instead"
     );
 }
 

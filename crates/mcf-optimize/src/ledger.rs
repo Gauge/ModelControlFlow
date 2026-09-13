@@ -11,11 +11,13 @@ const WHERE: Subsystem = Subsystem::new("mcf-optimize::ledger");
 
 pub const CORPUS: u32 = 1;
 
-/// Which way a speed trial was timed. A reading recorded before MCF knew that a micro-batch
-/// changes how fast a prompt is read and not how fast an answer is written was timing the
-/// wrong work, and the number it holds is not comparable with one taken since. Raising this
-/// leaves every graded reading where it is and asks only for the timed ones again.
-pub const TIMED: u32 = 2;
+/// Which way a speed trial was timed. A rate is only comparable with one taken the same
+/// way: a reading from before MCF knew that a micro-batch changes how fast a prompt is read
+/// rather than how fast an answer is written was timing the wrong work altogether, and one
+/// taken over a shorter prompt than this reads faster for that reason alone, because reading
+/// a prompt costs more per token the longer the prompt is. Raising this leaves every graded
+/// reading where it is and asks only for the timed ones again.
+pub const TIMED: u32 = 3;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Under {
