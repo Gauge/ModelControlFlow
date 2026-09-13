@@ -604,6 +604,70 @@ fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
 }
 
 #[test]
+fn a_header_that_names_its_key_value_heads_one_block_at_a_time_still_sizes_the_cache() {
+    let mut tensors = vec![tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K)];
+    for block in 0..4_u64 {
+        let named = |leaf: &str| format!("blk.{block}.{leaf}");
+        if block == 3 {
+            tensors.extend([
+                tensor(&named("attn_q.weight"), &[64, 64], TensorKind::Q4_K),
+                tensor(&named("attn_k.weight"), &[64, 32], TensorKind::Q4_K),
+                tensor(&named("attn_v.weight"), &[64, 32], TensorKind::Q4_K),
+                tensor(&named("attn_output.weight"), &[64, 64], TensorKind::Q4_K),
+            ]);
+        } else {
+            tensors.extend([
+                tensor(&named("ssm_conv1d.weight"), &[4, 128], TensorKind::F32),
+                tensor(&named("ssm_out.weight"), &[64, 64], TensorKind::Q4_K),
+            ]);
+        }
+    }
+    let file = model(
+        "per_block",
+        &[
+            ("per_block.block_count", Value::Integer(4)),
+            ("per_block.embedding_length", Value::Integer(64)),
+            ("per_block.context_length", Value::Integer(1024)),
+            ("per_block.attention.head_count", Value::Integer(4)),
+            (
+                "per_block.attention.head_count_kv",
+                Value::List(vec![
+                    Value::Integer(0),
+                    Value::Integer(0),
+                    Value::Integer(0),
+                    Value::Integer(2),
+                ]),
+            ),
+            ("per_block.attention.key_length", Value::Integer(16)),
+        ],
+        tensors,
+    );
+    let counted = of(&file);
+    let work = super::work::of(&file, &counted);
+    assert_eq!(
+        work.cache,
+        super::work::Cache::Sized {
+            per_token: 2 * 32 * 2,
+            at_context: Some((1024, 1024 * 2 * 32 * 2)),
+            sliding_window: None,
+            key_heads: 2,
+            per_head: 32,
+            latent: false,
+            attending: (1, 4),
+            recurrent: 3,
+        },
+        "the zeros stand against the blocks that keep a recurrent state instead, so the \
+         figure the attending blocks name is the one that sizes the cache"
+    );
+    let row = counted
+        .agreements
+        .iter()
+        .find(|held| held.what == "key/value heads")
+        .expect("a header that names them at all is compared against what the blocks hold");
+    assert_eq!(row.agrees, Some(true), "{row:?}");
+}
+
+#[test]
 fn heads_are_read_off_the_output_projection() {
     let mut tensors = vec![tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K)];
     let named = |leaf: &str| format!("blk.0.{leaf}");

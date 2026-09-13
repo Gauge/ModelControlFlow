@@ -224,6 +224,27 @@ fn declared(model: &Model, suffix: &str) -> Option<u64> {
         .and_then(|held| u64::try_from(held).ok())
 }
 
+/// A model whose blocks are not all the same kind declares some figures once per block
+/// rather than once for the model, writing a zero against every block the figure does not
+/// apply to. The figure itself is what the blocks that do have it say, so a zero is a block
+/// to pass over rather than a figure to take. Where the blocks disagree, the largest is the
+/// one that does not under-count what they cost together.
+fn declared_per_block(model: &Model, suffix: &str) -> Option<u64> {
+    let architecture = model.architecture()?;
+    let held = model.get(&format!("{architecture}.{suffix}"))?;
+    let Some(per_block) = held.as_list() else {
+        return held
+            .as_integer()
+            .and_then(|whole| u64::try_from(whole).ok());
+    };
+    per_block
+        .iter()
+        .filter_map(Value::as_integer)
+        .filter_map(|block| u64::try_from(block).ok())
+        .filter(|block| *block > 0)
+        .max()
+}
+
 fn shape_of(model: &Model, leaf: &str) -> Option<Vec<u64>> {
     model
         .tensors
@@ -334,12 +355,12 @@ fn agreements_of(
         ),
         Agreement::of(
             "attention heads",
-            declared(model, "attention.head_count"),
+            declared_per_block(model, "attention.head_count"),
             heads_from_output().or_else(|| heads_from("attn_q.weight")),
         ),
         Agreement::of(
             "key/value heads",
-            declared(model, "attention.head_count_kv"),
+            declared_per_block(model, "attention.head_count_kv"),
             heads_from("attn_k.weight").or_else(|| heads_from("attn_kv_a_mqa.weight")),
         ),
         Agreement::of(

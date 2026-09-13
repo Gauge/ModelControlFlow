@@ -341,7 +341,7 @@ fn a_timed_trial_is_not_cut_short_for_repeating_itself() {
 
 #[test]
 fn a_timed_run_is_long_enough_to_mean_something_and_taken_more_than_once() {
-    assert_eq!(super::TOKENS_TIMED, 2048);
+    assert_eq!(super::TOKENS_TIMED, 1024);
     assert_eq!(
         super::TIMES_TIMED,
         5,

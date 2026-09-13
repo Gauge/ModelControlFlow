@@ -1,4 +1,4 @@
-use super::{Anatomy, Role, declared};
+use super::{Anatomy, Role, declared, declared_per_block};
 use crate::gguf::Model;
 
 const CACHE_ELEMENT_BYTES: u64 = 2;
@@ -65,8 +65,8 @@ pub fn of(model: &Model, body: &Anatomy) -> Work {
     } else {
         active.saturating_sub(embedding)
     };
-    let heads = declared(model, "attention.head_count");
-    let key_heads = declared(model, "attention.head_count_kv");
+    let heads = declared_per_block(model, "attention.head_count");
+    let key_heads = declared_per_block(model, "attention.head_count_kv");
     let head_width = declared(model, "attention.key_length").or_else(|| {
         let (width, count) = (declared(model, "embedding_length")?, heads?);
         if count > 0 && width.is_multiple_of(count) {

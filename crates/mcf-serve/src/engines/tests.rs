@@ -405,39 +405,79 @@ fn a_hybrid_caches_only_in_the_blocks_that_attend() {
 }
 
 #[test]
+fn every_model_this_machine_holds_says_enough_about_itself_to_be_hosted() {
+    let models = models_on_this_machine();
+    if models.is_empty() {
+        eprintln!("skipped: this machine holds no model to read");
+        return;
+    }
+    let held_as = mcf_core::configuration::CacheType::F16;
+    let mut unsized_ones = Vec::new();
+    for path in &models {
+        let Some(model) = read_header(path) else {
+            continue;
+        };
+        if cache_bytes_per_token(&model, held_as).is_none() {
+            unsized_ones.push(format!(
+                "{} ({})",
+                path.file_name().map_or_else(
+                    || path.display().to_string(),
+                    |held| held.to_string_lossy().into_owned()
+                ),
+                model.architecture().unwrap_or("no architecture")
+            ));
+        }
+    }
+    assert!(
+        unsized_ones.is_empty(),
+        "MCF cannot size the cache of {} of the {} models here, so it refuses to host them \
+         rather than choosing a window: {}",
+        unsized_ones.len(),
+        models.len(),
+        unsized_ones.join(", ")
+    );
+}
+
+#[test]
 fn a_header_that_says_nothing_yields_no_shape() {
     assert!(mcf_standin::gguf::parse(b"not a gguf at all").is_err());
 }
 
 fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
-    let root = home.join(".local/share/mcf/models");
-    let mut looking = vec![root];
+    models_on_this_machine().into_iter().next()
+}
+
+fn models_on_this_machine() -> Vec<std::path::PathBuf> {
+    let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    let mut looking = vec![home.join(".local/share/mcf/models")];
     while let Some(directory) = looking.pop() {
-        let entries = std::fs::read_dir(&directory).ok()?;
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 looking.push(path);
                 continue;
             }
-            let is_a_shard = path
-                .file_stem()
-                .and_then(|held| held.to_str())
-                .is_some_and(|held| {
-                    held.rsplit_once("-of-")
-                        .is_some_and(|(_, tail)| tail.chars().all(|c| c.is_ascii_digit()))
-                });
-            if !is_a_shard
-                && path
-                    .extension()
-                    .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
+            let is_a_later_shard =
+                mcf_hub::store::part_of_a_set(&path).is_some_and(|(_, number)| number > 1);
+            if is_a_later_shard || mcf_hub::store::is_a_companion(&path) {
+                continue;
+            }
+            if path
+                .extension()
+                .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
             {
-                return Some(path);
+                found.push(path);
             }
         }
     }
-    None
+    found.sort();
+    found
 }
 
 fn read_header(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
