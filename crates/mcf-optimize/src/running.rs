@@ -212,7 +212,9 @@ fn sweeping(mut doing: Doing) {
             dial: doing.dial,
             step: spot.step,
             repeat: spot.repeat,
-            ceiling: if doing.dial.only_changes_speed() {
+            ceiling: if doing.dial.times_reading_the_prompt() {
+                crate::trial::prompt_within(doing.under.context)
+            } else if doing.dial.only_changes_speed() {
                 crate::trial::TOKENS_TIMED
             } else {
                 doing.ceiling

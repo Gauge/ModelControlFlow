@@ -152,17 +152,33 @@ fn only_one_of_the_two_measures_needs_a_model_s_code_to_be_run() {
 
 #[test]
 fn a_timed_reading_is_shown_without_the_columns_that_would_be_dashes() {
-    let columns = Report::columns_of(Dial::MicroBatch);
-    for gone in ["Set", "Score", "Tok/✓"] {
-        assert!(
-            !columns.contains(&gone),
-            "{gone} runs no set and marks no answer in a timed sweep, so it would be a column \
-             of nothing: {columns:?}"
-        );
+    for dial in [Dial::MicroBatch, Dial::DraftDepth] {
+        let columns = Report::columns_of(dial);
+        for gone in ["Set", "Score", "Tok/✓"] {
+            assert!(
+                !columns.contains(&gone),
+                "{gone} runs no set and marks no answer in a timed sweep, so it would be a \
+                 column of nothing: {columns:?}"
+            );
+        }
+        for kept in ["Value", "Take", "Seconds", "Ending"] {
+            assert!(columns.contains(&kept), "{kept} is missing: {columns:?}");
+        }
     }
-    for kept in ["Value", "Take", "Tokens", "Tok/s", "Seconds", "Ending"] {
-        assert!(columns.contains(&kept), "{kept} is missing: {columns:?}");
-    }
+}
+
+#[test]
+fn a_sweep_that_times_reading_names_the_tokens_it_counted_as_the_prompt() {
+    let reading = Report::columns_of(Dial::MicroBatch);
+    let writing = Report::columns_of(Dial::DraftDepth);
+    assert!(
+        reading.contains(&"Prompt") && !reading.contains(&"Tokens"),
+        "a micro-batch sweep counts the prompt it read, not an answer it wrote: {reading:?}"
+    );
+    assert!(
+        writing.contains(&"Tokens") && !writing.contains(&"Prompt"),
+        "a draft head sweep counts the answer it wrote: {writing:?}"
+    );
 }
 
 #[test]

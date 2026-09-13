@@ -153,6 +153,16 @@ impl Dial {
         matches!(self, Self::MicroBatch | Self::DraftDepth)
     }
 
+    /// A speed trial times one of two pieces of work, and they are not the same work. The
+    /// micro-batch is how many prompt tokens the device takes in one pass, so it shows in
+    /// how fast a prompt is read and not at all in how fast an answer is written: an answer
+    /// is written one token at a time whatever the micro-batch is. A draft head is the
+    /// other way round. Timing the wrong one reads the same number back at every value.
+    #[must_use]
+    pub const fn times_reading_the_prompt(self) -> bool {
+        matches!(self, Self::MicroBatch)
+    }
+
     #[must_use]
     pub const fn is_named_by_the_model(self) -> bool {
         matches!(self, Self::ThinkingLevel)

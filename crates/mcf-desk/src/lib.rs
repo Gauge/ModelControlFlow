@@ -3274,6 +3274,7 @@ impl Desk {
             top_p: None,
             top_k: None,
             corpus: mcf_optimize::ledger::CORPUS,
+            timed: mcf_optimize::ledger::TIMED,
         })
     }
 

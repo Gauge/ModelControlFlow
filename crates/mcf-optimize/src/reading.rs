@@ -212,6 +212,9 @@ impl Report {
     /// and runs no set, so those columns would be a row of dashes.
     #[must_use]
     pub fn columns_of(dial: Dial) -> Vec<&'static str> {
+        if dial.times_reading_the_prompt() {
+            return vec!["Value", "Take", "Prompt", "Read tok/s", "Seconds", "Ending"];
+        }
         if dial.only_changes_speed() {
             return vec!["Value", "Take", "Tokens", "Tok/s", "Seconds", "Ending"];
         }

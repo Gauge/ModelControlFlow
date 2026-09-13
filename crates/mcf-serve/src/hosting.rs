@@ -1019,10 +1019,12 @@ impl Hosting {
                 name: "micro-batch",
                 value: self.ubatch.to_string(),
                 recommended: against.ubatch.to_string(),
-                because: "how much of a batch the engine actually computes in one pass. The \
-                          compute buffers are built for this rather than for the batch size, \
-                          so it is a memory setting as much as a speed one, and lowering it is \
-                          what to reach for when a hold is a little short of fitting",
+                because: "how much of a batch the engine actually computes in one pass. This \
+                          is how fast a prompt is read and not how fast an answer is written: \
+                          an answer is one token at a time whatever this is. The compute \
+                          buffers are built for this rather than for the batch size, so it is \
+                          a memory setting as much as a speed one, and lowering it is what to \
+                          reach for when a hold is a little short of fitting",
             },
             Setting {
                 name: "threads for reading a prompt",

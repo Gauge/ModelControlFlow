@@ -11,6 +11,12 @@ const WHERE: Subsystem = Subsystem::new("mcf-optimize::ledger");
 
 pub const CORPUS: u32 = 1;
 
+/// Which way a speed trial was timed. A reading recorded before MCF knew that a micro-batch
+/// changes how fast a prompt is read and not how fast an answer is written was timing the
+/// wrong work, and the number it holds is not comparable with one taken since. Raising this
+/// leaves every graded reading where it is and asks only for the timed ones again.
+pub const TIMED: u32 = 2;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Under {
     pub model: String,
@@ -30,12 +36,16 @@ pub struct Under {
     pub top_p: Option<u32>,
     pub top_k: Option<u32>,
     pub corpus: u32,
+    pub timed: u32,
 }
 
 impl Under {
     #[must_use]
     pub fn without(&self, dial: Dial) -> Self {
         let mut held = self.clone();
+        if !dial.only_changes_speed() {
+            held.timed = 0;
+        }
         match dial {
             Dial::ThinkingBudget => held.thinking_budget = None,
             Dial::ThinkingLevel => held.thinking_level = None,
@@ -75,6 +85,7 @@ impl Under {
             ("top_p", count(self.top_p)),
             ("top_k", count(self.top_k)),
             ("corpus", Value::Integer(self.corpus.into())),
+            ("timed", Value::Integer(self.timed.into())),
         ])
     }
 
@@ -122,6 +133,7 @@ impl Under {
             top_p: small("top_p"),
             top_k: small("top_k"),
             corpus: small("corpus").unwrap_or(0),
+            timed: small("timed").unwrap_or(0),
         }
     }
 

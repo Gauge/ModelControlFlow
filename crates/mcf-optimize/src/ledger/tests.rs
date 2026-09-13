@@ -1,4 +1,4 @@
-use super::{At, CORPUS, Ledger, Row, Under};
+use super::{At, CORPUS, Ledger, Row, TIMED, Under};
 use crate::dial::{Dial, Step};
 use crate::reading::{Ending, Reading};
 
@@ -47,6 +47,7 @@ fn under() -> Under {
         top_p: Some(950),
         top_k: Some(20),
         corpus: CORPUS,
+        timed: TIMED,
     }
 }
 
@@ -416,6 +417,45 @@ fn a_sweep_of_the_thinking_budget_ignores_the_budget_in_the_base() {
     assert!(
         ledger.already(&longer, &spot).is_some(),
         "the budget is what this sweep varies, so it is not part of the base it varies against"
+    );
+}
+
+#[test]
+fn a_timed_reading_taken_the_old_way_is_taken_again_and_a_graded_one_is_not() {
+    let scratch = Scratch::new("timed-again");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    let mut before = under();
+    before.timed = TIMED.saturating_sub(1);
+    let spot = at(Step::Whole(256), 1);
+    ledger
+        .record(&before, spot, &reading(Step::Whole(256), 1, 6), "then")
+        .expect("a reading is written");
+    assert!(
+        ledger.already(&under(), &spot).is_none(),
+        "a micro-batch reading timed the wrong work before, so its number is not one to skip \
+         ahead on"
+    );
+    assert!(
+        ledger.against(&under(), Dial::MicroBatch).is_empty(),
+        "nor is it one to show beside readings of something else"
+    );
+
+    let graded = At {
+        dial: Dial::ThinkingBudget,
+        step: Step::Whole(4096),
+        set: 1,
+        repeat: 1,
+    };
+    let mut told = reading(Step::Whole(4096), 1, 6);
+    told.dial = Dial::ThinkingBudget;
+    told.step = Step::Whole(4096);
+    ledger
+        .record(&before, graded, &told, "then")
+        .expect("a reading is written");
+    assert!(
+        ledger.already(&under(), &graded).is_some(),
+        "how a speed trial is timed says nothing about a run that was marked, so raising it \
+         must not throw away work that cost a container to grade"
     );
 }
 

@@ -85,6 +85,7 @@ fn a_said_carries_why_it_ended_when_it_did_not_simply_answer() {
         ending: Ending::Failed,
         why: Some("the endpoint produced nothing".to_owned()),
         counted: None,
+        read_in: None,
     };
     assert!(held.why.is_some(), "a failure says what happened");
 }
@@ -229,7 +230,7 @@ fn a_sampling_dial_is_still_sent_as_a_number() {
 
 #[test]
 fn a_timed_trial_goes_to_the_plain_endpoint_and_asks_for_tokens() {
-    let mut held = asked(Dial::MicroBatch, Step::Whole(1024));
+    let mut held = asked(Dial::DraftDepth, Step::Whole(4));
     held.timing = true;
     held.ceiling = super::TOKENS_TIMED;
     assert_eq!(
@@ -256,6 +257,69 @@ fn a_timed_trial_goes_to_the_plain_endpoint_and_asks_for_tokens() {
         Some(&Value::Bool(true)),
         "this is what makes the count the count rather than whatever the model felt like"
     );
+}
+
+#[test]
+fn a_micro_batch_trial_times_reading_a_prompt_rather_than_writing_an_answer() {
+    let mut held = asked(Dial::MicroBatch, Step::Whole(512));
+    held.timing = true;
+    held.ceiling = super::TOKENS_PREFILLED;
+    let asking = super::body(&held);
+    let sent = asking
+        .get("prompt")
+        .and_then(Value::as_list)
+        .expect("a prompt given as token numbers is exactly as long as it says it is");
+    assert_eq!(
+        u32::try_from(sent.len()).unwrap(),
+        super::TOKENS_PREFILLED,
+        "a micro-batch is how many prompt tokens go through the device in one pass, so the \
+         prompt is the work being timed and it has to be long enough to take several passes"
+    );
+    assert_eq!(
+        asking.get("n_predict"),
+        Some(&Value::Integer(1)),
+        "writing an answer is one token at a time whatever the micro-batch is, so timing any \
+         more of it would read the same number back at every value"
+    );
+    assert_eq!(
+        asking.get("cache_prompt"),
+        Some(&Value::Bool(false)),
+        "a cached prompt is not read again, and a reading that reads nothing times nothing"
+    );
+    assert_eq!(super::the_way_in(&held), "/completion");
+}
+
+#[test]
+fn a_prompt_to_be_read_is_inside_every_vocabulary_and_fits_the_window() {
+    let sent = super::to_be_read(64);
+    let numbers: Vec<i64> = sent
+        .as_list()
+        .expect("a list")
+        .iter()
+        .filter_map(Value::as_integer)
+        .collect();
+    assert_eq!(numbers.len(), 64);
+    for held in &numbers {
+        assert!(
+            (0..32_000).contains(held),
+            "a token number above the model's vocabulary is refused by the engine, and the \
+             smallest vocabulary MCF has met is well above this: {held}"
+        );
+    }
+    assert!(
+        numbers
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            > 1,
+        "one token repeated is not a prompt an engine reads the way it reads a real one"
+    );
+    assert_eq!(
+        super::prompt_within(4096),
+        4096 - 512,
+        "a window smaller than the prompt MCF would rather send is the one that decides"
+    );
+    assert_eq!(super::prompt_within(131_072), super::TOKENS_PREFILLED);
 }
 
 #[test]
