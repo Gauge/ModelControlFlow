@@ -17,6 +17,15 @@ const DECLARED: &[Deletes] = &[
                it acquired (B-367, A27)",
     },
     Deletes {
+        file: "crates/mcf-optimize/src/running.rs",
+        calls: 1,
+        what: "the scratch directory one trial's answers were marked in, once the container \
+               that marked them has exited. What goes is the code a model wrote a minute \
+               earlier, copied there by MCF so a container could run it, and the verdict has \
+               already been read and recorded. Leaving it would fill the disk one trial at a \
+               time. No model file and nothing anybody stored is touched (A27, §3.11)",
+    },
+    Deletes {
         file: "crates/mcf-desk/src/lib.rs",
         calls: 1,
         what: "the optimizer's own record of readings, when somebody asks the window to \

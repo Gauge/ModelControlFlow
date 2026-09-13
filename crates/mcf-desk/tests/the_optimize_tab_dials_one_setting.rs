@@ -66,14 +66,57 @@ fn repeats_cycle_one_two_three_and_back() {
 }
 
 #[test]
-fn a_sweep_with_nothing_held_is_refused_and_says_why() {
+fn a_sweep_with_no_model_chosen_is_refused_and_says_why() {
     let mut desk = desk();
     desk.act(Act::Sweep);
     assert!(!desk.optimizing.running, "nothing was started");
     let Some(why) = &desk.optimizing.refused else {
         panic!("a refusal says why");
     };
-    assert!(why.contains("host one first"), "{why}");
+    assert!(why.contains("choose a model"), "{why}");
+    assert!(
+        !why.contains("host"),
+        "a sweep holds the model itself, so being asked to host one first would be wrong: \
+         {why}"
+    );
+}
+
+#[test]
+fn correctness_is_what_a_sweep_ranks_by_unless_told_otherwise() {
+    let desk = desk();
+    assert_eq!(
+        desk.optimizing.measure,
+        mcf_optimize::reading::Measure::Correctness,
+        "the point of dialling a setting in is answers that are right"
+    );
+}
+
+#[test]
+fn the_values_chosen_by_hand_are_out_of_the_way_while_the_search_is_automatic() {
+    let mut desk = desk();
+    assert_eq!(desk.optimizing.way, mcf_optimize::hunt::Way::Halving);
+    desk.act(Act::SweepWay(by_hand()));
+    assert_eq!(desk.optimizing.way, mcf_optimize::hunt::Way::ByHand);
+    desk.act(Act::SweepWay(0));
+    assert_eq!(desk.optimizing.way, mcf_optimize::hunt::Way::Halving);
+}
+
+#[test]
+fn the_two_ways_of_searching_are_named_in_one_word_each() {
+    for way in mcf_optimize::hunt::Way::ALL {
+        assert!(
+            !way.label().contains('—') && way.label().split_whitespace().count() == 1,
+            "a button says what it is, not how it works: {:?}",
+            way.label()
+        );
+    }
+    for measure in mcf_optimize::reading::Measure::ALL {
+        assert!(
+            !measure.label().contains('—') && measure.label().split_whitespace().count() == 1,
+            "{:?}",
+            measure.label()
+        );
+    }
 }
 
 #[test]

@@ -13,8 +13,8 @@ impl Way {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Halving => "Automatic — coarse, then halve",
-            Self::ByHand => "By hand — the values I choose",
+            Self::Halving => "Automatic",
+            Self::ByHand => "Manual",
         }
     }
 
@@ -22,7 +22,7 @@ impl Way {
     pub const fn short(self) -> &'static str {
         match self {
             Self::Halving => "automatic",
-            Self::ByHand => "by hand",
+            Self::ByHand => "manual",
         }
     }
 }

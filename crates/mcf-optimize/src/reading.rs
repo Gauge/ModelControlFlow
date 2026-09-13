@@ -71,18 +71,18 @@ impl Reading {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Measure {
     #[default]
-    Speed,
     Correctness,
+    Speed,
 }
 
 impl Measure {
-    pub const ALL: [Self; 2] = [Self::Speed, Self::Correctness];
+    pub const ALL: [Self; 2] = [Self::Correctness, Self::Speed];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Speed => "Fastest — tokens a second",
-            Self::Correctness => "Most correct — tasks passed",
+            Self::Correctness => "Correctness",
+            Self::Speed => "Speed",
         }
     }
 

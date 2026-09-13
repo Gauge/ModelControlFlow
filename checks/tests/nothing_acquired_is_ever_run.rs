@@ -21,6 +21,22 @@ const DECLARED: &[Spawns] = &[
                toolchain that built the rest of this program (B-409, D39)",
     },
     Spawns {
+        file: "crates/mcf-optimize/src/marking.rs",
+        sites: 1,
+        what: "podman, running a Python image pinned by digest, to find out whether the code \
+               a model wrote actually passes the checks written for the task. This is the one \
+               place MCF runs something a model produced, and it is the case §6.4 permits: \
+               inside a container and nowhere else. What starts is podman by an absolute \
+               path from a fixed list, never a program named by anything a model wrote. The \
+               container reaches no network, drops every capability, takes no new \
+               privileges, is capped in memory and in processes, has a read-only root with \
+               one small tmpfs, and sees the model's code on a read-only mount. Each task \
+               inside it has a deadline of its own, and the container as a whole has \
+               another, so code that hangs is a failed task rather than a stuck sweep. \
+               Scoring by correctness is the whole point of the optimizer, and there is no \
+               way to know whether a program is correct without running it (B-519, B-025)",
+    },
+    Spawns {
         file: "crates/mcf-tui/src/job.rs",
         sites: 1,
         what: "MCF's own binary with arguments, so that the window can run a command-line \

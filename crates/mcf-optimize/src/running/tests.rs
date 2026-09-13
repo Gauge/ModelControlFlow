@@ -63,9 +63,12 @@ fn begun(scratch: &Scratch, steps: &[u32], sets: &[usize]) -> Running {
             ceiling: 64,
             thinking: None,
             effort: None,
+            mark: false,
+            room: scratch.path.join("marking"),
         },
         course,
         Ledger::open(&scratch.at()).expect("opens"),
+        std::boxed::Box::new(|_step| Ok(1)),
         || "now".to_owned(),
     )
 }
@@ -166,4 +169,181 @@ fn everything_already_in_the_ledger_is_reported_as_known_rather_than_measured() 
         "a run with nothing left to do is not a failure: {:?}",
         running.refused
     );
+}
+
+#[test]
+fn a_run_that_cannot_hold_the_model_says_so_and_measures_nothing() {
+    let scratch = Scratch::new("cannot-hold");
+    let held: Vec<Step> = vec![Step::Whole(256)];
+    let course = Course::laid_out(
+        under(),
+        Way::ByHand,
+        Dial::MicroBatch,
+        &held,
+        &[1],
+        1,
+        Measure::Speed,
+    );
+    let mut running = Running::begun(
+        super::Orders {
+            endpoint: Endpoint {
+                port: 1,
+                key: None,
+                patience: std::time::Duration::from_millis(200),
+            },
+            under: under(),
+            dial: Dial::MicroBatch,
+            ceiling: 64,
+            thinking: None,
+            effort: None,
+            mark: false,
+            room: scratch.path.join("marking"),
+        },
+        course,
+        Ledger::open(&scratch.at()).expect("opens"),
+        std::boxed::Box::new(|_step| Err("the engine would not start".to_owned())),
+        || "now".to_owned(),
+    );
+    settled(&mut running);
+    assert!(running.finished);
+    assert_eq!(
+        running.refused.as_deref(),
+        Some("the engine would not start"),
+        "the reason the hold failed is the reason the sweep stopped"
+    );
+    assert_eq!(running.taken, 0);
+}
+
+#[test]
+fn nothing_is_measured_until_the_model_is_held_at_all() {
+    for dial in Dial::ALL {
+        assert!(
+            super::needs_a_fresh_hold(dial, None, dial.step_of(1)),
+            "{} starts by holding the model, whether or not one was held before",
+            dial.label()
+        );
+    }
+}
+
+#[test]
+fn a_dial_that_is_a_launch_flag_holds_the_model_again_for_each_value() {
+    for dial in Dial::ALL
+        .into_iter()
+        .filter(|dial| dial.reloads_the_engine())
+    {
+        let held = dial.step_of(2);
+        assert!(
+            super::needs_a_fresh_hold(dial, Some(held), dial.step_of(4)),
+            "{} is a launch flag, so a new value means a new hold",
+            dial.label()
+        );
+        assert!(
+            !super::needs_a_fresh_hold(dial, Some(held), held),
+            "{} at the value already held needs no reload",
+            dial.label()
+        );
+    }
+}
+
+#[test]
+fn a_dial_that_rides_in_the_request_holds_the_model_only_once() {
+    for dial in Dial::ALL
+        .into_iter()
+        .filter(|dial| !dial.reloads_the_engine())
+    {
+        let held = dial.step_of(2);
+        assert!(
+            !super::needs_a_fresh_hold(dial, Some(held), dial.step_of(900)),
+            "{} rides in each request, so reloading between values would be wasted minutes",
+            dial.label()
+        );
+    }
+}
+
+fn one_task() -> Vec<crate::corpus::Task> {
+    vec![crate::corpus::Task {
+        name: "adds".to_owned(),
+        asked: String::new(),
+        checked: "assert add(2, 2) == 4\nassert add(1, 5) == 6".to_owned(),
+    }]
+}
+
+fn said_with(answer: &str) -> crate::trial::Said {
+    crate::trial::Said {
+        answer: answer.to_owned(),
+        produced: 10,
+        ending: crate::reading::Ending::Answered,
+        why: None,
+    }
+}
+
+fn spot() -> crate::ledger::At {
+    crate::ledger::At {
+        dial: Dial::MicroBatch,
+        step: Step::Whole(256),
+        set: 1,
+        repeat: 1,
+    }
+}
+
+#[test]
+fn a_sweep_that_is_not_marking_calls_nothing_right_and_starts_no_container() {
+    let scratch = Scratch::new("not-marking");
+    let room = scratch.path.join("marking");
+    let (judged, unmarked) = super::judged_by(
+        false,
+        &room,
+        spot(),
+        &one_task(),
+        &said_with("```python\ndef add(a,b): return a+b\n```"),
+    );
+    assert_eq!(judged, vec![("adds".to_owned(), false)]);
+    assert!(unmarked.is_none());
+    assert!(!room.exists(), "nothing was written anywhere");
+}
+
+#[test]
+fn a_marked_sweep_actually_runs_the_code_and_says_whether_it_passed() {
+    if crate::marking::where_podman_is().is_none() {
+        return;
+    }
+    let scratch = Scratch::new("marking-live");
+    let room = scratch.path.join("marking");
+    let (judged, unmarked) = super::judged_by(
+        true,
+        &room,
+        spot(),
+        &one_task(),
+        &said_with("### SOLUTION 1\n```python\ndef add(a, b):\n    return a + b\n```"),
+    );
+    assert_eq!(
+        unmarked, None,
+        "podman is here, so there is no reason marking could not happen"
+    );
+    assert_eq!(
+        judged,
+        vec![("adds".to_owned(), true)],
+        "code that satisfies the check is code that passed"
+    );
+    assert!(
+        !room.join("set-1-256-1").exists(),
+        "the scratch the container read is swept up afterwards"
+    );
+}
+
+#[test]
+fn a_marked_sweep_fails_code_that_does_not_satisfy_the_check() {
+    if crate::marking::where_podman_is().is_none() {
+        return;
+    }
+    let scratch = Scratch::new("marking-wrong");
+    let room = scratch.path.join("marking");
+    let (judged, _unmarked) = super::judged_by(
+        true,
+        &room,
+        spot(),
+        &one_task(),
+        &said_with("### SOLUTION 1\n```python\ndef add(a, b):\n    return a * b\n```"),
+    );
+    assert_eq!(judged, vec![("adds".to_owned(), false)]);
 }

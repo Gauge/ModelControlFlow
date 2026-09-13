@@ -1085,38 +1085,69 @@ fn base_configuration(paint: &mut Painter, desk: &Desk, area: Box, mut y: f32) -
         area,
         y,
         "Base configuration",
-        "held as it stands — every trial in a sweep runs against exactly this",
+        "every trial runs against exactly this — MCF holds the model itself",
     );
-    let Some(hosted) = &desk.hosted else {
+    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
         paint.say_at(
             area.x,
             y,
-            "Nothing is held. Host a model on the Configure tab and it becomes the base here.",
+            "Choose a model on the left and its settings become the base here.",
             Weight::Regular,
             size::SMALL,
             ink.faint,
         );
         return y + 30.0;
     };
-    let window = hosted
-        .context
-        .map_or_else(|| UNKNOWN.to_owned(), |held| format!("{held} tokens"));
-    let rows: [(&str, String); 4] = [
-        ("model", hosted.model.clone()),
-        ("answering on", hosted.address.clone()),
-        ("context window", window),
-        ("key cache", format!("{:?}", hosted.cache)),
+    let Some(settings) = &desk.settings else {
+        paint.say_at(
+            area.x,
+            y,
+            "MCF has not worked out what this model would run under yet.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return y + 30.0;
+    };
+    let dialled = desk.optimizing.sweep.dial;
+    let rows: [(&str, String, bool); 6] = [
+        ("model", held.name.clone(), false),
+        ("engine", settings.engine.clone(), false),
+        (
+            "context window",
+            format!("{} tokens", settings.context),
+            false,
+        ),
+        (
+            "micro-batch",
+            settings.ubatch.to_string(),
+            dialled == mcf_optimize::dial::Dial::MicroBatch,
+        ),
+        ("key cache", format!("{:?}", settings.cache), false),
+        (
+            "draft depth",
+            settings
+                .started
+                .drafted
+                .map_or_else(|| "off".to_owned(), |held| held.to_string()),
+            dialled == mcf_optimize::dial::Dial::DraftDepth,
+        ),
     ];
-    for (name, value) in rows {
+    for (name, value, moving) in rows {
         paint.say_at(area.x, y, name, Weight::Regular, size::SMALL, ink.faint);
-        let shown = paint.elide(&value, Weight::Regular, size::SMALL, area.w - 150.0);
+        let said = if moving {
+            format!("{value} — the sweep moves this")
+        } else {
+            value
+        };
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w - 150.0);
         paint.say_at(
             area.x + 140.0,
             y,
             &shown,
             Weight::Regular,
             size::SMALL,
-            ink.ink,
+            if moving { ink.accent } else { ink.ink },
         );
         y += 20.0;
     }
@@ -1133,41 +1164,35 @@ fn how_it_searches(
     let ink = paint.ink;
     let mut act = None;
     let dial = desk.optimizing.sweep.dial;
+    let span = dial.span();
+
+    paint.say_at(
+        area.x,
+        y + 7.0,
+        "Search",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
     let ways: Vec<(String, bool)> = mcf_optimize::hunt::Way::ALL
         .iter()
         .map(|way| (way.label().to_owned(), *way == desk.optimizing.way))
         .collect();
-    let (below, picked) = chips(paint, mouse, area, y, &ways);
+    let inset = Box::new(area.x + 110.0, area.y, (area.w - 110.0).max(120.0), area.h);
+    let (below, picked) = chips(paint, mouse, inset, y, &ways);
     if let Some(at) = picked {
         act = Some(Act::SweepWay(at));
     }
     y = below;
 
-    let automatic = desk.optimizing.way == mcf_optimize::hunt::Way::Halving;
-    let span = dial.span();
-    let said = if automatic {
-        format!(
-            "starts at {}, then halves the gap around whatever wins, down to steps of {}",
-            dial.coarse()
-                .iter()
-                .map(|step| step.said())
-                .collect::<Vec<_>>()
-                .join(", "),
-            dial.step_of(span.finest).said()
-        )
-    } else {
-        format!(
-            "the values ticked below, and nothing else — anywhere from {} to {}",
-            dial.step_of(span.floor).said(),
-            dial.step_of(span.ceiling).said()
-        )
-    };
-    for line in paint.wrap(&said, Weight::Regular, size::SMALL, area.w - 20.0) {
-        paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
-        y += 16.0;
-    }
-    y += 10.0;
-
+    paint.say_at(
+        area.x,
+        y + 7.0,
+        "Ranked by",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
     let measures: Vec<(String, bool)> = mcf_optimize::reading::Measure::ALL
         .iter()
         .map(|measure| {
@@ -1177,25 +1202,35 @@ fn how_it_searches(
             )
         })
         .collect();
-    let (below, picked) = chips(paint, mouse, area, y, &measures);
+    let (below, picked) = chips(paint, mouse, inset, y, &measures);
     if let Some(at) = picked {
         act = Some(Act::SweepMeasure(at));
     }
-    y = below;
-    if desk.optimizing.measure.needs_the_answers_run() {
-        for line in paint.wrap(
-            "Nothing marks these answers yet: a model's own code has to run somewhere MCF              controls, and that container is not built. Every reading is still recorded, and              the score column stays at zero until it is.",
-            Weight::Regular,
-            size::SMALL,
-            area.w - 20.0,
-        ) {
-            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
-            y += 16.0;
-        }
-        y += 8.0;
-    }
+    y = below + 4.0;
 
-    (y, act)
+    let automatic = desk.optimizing.way == mcf_optimize::hunt::Way::Halving;
+    let said = if automatic {
+        format!(
+            "Starts at {}, then halves the gap around whichever wins, down to steps of {}.",
+            dial.coarse()
+                .iter()
+                .map(|step| step.said())
+                .collect::<Vec<_>>()
+                .join(", "),
+            dial.step_of(span.finest).said()
+        )
+    } else {
+        format!(
+            "Runs the values below and nothing else, anywhere from {} to {}.",
+            dial.step_of(span.floor).said(),
+            dial.step_of(span.ceiling).said()
+        )
+    };
+    for line in paint.wrap(&said, Weight::Regular, size::SMALL, area.w - 20.0) {
+        paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    (y + 10.0, act)
 }
 
 fn setting_to_optimize(
@@ -1226,20 +1261,36 @@ fn setting_to_optimize(
     let dial = desk.optimizing.sweep.dial;
     let how = if dial.reloads_the_engine() {
         format!(
-            "{} is a launch flag — each value reloads the engine",
+            "{} is a launch flag, so MCF holds the model again for each value.",
             dial.flag().unwrap_or("")
         )
     } else {
         format!(
-            "{} rides in each request — no reload between values",
+            "{} rides in each request, so the model is held once for the whole sweep.",
             dial.field().unwrap_or("")
         )
     };
     paint.say_at(area.x, y, &how, Weight::Regular, size::SMALL, ink.faint);
-    y += 24.0;
+    y += 26.0;
     let (below, chosen) = how_it_searches(paint, desk, mouse, area, y);
     act = act.or(chosen);
     y = below;
+    if desk.optimizing.way == mcf_optimize::hunt::Way::Halving {
+        return (y, act);
+    }
+    let (below, picked) = the_values_by_hand(paint, desk, mouse, area, y);
+    (below, act.or(picked))
+}
+
+fn the_values_by_hand(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> (f32, Option<Act>) {
+    let mut act = None;
+    let dial = desk.optimizing.sweep.dial;
     let values: Vec<(String, bool)> = dial
         .suggested()
         .iter()
@@ -1255,7 +1306,6 @@ fn setting_to_optimize(
         act = Some(Act::SweepValue(at));
     }
     y = below + 6.0;
-
     let (below, typed) = a_value_of_my_own(paint, desk, mouse, area, y);
     (below, act.or(typed))
 }

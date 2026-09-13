@@ -666,6 +666,48 @@ impl Optimizing {
 
 const SWEEP_CEILING: u32 = 16_384;
 
+fn hold_it_at(
+    socket: &Path,
+    model: &str,
+    settings: &mcf_serve::hosting::Hosting,
+    dial: mcf_optimize::dial::Dial,
+    step: mcf_optimize::dial::Step,
+) -> Result<u16, String> {
+    let mut held = settings.clone();
+    match dial {
+        mcf_optimize::dial::Dial::MicroBatch => {
+            let wanted = step.whole().unwrap_or(held.ubatch);
+            held.ubatch = wanted;
+            held.batch = held.batch.max(wanted);
+        }
+        mcf_optimize::dial::Dial::ThinkingBudget => held.started.thinking = step.whole(),
+        mcf_optimize::dial::Dial::DraftDepth => {
+            let wanted = step.whole().unwrap_or(0);
+            held.started.draft_head = wanted > 0;
+            held.started.drafted = (wanted > 0).then_some(wanted);
+        }
+        mcf_optimize::dial::Dial::Temperature
+        | mcf_optimize::dial::Dial::TopP
+        | mcf_optimize::dial::Dial::TopK => {}
+    }
+    let answer = ask(
+        socket,
+        &Request::Host {
+            model: model.to_owned(),
+            settings: held.to_request(),
+        },
+    )?;
+    if !answer.served {
+        return Err(refused_because(&answer.body));
+    }
+    answer
+        .body
+        .get("address")
+        .and_then(Value::as_text)
+        .and_then(port_of)
+        .ok_or_else(|| "MCF held the model but named no port to reach it on".to_owned())
+}
+
 #[must_use]
 pub fn port_of(address: &str) -> Option<u16> {
     address
@@ -3032,23 +3074,17 @@ impl Desk {
 
     #[must_use]
     fn base_for_a_sweep(&self) -> Option<mcf_optimize::ledger::Under> {
-        let hosted = self.hosted.as_ref()?;
+        let held = self.chosen.and_then(|at| self.models.get(at))?;
         let settings = self.settings.as_ref()?;
-        let bytes = self
-            .models
-            .iter()
-            .find(|held| held.path == hosted.model)
-            .and_then(|held| held.bytes)
-            .unwrap_or(0);
         Some(mcf_optimize::ledger::Under {
-            model: hosted.model.clone(),
-            model_bytes: bytes,
+            model: held.path.clone(),
+            model_bytes: held.bytes.unwrap_or(0),
             engine: settings.engine.clone(),
             commit: self.daemon_build.clone().unwrap_or_default(),
-            context: hosted.context.unwrap_or(settings.context),
+            context: settings.context,
             batch: settings.batch,
             ubatch: settings.ubatch,
-            cache: format!("{:?}", hosted.cache),
+            cache: format!("{:?}", settings.cache),
             flash_attention: settings.flash_attention,
             draft_head: settings.started.draft_head,
             draft_depth: settings.started.drafted,
@@ -3109,26 +3145,22 @@ impl Desk {
                 Some("choose at least one test set before running".to_owned());
             return;
         }
-        let Some(hosted) = self.hosted.as_ref() else {
-            self.optimizing.refused =
-                Some("nothing is held: a sweep asks the held model, so host one first".to_owned());
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            self.optimizing.refused = Some("choose a model on the left first".to_owned());
             return;
         };
-        if hosted.address.is_empty() {
-            self.optimizing.refused =
-                Some("the held model is not answering on an address yet".to_owned());
-            return;
-        }
-        let Some(port) = port_of(&hosted.address) else {
-            self.optimizing.refused = Some(format!(
-                "the held model's address names no port: {}",
-                hosted.address
-            ));
+        let model = held.path.clone();
+        let Some(settings) = self.settings.clone() else {
+            self.optimizing.refused = Some(
+                "MCF has not said what this model would run under yet — open Configure and \
+                 let it work that out"
+                    .to_owned(),
+            );
             return;
         };
         let Some(under) = self.base_for_a_sweep() else {
             self.optimizing.refused =
-                Some("the held model's settings have not been read yet".to_owned());
+                Some("this model's settings have not been read yet".to_owned());
             return;
         };
         let Some(path) = self.ledger_path() else {
@@ -3158,7 +3190,7 @@ impl Desk {
         );
         let orders = mcf_optimize::running::Orders {
             endpoint: mcf_optimize::trial::Endpoint {
-                port,
+                port: 0,
                 key: None,
                 patience: std::time::Duration::from_secs(7200),
             },
@@ -3167,7 +3199,15 @@ impl Desk {
             ceiling: SWEEP_CEILING,
             thinking: None,
             effort: None,
+            mark: self.optimizing.measure.needs_the_answers_run(),
+            room: path
+                .parent()
+                .map_or_else(std::env::temp_dir, |beside| beside.join("marking")),
         };
+        let dial = self.optimizing.sweep.dial;
+        let socket = self.socket.clone();
+        let hosting =
+            std::boxed::Box::new(move |step| hold_it_at(&socket, &model, &settings, dial, step));
         self.optimizing.report = mcf_optimize::reading::Report::default();
         self.optimizing.done = 0;
         self.optimizing.last_said = None;
@@ -3175,6 +3215,7 @@ impl Desk {
             orders,
             course,
             ledger,
+            hosting,
             || mcf_core::time::Timestamp::now().to_string(),
         ));
         self.optimizing.running = true;
