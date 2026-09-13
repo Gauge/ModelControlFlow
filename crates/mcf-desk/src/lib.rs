@@ -1573,6 +1573,8 @@ pub enum Act {
     AddCustom,
     ForgetReadings,
     PickRow(mcf_optimize::ledger::At),
+    RerunRow(mcf_optimize::ledger::At),
+    ForgetRow(mcf_optimize::ledger::At),
     PickNone,
     RerunPicked,
     TestSet(usize),
@@ -2068,6 +2070,8 @@ impl Desk {
             | Act::AddCustom
             | Act::ForgetReadings
             | Act::PickRow(_)
+            | Act::RerunRow(_)
+            | Act::ForgetRow(_)
             | Act::PickNone
             | Act::RerunPicked
             | Act::TestSet(_)
@@ -3306,6 +3310,8 @@ impl Desk {
             Act::AddCustom => self.optimizing.add_what_was_typed(),
             Act::ForgetReadings => self.forget_readings(),
             Act::PickRow(at) => self.pick_row(at),
+            Act::RerunRow(at) => self.rerun_one(at),
+            Act::ForgetRow(at) => self.forget_one(at),
             Act::PickNone => self.optimizing.picked.clear(),
             Act::RerunPicked => self.rerun_picked(),
             _ => {}
@@ -3321,9 +3327,49 @@ impl Desk {
         self.optimizing.picked.push(at);
     }
 
+    fn rerun_one(&mut self, at: mcf_optimize::ledger::At) {
+        self.optimizing.refused = None;
+        if self.a_sweep_is_going() {
+            return;
+        }
+        if let Some(why) = self.forget_these(&[at]) {
+            self.optimizing.refused = Some(why);
+            return;
+        }
+        self.read_the_ledger();
+        self.sweeping_over(Some(&[at]));
+    }
+
+    #[must_use]
+    fn a_sweep_is_going(&self) -> bool {
+        if self.optimizing.run.is_none() && !self.optimizing.running {
+            return false;
+        }
+        true
+    }
+
+    fn forget_one(&mut self, at: mcf_optimize::ledger::At) {
+        self.optimizing.refused = None;
+        if self.a_sweep_is_going() {
+            self.optimizing.refused = Some(
+                "a sweep is running — stop it before changing what is already written down"
+                    .to_owned(),
+            );
+            return;
+        }
+        if let Some(why) = self.forget_these(&[at]) {
+            self.optimizing.refused = Some(why);
+            return;
+        }
+        if let Some(found) = self.optimizing.picked.iter().position(|held| *held == at) {
+            let _dropped = self.optimizing.picked.remove(found);
+        }
+        self.read_the_ledger();
+    }
+
     fn rerun_picked(&mut self) {
         self.optimizing.refused = None;
-        if self.optimizing.picked.is_empty() || self.optimizing.run.is_some() {
+        if self.optimizing.picked.is_empty() || self.a_sweep_is_going() {
             return;
         }
         let picked = self.optimizing.picked.clone();
@@ -3500,6 +3546,8 @@ impl Desk {
             | Act::AddCustom
             | Act::ForgetReadings
             | Act::PickRow(_)
+            | Act::RerunRow(_)
+            | Act::ForgetRow(_)
             | Act::PickNone
             | Act::RerunPicked => self.choosing_values(act),
             Act::TestSet(number) => self.optimizing.toggle_set(number),

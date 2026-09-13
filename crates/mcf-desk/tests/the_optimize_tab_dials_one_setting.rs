@@ -594,3 +594,89 @@ fn running_one_picked_reading_again_asks_for_that_take_of_that_set_only() {
         "an exact rerun does not narrow the sweep to the set that was picked"
     );
 }
+
+fn a_row(step: u32, set: usize, repeat: u8) -> mcf_optimize::ledger::Row {
+    let at = a_spot(step, set, repeat);
+    mcf_optimize::ledger::Row {
+        recorded: "before".to_owned(),
+        under: mcf_optimize::ledger::Under::default(),
+        at,
+        reading: mcf_optimize::reading::Reading {
+            dial: at.dial,
+            step: at.step,
+            set: at.set,
+            repeat: at.repeat,
+            passed: 4,
+            of: 8,
+            produced: 100,
+            milliseconds: 1000,
+            ending: mcf_optimize::reading::Ending::Answered,
+            per_task: Vec::new(),
+        },
+    }
+}
+
+#[test]
+fn forgetting_one_row_leaves_the_others_and_starts_nothing() {
+    let mut desk = desk();
+    desk.optimizing.rows = vec![a_row(0, 1, 1), a_row(4096, 1, 1)];
+    desk.act(Act::ForgetRow(a_spot(0, 1, 1)));
+    assert!(
+        !desk.optimizing.running,
+        "forgetting a reading runs nothing"
+    );
+    assert!(
+        desk.optimizing.refused.is_none(),
+        "{:?}",
+        desk.optimizing.refused
+    );
+}
+
+#[test]
+fn forgetting_a_row_that_was_picked_lets_go_of_the_pick_too() {
+    let mut desk = desk();
+    let one = a_spot(0, 1, 1);
+    desk.act(Act::PickRow(one));
+    assert_eq!(desk.optimizing.picked, vec![one]);
+    desk.act(Act::ForgetRow(one));
+    assert!(
+        desk.optimizing.picked.is_empty(),
+        "a pick of a reading that is gone would act on nothing"
+    );
+}
+
+#[test]
+fn running_one_row_again_leaves_the_sweep_beside_it_alone() {
+    let mut desk = desk();
+    let steps = desk.optimizing.sweep.steps.clone();
+    let sets = desk.optimizing.sweep.sets.clone();
+    let repeats = desk.optimizing.sweep.repeats;
+    desk.act(Act::RerunRow(a_spot(8192, 4, 2)));
+    assert_eq!(desk.optimizing.sweep.steps, steps);
+    assert_eq!(desk.optimizing.sweep.sets, sets);
+    assert_eq!(desk.optimizing.sweep.repeats, repeats);
+}
+
+#[test]
+fn a_sweep_in_flight_is_not_interrupted_by_running_one_row_again() {
+    let mut desk = desk();
+    desk.optimizing.running = true;
+    desk.act(Act::RerunRow(a_spot(0, 1, 1)));
+    assert!(
+        desk.optimizing.refused.is_none(),
+        "the sweep carries on and nothing is said about it: {:?}",
+        desk.optimizing.refused
+    );
+}
+
+#[test]
+fn forgetting_a_row_while_a_sweep_is_going_says_why_it_will_not() {
+    let mut desk = desk();
+    desk.optimizing.running = true;
+    desk.act(Act::ForgetRow(a_spot(0, 1, 1)));
+    let why = desk.optimizing.refused.clone().unwrap_or_default();
+    assert!(
+        why.contains("stop it"),
+        "taking a reading out from under a sweep that is reading it would be a mess: {why}"
+    );
+}

@@ -1599,7 +1599,7 @@ fn rows_of_the_record(
     let ink = paint.ink;
     let mut act = None;
     let dial = desk.optimizing.sweep.dial;
-    let wide = ((area.w - 28.0) / 9.0).max(58.0);
+    let wide = ((area.w - 28.0 - BESIDE) / 9.0).max(52.0);
     paint.say_at(
         area.x,
         *y,
@@ -1650,46 +1650,121 @@ fn rows_of_the_record(
             ink.faint,
         );
     }
+    paint.say_at(
+        area.right() - BESIDE - 12.0,
+        *y,
+        "One row",
+        Weight::Bold,
+        size::LABEL,
+        ink.faint,
+    );
     *y += 20.0;
     let band = paint.clipped();
     for row in &desk.optimizing.rows {
-        let below = *y + ROW;
-        let seen = band.is_none_or(|held| below >= held.y && *y <= held.bottom());
-        let where_ = Box::new(area.x, *y - 3.0, area.w - 12.0, ROW);
-        if seen {
-            let picked = desk.optimizing.picked.contains(&row.at);
-            if picked {
-                paint.wash(where_, ink.accent, 40);
-            } else if mouse.over(where_) {
-                paint.wash(where_, ink.line, 60);
-            }
-            if picked {
-                ui::tick(
-                    paint,
-                    Box::new(area.x + 4.0, *y + 1.0, 12.0, 12.0),
-                    ink.accent,
-                );
-            }
-            let cells =
-                mcf_optimize::reading::Report::cells_of(&row.reading, dial, &desk.optimizing.named);
-            for (column, cell) in cells.iter().enumerate() {
-                let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
-                paint.say_at(
-                    area.x + 28.0 + wide * column as f32,
-                    *y,
-                    &shown,
-                    Weight::Regular,
-                    size::SMALL,
-                    ink.ink,
-                );
-            }
-        }
-        if mouse.clicked(where_) {
-            act = Some(Act::PickRow(row.at));
-        }
-        *y += ROW;
+        act = one_row(
+            paint,
+            desk,
+            mouse,
+            RowAt {
+                area,
+                y,
+                wide,
+                dial,
+                band,
+            },
+            row,
+        )
+        .or(act);
     }
     act
+}
+
+struct RowAt<'a> {
+    area: Box,
+    y: &'a mut f32,
+    wide: f32,
+    dial: mcf_optimize::dial::Dial,
+    band: Option<Box>,
+}
+
+fn one_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    where_it_goes: RowAt<'_>,
+    row: &mcf_optimize::ledger::Row,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let RowAt {
+        area,
+        y,
+        wide,
+        dial,
+        band,
+    } = where_it_goes;
+    let mut act = None;
+    let below = *y + ROW;
+    let seen = band.is_none_or(|held| below >= held.y && *y <= held.bottom());
+    let where_ = Box::new(area.x, *y - 3.0, area.w - 12.0, ROW);
+    let again = Box::new(where_.right() - BESIDE, *y - 3.0, 54.0, ROW);
+    let gone = Box::new(where_.right() - BESIDE + 58.0, *y - 3.0, 54.0, ROW);
+    if seen {
+        let picked = desk.optimizing.picked.contains(&row.at);
+        if picked {
+            paint.wash(where_, ink.accent, 40);
+        } else if mouse.over(where_) {
+            paint.wash(where_, ink.line, 60);
+        }
+        if picked {
+            ui::tick(
+                paint,
+                Box::new(area.x + 4.0, *y + 1.0, 12.0, 12.0),
+                ink.accent,
+            );
+        }
+        let cells =
+            mcf_optimize::reading::Report::cells_of(&row.reading, dial, &desk.optimizing.named);
+        for (column, cell) in cells.iter().enumerate() {
+            let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
+            paint.say_at(
+                area.x + 28.0 + wide * column as f32,
+                *y,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.ink,
+            );
+        }
+        beside_a_row(paint, mouse, again, "Again", ink.accent);
+        beside_a_row(paint, mouse, gone, "Forget", ink.warn);
+    }
+    if mouse.clicked(again) {
+        act = Some(Act::RerunRow(row.at));
+    } else if mouse.clicked(gone) {
+        act = Some(Act::ForgetRow(row.at));
+    } else if mouse.clicked(where_) {
+        act = Some(Act::PickRow(row.at));
+    }
+    *y += ROW;
+    act
+}
+
+const BESIDE: f32 = 118.0;
+
+fn beside_a_row(paint: &mut Painter, mouse: &Mouse, area: Box, said: &str, colour: Rgb) {
+    let ink = paint.ink;
+    let over = mouse.over(area);
+    if over {
+        paint.edge(area, 4.0, colour, ink.card);
+    }
+    paint.say_at(
+        area.x + 7.0,
+        area.y + 3.0,
+        said,
+        Weight::Bold,
+        size::LABEL,
+        if over { colour } else { ink.faint },
+    );
 }
 
 fn optimize_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
