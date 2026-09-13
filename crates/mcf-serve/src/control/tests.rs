@@ -156,3 +156,51 @@ fn a_hub_request_carries_whether_it_wants_the_hub_asked_again() {
     };
     assert!(!fresh, "a line without the flag asks for what was kept");
 }
+
+#[test]
+fn a_removal_preview_survives_the_wire() {
+    let asked = Request::Removal {
+        model: "a-model.gguf".to_owned(),
+    };
+    let back = Request::read(&asked.to_line()).expect("a preview is readable");
+    assert_eq!(back, asked);
+}
+
+#[test]
+fn a_removal_carries_its_reason_and_whether_it_deletes() {
+    for purge in [false, true] {
+        let asked = Request::Remove {
+            model: "a-model.gguf".to_owned(),
+            reason: "making room for the one being measured".to_owned(),
+            purge,
+        };
+        let back = Request::read(&asked.to_line()).expect("a removal is readable");
+        assert_eq!(back, asked);
+    }
+}
+
+#[test]
+fn a_removal_naming_no_model_is_refused_rather_than_guessed_at() {
+    let line = mcf_record::json::Value::map([
+        ("protocol", mcf_record::json::Value::Integer(1)),
+        ("ask", mcf_record::json::Value::text("remove")),
+        ("reason", mcf_record::json::Value::text("because")),
+    ])
+    .to_line();
+    assert!(Request::read(&line).is_err());
+}
+
+#[test]
+fn a_removal_with_no_reason_on_the_wire_reads_as_no_reason_not_as_one() {
+    let line = mcf_record::json::Value::map([
+        ("protocol", mcf_record::json::Value::Integer(1)),
+        ("ask", mcf_record::json::Value::text("remove")),
+        ("model", mcf_record::json::Value::text("a-model.gguf")),
+    ])
+    .to_line();
+    let Ok(Request::Remove { reason, purge, .. }) = Request::read(&line) else {
+        panic!("a removal naming a model is readable");
+    };
+    assert!(reason.is_empty(), "the daemon refuses it later, by name");
+    assert!(!purge, "nothing is deleted unless it was asked for");
+}

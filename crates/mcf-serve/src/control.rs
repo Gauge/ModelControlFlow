@@ -88,6 +88,14 @@ pub enum Request {
     Anatomy {
         model: String,
     },
+    Removal {
+        model: String,
+    },
+    Remove {
+        model: String,
+        reason: String,
+        purge: bool,
+    },
 }
 
 fn maybe(held: Option<&str>) -> Value {
@@ -278,6 +286,20 @@ impl Request {
                 ("model", Value::text(model.clone())),
                 ("settings", settings.clone()),
             ]),
+            Self::Removal { model } => Value::map([
+                ("ask", Value::text("removal")),
+                ("model", Value::text(model.clone())),
+            ]),
+            Self::Remove {
+                model,
+                reason,
+                purge,
+            } => Value::map([
+                ("ask", Value::text("remove")),
+                ("model", Value::text(model.clone())),
+                ("reason", Value::text(reason.clone())),
+                ("purge", Value::Bool(*purge)),
+            ]),
             Self::Hosted => Value::map([("ask", Value::text("hosted"))]),
             Self::Unhost => Value::map([("ask", Value::text("unhost"))]),
         };
@@ -353,6 +375,26 @@ impl Request {
                     .ok_or_else(|| refused("an acquisition naming no file", line))?
                     .to_owned(),
                 from: optional("from"),
+            }),
+            Some("removal") => Ok(Self::Removal {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a removal preview naming no model", line))?
+                    .to_owned(),
+            }),
+            Some("remove") => Ok(Self::Remove {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a removal naming no model", line))?
+                    .to_owned(),
+                reason: value
+                    .get("reason")
+                    .and_then(Value::as_text)
+                    .unwrap_or_default()
+                    .to_owned(),
+                purge: matches!(value.get("purge"), Some(Value::Bool(true))),
             }),
             Some("hosted") => Ok(Self::Hosted),
             Some("unhost") => Ok(Self::Unhost),

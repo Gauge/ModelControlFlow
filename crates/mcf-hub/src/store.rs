@@ -144,6 +144,33 @@ pub fn part_of_a_set(path: &Path) -> Option<(String, u32)> {
     (at > 0).then(|| (prefix.to_owned(), at))
 }
 
+#[must_use]
+pub fn the_whole_of(path: &Path) -> Vec<PathBuf> {
+    let Some((prefix, _)) = part_of_a_set(path) else {
+        return vec![path.to_path_buf()];
+    };
+    let Some(directory) = path.parent() else {
+        return vec![path.to_path_buf()];
+    };
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return vec![path.to_path_buf()];
+    };
+    let mut parts: Vec<(u32, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let beside = entry.path();
+            part_of_a_set(&beside)
+                .filter(|(held, _)| *held == prefix)
+                .map(|(_, at)| (at, beside))
+        })
+        .collect();
+    if parts.is_empty() {
+        return vec![path.to_path_buf()];
+    }
+    parts.sort_unstable();
+    parts.into_iter().map(|(_, beside)| beside).collect()
+}
+
 pub fn bytes_of_the_whole(path: &Path) -> Result<u64> {
     let own = std::fs::metadata(path)
         .map_err(|error| {

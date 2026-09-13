@@ -592,6 +592,9 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     if desk.hub_chosen.is_some() || desk.pending.is_some() {
         return over.or(act);
     }
+    if desk.removing.is_some() {
+        return removal_page(paint, desk, mouse, pane).or(act);
+    }
     let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
         paint.say_at(
             right,
@@ -604,6 +607,162 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
         return act;
     };
     model_page(paint, desk, mouse, pane, held).or(act)
+}
+
+fn removal_done(paint: &mut Painter, mouse: &Mouse, said: &str, area: Box, y: f32) -> Option<Act> {
+    let ink = paint.ink;
+    let mut y = y;
+    let wide = (area.w - 20.0).max(160.0);
+    for line in paint.wrap(said, Weight::Regular, size::BODY, wide) {
+        paint.say_at(area.x, y, &line, Weight::Regular, size::BODY, ink.ink);
+        y += 20.0;
+    }
+    ui::button(
+        paint,
+        mouse,
+        Box::new(area.x, y + 12.0, 160.0, ui::BUTTON),
+        "Done",
+        Kind::Primary,
+    )
+    .then_some(Act::CancelRemove)
+}
+
+fn what_would_go(paint: &mut Painter, removing: &crate::Removing, area: Box, y: f32) -> f32 {
+    let ink = paint.ink;
+    let mut y = y;
+    let wide = (area.w - 20.0).max(160.0);
+    if removing.files.is_empty() {
+        return y;
+    }
+    let total = removing
+        .bytes
+        .map_or_else(|| "an unstatable total".to_owned(), gigabytes);
+    paint.say_at(
+        area.x,
+        y,
+        &format!("{} file(s), {total}", removing.files.len()),
+        Weight::Bold,
+        size::SMALL,
+        ink.ink,
+    );
+    y += 22.0;
+    for gone in removing.files.iter().take(6) {
+        let shown = paint.elide(&gone.path, Weight::Regular, size::SMALL, wide - 90.0);
+        paint.say_at(area.x, y, &shown, Weight::Regular, size::SMALL, ink.faint);
+        paint.say_at(
+            area.right() - 90.0,
+            y,
+            &gigabytes(gone.bytes),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 18.0;
+    }
+    if removing.files.len() > 6 {
+        paint.say_at(
+            area.x,
+            y,
+            &format!("and {} more", removing.files.len().saturating_sub(6)),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 18.0;
+    }
+    y + 12.0
+}
+
+fn removal_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let removing = desk.removing.as_ref()?;
+    let mut act = None;
+    let wide = (area.w - 20.0).max(160.0);
+    let name = paint.elide(&removing.name, Weight::Bold, size::HEAD, wide);
+    paint.say_at(area.x, area.y, &name, Weight::Bold, size::HEAD, ink.ink);
+    let mut y = area.y + 36.0;
+
+    if let Some(said) = &removing.done {
+        return removal_done(paint, mouse, said, area, y);
+    }
+
+    let ending = if removing.purge {
+        "This deletes the files. Nothing is shelved and nothing comes back."
+    } else if removing.reversible {
+        "The files move to the shelf below. Nothing is deleted, and they can be moved back."
+    } else {
+        "The shelf is on another filesystem, so this copies rather than moves, and cannot be \
+         undone in place."
+    };
+    for line in paint.wrap(ending, Weight::Regular, size::BODY, wide) {
+        paint.say_at(area.x, y, &line, Weight::Regular, size::BODY, ink.quiet);
+        y += 20.0;
+    }
+    y += 10.0;
+
+    y = what_would_go(paint, removing, area, y);
+
+    paint.say_at(area.x, y, "Why", Weight::Regular, size::BODY, ink.quiet);
+    y += 22.0;
+    let touched = ui::field(
+        paint,
+        mouse,
+        Box::new(area.x, y, wide.min(420.0), 28.0),
+        &removing.reason,
+        "what this is making room for",
+        true,
+    );
+    if touched != ui::Touched::No {
+        act = Some(Act::RemoveReason(touched));
+    }
+    y += 42.0;
+
+    let square = Box::new(area.x, y, 20.0, 20.0);
+    if ui::check(paint, mouse, square, removing.purge) {
+        act = Some(Act::PurgeToggle);
+    }
+    paint.say_at(
+        area.x + 30.0,
+        y + 2.0,
+        "Delete the files instead of shelving them",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    y += 36.0;
+
+    if let Some(why) = &removing.refused {
+        for line in paint.wrap(why, Weight::Regular, size::SMALL, wide) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
+            y += 16.0;
+        }
+        y += 8.0;
+    }
+
+    let doing = if removing.purge {
+        "Delete it"
+    } else {
+        "Shelve it"
+    };
+    if ui::button(
+        paint,
+        mouse,
+        Box::new(area.x, y, 160.0, ui::BUTTON),
+        doing,
+        Kind::Primary,
+    ) {
+        act = Some(Act::DoRemove);
+    }
+    if ui::button(
+        paint,
+        mouse,
+        Box::new(area.x + 172.0, y, 120.0, ui::BUTTON),
+        "Keep it",
+        Kind::Quiet,
+    ) {
+        act = Some(Act::CancelRemove);
+    }
+    act
 }
 
 fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
@@ -2295,6 +2454,9 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         Kind::Ordinary,
         Act::Tab(crate::Tab::Contents),
     ));
+    if !this_one && desk.chosen.is_some() {
+        actions.push(("Remove…".to_owned(), Kind::Quiet, Act::AskToRemove));
+    }
     for (label, kind, what) in actions {
         let where_ = Box::new(area.x, y, list - 20.0, 30.0);
         let needs_one = true;

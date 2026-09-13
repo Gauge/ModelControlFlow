@@ -1080,3 +1080,127 @@ fn a_daemon_of_another_age_is_shown_and_one_of_the_same_age_is_not() {
         "a daemon of another age is not shown as one"
     );
 }
+
+#[test]
+fn removing_nothing_opens_nothing() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Models;
+    desk.chosen = None;
+    desk.act(crate::Act::AskToRemove);
+    assert!(
+        desk.removing.is_none(),
+        "with no model chosen there is nothing to ask about"
+    );
+}
+
+#[test]
+fn a_removal_will_not_go_ahead_until_it_is_told_why() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Models;
+    desk.removing = Some(crate::Removing {
+        model: "/m/a-model.gguf".to_owned(),
+        name: "a-model".to_owned(),
+        files: Vec::new(),
+        bytes: Some(1024),
+        reversible: true,
+        shelf: "/m/removed".to_owned(),
+        reason: crate::typing::Typing::of(String::new()),
+        purge: false,
+        refused: None,
+        done: None,
+    });
+    desk.act(crate::Act::DoRemove);
+    let why = desk
+        .removing
+        .as_ref()
+        .and_then(|held| held.refused.clone())
+        .unwrap_or_default();
+    assert!(
+        why.contains("why"),
+        "an empty reason is refused, and the refusal says what is missing: {why}"
+    );
+    assert!(
+        desk.removing
+            .as_ref()
+            .is_some_and(|held| held.done.is_none()),
+        "nothing was removed"
+    );
+}
+
+#[test]
+fn a_reason_being_typed_takes_the_keys_ahead_of_the_filter() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Models;
+    desk.filter.set("a-family");
+    desk.removing = Some(crate::Removing {
+        model: "/m/a-model.gguf".to_owned(),
+        name: "a-model".to_owned(),
+        files: Vec::new(),
+        bytes: None,
+        reversible: true,
+        shelf: String::new(),
+        reason: crate::typing::Typing::of(String::new()),
+        purge: false,
+        refused: None,
+        done: None,
+    });
+    assert!(desk.takes_typing());
+    desk.typing().put("room", 64);
+    assert_eq!(
+        desk.removing.as_ref().map(|held| held.reason.said()),
+        Some("room"),
+        "the keys reach the reason, not the filter behind it"
+    );
+    assert_eq!(
+        desk.filter.said(),
+        "a-family",
+        "the filter is left as it was"
+    );
+}
+
+#[test]
+fn escape_puts_a_removal_back_without_removing_anything() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Models;
+    desk.removing = Some(crate::Removing {
+        model: "/m/a-model.gguf".to_owned(),
+        name: "a-model".to_owned(),
+        files: Vec::new(),
+        bytes: None,
+        reversible: true,
+        shelf: String::new(),
+        reason: crate::typing::Typing::of("room".to_owned()),
+        purge: false,
+        refused: None,
+        done: None,
+    });
+    desk.stopped_typing();
+    assert!(desk.removing.is_none());
+}
+
+#[test]
+fn deleting_is_asked_for_separately_from_removing() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Models;
+    desk.removing = Some(crate::Removing {
+        model: "/m/a-model.gguf".to_owned(),
+        name: "a-model".to_owned(),
+        files: Vec::new(),
+        bytes: None,
+        reversible: true,
+        shelf: String::new(),
+        reason: crate::typing::Typing::of(String::new()),
+        purge: false,
+        refused: None,
+        done: None,
+    });
+    assert_eq!(desk.removing.as_ref().map(|held| held.purge), Some(false));
+    desk.act(crate::Act::PurgeToggle);
+    assert_eq!(
+        desk.removing.as_ref().map(|held| held.purge),
+        Some(true),
+        "shelving is what a removal does unless deleting is asked for"
+    );
+    desk.act(crate::Act::PurgeToggle);
+    assert_eq!(desk.removing.as_ref().map(|held| held.purge), Some(false));
+}

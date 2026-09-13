@@ -397,6 +397,26 @@ pub fn chevron(paint: &mut Painter, at: (f32, f32), colour: Rgb) {
     }
 }
 
+pub fn check(paint: &mut Painter, mouse: &Mouse, area: Box, on: bool) -> bool {
+    let ink = paint.ink;
+    let hot = mouse.over(area) || mouse.holding(area);
+    let edge = if on || hot { ink.accent } else { ink.line };
+    paint.edge(area, 5.0, edge, if on { ink.accent } else { ink.card });
+    if on {
+        tick(
+            paint,
+            Box::new(
+                area.x + area.w * 0.2,
+                area.y + area.h * 0.2,
+                area.w * 0.6,
+                area.h * 0.6,
+            ),
+            ink.card,
+        );
+    }
+    mouse.clicked(area)
+}
+
 pub fn tick(paint: &mut Painter, area: Box, colour: Rgb) {
     let unit = area.w / 8.0;
     for step in 0..4 {

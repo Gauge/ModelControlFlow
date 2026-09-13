@@ -56,6 +56,10 @@ const REACHES: &[Reaches] = &[
         module: "crates/mcf-cli/src/desk.rs",
         subcommand: Some("desk"),
     },
+    Reaches {
+        module: "crates/mcf-cli/src/models.rs",
+        subcommand: Some("rm"),
+    },
 ];
 
 const HELPER: &str = "tier_private_runtime_dir";

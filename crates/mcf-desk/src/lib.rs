@@ -1187,6 +1187,33 @@ pub const SMALLEST_WINDOW: u64 = 4096;
 
 pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Gone {
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Removing {
+    pub model: String,
+    pub name: String,
+    pub files: Vec<Gone>,
+    pub bytes: Option<u64>,
+    pub reversible: bool,
+    pub shelf: String,
+    pub reason: crate::typing::Typing,
+    pub purge: bool,
+    pub refused: Option<String>,
+    pub done: Option<String>,
+}
+
+impl Removing {
+    #[must_use]
+    pub fn finished(&self) -> bool {
+        self.done.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Slots,
@@ -1281,6 +1308,11 @@ pub enum Act {
     Sweep,
     Contents(Page),
     Edit(Field, crate::ui::Touched),
+    AskToRemove,
+    RemoveReason(crate::ui::Touched),
+    PurgeToggle,
+    DoRemove,
+    CancelRemove,
     Switch(Switch),
     Place(usize),
     Rope(usize),
@@ -1446,6 +1478,7 @@ pub struct Desk {
     pub contents: Page,
     pub editing: Option<(Field, crate::typing::Typing)>,
     pub edit_refused: Option<String>,
+    pub removing: Option<Removing>,
     pub declared: Option<mcf_serve::declared::Declared>,
     host_after: Option<String>,
     pub building: Option<String>,
@@ -1478,6 +1511,7 @@ impl Desk {
             optimizing: Optimizing::default(),
             contents: Page::Anatomy,
             editing: None,
+            removing: None,
             edit_refused: None,
             declared: None,
             shown: None,
@@ -1527,7 +1561,8 @@ impl Desk {
 
     #[must_use]
     pub fn takes_typing(&self) -> bool {
-        matches!(self.page, Page::Adding | Page::Hosting | Page::Models)
+        self.removing.as_ref().is_some_and(|held| !held.finished())
+            || matches!(self.page, Page::Adding | Page::Hosting | Page::Models)
             || (matches!(self.page, Page::Host) && self.editing.is_some())
     }
 
@@ -1560,6 +1595,10 @@ impl Desk {
     }
 
     pub fn stopped_typing(&mut self) {
+        if self.removing.is_some() {
+            self.removing = None;
+            return;
+        }
         if self.editing.is_some() {
             self.editing = None;
             self.edit_refused = None;
@@ -1573,6 +1612,9 @@ impl Desk {
     }
 
     pub fn typing(&mut self) -> &mut crate::typing::Typing {
+        if let Some(removing) = self.removing.as_mut().filter(|held| !held.finished()) {
+            return &mut removing.reason;
+        }
         if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_mut()) {
             return typed;
         }
@@ -1589,6 +1631,9 @@ impl Desk {
 
     #[must_use]
     pub fn typing_now(&self) -> &crate::typing::Typing {
+        if let Some(removing) = self.removing.as_ref().filter(|held| !held.finished()) {
+            return &removing.reason;
+        }
         if let (Page::Models | Page::Host, Some((_, typed))) = (self.page, self.editing.as_ref()) {
             return typed;
         }
@@ -1769,6 +1814,11 @@ impl Desk {
             Act::HostIt => self.host_it(),
             Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
+            Act::AskToRemove
+            | Act::RemoveReason(_)
+            | Act::PurgeToggle
+            | Act::DoRemove
+            | Act::CancelRemove => self.removal(&act),
             Act::Close | Act::Copy(_) => {}
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
@@ -2050,6 +2100,198 @@ impl Desk {
     #[must_use]
     pub fn to_let_go(&self) -> Option<String> {
         self.hosted.as_ref().map(Hosted::name)
+    }
+
+    fn removal(&mut self, act: &Act) {
+        match act {
+            Act::AskToRemove => self.ask_to_remove(),
+            Act::RemoveReason(touched) => self.touch_the_reason(*touched),
+            Act::PurgeToggle => {
+                if let Some(removing) = self.removing.as_mut() {
+                    removing.purge = !removing.purge;
+                    removing.refused = None;
+                }
+            }
+            Act::DoRemove => self.do_remove(),
+            Act::CancelRemove => self.removing = None,
+            _ => {}
+        }
+    }
+
+    pub fn ask_to_remove(&mut self) {
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            return;
+        };
+        let model = held.path.clone();
+        let name = held.name.clone();
+        match ask(
+            &self.socket,
+            &Request::Removal {
+                model: model.clone(),
+            },
+        ) {
+            Ok(answer) if answer.served => {
+                let whole = |key: &str| {
+                    answer
+                        .body
+                        .get(key)
+                        .and_then(Value::as_integer)
+                        .and_then(|held| u64::try_from(held).ok())
+                };
+                let text = |key: &str| {
+                    answer
+                        .body
+                        .get(key)
+                        .and_then(Value::as_text)
+                        .unwrap_or_default()
+                        .to_owned()
+                };
+                let files = match answer.body.get("files") {
+                    Some(Value::List(listed)) => listed
+                        .iter()
+                        .map(|one| Gone {
+                            path: one
+                                .get("path")
+                                .and_then(Value::as_text)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            bytes: one
+                                .get("bytes")
+                                .and_then(Value::as_integer)
+                                .and_then(|held| u64::try_from(held).ok())
+                                .unwrap_or(0),
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                self.removing = Some(Removing {
+                    model,
+                    name,
+                    files,
+                    bytes: whole("bytes"),
+                    reversible: matches!(answer.body.get("reversible"), Some(Value::Bool(true))),
+                    shelf: text("shelf"),
+                    reason: crate::typing::Typing::of(String::new()),
+                    purge: false,
+                    refused: None,
+                    done: None,
+                });
+            }
+            Ok(answer) => {
+                self.removing = Some(Removing {
+                    model,
+                    name,
+                    files: Vec::new(),
+                    bytes: None,
+                    reversible: false,
+                    shelf: String::new(),
+                    reason: crate::typing::Typing::of(String::new()),
+                    purge: false,
+                    refused: Some(refused_because(&answer.body)),
+                    done: None,
+                });
+            }
+            Err(why) => {
+                self.removing = Some(Removing {
+                    model,
+                    name,
+                    files: Vec::new(),
+                    bytes: None,
+                    reversible: false,
+                    shelf: String::new(),
+                    reason: crate::typing::Typing::of(String::new()),
+                    purge: false,
+                    refused: Some(why),
+                    done: None,
+                });
+            }
+        }
+    }
+
+    fn touch_the_reason(&mut self, touched: crate::ui::Touched) {
+        let Some(removing) = self.removing.as_mut() else {
+            return;
+        };
+        match touched {
+            crate::ui::Touched::No => {}
+            crate::ui::Touched::At(at) => removing.reason.place(at, false),
+            crate::ui::Touched::Word(at) => removing.reason.word_at(at),
+            crate::ui::Touched::DraggedTo(at) => removing.reason.place(at, true),
+        }
+    }
+
+    pub fn do_remove(&mut self) {
+        let Some(removing) = self.removing.as_ref() else {
+            return;
+        };
+        if removing.finished() {
+            return;
+        }
+        let reason = removing.reason.trim().to_owned();
+        if reason.is_empty() {
+            if let Some(removing) = self.removing.as_mut() {
+                removing.refused = Some(
+                    "Say why this is going. A removal nobody can account for is one nobody can \
+                     answer for."
+                        .to_owned(),
+                );
+            }
+            return;
+        }
+        let asked = Request::Remove {
+            model: removing.model.clone(),
+            reason: reason.clone(),
+            purge: removing.purge,
+        };
+        let answered = ask(&self.socket, &asked);
+        let Some(removing) = self.removing.as_mut() else {
+            return;
+        };
+        match answered {
+            Ok(answer) if answer.served => {
+                let bytes = answer
+                    .body
+                    .get("bytes")
+                    .and_then(Value::as_integer)
+                    .and_then(|held| u64::try_from(held).ok())
+                    .unwrap_or(0);
+                let purged = answer
+                    .body
+                    .get("purged_bytes")
+                    .and_then(Value::as_integer)
+                    .is_some();
+                let put_on = answer
+                    .body
+                    .get("shelf")
+                    .and_then(Value::as_text)
+                    .unwrap_or_default()
+                    .to_owned();
+                removing.done = Some(if purged {
+                    format!(
+                        "{} is gone — {} freed, and it cannot be brought back.",
+                        removing.name,
+                        view::gigabytes(bytes)
+                    )
+                } else {
+                    format!(
+                        "{} is off the list — {} shelved in {put_on}, and it can be moved back.",
+                        removing.name,
+                        view::gigabytes(bytes)
+                    )
+                });
+                removing.refused = None;
+            }
+            Ok(answer) => removing.refused = Some(refused_because(&answer.body)),
+            Err(why) => removing.refused = Some(why),
+        }
+        if self
+            .removing
+            .as_ref()
+            .is_some_and(|held| held.done.is_some())
+        {
+            self.chosen = None;
+            self.refresh();
+        }
     }
 
     pub fn stop_hosting(&mut self) {

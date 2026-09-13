@@ -4,6 +4,7 @@ use mcf_hub::store::{self, Authorization, Held, Plan};
 use mcf_record::journal::Journal;
 
 use crate::Response;
+use mcf_serve::control::Request;
 
 pub(crate) const STORES: &str = "MCF_MODELS";
 
@@ -156,6 +157,86 @@ fn render(root: &Path, holding: &[Held]) -> String {
     lines.join("\n")
 }
 
+fn through_the_daemon(names: &[&str], reason: Option<&str>, purge: bool) -> Option<Response> {
+    if names.len() != 1 {
+        return None;
+    }
+    let model = (*names.first()?).to_owned();
+    let socket = crate::serve::socket_path()?;
+    if std::os::unix::net::UnixStream::connect(&socket).is_err() {
+        return None;
+    }
+    let asked = match reason {
+        Some(reason) => Request::Remove {
+            model,
+            reason: reason.to_owned(),
+            purge,
+        },
+        None => Request::Removal { model },
+    };
+    let answer = crate::serve::ask(&socket, &asked).ok()?;
+    if !answer.served {
+        return Some(Response {
+            text: format!(
+                "mcf: nothing was removed\n  {}",
+                crate::say::refused_because(&answer.body)
+            ),
+            served: false,
+        });
+    }
+    Some(Response {
+        text: said_by_the_daemon(&answer.body, reason.is_some()),
+        served: true,
+    })
+}
+
+fn said_by_the_daemon(body: &mcf_record::json::Value, carried_out: bool) -> String {
+    use mcf_record::json::Value;
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let whole = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_integer)
+            .unwrap_or_default()
+    };
+    if !carried_out {
+        return text("describes");
+    }
+    let mut lines = vec![format!(
+        "removed {} file(s), {} bytes, because: {}",
+        match body.get("shelved") {
+            Some(Value::List(listed)) => listed.len(),
+            _ => 0,
+        },
+        whole("bytes"),
+        text("reason")
+    )];
+    if let Some(Value::List(refused)) = body.get("refused") {
+        for one in refused {
+            lines.push(format!(
+                "  NOT removed: {} — {}",
+                one.get("path").and_then(Value::as_text).unwrap_or_default(),
+                one.get("why").and_then(Value::as_text).unwrap_or_default()
+            ));
+        }
+    }
+    match body.get("purged_bytes").and_then(Value::as_integer) {
+        Some(freed) => lines.push(format!(
+            "purged: {freed} bytes are gone and cannot be brought back"
+        )),
+        None => lines.push(format!(
+            "shelved in {}\n\x20 nothing was deleted: put it back by moving it, or delete it \
+             with --purge",
+            text("shelf")
+        )),
+    }
+    lines.join("\n")
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "one removal, in the four acts B-027 requires — resolve, preview, \
@@ -163,6 +244,9 @@ fn render(root: &Path, holding: &[Held]) -> String {
               somewhere other than beside what it authorizes"
 )]
 pub(crate) fn remove(names: &[&str], reason: Option<&str>, purge: bool) -> Response {
+    if let Some(answered) = through_the_daemon(names, reason, purge) {
+        return answered;
+    }
     let Some(root) = default_root() else {
         return Response {
             text: format!(

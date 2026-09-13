@@ -1474,6 +1474,8 @@ impl Daemon {
             | Request::Search { .. }
             | Request::Settings { .. }
             | Request::Anatomy { .. }
+            | Request::Removal { .. }
+            | Request::Remove { .. }
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => None,
@@ -1671,6 +1673,8 @@ impl Daemon {
             | Request::Search { .. }
             | Request::Settings { .. }
             | Request::Anatomy { .. }
+            | Request::Removal { .. }
+            | Request::Remove { .. }
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => {}
@@ -1812,6 +1816,12 @@ impl Daemon {
             ),
             Request::Settings { model } => (self.settings_for(model), None),
             Request::Anatomy { model } => (self.anatomy_of(model), None),
+            Request::Removal { model } => (self.removal(model), None),
+            Request::Remove {
+                model,
+                reason,
+                purge,
+            } => (self.remove(model, reason, *purge), None),
             Request::Hosted => (Answer::served(self.hosted()), None),
             Request::Unhost => (Answer::served(self.unhost()), None),
             Request::Generate { .. }
@@ -2399,6 +2409,127 @@ impl Daemon {
             ])),
             Err(failure) => Answer::refused(&failure),
         }
+    }
+
+    fn shelf(&self) -> PathBuf {
+        self.places.models.with_file_name("removed")
+    }
+
+    fn still_held(&self, path: &Path) -> bool {
+        let holding = self
+            .holding
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        holding.as_ref().is_some_and(|held| held.model == *path)
+    }
+
+    fn planned_removal(&self, named: &str) -> std::result::Result<mcf_hub::store::Plan, Answer> {
+        let path = crate::generation::resolved(&self.places.models, named);
+        if !path.is_file() {
+            return Err(Answer::refused(&crate::control::refused(
+                "a model this machine is not holding",
+                named,
+            )));
+        }
+        if self.still_held(&path) {
+            return Err(Answer::refused(&crate::control::refused(
+                "a model that is being hosted right now, which stops being true the moment it is \
+                 let go",
+                named,
+            )));
+        }
+        mcf_hub::store::preview(&mcf_hub::store::the_whole_of(&path), &self.shelf())
+            .map_err(|failure| Answer::refused(&failure))
+    }
+
+    fn removal(&self, named: &str) -> Answer {
+        let plan = match self.planned_removal(named) {
+            Ok(plan) => plan,
+            Err(answer) => return answer,
+        };
+        Answer::served(Value::map([
+            ("model", Value::text(named.to_owned())),
+            (
+                "files",
+                Value::List(
+                    plan.doomed()
+                        .iter()
+                        .map(|doomed| {
+                            Value::map([
+                                ("path", Value::text(doomed.path.display().to_string())),
+                                ("bytes", as_whole(doomed.bytes)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            ("bytes", plan.bytes().map_or(Value::Null, as_whole)),
+            ("reversible", Value::Bool(plan.reversible())),
+            ("shelf", Value::text(self.shelf().display().to_string())),
+            ("describes", Value::text(plan.describe())),
+        ]))
+    }
+
+    fn remove(&self, named: &str, reason: &str, purge: bool) -> Answer {
+        let plan = match self.planned_removal(named) {
+            Ok(plan) => plan,
+            Err(answer) => return answer,
+        };
+        let authorization = match mcf_hub::store::Authorization::given(&plan, reason) {
+            Ok(authorization) => authorization,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let mut journal = match mcf_record::journal::Journal::open(&self.places.journal) {
+            Ok(journal) => journal,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let removed =
+            match mcf_hub::store::remove(&plan, &authorization, &mut journal, Timestamp::now()) {
+                Ok(removed) => removed,
+                Err(failure) => return Answer::refused(&failure),
+            };
+        let freed = if purge {
+            match mcf_hub::store::purge(&removed, &authorization, &plan) {
+                Ok(freed) => Some(freed),
+                Err(failure) => return Answer::refused(&failure),
+            }
+        } else {
+            None
+        };
+        self.rediscover();
+        Answer::served(Value::map([
+            ("model", Value::text(named.to_owned())),
+            ("reason", Value::text(reason.to_owned())),
+            (
+                "shelved",
+                Value::List(
+                    removed
+                        .shelved
+                        .iter()
+                        .map(|path| Value::text(path.display().to_string()))
+                        .collect(),
+                ),
+            ),
+            (
+                "refused",
+                Value::List(
+                    removed
+                        .refused
+                        .iter()
+                        .map(|(path, why)| {
+                            Value::map([
+                                ("path", Value::text(path.display().to_string())),
+                                ("why", Value::text(why.clone())),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            ("bytes", as_whole(removed.bytes)),
+            ("complete", Value::Bool(removed.complete())),
+            ("purged_bytes", freed.map_or(Value::Null, as_whole)),
+            ("shelf", Value::text(self.shelf().display().to_string())),
+        ]))
     }
 
     fn anatomy_of(&self, named: &str) -> Answer {

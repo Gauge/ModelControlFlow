@@ -566,3 +566,51 @@ fn a_provenance_file_is_never_mistaken_for_what_it_describes() {
     let beside = format!("/m/Model-Q4_K_M.gguf{PROVENANCE_SUFFIX}");
     assert!(!is_a_model_file(Path::new(&beside)), "{beside}");
 }
+
+#[test]
+fn a_model_in_one_file_is_the_whole_of_itself() {
+    use super::the_whole_of;
+    let alone = Path::new("/m/Model-Q4_K_M.gguf");
+    assert_eq!(the_whole_of(alone), vec![PathBuf::from(alone)]);
+}
+
+#[test]
+fn a_model_split_across_files_names_every_part_of_itself_in_order() {
+    use super::the_whole_of;
+    let scratch = Scratch::new("whole-of-a-set");
+    for at in [3_u32, 1, 2] {
+        let _made = scratch.holding(&format!("Model-Q4_K_M-0000{at}-of-00003.gguf"), 8);
+    }
+    let _beside = scratch.holding("Other-Q4_K_M.gguf", 8);
+    let whole = the_whole_of(&scratch.at("Model-Q4_K_M-00002-of-00003.gguf"));
+    let names: Vec<String> = whole
+        .iter()
+        .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "Model-Q4_K_M-00001-of-00003.gguf".to_owned(),
+            "Model-Q4_K_M-00002-of-00003.gguf".to_owned(),
+            "Model-Q4_K_M-00003-of-00003.gguf".to_owned(),
+        ],
+        "naming any one part names them all, because a part on its own runs nothing"
+    );
+}
+
+#[test]
+fn a_part_of_another_set_beside_it_is_not_drawn_in() {
+    use super::the_whole_of;
+    let scratch = Scratch::new("whole-of-one-set");
+    for name in [
+        "Model-Q4_K_M-00001-of-00002.gguf",
+        "Model-Q4_K_M-00002-of-00002.gguf",
+        "Another-Q8_0-00001-of-00002.gguf",
+    ] {
+        let _made = scratch.holding(name, 8);
+    }
+    assert_eq!(
+        the_whole_of(&scratch.at("Model-Q4_K_M-00001-of-00002.gguf")).len(),
+        2
+    );
+}
