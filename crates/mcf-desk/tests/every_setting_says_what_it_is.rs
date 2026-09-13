@@ -28,6 +28,9 @@ const SHOWN: &[&str] = &[
     "Flash attention",
     "Thinking budget",
     "Thinking level",
+    "Temperature",
+    "Top-p",
+    "Top-k",
     "Draft depth",
     "Prompt cache",
     "Prompt cache memory",
@@ -123,6 +126,30 @@ fn a_setting_named_in_the_window_matches_the_one_the_record_names() {
         assert!(
             named.iter().any(|held| held.eq_ignore_ascii_case(name)),
             "{name:?} is drawn by the window and known to nothing else"
+        );
+    }
+}
+
+#[test]
+fn every_setting_the_optimizer_dials_can_also_be_set_by_hand() {
+    for dial in mcf_optimize::dial::Dial::ALL {
+        let wanted = match dial {
+            mcf_optimize::dial::Dial::ThinkingBudget => "Thinking budget",
+            mcf_optimize::dial::Dial::ThinkingLevel => "Thinking level",
+            mcf_optimize::dial::Dial::Temperature => "Temperature",
+            mcf_optimize::dial::Dial::TopP => "Top-p",
+            mcf_optimize::dial::Dial::TopK => "Top-k",
+            mcf_optimize::dial::Dial::MicroBatch => "Micro-batch",
+            mcf_optimize::dial::Dial::DraftDepth => "Draft depth",
+        };
+        assert!(
+            SHOWN.contains(&wanted),
+            "{} can be dialled in and not set, which leaves nowhere to put the answer",
+            dial.label()
+        );
+        assert!(
+            because_of(wanted).is_some(),
+            "{wanted:?} is drawn and explained by nothing"
         );
     }
 }

@@ -1049,6 +1049,48 @@ impl Hosting {
                           one that has no thinking at all",
             },
             Setting {
+                name: "temperature",
+                value: self
+                    .started
+                    .temperature
+                    .map_or_else(|| "the engine's own".to_owned(), |held| held.to_string()),
+                recommended: against
+                    .started
+                    .temperature
+                    .map_or_else(|| "the engine's own".to_owned(), |held| held.to_string()),
+                because: "how much the model is allowed to wander when it picks each token. \
+                          Zero takes the likeliest every time, which is what makes two runs \
+                          comparable; higher wanders further. This is the default for callers \
+                          who name none of their own, and a caller that names one overrides it",
+            },
+            Setting {
+                name: "top-p",
+                value: self
+                    .started
+                    .top_p
+                    .map_or_else(|| "the engine's own".to_owned(), |held| held.to_string()),
+                recommended: against
+                    .started
+                    .top_p
+                    .map_or_else(|| "the engine's own".to_owned(), |held| held.to_string()),
+                because: "keep only the likeliest tokens whose chances add up to this much, and \
+                          draw from those. It bounds how far the temperature can wander. Like \
+                          the temperature, it is a default a caller can override",
+            },
+            Setting {
+                name: "top-k",
+                value: self
+                    .started
+                    .top_k
+                    .map_or_else(|| "the engine's own".to_owned(), |held| held.to_string()),
+                recommended: against
+                    .started
+                    .top_k
+                    .map_or_else(|| "the engine's own".to_owned(), |held| held.to_string()),
+                because: "keep only this many of the likeliest tokens and draw from those. \
+                          Zero leaves the count unbounded and lets top-p decide alone",
+            },
+            Setting {
                 name: "thinking level",
                 value: self
                     .started

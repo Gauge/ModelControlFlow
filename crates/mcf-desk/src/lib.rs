@@ -1496,6 +1496,9 @@ pub enum Field {
     RopeFactor,
     ThinkingBudget,
     DraftDepth,
+    Temperature,
+    TopP,
+    TopK,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3645,6 +3648,18 @@ impl Desk {
                 .started
                 .drafted
                 .map_or_else(String::new, |held| held.to_string()),
+            Field::Temperature => settings
+                .started
+                .temperature
+                .map_or_else(String::new, |held| held.to_string()),
+            Field::TopP => settings
+                .started
+                .top_p
+                .map_or_else(String::new, |held| held.to_string()),
+            Field::TopK => settings
+                .started
+                .top_k
+                .map_or_else(String::new, |held| held.to_string()),
         };
         self.editing = Some((field, crate::typing::Typing::of(now)));
         self.touch(touched);
@@ -3653,6 +3668,54 @@ impl Desk {
     }
 
     #[allow(clippy::too_many_lines, reason = "one arm a field, each named")]
+    fn sampled(
+        settings: &mut mcf_serve::hosting::Hosting,
+        field: Field,
+        typed: &str,
+    ) -> Option<String> {
+        if typed.is_empty() {
+            match field {
+                Field::Temperature => settings.started.temperature = None,
+                Field::TopP => settings.started.top_p = None,
+                Field::TopK => settings.started.top_k = None,
+                _ => {}
+            }
+            return None;
+        }
+        if field == Field::TopK {
+            return match typed.parse::<u32>() {
+                Ok(held) => {
+                    settings.started.top_k = Some(held);
+                    None
+                }
+                Err(_) => Some(format!("top-k wants a whole number, not {typed:?}")),
+            };
+        }
+        let Ok(held) = typed.parse::<mcf_core::configuration::Thousandths>() else {
+            return Some(format!(
+                "{} wants a number like 0.2, not {typed:?}",
+                if field == Field::TopP {
+                    "top-p"
+                } else {
+                    "the temperature"
+                }
+            ));
+        };
+        match field {
+            Field::TopP if held.0 > 1000 => {
+                Some("top-p is a share of the whole, so it never goes above 1".to_owned())
+            }
+            Field::TopP => {
+                settings.started.top_p = Some(held);
+                None
+            }
+            _ => {
+                settings.started.temperature = Some(held);
+                None
+            }
+        }
+    }
+
     pub fn apply_edit(&mut self) {
         let Some((field, typed)) = self.editing.take() else {
             return;
@@ -3663,7 +3726,20 @@ impl Desk {
         let Some(settings) = self.settings.as_mut() else {
             return;
         };
-        self.edit_refused = match field {
+        self.edit_refused = Self::a_number_for(settings, field, &typed, &not_a_number);
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm per field a person can type into, each refusing in its own words"
+    )]
+    fn a_number_for(
+        settings: &mut mcf_serve::hosting::Hosting,
+        field: Field,
+        typed: &str,
+        not_a_number: &dyn Fn(&str) -> Option<String>,
+    ) -> Option<String> {
+        match field {
             Field::Context => match typed.parse::<u64>() {
                 Ok(tokens) if tokens >= 512 => {
                     settings.context = tokens;
@@ -3708,15 +3784,15 @@ impl Desk {
                 Err(_) => not_a_number("the main device"),
             },
             Field::Devices => {
-                settings.spread.devices = (!typed.is_empty()).then(|| typed.clone());
+                settings.spread.devices = (!typed.is_empty()).then(|| typed.to_owned());
                 None
             }
             Field::OverrideTensors => {
-                settings.spread.override_tensors = (!typed.is_empty()).then(|| typed.clone());
+                settings.spread.override_tensors = (!typed.is_empty()).then(|| typed.to_owned());
                 None
             }
             Field::Alias => {
-                settings.alias = (!typed.is_empty()).then(|| typed.clone());
+                settings.alias = (!typed.is_empty()).then(|| typed.to_owned());
                 None
             }
             Field::Ubatch => match typed.parse::<u32>() {
@@ -3777,7 +3853,7 @@ impl Desk {
                 Err(_) => not_a_number("the port"),
             },
             Field::ApiKey => {
-                settings.api_key = Some(typed).filter(|key| !key.is_empty());
+                settings.api_key = (!typed.is_empty()).then(|| typed.to_owned());
                 None
             }
             Field::RopeFactor => {
@@ -3808,6 +3884,7 @@ impl Desk {
                     }
                 }
             }
+            Field::Temperature | Field::TopP | Field::TopK => Self::sampled(settings, field, typed),
             Field::DraftDepth => {
                 if typed.is_empty() {
                     settings.started.drafted = None;
@@ -3827,7 +3904,7 @@ impl Desk {
                     }
                 }
             }
-        };
+        }
     }
 
     pub fn flip(&mut self, switch: Switch) {

@@ -2240,6 +2240,41 @@ fn configure_tab(
             ],
         ),
         (
+            "Sampling",
+            vec![
+                (
+                    "Temperature",
+                    number(
+                        crate::Field::Temperature,
+                        settings
+                            .started
+                            .temperature
+                            .map_or_else(String::new, |held| held.to_string()),
+                    ),
+                ),
+                (
+                    "Top-p",
+                    number(
+                        crate::Field::TopP,
+                        settings
+                            .started
+                            .top_p
+                            .map_or_else(String::new, |held| held.to_string()),
+                    ),
+                ),
+                (
+                    "Top-k",
+                    number(
+                        crate::Field::TopK,
+                        settings
+                            .started
+                            .top_k
+                            .map_or_else(String::new, |held| held.to_string()),
+                    ),
+                ),
+            ],
+        ),
+        (
             "Reuse between messages",
             vec![
                 (

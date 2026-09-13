@@ -168,6 +168,9 @@ pub struct Started {
     pub architecture: Option<String>,
     pub thinking: Option<u32>,
     pub effort: Option<String>,
+    pub temperature: Option<mcf_core::configuration::Thousandths>,
+    pub top_p: Option<mcf_core::configuration::Thousandths>,
+    pub top_k: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,6 +212,9 @@ impl Started {
             || self.lift.is_some()
             || self.thinking.is_some()
             || self.effort.is_some()
+            || self.temperature.is_some()
+            || self.top_p.is_some()
+            || self.top_k.is_some()
     }
 
     #[must_use]
@@ -221,6 +227,9 @@ impl Started {
             && self.lift == other.lift
             && self.thinking == other.thinking
             && self.effort == other.effort
+            && self.temperature == other.temperature
+            && self.top_p == other.top_p
+            && self.top_k == other.top_k
     }
 
     #[must_use]
@@ -257,6 +266,18 @@ impl Started {
         if let Some(effort) = &self.effort {
             out.push("--reasoning-effort".to_owned());
             out.push(effort.clone());
+        }
+        if let Some(temperature) = self.temperature {
+            out.push("--temp".to_owned());
+            out.push(temperature.to_string());
+        }
+        if let Some(top_p) = self.top_p {
+            out.push("--top-p".to_owned());
+            out.push(top_p.to_string());
+        }
+        if let Some(top_k) = self.top_k {
+            out.push("--top-k".to_owned());
+            out.push(top_k.to_string());
         }
         out
     }
@@ -346,6 +367,21 @@ impl Started {
                     .map_or(Value::Null, |held| Value::text(held.clone())),
             ),
             (
+                "temperature",
+                self.temperature
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held.0))),
+            ),
+            (
+                "top_p",
+                self.top_p
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held.0))),
+            ),
+            (
+                "top_k",
+                self.top_k
+                    .map_or(Value::Null, |held| Value::Integer(i64::from(held))),
+            ),
+            (
                 "window",
                 self.window.map_or(Value::Null, |window| {
                     Value::Integer(i64::try_from(window).unwrap_or(i64::MAX))
@@ -390,6 +426,12 @@ impl Started {
                 .get("effort")
                 .and_then(Value::as_text)
                 .map(str::to_owned),
+            temperature: thousandths(value.get("temperature")),
+            top_p: thousandths(value.get("top_p")),
+            top_k: value
+                .get("top_k")
+                .and_then(Value::as_integer)
+                .and_then(|held| u32::try_from(held).ok()),
             thinking: value
                 .get("thinking")
                 .and_then(Value::as_integer)
@@ -440,6 +482,13 @@ fn refused(why: &'static str) -> Failure {
         Subsystem::new("mcf-serve::declared"),
         why,
     )
+}
+
+fn thousandths(held: Option<&Value>) -> Option<mcf_core::configuration::Thousandths> {
+    let held = held?.as_integer()?;
+    u32::try_from(held)
+        .ok()
+        .map(mcf_core::configuration::Thousandths)
 }
 
 fn whole(held: u128) -> Value {

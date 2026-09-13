@@ -12,6 +12,9 @@ fn nothing_is_asked_for_by_default() {
 fn the_switches_are_the_engines_own() {
     let asked = Started {
         effort: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
         draft_head: true,
         rope: Some(Scaling::Yarn),
         factor: Some(4),
@@ -81,6 +84,9 @@ fn silence_on_the_wire_asks_for_nothing() {
 fn a_draft_head_no_file_declares_is_refused() {
     let asked = Started {
         effort: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
         draft_head: true,
         ..Started::default()
     };
@@ -106,6 +112,9 @@ fn a_draft_head_no_file_declares_is_refused() {
 fn a_scaling_that_stretches_nothing_is_refused() {
     let asked = Started {
         effort: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
         rope: Some(Scaling::Yarn),
         ..Started::default()
     };
@@ -135,6 +144,9 @@ fn a_scaling_that_stretches_nothing_is_refused() {
 fn a_factor_with_no_scaling_is_refused() {
     let asked = Started {
         effort: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
         factor: Some(4),
         ..Started::default()
     };
@@ -196,6 +208,9 @@ fn only_the_engines_own_words_are_scalings() {
 fn the_tuning_switches_reach_the_engine_in_the_order_it_reads_them() {
     let asked = Started {
         effort: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
         draft_head: true,
         drafted: Some(2),
         rope: Some(Scaling::Yarn),
@@ -269,6 +284,9 @@ fn a_thinking_budget_of_zero_is_a_setting_not_an_absence() {
 fn every_new_switch_survives_the_wire() {
     let asked = Started {
         effort: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
         draft_head: false,
         drafted: Some(5),
         rope: None,
