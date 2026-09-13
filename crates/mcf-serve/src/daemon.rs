@@ -2427,16 +2427,27 @@ impl Daemon {
         let path = crate::generation::resolved(&self.places.models, named);
         if !path.is_file() {
             return Err(Answer::refused(&crate::control::refused(
-                "a model this machine is not holding",
+                "a model this machine is holding",
                 named,
             )));
         }
         if self.still_held(&path) {
-            return Err(Answer::refused(&crate::control::refused(
-                "a model that is being hosted right now, which stops being true the moment it is \
-                 let go",
-                named,
-            )));
+            return Err(Answer::refused(
+                &mcf_core::failure::Failure::new(
+                    mcf_core::failure::Category::ConfigConflict,
+                    mcf_core::failure::Attribution::User,
+                    mcf_core::failure::Disposition::Refused,
+                    WHERE,
+                    "this model is being hosted right now, and removing the file an engine is \
+                     reading is how a running server turns into a crash nobody can explain",
+                )
+                .with_context("model", named.to_owned())
+                .with_context(
+                    "what_to_do",
+                    "stop hosting it first — `mcf unhost`, or Stop server in the window — and \
+                     then remove it",
+                ),
+            ));
         }
         mcf_hub::store::preview(&mcf_hub::store::the_whole_of(&path), &self.shelf())
             .map_err(|failure| Answer::refused(&failure))
