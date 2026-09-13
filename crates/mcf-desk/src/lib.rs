@@ -666,12 +666,29 @@ impl Optimizing {
 
 const SWEEP_CEILING: u32 = 16_384;
 
+const HOLDING_PATIENCE: std::time::Duration = std::time::Duration::from_mins(30);
+
+#[must_use]
+pub fn loading_line(body: &Value) -> Option<String> {
+    let loading = body.get("loading")?;
+    let count = |key: &str| loading.get(key).and_then(Value::as_integer);
+    let seconds = count("seconds").unwrap_or(0);
+    let on = count("resident_bytes")
+        .and_then(|held| u64::try_from(held).ok())
+        .map(view::gigabytes);
+    match on {
+        Some(on) => Some(format!("{on} loaded, {seconds}s so far")),
+        None => Some(format!("{seconds}s so far")),
+    }
+}
+
 fn hold_it_at(
     socket: &Path,
     model: &str,
     settings: &mcf_serve::hosting::Hosting,
     dial: mcf_optimize::dial::Dial,
     step: mcf_optimize::dial::Step,
+    along: &mut dyn FnMut(String),
 ) -> Result<u16, String> {
     let mut held = settings.clone();
     match dial {
@@ -690,11 +707,17 @@ fn hold_it_at(
         | mcf_optimize::dial::Dial::TopP
         | mcf_optimize::dial::Dial::TopK => {}
     }
-    let answer = ask(
+    let answer = asked_until_done(
         socket,
         &Request::Host {
             model: model.to_owned(),
             settings: held.to_request(),
+        },
+        HOLDING_PATIENCE,
+        |body| {
+            if let Some(said) = loading_line(body) {
+                along(said);
+            }
         },
     )?;
     if !answer.served {
@@ -1049,6 +1072,45 @@ pub fn expected_mark(grouped: Option<&Value>, at: usize) -> Option<String> {
 
 fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
     ask_within(socket, request, std::time::Duration::from_secs(30))
+}
+
+pub fn asked_until_done(
+    socket: &Path,
+    request: &Request,
+    deadline: std::time::Duration,
+    mut the_way: impl FnMut(&Value),
+) -> Result<Answer, String> {
+    let mut connection = UnixStream::connect(socket)
+        .map_err(|_| "MCF is not answering on this computer".to_owned())?;
+    let _deadline = connection.set_read_timeout(Some(deadline));
+    writeln!(connection, "{}", request.to_line())
+        .and_then(|()| connection.flush())
+        .map_err(|error| format!("the request could not be sent: {error}"))?;
+    let mut reading = BufReader::new(&connection);
+    let mut last: Option<Answer> = None;
+    loop {
+        let mut line = String::new();
+        let read = reading
+            .read_line(&mut line)
+            .map_err(|error| format!("MCF stopped answering: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let answer = Answer::read(trimmed).map_err(|failure| failure.to_string())?;
+        if !answer.served {
+            return Ok(answer);
+        }
+        if matches!(answer.body.get("done"), Some(Value::Bool(true))) {
+            return Ok(answer);
+        }
+        the_way(&answer.body);
+        last = Some(answer);
+    }
+    last.ok_or_else(|| "MCF answered nothing at all".to_owned())
 }
 
 const POLL: std::time::Duration = std::time::Duration::from_secs(5);
@@ -3206,8 +3268,9 @@ impl Desk {
         };
         let dial = self.optimizing.sweep.dial;
         let socket = self.socket.clone();
-        let hosting =
-            std::boxed::Box::new(move |step| hold_it_at(&socket, &model, &settings, dial, step));
+        let hosting = std::boxed::Box::new(move |step, along: &mut dyn FnMut(String)| {
+            hold_it_at(&socket, &model, &settings, dial, step, along)
+        });
         self.optimizing.report = mcf_optimize::reading::Report::default();
         self.optimizing.done = 0;
         self.optimizing.last_said = None;

@@ -52,7 +52,7 @@ pub fn needs_a_fresh_hold(dial: Dial, held_at: Option<Step>, wanted: Step) -> bo
 #[derive(Debug)]
 pub enum Heard {
     Started(At),
-    Holding(Step),
+    Holding(String),
     Took(Box<Reading>),
     Skipped(usize),
     Refused(String),
@@ -76,6 +76,32 @@ struct Doing {
     host: Hosting,
     recorded: std::boxed::Box<dyn Fn() -> String + Send>,
     asked_to_stop: Arc<AtomicBool>,
+}
+
+enum Stopped {
+    Gone,
+    Refused(String),
+}
+
+fn held_again(
+    send: &std::sync::mpsc::Sender<Heard>,
+    host: &Hosting,
+    step: Step,
+) -> Result<u16, Stopped> {
+    let said = step.said();
+    if send
+        .send(Heard::Holding(format!("holding the model at {said}")))
+        .is_err()
+    {
+        return Err(Stopped::Gone);
+    }
+    let telling = send.clone();
+    let mut along = move |how: String| {
+        let _sent = telling.send(Heard::Holding(format!(
+            "holding the model at {said} — {how}"
+        )));
+    };
+    host(step, &mut along).map_err(Stopped::Refused)
 }
 
 fn sweeping(mut doing: Doing) {
@@ -104,15 +130,13 @@ fn sweeping(mut doing: Doing) {
             return;
         }
         if needs_a_fresh_hold(doing.dial, held_at, spot.step) {
-            if doing.send.send(Heard::Holding(spot.step)).is_err() {
-                return;
-            }
-            match (doing.host)(spot.step) {
+            match held_again(&doing.send, &doing.host, spot.step) {
                 Ok(port) => {
                     doing.endpoint.port = port;
                     held_at = Some(spot.step);
                 }
-                Err(why) => {
+                Err(Stopped::Gone) => return,
+                Err(Stopped::Refused(why)) => {
                     let _sent = doing.send.send(Heard::Refused(why));
                     break;
                 }
@@ -181,7 +205,8 @@ pub struct Orders {
     pub room: std::path::PathBuf,
 }
 
-pub type Hosting = std::boxed::Box<dyn Fn(Step) -> Result<u16, String> + Send>;
+pub type Hosting =
+    std::boxed::Box<dyn Fn(Step, &mut dyn FnMut(String)) -> Result<u16, String> + Send>;
 
 #[derive(Debug)]
 pub struct Running {
@@ -192,7 +217,7 @@ pub struct Running {
     pub taken: usize,
     pub skipped: usize,
     pub refused: Option<String>,
-    pub holding: Option<Step>,
+    pub holding: Option<String>,
     pub stopped: Option<String>,
     pub finished: bool,
     started: Instant,
@@ -276,8 +301,8 @@ impl Running {
                     self.doing = Some(at);
                     moved = true;
                 }
-                Ok(Heard::Holding(step)) => {
-                    self.holding = Some(step);
+                Ok(Heard::Holding(said)) => {
+                    self.holding = Some(said);
                     moved = true;
                 }
                 Ok(Heard::Skipped(over)) => {
@@ -330,12 +355,10 @@ impl Running {
                 None => said,
             };
         }
-        if let Some(step) = self.holding {
+        if let Some(said) = &self.holding {
             return format!(
-                "holding the model again at {} — {} done, {} already known",
-                step.said(),
-                self.taken,
-                self.skipped
+                "{said} — {} done, {} already known",
+                self.taken, self.skipped
             );
         }
         match self.doing {

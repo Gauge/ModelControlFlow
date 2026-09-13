@@ -68,7 +68,7 @@ fn begun(scratch: &Scratch, steps: &[u32], sets: &[usize]) -> Running {
         },
         course,
         Ledger::open(&scratch.at()).expect("opens"),
-        std::boxed::Box::new(|_step| Ok(1)),
+        std::boxed::Box::new(|_step, _along| Ok(1)),
         || "now".to_owned(),
     )
 }
@@ -201,7 +201,7 @@ fn a_run_that_cannot_hold_the_model_says_so_and_measures_nothing() {
         },
         course,
         Ledger::open(&scratch.at()).expect("opens"),
-        std::boxed::Box::new(|_step| Err("the engine would not start".to_owned())),
+        std::boxed::Box::new(|_step, _along| Err("the engine would not start".to_owned())),
         || "now".to_owned(),
     );
     settled(&mut running);
