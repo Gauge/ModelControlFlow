@@ -1417,6 +1417,8 @@ fn test_set(
     (y + 44.0, act)
 }
 
+const ROW: f32 = 19.0;
+
 fn run_row(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, y: f32) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
@@ -1548,23 +1550,26 @@ fn sweep_report(
         );
     }
     y += 20.0;
+    let band = paint.clipped();
     for row in rows {
-        for (at, cell) in row.iter().enumerate() {
-            let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
-            paint.say_at(
-                area.x + wide * at as f32,
-                y,
-                &shown,
-                Weight::Regular,
-                size::SMALL,
-                ink.ink,
-            );
+        let below = y + ROW;
+        let seen = band.is_none_or(|held| below >= held.y && y <= held.bottom());
+        if seen {
+            for (at, cell) in row.iter().enumerate() {
+                let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
+                paint.say_at(
+                    area.x + wide * at as f32,
+                    y,
+                    &shown,
+                    Weight::Regular,
+                    size::SMALL,
+                    ink.ink,
+                );
+            }
         }
-        y += 19.0;
-        if y > area.bottom() {
-            break;
-        }
+        y += ROW;
     }
+    paint.reaches(y);
     act
 }
 

@@ -170,6 +170,7 @@ pub struct Painter {
     pub scale: f32,
     pub ink: Ink,
     lowest: std::cell::Cell<f32>,
+    clipped: Option<Box>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -225,6 +226,7 @@ impl Painter {
             scale,
             ink,
             lowest: std::cell::Cell::new(0.0),
+            clipped: None,
         };
         painter.make_the_corner_mask();
         Ok(painter)
@@ -240,6 +242,7 @@ impl Painter {
             scale,
             ink,
             lowest: std::cell::Cell::new(0.0),
+            clipped: None,
         };
         painter.make_the_corner_mask();
         Ok(painter)
@@ -318,7 +321,17 @@ impl Painter {
         }
     }
 
+    pub fn reaches(&self, bottom: f32) {
+        self.reach(bottom);
+    }
+
+    #[must_use]
+    pub fn clipped(&self) -> Option<Box> {
+        self.clipped
+    }
+
     pub fn clip(&mut self, area: Box) {
+        self.clipped = Some(area);
         let where_ = Rect {
             x: area.x * self.scale,
             y: area.y * self.scale,
@@ -329,6 +342,7 @@ impl Painter {
     }
 
     pub fn unclip(&mut self) {
+        self.clipped = None;
         self.surface.clip(None);
     }
 
