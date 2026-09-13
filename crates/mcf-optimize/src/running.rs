@@ -73,6 +73,7 @@ struct Doing {
     effort: Option<String>,
     mark: bool,
     room: std::path::PathBuf,
+    ready_within: Duration,
     host: Hosting,
     recorded: std::boxed::Box<dyn Fn() -> String + Send>,
     asked_to_stop: Arc<AtomicBool>,
@@ -87,6 +88,7 @@ fn held_again(
     send: &std::sync::mpsc::Sender<Heard>,
     host: &Hosting,
     step: Step,
+    ready_within: Duration,
 ) -> Result<u16, Stopped> {
     let said = step.said();
     if send
@@ -101,7 +103,42 @@ fn held_again(
             "holding the model at {said} — {how}"
         )));
     };
-    host(step, &mut along).map_err(Stopped::Refused)
+    let port = host(step, &mut along).map_err(Stopped::Refused)?;
+    let ready = crate::trial::ready_within(port, ready_within, |seconds| {
+        along(format!("waiting for the engine to answer, {seconds}s"));
+    });
+    if ready {
+        return Ok(port);
+    }
+    Err(Stopped::Refused(format!(
+        "the engine was held on port {port} but never started answering — a sweep will not \
+         write down readings taken against a model that was still loading"
+    )))
+}
+
+fn answered(doing: &mut Doing, asked: &Asked, step: Step) -> Result<crate::trial::Said, Stopped> {
+    let first = match ask(&doing.endpoint, asked) {
+        Ok(said) => return Ok(said),
+        Err(failure) => failure.to_string(),
+    };
+    doing
+        .send
+        .send(Heard::Holding(
+            "the engine stopped answering — holding it again".to_owned(),
+        ))
+        .map_err(|_gone| Stopped::Gone)?;
+    match held_again(&doing.send, &doing.host, step, doing.ready_within) {
+        Ok(port) => doing.endpoint.port = port,
+        Err(Stopped::Gone) => return Err(Stopped::Gone),
+        Err(Stopped::Refused(why)) => {
+            return Err(Stopped::Refused(format!(
+                "{first}; holding it again did not work either: {why}"
+            )));
+        }
+    }
+    ask(&doing.endpoint, asked).map_err(|again| {
+        Stopped::Refused(format!("the engine stopped answering twice over: {again}"))
+    })
 }
 
 fn sweeping(mut doing: Doing) {
@@ -130,7 +167,7 @@ fn sweeping(mut doing: Doing) {
             return;
         }
         if needs_a_fresh_hold(doing.dial, held_at, spot.step) {
-            match held_again(&doing.send, &doing.host, spot.step) {
+            match held_again(&doing.send, &doing.host, spot.step, doing.ready_within) {
                 Ok(port) => {
                     doing.endpoint.port = port;
                     held_at = Some(spot.step);
@@ -159,13 +196,15 @@ fn sweeping(mut doing: Doing) {
             ceiling: doing.ceiling,
         };
         let began = Instant::now();
-        let said = match ask(&doing.endpoint, &asked) {
+        let said = match answered(&mut doing, &asked, spot.step) {
             Ok(said) => said,
-            Err(failure) => {
-                let _sent = doing.send.send(Heard::Refused(failure.to_string()));
+            Err(Stopped::Gone) => return,
+            Err(Stopped::Refused(why)) => {
+                let _sent = doing.send.send(Heard::Refused(why));
                 break;
             }
         };
+        held_at = Some(spot.step);
         let milliseconds = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
         let (judged, unmarked) = judged_by(doing.mark, &doing.room, spot, &asked.set.tasks, &said);
         if let Some(why) = unmarked
@@ -203,6 +242,7 @@ pub struct Orders {
     pub effort: Option<String>,
     pub mark: bool,
     pub room: std::path::PathBuf,
+    pub ready_within: Duration,
 }
 
 pub type Hosting =
@@ -241,6 +281,7 @@ impl Running {
             effort,
             mark,
             room,
+            ready_within,
         } = orders;
         let (send, heard) = channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -259,6 +300,7 @@ impl Running {
                 effort,
                 mark,
                 room,
+                ready_within,
                 host,
                 recorded: std::boxed::Box::new(recorded),
                 asked_to_stop,

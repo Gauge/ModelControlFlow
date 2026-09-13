@@ -13,6 +13,7 @@ use crate::reading::{Ending, Reading};
 const LOOPBACK: &str = "127.0.0.1";
 const READ_AT_A_TIME: usize = 8192;
 const CHECKED_EVERY: usize = 200;
+const KEPT_OF_THE_REPLY: usize = 4096;
 
 #[derive(Debug, Clone)]
 pub struct Endpoint {
@@ -80,6 +81,59 @@ pub fn body(asked: &Asked) -> Value {
     Value::map(fields)
 }
 
+#[must_use]
+pub fn is_ready(port: u16) -> bool {
+    let Ok(mut connection) = TcpStream::connect((LOOPBACK, port)) else {
+        return false;
+    };
+    if connection
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .is_err()
+    {
+        return false;
+    }
+    if write!(
+        connection,
+        "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    )
+    .and_then(|()| connection.flush())
+    .is_err()
+    {
+        return false;
+    }
+    let mut said = String::new();
+    let mut held = [0_u8; 1024];
+    while let Ok(read) = connection.read(&mut held) {
+        if read == 0 {
+            break;
+        }
+        said.push_str(&String::from_utf8_lossy(
+            held.get(..read).unwrap_or_default(),
+        ));
+        if said.len() > 4096 {
+            break;
+        }
+    }
+    said.contains("\"status\":\"ok\"")
+}
+
+pub fn ready_within(port: u16, patience: Duration, mut along: impl FnMut(u64)) -> bool {
+    let began = Instant::now();
+    let mut told = 0;
+    while began.elapsed() < patience {
+        if is_ready(port) {
+            return true;
+        }
+        let seconds = began.elapsed().as_secs();
+        if seconds != told {
+            told = seconds;
+            along(seconds);
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    is_ready(port)
+}
+
 pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
     let payload = body(asked).to_string();
     let mut connection = TcpStream::connect((LOOPBACK, endpoint.port))
@@ -102,6 +156,7 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
     let started = Instant::now();
     let mut held = [0_u8; READ_AT_A_TIME];
     let mut pending = String::new();
+    let mut whole = String::new();
     let mut answer = String::new();
     let mut produced: u64 = 0;
     let mut ending = Ending::Answered;
@@ -110,9 +165,11 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
         if read == 0 {
             break;
         }
-        pending.push_str(&String::from_utf8_lossy(
-            held.get(..read).unwrap_or_default(),
-        ));
+        let arrived = String::from_utf8_lossy(held.get(..read).unwrap_or_default()).into_owned();
+        if whole.len() < KEPT_OF_THE_REPLY {
+            whole.push_str(&arrived);
+        }
+        pending.push_str(&arrived);
         while let Some(at) = pending.find('\n') {
             let line = pending.get(..at).unwrap_or_default().trim().to_owned();
             pending = pending
@@ -150,7 +207,7 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
     }
     if produced == 0 {
         ending = Ending::Failed;
-        why = Some("the endpoint produced nothing".to_owned());
+        why = Some(what_came_back(&whole));
     }
     let _elapsed = started.elapsed();
     Ok(Said {
@@ -159,6 +216,46 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
         ending,
         why,
     })
+}
+
+#[must_use]
+pub fn what_came_back(whole: &str) -> String {
+    if whole.trim().is_empty() {
+        return "the endpoint accepted the request and then said nothing at all".to_owned();
+    }
+    let status = whole.lines().next().unwrap_or("").trim().to_owned();
+    let (head, body) = match whole.find("\r\n\r\n") {
+        Some(at) => (
+            status.clone(),
+            whole.get(at.saturating_add(4)..).unwrap_or("").trim(),
+        ),
+        None => (status.clone(), whole.trim()),
+    };
+    if !head.starts_with("HTTP/") {
+        return format!(
+            "the endpoint answered something that is not HTTP: {}",
+            shortened(whole.trim())
+        );
+    }
+    let ok = head.contains(" 200");
+    if !ok {
+        return format!("the endpoint refused it — {head}: {}", shortened(body));
+    }
+    if body.contains("\"finish_reason\":\"length\"") {
+        return "the model stopped on its token limit before writing anything — at a thinking \
+                budget this small there is no room left to answer in"
+            .to_owned();
+    }
+    format!(
+        "the endpoint answered {head} and sent no content: {}",
+        shortened(body)
+    )
+}
+
+fn shortened(said: &str) -> String {
+    let kept: String = said.chars().take(300).collect();
+    let one_line = kept.replace(['\n', '\r'], " ");
+    one_line.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn sent(step: Step) -> Value {

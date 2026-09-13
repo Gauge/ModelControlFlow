@@ -1115,6 +1115,8 @@ pub fn asked_until_done(
 
 const POLL: std::time::Duration = std::time::Duration::from_secs(5);
 
+const GLANCE: std::time::Duration = std::time::Duration::from_millis(250);
+
 fn ask_within(
     socket: &Path,
     request: &Request,
@@ -2218,7 +2220,7 @@ impl Desk {
     }
 
     pub fn read_hosted(&mut self) {
-        let answered = ask_within(&self.socket, &Request::Hosted, POLL).ok();
+        let answered = ask_within(&self.socket, &Request::Hosted, GLANCE).ok();
         if let Some(answer) = answered.as_ref().filter(|answer| answer.served) {
             self.under_test = answer
                 .body
@@ -2227,7 +2229,7 @@ impl Desk {
                 .map(UnderTest::from_value);
         }
         let read =
-            match ask_within(&self.socket, &Request::Hosted, POLL) {
+            match ask_within(&self.socket, &Request::Hosted, GLANCE) {
                 Ok(answer) if answer.served => answer
                     .body
                     .get("hosting")
@@ -3262,6 +3264,7 @@ impl Desk {
             thinking: None,
             effort: None,
             mark: self.optimizing.measure.needs_the_answers_run(),
+            ready_within: HOLDING_PATIENCE,
             room: path
                 .parent()
                 .map_or_else(std::env::temp_dir, |beside| beside.join("marking")),
@@ -3758,6 +3761,14 @@ impl Desk {
         }
     }
 
+    #[must_use]
+    pub fn busy_elsewhere(&self) -> bool {
+        if matches!(self.doing, Doing::Hosting(_) | Doing::Provisioning(_)) {
+            return true;
+        }
+        self.optimizing.run.is_some()
+    }
+
     pub fn sample(&mut self) {
         self.reading = self.sampler.read();
     }
@@ -4103,7 +4114,9 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
             && last.elapsed() >= std::time::Duration::from_secs(1);
         if due {
             desk.sample();
-            desk.read_hosted();
+            if !desk.busy_elsewhere() {
+                desk.read_hosted();
+            }
             last = std::time::Instant::now();
             acted = true;
         }

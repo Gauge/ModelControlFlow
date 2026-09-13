@@ -65,6 +65,7 @@ fn begun(scratch: &Scratch, steps: &[u32], sets: &[usize]) -> Running {
             effort: None,
             mark: false,
             room: scratch.path.join("marking"),
+            ready_within: std::time::Duration::from_millis(50),
         },
         course,
         Ledger::open(&scratch.at()).expect("opens"),
@@ -91,7 +92,7 @@ fn a_run_against_nothing_listening_stops_and_says_so_rather_than_hanging() {
     assert!(running.finished, "it does not hang when nothing answers");
     let why = running.refused.clone().unwrap_or_default();
     assert!(
-        why.contains("could not be reached"),
+        why.contains("never started answering"),
         "the refusal names what went wrong: {why}"
     );
     assert_eq!(running.taken, 0, "a trial that never ran is not a reading");
@@ -198,6 +199,7 @@ fn a_run_that_cannot_hold_the_model_says_so_and_measures_nothing() {
             effort: None,
             mark: false,
             room: scratch.path.join("marking"),
+            ready_within: std::time::Duration::from_millis(50),
         },
         course,
         Ledger::open(&scratch.at()).expect("opens"),
@@ -346,4 +348,86 @@ fn a_marked_sweep_fails_code_that_does_not_satisfy_the_check() {
         &said_with("### SOLUTION 1\n```python\ndef add(a, b):\n    return a * b\n```"),
     );
     assert_eq!(judged, vec![("adds".to_owned(), false)]);
+}
+
+#[test]
+fn nothing_is_asked_of_an_engine_that_is_not_answering_yet() {
+    let scratch = Scratch::new("not-ready-yet");
+    let mut running = begun(&scratch, &[256], &[1]);
+    settled(&mut running);
+    assert_eq!(
+        running.taken, 0,
+        "a reading taken while the model was still loading would be a lie written down"
+    );
+    let ledger = Ledger::open(&scratch.at()).expect("opens");
+    assert!(ledger.rows().is_empty());
+}
+
+fn a_port_that_answers_health_then_vanishes() -> u16 {
+    use std::io::Write as _;
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port to listen on");
+    let port = listener.local_addr().expect("an address").port();
+    let _serving = std::thread::spawn(move || {
+        for stream in listener.incoming().take(1) {
+            let Ok(mut stream) = stream else { continue };
+            let said = "HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n                        {\"status\":\"ok\"}";
+            let _written = stream.write_all(said.as_bytes());
+            let _flushed = stream.flush();
+        }
+    });
+    port
+}
+
+#[test]
+fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
+    let scratch = Scratch::new("held-again");
+    let held: Vec<Step> = vec![Step::Whole(256)];
+    let course = Course::laid_out(
+        under(),
+        Way::ByHand,
+        Dial::MicroBatch,
+        &held,
+        &[1],
+        1,
+        Measure::Speed,
+    );
+    let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let kept = std::sync::Arc::clone(&asked);
+    let mut running = Running::begun(
+        super::Orders {
+            endpoint: Endpoint {
+                port: 1,
+                key: None,
+                patience: std::time::Duration::from_millis(100),
+            },
+            under: under(),
+            dial: Dial::MicroBatch,
+            ceiling: 64,
+            thinking: None,
+            effort: None,
+            mark: false,
+            room: scratch.path.join("marking"),
+            ready_within: std::time::Duration::from_millis(400),
+        },
+        course,
+        Ledger::open(&scratch.at()).expect("opens"),
+        std::boxed::Box::new(move |_step, _along| {
+            let held = kept.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if held == 0 {
+                return Ok(a_port_that_answers_health_then_vanishes());
+            }
+            Err("the engine would not come back".to_owned())
+        }),
+        || "now".to_owned(),
+    );
+    settled(&mut running);
+    assert!(
+        asked.load(std::sync::atomic::Ordering::Relaxed) >= 2,
+        "an engine that dies four hours into a sweep should cost one hold, not the sweep"
+    );
+    let why = running.refused.clone().unwrap_or_default();
+    assert!(
+        why.contains("did not work either"),
+        "and when holding it again does not help, it says so: {why}"
+    );
 }

@@ -100,3 +100,75 @@ fn a_said_carries_why_it_ended_when_it_did_not_simply_answer() {
     };
     assert!(held.why.is_some(), "a failure says what happened");
 }
+
+#[test]
+fn an_empty_reply_says_the_endpoint_said_nothing_rather_than_just_failed() {
+    let said = super::what_came_back("");
+    assert!(said.contains("said nothing at all"), "{said}");
+}
+
+#[test]
+fn a_refusal_carries_the_status_line_and_what_the_body_said() {
+    let said = super::what_came_back(
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\n\r\n\
+         {\"error\":{\"message\":\"Loading model\",\"code\":503}}",
+    );
+    assert!(said.contains("503"), "{said}");
+    assert!(
+        said.contains("Loading model"),
+        "the reason the engine gave is the reason to show: {said}"
+    );
+}
+
+#[test]
+fn a_model_that_ran_out_of_room_before_answering_is_told_apart_from_a_broken_endpoint() {
+    let said = super::what_came_back(
+        "HTTP/1.1 200 OK\r\n\r\ndata: {\"choices\":[{\"finish_reason\":\"length\",\
+         \"delta\":{}}]}",
+    );
+    assert!(
+        said.contains("no room left to answer"),
+        "a thinking budget that leaves nothing for the answer is a finding, not a fault: \
+         {said}"
+    );
+}
+
+#[test]
+fn an_answer_that_is_not_http_at_all_says_so() {
+    let said = super::what_came_back("hello there");
+    assert!(said.contains("not HTTP"), "{said}");
+}
+
+#[test]
+fn a_long_body_is_cut_down_to_something_a_person_can_read() {
+    let body = "x".repeat(5000);
+    let said = super::what_came_back(&format!("HTTP/1.1 500 Oops\r\n\r\n{body}"));
+    assert!(said.len() < 500, "{}", said.len());
+    assert!(said.contains("500"));
+}
+
+#[test]
+fn a_reply_body_is_flattened_onto_one_line() {
+    let said = super::what_came_back("HTTP/1.1 400 Bad\r\n\r\n{\n  \"error\": \"no\"\n}");
+    assert!(!said.contains('\n'), "{said}");
+}
+
+#[test]
+fn nothing_is_ready_on_a_port_with_nothing_behind_it() {
+    assert!(
+        !super::is_ready(1),
+        "a port nobody is listening on is not an engine that is ready"
+    );
+}
+
+#[test]
+fn waiting_for_a_port_that_never_answers_gives_up_rather_than_waiting_forever() {
+    let began = std::time::Instant::now();
+    let ready = super::ready_within(1, std::time::Duration::from_millis(600), |_seconds| {});
+    assert!(!ready);
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(20),
+        "it waited {:?}",
+        began.elapsed()
+    );
+}
