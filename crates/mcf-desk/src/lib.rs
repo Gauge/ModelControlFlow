@@ -3554,7 +3554,7 @@ impl Desk {
                 if self.optimizing.sweep.dial.only_changes_speed() {
                     self.optimizing.measure = mcf_optimize::reading::Measure::Speed;
                     self.optimizing.sweep.sets = vec![1];
-                    self.optimizing.sweep.repeats = 1;
+                    self.optimizing.sweep.repeats = mcf_optimize::trial::TIMES_TIMED;
                 }
                 if self.optimizing.sweep.dial.is_named_by_the_model() {
                     self.optimizing.way = mcf_optimize::hunt::Way::ByHand;

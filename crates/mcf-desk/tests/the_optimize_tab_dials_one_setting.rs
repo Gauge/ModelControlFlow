@@ -695,7 +695,12 @@ fn choosing_a_setting_that_only_changes_speed_ranks_by_speed() {
         vec![1],
         "and the tasks are not run at all, so eight sets of them is eight times nothing"
     );
-    assert_eq!(desk.optimizing.sweep.repeats, 1);
+    assert_eq!(
+        desk.optimizing.sweep.repeats,
+        mcf_optimize::trial::TIMES_TIMED,
+        "one timed run of four thousand tokens is mostly noise, so each value is timed several \
+         times"
+    );
 }
 
 #[test]
@@ -725,4 +730,29 @@ fn choosing_a_setting_that_changes_answers_leaves_the_ranking_alone() {
         mcf_optimize::reading::Measure::Correctness
     );
     assert_eq!(desk.optimizing.sweep.sets.len(), 8);
+}
+
+#[test]
+fn a_timed_sweep_lays_out_one_trial_for_each_take_of_each_value() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::MicroBatch)));
+    let values = desk.optimizing.sweep.steps.len().max(1);
+    assert_eq!(
+        desk.optimizing.sweep.trials(),
+        values * usize::from(mcf_optimize::trial::TIMES_TIMED),
+        "one set, so the count is values times takes and nothing else"
+    );
+}
+
+#[test]
+fn moving_from_a_timed_setting_to_one_that_marks_answers_puts_the_sets_back() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::MicroBatch)));
+    assert_eq!(desk.optimizing.sweep.sets, vec![1]);
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingBudget)));
+    assert_eq!(
+        desk.optimizing.sweep.sets.len(),
+        8,
+        "the tasks come back when the setting being dialled can change an answer"
+    );
 }

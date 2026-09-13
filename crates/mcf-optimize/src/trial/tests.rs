@@ -83,6 +83,7 @@ fn a_said_carries_why_it_ended_when_it_did_not_simply_answer() {
         produced: 0,
         ending: Ending::Failed,
         why: Some("the endpoint produced nothing".to_owned()),
+        counted: None,
     };
     assert!(held.why.is_some(), "a failure says what happened");
 }
@@ -253,17 +254,42 @@ fn a_timed_trial_asks_for_tokens_rather_than_for_the_tasks() {
             super::TOKENS_TIMED
         )))
     );
-    assert_eq!(
-        asking.get("ignore_eos"),
-        Some(&mcf_record::json::Value::Bool(true)),
-        "without this the model stops early and the trials are not the same length"
+    assert!(
+        asking.get("ignore_eos").is_none(),
+        "this build of llama.cpp drops the connection and sometimes dies on it, so the prompt \
+         has to do the work instead"
+    );
+    assert!(
+        said.contains("3000"),
+        "it asks for far more numbers than the count allows, so the engine stops on the count \
+         rather than the model stopping when it feels finished: {said}"
     );
 }
 
 #[test]
-fn a_trial_of_the_tasks_asks_for_the_tasks_and_lets_the_model_stop() {
+fn a_trial_of_the_tasks_asks_for_the_tasks() {
     let asking = super::body(&asked(Dial::ThinkingBudget, Step::Whole(4096)));
-    assert!(asking.get("ignore_eos").is_none());
+    let said = asking
+        .get("messages")
+        .and_then(mcf_record::json::Value::as_list)
+        .and_then(|held| held.first().cloned())
+        .and_then(|one| {
+            one.get("content")
+                .and_then(|held| held.as_text())
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    assert!(said.contains("SOLUTION"), "{said}");
+}
+
+#[test]
+fn a_timed_run_that_stopped_early_is_not_offered_as_a_rate() {
+    assert!(
+        super::enough_of(4096) > 3000,
+        "most of the tokens asked for is the bar; a run that stopped at a tenth is not the \
+         same measurement as one that ran the whole way"
+    );
+    assert!(super::enough_of(4096) <= 4096);
 }
 
 #[test]
@@ -312,5 +338,15 @@ fn a_timed_trial_is_not_cut_short_for_repeating_itself() {
     assert!(
         !answering.timing,
         "a trial of the tasks is still stopped when it starts going round in circles"
+    );
+}
+
+#[test]
+fn a_timed_run_is_long_enough_to_mean_something_and_taken_more_than_once() {
+    assert_eq!(super::TOKENS_TIMED, 4096);
+    assert_eq!(
+        super::TIMES_TIMED,
+        5,
+        "a single run of a few thousand tokens is mostly whatever else the machine was doing"
     );
 }

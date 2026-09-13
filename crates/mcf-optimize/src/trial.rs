@@ -15,11 +15,17 @@ const READ_AT_A_TIME: usize = 8192;
 const CHECKED_EVERY: usize = 200;
 const KEPT_OF_THE_REPLY: usize = 4096;
 
-/// What a speed trial asks for. It is never read: only the tokens that come back are.
-pub const TO_BE_TIMED: &str =
-    "Count upwards from one, one number a line, and keep going without stopping.";
+/// What a speed trial asks for. What comes back is never read: only how long it took.
+/// It asks for far more numbers than the token count allows, so the engine stops on the
+/// count rather than the model stopping when it feels finished.
+pub const TO_BE_TIMED: &str = "Write the numbers from 1 to 3000, one per line. Output only \
+                               the numbers, nothing else. Do not stop early.";
 
-pub const TOKENS_TIMED: u32 = 2048;
+pub const TOKENS_TIMED: u32 = 4096;
+
+/// A timed run is short enough that one of them is mostly noise, so every value is timed
+/// this many times and the readings are taken together.
+pub const TIMES_TIMED: u8 = 5;
 
 #[derive(Debug, Clone)]
 pub struct Endpoint {
@@ -55,6 +61,9 @@ pub struct Said {
     pub produced: u64,
     pub ending: Ending,
     pub why: Option<String>,
+    /// What the engine itself said it generated. The engine counts every token; a reader of
+    /// the stream counts only the ones that carried text, and the two differ by a few.
+    pub counted: Option<u64>,
 }
 
 #[must_use]
@@ -78,9 +87,7 @@ pub fn body(asked: &Asked) -> Value {
         ("stream", Value::Bool(true)),
         ("cache_prompt", Value::Bool(false)),
     ];
-    if asked.timing {
-        fields.push(("ignore_eos", Value::Bool(true)));
-    }
+
     if let Some(field) = asked.dial.field() {
         if asked.dial.is_named_by_the_model() {
             let said = asked.dial.said_among(asked.step, &asked.named);
@@ -172,6 +179,7 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
     let mut produced: u64 = 0;
     let mut ending = Ending::Answered;
     let mut why = None;
+    let mut counted: Option<u64> = None;
     'reading: while let Ok(read) = connection.read(&mut held) {
         if read == 0 {
             break;
@@ -195,6 +203,15 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
                 break 'reading;
             }
             let Ok(value) = parse(data) else { continue };
+            if let Some(timings) = value.get("timings") {
+                let whole = |key: &str| {
+                    timings
+                        .get(key)
+                        .and_then(Value::as_integer)
+                        .and_then(|held| u64::try_from(held).ok())
+                };
+                counted = whole("predicted_n").or(counted);
+            }
             let Some(piece) = spoken(&value) else {
                 continue;
             };
@@ -214,22 +231,15 @@ pub fn ask(endpoint: &Endpoint, asked: &Asked) -> Result<Said, Failure> {
             }
         }
     }
-    if !asked.timing
-        && ending == Ending::Answered
-        && produced >= u64::from(asked.ceiling).saturating_sub(4)
-    {
-        ending = Ending::Filled;
-    }
-    if produced == 0 {
-        ending = Ending::Failed;
-        why = Some(what_came_back(&whole));
-    }
+    let counted_now = counted.unwrap_or(produced);
+    (ending, why) = how_it_ended(asked, counted_now, produced, ending, why, &whole);
     let _elapsed = started.elapsed();
     Ok(Said {
         answer,
         produced,
         ending,
         why,
+        counted,
     })
 }
 
@@ -271,6 +281,45 @@ fn shortened(said: &str) -> String {
     let kept: String = said.chars().take(300).collect();
     let one_line = kept.replace(['\n', '\r'], " ");
     one_line.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A timed run that fell well short of what it asked for is not the same measurement.
+fn how_it_ended(
+    asked: &Asked,
+    counted: u64,
+    produced: u64,
+    ending: Ending,
+    why: Option<String>,
+    whole: &str,
+) -> (Ending, Option<String>) {
+    if produced == 0 {
+        return (Ending::Failed, Some(what_came_back(whole)));
+    }
+    if asked.timing {
+        if counted < enough_of(asked.ceiling) {
+            return (
+                Ending::Failed,
+                Some(format!(
+                    "the model stopped after {counted} tokens of the {} it was asked for, so \
+                     this rate is over a shorter run than the others and is not theirs to \
+                     compare with",
+                    asked.ceiling
+                )),
+            );
+        }
+        return (ending, why);
+    }
+    if ending == Ending::Answered && produced >= u64::from(asked.ceiling).saturating_sub(4) {
+        return (Ending::Filled, why);
+    }
+    (ending, why)
+}
+
+fn enough_of(ceiling: u32) -> u64 {
+    u64::from(ceiling)
+        .saturating_mul(9)
+        .checked_div(10)
+        .unwrap_or(0)
 }
 
 fn sent(step: Step) -> Value {
@@ -325,7 +374,7 @@ pub fn reading_of(
         repeat: asked.repeat,
         passed: u32::try_from(passed.iter().filter(|(_, ok)| *ok).count()).unwrap_or(u32::MAX),
         of: u32::try_from(asked.set.tasks.len()).unwrap_or(u32::MAX),
-        produced: said.produced,
+        produced: said.counted.unwrap_or(said.produced),
         milliseconds,
         ending: said.ending,
         per_task: passed.to_vec(),

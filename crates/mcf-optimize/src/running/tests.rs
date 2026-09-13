@@ -274,6 +274,7 @@ fn said_with(answer: &str) -> crate::trial::Said {
         produced: 10,
         ending: crate::reading::Ending::Answered,
         why: None,
+        counted: None,
     }
 }
 
