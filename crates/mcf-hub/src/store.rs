@@ -107,6 +107,22 @@ pub fn held(root: &Path) -> Result<Vec<Held>> {
 }
 
 #[must_use]
+pub fn is_a_model_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if name.ends_with(PROVENANCE_SUFFIX) {
+        return false;
+    }
+    if name.starts_with('.') {
+        return false;
+    }
+    path.extension()
+        .and_then(|held| held.to_str())
+        .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
+}
+
+#[must_use]
 pub fn is_a_companion(path: &Path) -> bool {
     path.file_stem()
         .and_then(|held| held.to_str())
@@ -221,11 +237,7 @@ fn walk(directory: &Path, into: &mut Vec<Held>) -> Result<()> {
             walk(&path, into)?;
             continue;
         }
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.ends_with(PROVENANCE_SUFFIX))
-        {
+        if !is_a_model_file(&path) {
             continue;
         }
         let bytes = std::fs::metadata(&path).map(|metadata| metadata.len());

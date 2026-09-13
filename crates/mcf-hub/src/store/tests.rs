@@ -528,3 +528,41 @@ fn a_projector_is_a_companion_and_a_model_is_not() {
         "/m/a-model-with-mmproj-inside.gguf"
     )));
 }
+
+#[test]
+fn a_store_holds_weights_and_not_the_bookkeeping_beside_them() {
+    use super::is_a_model_file;
+    use std::path::Path;
+    for kept in [
+        "/m/models--o--n/snapshots/abc/Model-Q4_K_M.gguf",
+        "/m/Model-Q4_K_M-00001-of-00002.gguf",
+        "/m/mmproj-Model-f16.gguf",
+        "/m/UPPER.GGUF",
+    ] {
+        assert!(is_a_model_file(Path::new(kept)), "{kept} is a model file");
+    }
+    for left in [
+        "/m/models--o--n/refs/main",
+        "/m/models--o--n/snapshots/abc/config.json",
+        "/m/Model.gguf.partial",
+        "/m/Model.gguf.incomplete",
+        "/m/Model.gguf.tmp",
+        "/m/.Model-Q4_K_M.gguf.sha256",
+        "/m/README.md",
+        "/m/model.safetensors",
+        "/m/.gitattributes",
+    ] {
+        assert!(
+            !is_a_model_file(Path::new(left)),
+            "{left} is not a model file and must not be listed as one"
+        );
+    }
+}
+
+#[test]
+fn a_provenance_file_is_never_mistaken_for_what_it_describes() {
+    use super::{PROVENANCE_SUFFIX, is_a_model_file};
+    use std::path::Path;
+    let beside = format!("/m/Model-Q4_K_M.gguf{PROVENANCE_SUFFIX}");
+    assert!(!is_a_model_file(Path::new(&beside)), "{beside}");
+}
