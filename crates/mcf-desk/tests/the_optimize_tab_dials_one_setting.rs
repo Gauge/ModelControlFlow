@@ -347,34 +347,24 @@ fn running_nothing_again_does_nothing() {
 }
 
 #[test]
-fn a_thinking_level_is_a_dial_of_its_own_beside_the_budget() {
-    assert!(
-        Dial::ALL.contains(&Dial::ThinkingEffort),
-        "gpt-oss takes a level as well as a budget, and they are not the same setting"
-    );
-    assert_ne!(Dial::ThinkingEffort, Dial::ThinkingBudget);
+fn every_dial_offered_is_one_the_engine_enforces() {
+    for dial in Dial::ALL {
+        assert!(
+            dial.flag().is_some() || dial.field().is_some(),
+            "{} would only reach the model as words in a prompt, and a model is free to \
+             ignore those",
+            dial.label()
+        );
+    }
 }
 
 #[test]
-fn a_thinking_level_is_typed_in_as_a_word() {
-    let mut desk = desk();
-    desk.act(Act::Dial(dial_at(Dial::ThinkingEffort)));
-    desk.optimizing.sweep.steps.clear();
-    desk.optimizing.custom.set("high");
-    desk.act(Act::AddCustom);
-    assert!(
-        desk.optimizing.sweep.steps.contains(&Step::Whole(2)),
-        "\"high\" is a level this dial knows: {:?} {:?}",
-        desk.optimizing.sweep.steps,
-        desk.optimizing.custom_refused
-    );
-}
-
-#[test]
-fn a_word_that_is_not_a_thinking_level_is_refused() {
-    let mut desk = desk();
-    desk.act(Act::Dial(dial_at(Dial::ThinkingEffort)));
-    desk.optimizing.custom.set("enormous");
-    desk.act(Act::AddCustom);
-    assert!(desk.optimizing.custom_refused.is_some());
+fn a_thinking_level_is_not_offered_because_nothing_enforces_it() {
+    for dial in Dial::ALL {
+        assert!(
+            !dial.label().to_lowercase().contains("level"),
+            "a reasoning level is text in the prompt: {}",
+            dial.label()
+        );
+    }
 }

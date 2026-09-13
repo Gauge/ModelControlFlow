@@ -25,7 +25,6 @@ pub struct Under {
     pub draft_head: bool,
     pub draft_depth: Option<u32>,
     pub thinking_budget: Option<u32>,
-    pub thinking_level: Option<u32>,
     pub temperature: Option<u32>,
     pub top_p: Option<u32>,
     pub top_k: Option<u32>,
@@ -38,7 +37,6 @@ impl Under {
         let mut held = self.clone();
         match dial {
             Dial::ThinkingBudget => held.thinking_budget = None,
-            Dial::ThinkingEffort => held.thinking_level = None,
             Dial::Temperature => held.temperature = None,
             Dial::TopP => held.top_p = None,
             Dial::TopK => held.top_k = None,
@@ -65,7 +63,6 @@ impl Under {
             ("draft_head", Value::Bool(self.draft_head)),
             ("draft_depth", count(self.draft_depth)),
             ("thinking_budget", count(self.thinking_budget)),
-            ("thinking_level", count(self.thinking_level)),
             ("temperature", count(self.temperature)),
             ("top_p", count(self.top_p)),
             ("top_k", count(self.top_k)),
@@ -109,7 +106,6 @@ impl Under {
             draft_head: yes("draft_head"),
             draft_depth: small("draft_depth"),
             thinking_budget: small("thinking_budget"),
-            thinking_level: small("thinking_level"),
             temperature: small("temperature"),
             top_p: small("top_p"),
             top_k: small("top_k"),

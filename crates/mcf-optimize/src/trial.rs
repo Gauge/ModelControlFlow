@@ -38,8 +38,6 @@ pub struct Asked {
     pub dial: Dial,
     pub step: Step,
     pub repeat: u8,
-    pub thinking: Option<bool>,
-    pub effort: Option<String>,
     pub ceiling: u32,
 }
 
@@ -53,19 +51,6 @@ pub struct Said {
 
 #[must_use]
 pub fn body(asked: &Asked) -> Value {
-    let mut switches: Vec<(&str, Value)> = Vec::new();
-    if let Some(on) = asked.thinking {
-        switches.push(("enable_thinking", Value::Bool(on)));
-    }
-    let dialled = asked
-        .dial
-        .template_kwarg()
-        .map(|kwarg| (kwarg, asked.dial.said(asked.step)));
-    match (&dialled, &asked.effort) {
-        (Some((kwarg, said)), _) => switches.push((kwarg, Value::text(said.clone()))),
-        (None, Some(effort)) => switches.push(("reasoning_effort", Value::text(effort.clone()))),
-        (None, None) => {}
-    }
     let mut fields: Vec<(&str, Value)> = vec![
         (
             "messages",
@@ -80,9 +65,6 @@ pub fn body(asked: &Asked) -> Value {
     ];
     if let Some(field) = asked.dial.field() {
         fields.push((field, sent(asked.step)));
-    }
-    if !switches.is_empty() {
-        fields.push(("chat_template_kwargs", Value::map(switches)));
     }
     Value::map(fields)
 }

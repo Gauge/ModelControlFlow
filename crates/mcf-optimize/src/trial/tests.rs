@@ -2,7 +2,6 @@ use super::{Asked, Endpoint, Said, blocks, body};
 use crate::corpus::Set;
 use crate::dial::{Dial, Step};
 use crate::reading::Ending;
-use mcf_record::json::Value;
 
 fn asked(dial: Dial, step: Step) -> Asked {
     let Some(set) = Set::numbered(1) else {
@@ -13,8 +12,6 @@ fn asked(dial: Dial, step: Step) -> Asked {
         dial,
         step,
         repeat: 0,
-        thinking: Some(true),
-        effort: Some("medium".to_owned()),
         ceiling: 40_000,
     }
 }
@@ -48,20 +45,6 @@ fn the_body_asks_for_a_stream_and_refuses_the_prompt_cache() {
         held.get("cache_prompt"),
         Some(&mcf_record::json::Value::Bool(false)),
         "a cached prefix makes two trials incomparable"
-    );
-}
-
-#[test]
-fn the_thinking_switches_ride_in_the_template_arguments() {
-    let held = body(&asked(Dial::Temperature, Step::Thousandths(0)));
-    let Some(switches) = held.get("chat_template_kwargs") else {
-        panic!("the switches are sent");
-    };
-    assert_eq!(
-        switches
-            .get("reasoning_effort")
-            .and_then(mcf_record::json::Value::as_text),
-        Some("medium")
     );
 }
 
@@ -175,59 +158,20 @@ fn waiting_for_a_port_that_never_answers_gives_up_rather_than_waiting_forever() 
 }
 
 #[test]
-fn a_thinking_level_reaches_the_model_as_the_word_its_template_reads() {
-    let set = crate::corpus::Set::numbered(1).expect("set one");
-    let asked = Asked {
-        set,
-        dial: Dial::ThinkingEffort,
-        step: Step::Whole(2),
-        repeat: 1,
-        thinking: None,
-        effort: None,
-        ceiling: 64,
-    };
-    let asking = super::body(&asked);
-    let kwargs = asking
-        .get("chat_template_kwargs")
-        .expect("the template kwargs");
-    assert_eq!(
-        kwargs.get("reasoning_effort").and_then(Value::as_text),
-        Some("high"),
-        "the template reads a word, not the number the ledger keeps"
-    );
-}
-
-#[test]
-fn every_thinking_level_the_dial_offers_has_a_word() {
-    for step in Dial::ThinkingEffort.coarse() {
-        let said = Dial::ThinkingEffort.said(step);
+fn a_sweep_sends_no_chat_template_switches_at_all() {
+    for dial in Dial::ALL {
+        let asking = super::body(&asked(dial, dial.step_of(2)));
         assert!(
-            crate::dial::LEVELS.contains(&said.as_str()),
-            "{said:?} is not a level any template knows"
+            asking.get("chat_template_kwargs").is_none(),
+            "{} would reach the model as words in its prompt, which a model may honour or \
+             ignore as it likes",
+            dial.label()
         );
     }
 }
 
 #[test]
-fn a_thinking_level_is_not_a_sampling_field_and_does_not_reload_the_engine() {
-    assert_eq!(Dial::ThinkingEffort.field(), None);
-    assert_eq!(Dial::ThinkingEffort.flag(), None);
-    assert!(!Dial::ThinkingEffort.reloads_the_engine());
-}
-
-#[test]
-fn a_dial_that_is_not_about_thinking_sends_no_template_switch_of_its_own() {
-    let set = crate::corpus::Set::numbered(1).expect("set one");
-    let asked = Asked {
-        set,
-        dial: Dial::Temperature,
-        step: Step::Thousandths(200),
-        repeat: 1,
-        thinking: None,
-        effort: None,
-        ceiling: 64,
-    };
-    let asking = super::body(&asked);
-    assert!(asking.get("chat_template_kwargs").is_none());
+fn a_sampling_dial_reaches_the_model_as_a_field_the_engine_applies() {
+    let asking = super::body(&asked(Dial::Temperature, Step::Thousandths(200)));
     assert!(asking.get("temperature").is_some());
 }

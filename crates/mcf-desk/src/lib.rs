@@ -623,7 +623,7 @@ impl Optimizing {
             return;
         }
         let dial = self.sweep.dial;
-        let Some(step) = dial.read(&typed).or_else(|| read_a_value(dial, &typed)) else {
+        let Some(step) = read_a_value(dial, &typed) else {
             self.custom_refused = Some(format!(
                 "{typed:?} is not a value {} takes",
                 dial.label().to_lowercase()
@@ -705,8 +705,7 @@ fn hold_it_at(
             held.started.draft_head = wanted > 0;
             held.started.drafted = (wanted > 0).then_some(wanted);
         }
-        mcf_optimize::dial::Dial::ThinkingEffort
-        | mcf_optimize::dial::Dial::Temperature
+        mcf_optimize::dial::Dial::Temperature
         | mcf_optimize::dial::Dial::TopP
         | mcf_optimize::dial::Dial::TopK => {}
     }
@@ -3162,7 +3161,6 @@ impl Desk {
             draft_head: settings.started.draft_head,
             draft_depth: settings.started.drafted,
             thinking_budget: settings.started.thinking,
-            thinking_level: None,
             temperature: None,
             top_p: None,
             top_k: None,
@@ -3338,8 +3336,6 @@ impl Desk {
             under,
             dial: self.optimizing.sweep.dial,
             ceiling: SWEEP_CEILING,
-            thinking: None,
-            effort: None,
             mark: self.optimizing.measure.needs_the_answers_run(),
             ready_within: HOLDING_PATIENCE,
             room: path

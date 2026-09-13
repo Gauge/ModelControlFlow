@@ -42,7 +42,6 @@ fn under() -> Under {
         draft_head: false,
         draft_depth: None,
         thinking_budget: Some(4096),
-        thinking_level: Some(1),
         temperature: Some(200),
         top_p: Some(950),
         top_k: Some(20),
@@ -380,41 +379,41 @@ fn a_reading_taken_under_another_configuration_is_not_forgotten_by_mistake() {
 }
 
 #[test]
-fn the_thinking_level_is_part_of_what_makes_a_configuration_that_configuration() {
-    let scratch = Scratch::new("level-in-the-base");
+fn the_thinking_budget_is_part_of_what_makes_a_configuration_that_configuration() {
+    let scratch = Scratch::new("budget-in-the-base");
     let mut ledger = Ledger::open(&scratch.at()).expect("opens");
     let spot = at(Step::Whole(256), 1);
     ledger
         .record(&under(), spot, &reading(Step::Whole(256), 1, 6), "before")
         .expect("written");
-    let mut louder = under();
-    louder.thinking_level = Some(3);
+    let mut longer = under();
+    longer.thinking_budget = Some(16_384);
     assert!(
-        ledger.already(&louder, &spot).is_none(),
-        "a reading taken at one thinking level says nothing about another"
+        ledger.already(&longer, &spot).is_none(),
+        "a reading taken under one thinking budget says nothing about another"
     );
 }
 
 #[test]
-fn a_sweep_of_the_thinking_level_ignores_the_level_in_the_base() {
-    let scratch = Scratch::new("level-dialled");
+fn a_sweep_of_the_thinking_budget_ignores_the_budget_in_the_base() {
+    let scratch = Scratch::new("budget-dialled");
     let mut ledger = Ledger::open(&scratch.at()).expect("opens");
     let spot = At {
-        dial: Dial::ThinkingEffort,
-        step: Step::Whole(1),
+        dial: Dial::ThinkingBudget,
+        step: Step::Whole(4096),
         set: 1,
         repeat: 1,
     };
-    let mut held = reading(Step::Whole(1), 1, 6);
-    held.dial = Dial::ThinkingEffort;
-    held.step = Step::Whole(1);
+    let mut held = reading(Step::Whole(4096), 1, 6);
+    held.dial = Dial::ThinkingBudget;
+    held.step = Step::Whole(4096);
     ledger
         .record(&under(), spot, &held, "before")
         .expect("written");
-    let mut louder = under();
-    louder.thinking_level = Some(3);
+    let mut longer = under();
+    longer.thinking_budget = Some(16_384);
     assert!(
-        ledger.already(&louder, &spot).is_some(),
-        "the level is what this sweep varies, so it is not part of the base it varies against"
+        ledger.already(&longer, &spot).is_some(),
+        "the budget is what this sweep varies, so it is not part of the base it varies against"
     );
 }
