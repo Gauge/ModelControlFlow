@@ -1051,7 +1051,10 @@ impl Daemon {
         }
     }
 
-    fn header_kept(&self, path: &std::path::Path) -> Option<std::sync::Arc<mcf_standin::gguf::Model>> {
+    fn header_kept(
+        &self,
+        path: &std::path::Path,
+    ) -> Option<std::sync::Arc<mcf_standin::gguf::Model>> {
         let (size, changed) = how_the_file_stands(path);
         if let Ok(kept) = self.headers.lock()
             && let Some(held) = kept.get(path)
@@ -2489,6 +2492,7 @@ impl Daemon {
                 fits,
                 projector.as_deref(),
             )
+            .tuned_for(&file)
             .spread_over(choice.split()),
             path,
             largest: choice.context,

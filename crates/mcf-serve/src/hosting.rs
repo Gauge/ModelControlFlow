@@ -547,6 +547,32 @@ impl Hosting {
         }
     }
 
+    /// The settings a file's own header argues for, on top of what the machine
+    /// argues for. Each one is a measurement, and each says what it rests on.
+    #[must_use]
+    pub fn tuned_for(mut self, file: &mcf_standin::gguf::Model) -> Self {
+        let architecture = file.architecture().map(str::to_owned);
+        let under = |suffix: &str| {
+            architecture.as_ref().and_then(|held| {
+                file.get(&format!("{held}.{suffix}"))
+                    .and_then(mcf_standin::gguf::Value::as_integer)
+                    .and_then(|held| u64::try_from(held).ok())
+            })
+        };
+        let sparse = under("expert_count").is_some_and(|count| count > 1);
+        self.ubatch = if sparse { 1024 } else { 256 };
+        self.batch = self.batch.max(self.ubatch);
+        self.cache = CacheType::Q8_0;
+        if under("nextn_predict_layers").is_some_and(|layers| layers > 0) {
+            self.started.draft_head = true;
+            self.started.drafted = Some(2);
+            self.reuse.prompt_cache_mib = 0;
+            self.reuse.checkpoints = 0;
+        }
+        self.started.architecture = architecture;
+        self
+    }
+
     #[must_use]
     pub fn per_conversation(&self) -> u64 {
         self.context
@@ -1170,13 +1196,15 @@ impl Hosting {
             ),
             (
                 "trained",
-                self.started
-                    .trained
-                    .map_or(Value::Null, |held| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))),
+                self.started.trained.map_or(Value::Null, |held| {
+                    Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+                }),
             ),
             (
                 "lift",
-                self.started.lift.map_or(Value::Null, |held| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))),
+                self.started.lift.map_or(Value::Null, |held| {
+                    Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+                }),
             ),
             (
                 "architecture",

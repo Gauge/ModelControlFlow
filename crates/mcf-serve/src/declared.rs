@@ -310,7 +310,8 @@ impl Started {
             ),
             (
                 "lift",
-                self.lift.map_or(Value::Null, |held| whole(u128::from(held))),
+                self.lift
+                    .map_or(Value::Null, |held| whole(u128::from(held))),
             ),
             (
                 "architecture",
