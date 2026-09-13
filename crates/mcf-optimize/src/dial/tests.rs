@@ -1,19 +1,53 @@
 use super::{Dial, Scale, Span, Step, Sweep};
 
 #[test]
-fn every_dial_is_either_an_engine_flag_or_a_request_field_never_both() {
+fn every_dial_reaches_the_model_exactly_one_way() {
     for dial in Dial::ALL {
-        let flag = dial.flag().is_some();
-        let field = dial.field().is_some();
-        assert!(
-            flag != field,
-            "{} must be exactly one of the two",
+        let ways = usize::from(dial.flag().is_some())
+            + usize::from(dial.field().is_some())
+            + usize::from(dial.template_kwarg().is_some());
+        assert_eq!(
+            ways,
+            1,
+            "{} must be a launch flag, a request field or a template switch — one of the \
+             three, never two and never none",
             dial.label()
         );
         assert_eq!(
-            flag,
+            dial.flag().is_some(),
             dial.reloads_the_engine(),
             "{} reloads exactly when it is a launch flag",
+            dial.label()
+        );
+    }
+}
+
+#[test]
+fn a_thinking_level_is_a_word_the_template_reads_and_a_number_the_record_keeps() {
+    for (at, word) in super::LEVELS.iter().enumerate() {
+        let step = Dial::ThinkingEffort.step_of(u32::try_from(at).unwrap_or(0));
+        assert_eq!(&Dial::ThinkingEffort.said(step), word);
+        assert_eq!(Dial::ThinkingEffort.read(word), Some(step));
+        assert_eq!(
+            Dial::ThinkingEffort.read(&word.to_uppercase()),
+            Some(step),
+            "a level typed in capitals is the same level"
+        );
+    }
+    assert_eq!(Dial::ThinkingEffort.read("enormous"), None);
+}
+
+#[test]
+fn a_dial_that_is_not_about_thinking_reads_its_values_as_numbers() {
+    for dial in Dial::ALL
+        .into_iter()
+        .filter(|dial| *dial != Dial::ThinkingEffort)
+    {
+        assert_eq!(dial.read("low"), None, "{}", dial.label());
+        assert_eq!(
+            dial.said(dial.step_of(2)),
+            dial.step_of(2).said(),
+            "{} renders its values as it always did",
             dial.label()
         );
     }

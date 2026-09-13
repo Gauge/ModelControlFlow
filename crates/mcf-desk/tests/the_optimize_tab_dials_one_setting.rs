@@ -14,7 +14,7 @@ fn optimize_sits_between_configure_and_statistics() {
 #[test]
 fn picking_a_dial_replaces_the_values_with_that_dials_own() {
     let mut desk = desk();
-    desk.act(Act::Dial(1));
+    desk.act(Act::Dial(dial_at(Dial::Temperature)));
     assert_eq!(desk.optimizing.sweep.dial, Dial::Temperature);
     assert!(
         desk.optimizing
@@ -238,11 +238,7 @@ fn a_value_already_in_the_list_is_not_added_twice() {
 #[test]
 fn a_dial_read_in_thousandths_takes_a_value_with_a_point_in_it() {
     let mut desk = desk();
-    let at = mcf_optimize::dial::Dial::ALL
-        .iter()
-        .position(|dial| *dial == mcf_optimize::dial::Dial::Temperature)
-        .unwrap_or(0);
-    desk.act(Act::Dial(at));
+    desk.act(Act::Dial(dial_at(Dial::Temperature)));
     desk.optimizing.sweep.steps.clear();
     desk.optimizing.custom.set("0.35");
     desk.act(Act::AddCustom);
@@ -277,4 +273,108 @@ fn typing_a_value_takes_the_keys_while_the_optimize_tab_is_open() {
 fn the_corpus_the_tab_offers_is_the_whole_sixty_four() {
     assert_eq!(mcf_optimize::corpus::task_count(), 64);
     assert_eq!(mcf_optimize::corpus::Set::all().len(), 8);
+}
+
+fn dial_at(wanted: Dial) -> usize {
+    Dial::ALL
+        .iter()
+        .position(|dial| *dial == wanted)
+        .unwrap_or(0)
+}
+
+fn a_spot(step: u32, set: usize, repeat: u8) -> mcf_optimize::ledger::At {
+    mcf_optimize::ledger::At {
+        dial: Dial::ThinkingBudget,
+        step: Step::Whole(step),
+        set,
+        repeat,
+    }
+}
+
+#[test]
+fn a_row_is_picked_by_clicking_it_and_let_go_by_clicking_again() {
+    let mut desk = desk();
+    let one = a_spot(4096, 1, 1);
+    desk.act(Act::PickRow(one));
+    assert_eq!(desk.optimizing.picked, vec![one]);
+    desk.act(Act::PickRow(one));
+    assert!(desk.optimizing.picked.is_empty());
+}
+
+#[test]
+fn several_rows_can_be_picked_at_once() {
+    let mut desk = desk();
+    let held = [a_spot(0, 1, 1), a_spot(4096, 2, 3), a_spot(8192, 5, 2)];
+    for spot in held {
+        desk.act(Act::PickRow(spot));
+    }
+    assert_eq!(desk.optimizing.picked.len(), 3);
+    desk.act(Act::PickNone);
+    assert!(desk.optimizing.picked.is_empty(), "and let go of in one go");
+}
+
+#[test]
+fn running_the_picked_rows_again_asks_for_exactly_those_values_sets_and_repeats() {
+    let mut desk = desk();
+    for spot in [a_spot(0, 3, 1), a_spot(8192, 1, 2), a_spot(0, 1, 1)] {
+        desk.act(Act::PickRow(spot));
+    }
+    desk.act(Act::RerunPicked);
+    assert_eq!(
+        desk.optimizing.sweep.steps,
+        vec![Step::Whole(0), Step::Whole(8192)],
+        "each value once, in order"
+    );
+    assert_eq!(desk.optimizing.sweep.sets, vec![1, 3]);
+    assert_eq!(desk.optimizing.sweep.repeats, 2);
+    assert_eq!(
+        desk.optimizing.way,
+        mcf_optimize::hunt::Way::ByHand,
+        "picking rows is choosing values by hand"
+    );
+    assert!(
+        desk.optimizing.picked.is_empty(),
+        "the picks are spent once they are acted on"
+    );
+}
+
+#[test]
+fn running_nothing_again_does_nothing() {
+    let mut desk = desk();
+    desk.act(Act::RerunPicked);
+    assert!(!desk.optimizing.running);
+    assert!(desk.optimizing.picked.is_empty());
+}
+
+#[test]
+fn a_thinking_level_is_a_dial_of_its_own_beside_the_budget() {
+    assert!(
+        Dial::ALL.contains(&Dial::ThinkingEffort),
+        "gpt-oss takes a level as well as a budget, and they are not the same setting"
+    );
+    assert_ne!(Dial::ThinkingEffort, Dial::ThinkingBudget);
+}
+
+#[test]
+fn a_thinking_level_is_typed_in_as_a_word() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(Dial::ThinkingEffort)));
+    desk.optimizing.sweep.steps.clear();
+    desk.optimizing.custom.set("high");
+    desk.act(Act::AddCustom);
+    assert!(
+        desk.optimizing.sweep.steps.contains(&Step::Whole(2)),
+        "\"high\" is a level this dial knows: {:?} {:?}",
+        desk.optimizing.sweep.steps,
+        desk.optimizing.custom_refused
+    );
+}
+
+#[test]
+fn a_word_that_is_not_a_thinking_level_is_refused() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(Dial::ThinkingEffort)));
+    desk.optimizing.custom.set("enormous");
+    desk.act(Act::AddCustom);
+    assert!(desk.optimizing.custom_refused.is_some());
 }

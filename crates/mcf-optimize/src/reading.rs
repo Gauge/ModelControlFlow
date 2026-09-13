@@ -209,12 +209,35 @@ impl Report {
     }
 
     #[must_use]
+    pub fn cells_of(reading: &Reading, dial: Dial) -> Vec<String> {
+        vec![
+            dial.said(reading.step),
+            reading.set.to_string(),
+            reading.repeat.to_string(),
+            format!("{}/{}", reading.passed, reading.of),
+            reading.produced.to_string(),
+            reading
+                .tokens_a_second()
+                .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}")),
+            reading
+                .tokens_an_answer()
+                .map_or_else(|| "—".to_owned(), |held| held.to_string()),
+            reading
+                .milliseconds
+                .checked_div(1000)
+                .unwrap_or(0)
+                .to_string(),
+            reading.ending.label().to_owned(),
+        ]
+    }
+
+    #[must_use]
     pub fn to_rows(&self) -> Vec<Vec<String>> {
         self.readings
             .iter()
             .map(|reading| {
                 vec![
-                    reading.step.said(),
+                    reading.dial.said(reading.step),
                     reading.set.to_string(),
                     reading.repeat.to_string(),
                     format!("{}/{}", reading.passed, reading.of),

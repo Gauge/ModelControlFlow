@@ -2,6 +2,7 @@ use super::{Asked, Endpoint, Said, blocks, body};
 use crate::corpus::Set;
 use crate::dial::{Dial, Step};
 use crate::reading::Ending;
+use mcf_record::json::Value;
 
 fn asked(dial: Dial, step: Step) -> Asked {
     let Some(set) = Set::numbered(1) else {
@@ -171,4 +172,62 @@ fn waiting_for_a_port_that_never_answers_gives_up_rather_than_waiting_forever() 
         "it waited {:?}",
         began.elapsed()
     );
+}
+
+#[test]
+fn a_thinking_level_reaches_the_model_as_the_word_its_template_reads() {
+    let set = crate::corpus::Set::numbered(1).expect("set one");
+    let asked = Asked {
+        set,
+        dial: Dial::ThinkingEffort,
+        step: Step::Whole(2),
+        repeat: 1,
+        thinking: None,
+        effort: None,
+        ceiling: 64,
+    };
+    let asking = super::body(&asked);
+    let kwargs = asking
+        .get("chat_template_kwargs")
+        .expect("the template kwargs");
+    assert_eq!(
+        kwargs.get("reasoning_effort").and_then(Value::as_text),
+        Some("high"),
+        "the template reads a word, not the number the ledger keeps"
+    );
+}
+
+#[test]
+fn every_thinking_level_the_dial_offers_has_a_word() {
+    for step in Dial::ThinkingEffort.coarse() {
+        let said = Dial::ThinkingEffort.said(step);
+        assert!(
+            crate::dial::LEVELS.contains(&said.as_str()),
+            "{said:?} is not a level any template knows"
+        );
+    }
+}
+
+#[test]
+fn a_thinking_level_is_not_a_sampling_field_and_does_not_reload_the_engine() {
+    assert_eq!(Dial::ThinkingEffort.field(), None);
+    assert_eq!(Dial::ThinkingEffort.flag(), None);
+    assert!(!Dial::ThinkingEffort.reloads_the_engine());
+}
+
+#[test]
+fn a_dial_that_is_not_about_thinking_sends_no_template_switch_of_its_own() {
+    let set = crate::corpus::Set::numbered(1).expect("set one");
+    let asked = Asked {
+        set,
+        dial: Dial::Temperature,
+        step: Step::Thousandths(200),
+        repeat: 1,
+        thinking: None,
+        effort: None,
+        ceiling: 64,
+    };
+    let asking = super::body(&asked);
+    assert!(asking.get("chat_template_kwargs").is_none());
+    assert!(asking.get("temperature").is_some());
 }

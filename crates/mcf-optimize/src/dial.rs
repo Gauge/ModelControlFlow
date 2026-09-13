@@ -2,6 +2,7 @@
 pub enum Dial {
     #[default]
     ThinkingBudget,
+    ThinkingEffort,
     Temperature,
     TopP,
     TopK,
@@ -10,8 +11,9 @@ pub enum Dial {
 }
 
 impl Dial {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::ThinkingBudget,
+        Self::ThinkingEffort,
         Self::Temperature,
         Self::TopP,
         Self::TopK,
@@ -23,6 +25,7 @@ impl Dial {
     pub const fn label(self) -> &'static str {
         match self {
             Self::ThinkingBudget => "Thinking budget",
+            Self::ThinkingEffort => "Thinking level",
             Self::Temperature => "Temperature",
             Self::TopP => "Top-p",
             Self::TopK => "Top-k",
@@ -45,14 +48,18 @@ impl Dial {
             Self::ThinkingBudget => "tokens",
             Self::MicroBatch => "tokens per pass",
             Self::DraftDepth => "drafted tokens",
-            Self::Temperature | Self::TopP | Self::TopK => "",
+            Self::ThinkingEffort | Self::Temperature | Self::TopP | Self::TopK => "",
         }
     }
 
     #[must_use]
     pub const fn scale(self) -> Scale {
         match self {
-            Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth | Self::TopK => Scale::Whole,
+            Self::ThinkingBudget
+            | Self::ThinkingEffort
+            | Self::MicroBatch
+            | Self::DraftDepth
+            | Self::TopK => Scale::Whole,
             Self::Temperature | Self::TopP => Scale::Thousandths,
         }
     }
@@ -61,6 +68,7 @@ impl Dial {
     pub const fn span(self) -> Span {
         match self {
             Self::ThinkingBudget => Span::new(0, 32_768, 256),
+            Self::ThinkingEffort => Span::new(0, 3, 1),
             Self::Temperature => Span::new(0, 1000, 25),
             Self::TopP => Span::new(500, 1000, 10),
             Self::TopK => Span::new(0, 200, 5),
@@ -73,6 +81,7 @@ impl Dial {
     pub fn coarse(self) -> Vec<Step> {
         let held: &[u32] = match self {
             Self::ThinkingBudget => &[0, 4096, 8192, 16_384, 32_768],
+            Self::ThinkingEffort => &[0, 1, 2, 3],
             Self::Temperature => &[0, 250, 500, 750, 1000],
             Self::TopP => &[500, 625, 750, 875, 1000],
             Self::TopK => &[0, 50, 100, 150, 200],
@@ -97,6 +106,7 @@ impl Dial {
                 .into_iter()
                 .map(Step::Whole)
                 .collect(),
+            Self::ThinkingEffort => (0..4).map(Step::Whole).collect(),
             Self::Temperature => [0, 200, 400, 600, 800, 1000]
                 .into_iter()
                 .map(Step::Thousandths)
@@ -120,7 +130,7 @@ impl Dial {
             Self::ThinkingBudget => Some("--reasoning-budget"),
             Self::MicroBatch => Some("--ubatch-size"),
             Self::DraftDepth => Some("--spec-draft-n-max"),
-            Self::Temperature | Self::TopP | Self::TopK => None,
+            Self::ThinkingEffort | Self::Temperature | Self::TopP | Self::TopK => None,
         }
     }
 
@@ -130,10 +140,51 @@ impl Dial {
             Self::Temperature => Some("temperature"),
             Self::TopP => Some("top_p"),
             Self::TopK => Some("top_k"),
-            Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth => None,
+            Self::ThinkingBudget | Self::ThinkingEffort | Self::MicroBatch | Self::DraftDepth => {
+                None
+            }
         }
     }
+
+    #[must_use]
+    pub const fn template_kwarg(self) -> Option<&'static str> {
+        match self {
+            Self::ThinkingEffort => Some("reasoning_effort"),
+            Self::ThinkingBudget
+            | Self::Temperature
+            | Self::TopP
+            | Self::TopK
+            | Self::MicroBatch
+            | Self::DraftDepth => None,
+        }
+    }
+
+    #[must_use]
+    pub fn said(self, step: Step) -> String {
+        match self {
+            Self::ThinkingEffort => step
+                .whole()
+                .and_then(|held| LEVELS.get(usize::try_from(held).unwrap_or(usize::MAX)))
+                .map_or_else(|| step.said(), |held| (*held).to_owned()),
+            _ => step.said(),
+        }
+    }
+
+    #[must_use]
+    pub fn read(self, typed: &str) -> Option<Step> {
+        if self == Self::ThinkingEffort {
+            let wanted = typed.trim().to_ascii_lowercase();
+            return LEVELS
+                .iter()
+                .position(|held| *held == wanted)
+                .and_then(|at| u32::try_from(at).ok())
+                .map(Step::Whole);
+        }
+        None
+    }
 }
+
+pub const LEVELS: [&str; 4] = ["low", "medium", "high", "xhigh"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scale {

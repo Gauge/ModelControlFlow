@@ -520,6 +520,8 @@ pub struct Optimizing {
     pub custom_focused: bool,
     pub custom_refused: Option<String>,
     pub known: usize,
+    pub rows: Vec<mcf_optimize::ledger::Row>,
+    pub picked: Vec<mcf_optimize::ledger::At>,
     pub last_said: Option<String>,
     pub run: Option<mcf_optimize::running::Running>,
 }
@@ -621,7 +623,7 @@ impl Optimizing {
             return;
         }
         let dial = self.sweep.dial;
-        let Some(step) = read_a_value(dial, &typed) else {
+        let Some(step) = dial.read(&typed).or_else(|| read_a_value(dial, &typed)) else {
             self.custom_refused = Some(format!(
                 "{typed:?} is not a value {} takes",
                 dial.label().to_lowercase()
@@ -703,7 +705,8 @@ fn hold_it_at(
             held.started.draft_head = wanted > 0;
             held.started.drafted = (wanted > 0).then_some(wanted);
         }
-        mcf_optimize::dial::Dial::Temperature
+        mcf_optimize::dial::Dial::ThinkingEffort
+        | mcf_optimize::dial::Dial::Temperature
         | mcf_optimize::dial::Dial::TopP
         | mcf_optimize::dial::Dial::TopK => {}
     }
@@ -1558,6 +1561,9 @@ pub enum Act {
     CustomValue(crate::ui::Touched),
     AddCustom,
     ForgetReadings,
+    PickRow(mcf_optimize::ledger::At),
+    PickNone,
+    RerunPicked,
     TestSet(usize),
     Repeats,
     Sweep,
@@ -2048,6 +2054,9 @@ impl Desk {
             | Act::CustomValue(_)
             | Act::AddCustom
             | Act::ForgetReadings
+            | Act::PickRow(_)
+            | Act::PickNone
+            | Act::RerunPicked
             | Act::TestSet(_)
             | Act::Repeats
             | Act::Sweep
@@ -3153,6 +3162,7 @@ impl Desk {
             draft_head: settings.started.draft_head,
             draft_depth: settings.started.drafted,
             thinking_budget: settings.started.thinking,
+            thinking_level: None,
             temperature: None,
             top_p: None,
             top_k: None,
@@ -3161,6 +3171,7 @@ impl Desk {
     }
 
     pub fn read_the_ledger(&mut self) {
+        self.optimizing.rows.clear();
         let Some(path) = self.ledger_path() else {
             return;
         };
@@ -3174,9 +3185,20 @@ impl Desk {
         let against = ledger.against(&under, self.optimizing.sweep.dial);
         self.optimizing.known = against.len();
         let mut report = mcf_optimize::reading::Report::default();
-        for row in against {
+        for row in &against {
             report.record(row.reading.clone());
         }
+        self.optimizing.rows = against.into_iter().cloned().collect();
+        self.optimizing.rows.sort_by_key(|row| {
+            (
+                match row.at.step {
+                    mcf_optimize::dial::Step::Whole(held)
+                    | mcf_optimize::dial::Step::Thousandths(held) => held,
+                },
+                row.at.set,
+                row.at.repeat,
+            )
+        });
         self.optimizing.report = report;
     }
 
@@ -3187,7 +3209,62 @@ impl Desk {
             Act::CustomValue(touched) => self.optimizing.touch_the_custom(touched),
             Act::AddCustom => self.optimizing.add_what_was_typed(),
             Act::ForgetReadings => self.forget_readings(),
+            Act::PickRow(at) => self.pick_row(at),
+            Act::PickNone => self.optimizing.picked.clear(),
+            Act::RerunPicked => self.rerun_picked(),
             _ => {}
+        }
+    }
+
+    fn pick_row(&mut self, at: mcf_optimize::ledger::At) {
+        self.optimizing.refused = None;
+        if let Some(found) = self.optimizing.picked.iter().position(|held| *held == at) {
+            let _dropped = self.optimizing.picked.remove(found);
+            return;
+        }
+        self.optimizing.picked.push(at);
+    }
+
+    fn rerun_picked(&mut self) {
+        self.optimizing.refused = None;
+        if self.optimizing.picked.is_empty() || self.optimizing.run.is_some() {
+            return;
+        }
+        let picked = self.optimizing.picked.clone();
+        let mut steps: Vec<mcf_optimize::dial::Step> = picked.iter().map(|at| at.step).collect();
+        steps.sort_by_key(|step| match *step {
+            mcf_optimize::dial::Step::Whole(held) | mcf_optimize::dial::Step::Thousandths(held) => {
+                held
+            }
+        });
+        steps.dedup();
+        let mut sets: Vec<usize> = picked.iter().map(|at| at.set).collect();
+        sets.sort_unstable();
+        sets.dedup();
+        let repeats = picked.iter().map(|at| at.repeat).max().unwrap_or(1);
+        self.optimizing.way = mcf_optimize::hunt::Way::ByHand;
+        self.optimizing.sweep.steps = steps;
+        self.optimizing.sweep.sets = sets;
+        self.optimizing.sweep.repeats = repeats;
+        self.optimizing.picked.clear();
+        if let Some(why) = self.forget_these(&picked) {
+            self.optimizing.refused = Some(why);
+            return;
+        }
+        self.read_the_ledger();
+        self.start_or_stop_sweeping();
+    }
+
+    fn forget_these(&mut self, picked: &[mcf_optimize::ledger::At]) -> Option<String> {
+        let under = self.base_for_a_sweep()?;
+        let path = self.ledger_path()?;
+        let mut ledger = match mcf_optimize::ledger::Ledger::open(&path) {
+            Ok(ledger) => ledger,
+            Err(failure) => return Some(failure.to_string()),
+        };
+        match ledger.forget(&under, picked) {
+            Ok(_gone) => None,
+            Err(failure) => Some(failure.to_string()),
         }
     }
 
@@ -3274,7 +3351,6 @@ impl Desk {
         let hosting = std::boxed::Box::new(move |step, along: &mut dyn FnMut(String)| {
             hold_it_at(&socket, &model, &settings, dial, step, along)
         });
-        self.optimizing.report = mcf_optimize::reading::Report::default();
         self.optimizing.done = 0;
         self.optimizing.last_said = None;
         self.optimizing.run = Some(mcf_optimize::running::Running::begun(
@@ -3296,8 +3372,6 @@ impl Desk {
             return false;
         }
         self.optimizing.done = run.taken.saturating_add(run.skipped);
-        self.optimizing.known = run.skipped;
-        self.optimizing.report = run.report.clone();
         if let Some(why) = run.refused.clone() {
             self.optimizing.refused = Some(why);
         }
@@ -3306,6 +3380,7 @@ impl Desk {
             self.optimizing.running = false;
             self.optimizing.run = None;
         }
+        self.read_the_ledger();
         true
     }
 
@@ -3321,7 +3396,10 @@ impl Desk {
             | Act::SweepMeasure(_)
             | Act::CustomValue(_)
             | Act::AddCustom
-            | Act::ForgetReadings => self.choosing_values(act),
+            | Act::ForgetReadings
+            | Act::PickRow(_)
+            | Act::PickNone
+            | Act::RerunPicked => self.choosing_values(act),
             Act::TestSet(number) => self.optimizing.toggle_set(number),
             Act::Repeats => self.optimizing.cycle_repeats(),
             Act::Sweep => self.start_or_stop_sweeping(),

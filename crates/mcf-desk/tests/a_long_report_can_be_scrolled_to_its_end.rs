@@ -4,6 +4,7 @@ use mcf_desk::paint::{Box, NIGHT, Painter};
 use mcf_desk::ui::Mouse;
 use mcf_desk::{Desk, Model, Page, Region, Tab};
 use mcf_optimize::dial::{Dial, Step};
+use mcf_optimize::ledger::{At, Row, Under};
 use mcf_optimize::reading::{Ending, Reading};
 
 fn model() -> Model {
@@ -35,17 +36,30 @@ fn desk_with(rows: usize) -> Desk {
     desk.page = Page::Host;
     desk.tab = Tab::Optimize;
     for at in 0..rows {
-        desk.optimizing.report.record(Reading {
+        let spot = At {
             dial: Dial::ThinkingBudget,
             step: Step::Whole(4096),
             set: at % 8 + 1,
-            repeat: 1,
+            repeat: u8::try_from(at.checked_div(8).unwrap_or(0) + 1).unwrap_or(1),
+        };
+        let reading = Reading {
+            dial: spot.dial,
+            step: spot.step,
+            set: spot.set,
+            repeat: spot.repeat,
             passed: 4,
             of: 8,
             produced: 8000,
             milliseconds: 140_000,
             ending: Ending::Answered,
             per_task: Vec::new(),
+        };
+        desk.optimizing.report.record(reading.clone());
+        desk.optimizing.rows.push(Row {
+            recorded: "now".to_owned(),
+            under: Under::default(),
+            at: spot,
+            reading,
         });
     }
     desk
@@ -90,6 +104,7 @@ fn scrolling_down_shows_rows_the_top_of_the_page_did_not() {
         held.page = Page::Host;
         held.tab = Tab::Optimize;
         held.optimizing.report = desk.optimizing.report.clone();
+        held.optimizing.rows.clone_from(&desk.optimizing.rows);
         let _was = held.scrolls.insert(Region::Page, offset);
         let mut paint = Painter::on_paper(1000, 700, 1.0, NIGHT).expect("paper");
         let mouse = Mouse::default();

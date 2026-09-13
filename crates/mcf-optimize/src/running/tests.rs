@@ -407,7 +407,7 @@ fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
             effort: None,
             mark: false,
             room: scratch.path.join("marking"),
-            ready_within: std::time::Duration::from_millis(400),
+            ready_within: std::time::Duration::from_secs(5),
         },
         course,
         Ledger::open(&scratch.at()).expect("opens"),

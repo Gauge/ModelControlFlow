@@ -1505,19 +1505,20 @@ fn sweep_report(
         );
     }
     y += 52.0;
-    let rows = desk.optimizing.report.to_rows();
-    if let Some(best) = desk.optimizing.report.best_by(desk.optimizing.measure) {
+    let best = desk.optimizing.report.best_by(desk.optimizing.measure);
+    if let Some(best) = best {
+        let dial = desk.optimizing.sweep.dial;
         let said = match desk.optimizing.measure {
             mcf_optimize::reading::Measure::Speed => format!(
                 "Best so far: {} at {} tok/s over {} trial(s)",
-                best.step.said(),
+                dial.said(best.step),
                 best.tokens_a_second()
                     .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}")),
                 best.trials
             ),
             mcf_optimize::reading::Measure::Correctness => format!(
                 "Best so far: {} at {}/{} over {} trial(s)",
-                best.step.said(),
+                dial.said(best.step),
                 best.passed,
                 best.of,
                 best.trials
@@ -1526,40 +1527,111 @@ fn sweep_report(
         paint.say_at(area.x, y, &said, Weight::Bold, size::SMALL, ink.accent);
         y += 22.0;
     }
-    if rows.is_empty() {
+    if desk.optimizing.rows.is_empty() {
         paint.say_at(
             area.x,
             y,
-            "No rows yet. Every reading is written down as it finishes, so a sweep stopped \
-             halfway carries on from where it stopped.",
+            "Nothing measured against this configuration yet. Every reading is written down \
+             as it finishes, and every one taken under exactly these settings shows here — \
+             from this sweep and from any before it.",
             Weight::Regular,
             size::SMALL,
             ink.faint,
         );
         return act;
     }
-    let wide = (area.w / 9.0).max(60.0);
+    act = act.or(rows_of_the_record(paint, desk, mouse, area, &mut y));
+    paint.reaches(y);
+    act
+}
+
+fn rows_of_the_record(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    y: &mut f32,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let dial = desk.optimizing.sweep.dial;
+    let wide = ((area.w - 28.0) / 9.0).max(58.0);
+    paint.say_at(
+        area.x,
+        *y,
+        &format!(
+            "{} reading(s) under exactly this configuration{}",
+            desk.optimizing.rows.len(),
+            if desk.optimizing.picked.is_empty() {
+                " · click a row to pick it".to_owned()
+            } else {
+                format!(" · {} picked", desk.optimizing.picked.len())
+            }
+        ),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    *y += 20.0;
+    if !desk.optimizing.picked.is_empty() && !desk.optimizing.running {
+        let (pressed, held) = ui::fitted(
+            paint,
+            mouse,
+            (area.x, *y),
+            &format!("Run {} again", desk.optimizing.picked.len()),
+            Kind::Primary,
+        );
+        if pressed {
+            act = Some(Act::RerunPicked);
+        }
+        let (cleared, _where) = ui::fitted(
+            paint,
+            mouse,
+            (held.right() + 10.0, *y),
+            "Pick none",
+            Kind::Quiet,
+        );
+        if cleared {
+            act = Some(Act::PickNone);
+        }
+        *y += 40.0;
+    }
     for (at, head) in mcf_optimize::reading::Report::COLUMNS.iter().enumerate() {
         paint.say_at(
-            area.x + wide * at as f32,
-            y,
+            area.x + 28.0 + wide * at as f32,
+            *y,
             head,
             Weight::Bold,
             size::LABEL,
             ink.faint,
         );
     }
-    y += 20.0;
+    *y += 20.0;
     let band = paint.clipped();
-    for row in rows {
-        let below = y + ROW;
-        let seen = band.is_none_or(|held| below >= held.y && y <= held.bottom());
+    for row in &desk.optimizing.rows {
+        let below = *y + ROW;
+        let seen = band.is_none_or(|held| below >= held.y && *y <= held.bottom());
+        let where_ = Box::new(area.x, *y - 3.0, area.w - 12.0, ROW);
         if seen {
-            for (at, cell) in row.iter().enumerate() {
+            let picked = desk.optimizing.picked.contains(&row.at);
+            if picked {
+                paint.wash(where_, ink.accent, 40);
+            } else if mouse.over(where_) {
+                paint.wash(where_, ink.line, 60);
+            }
+            if picked {
+                ui::tick(
+                    paint,
+                    Box::new(area.x + 4.0, *y + 1.0, 12.0, 12.0),
+                    ink.accent,
+                );
+            }
+            let cells = mcf_optimize::reading::Report::cells_of(&row.reading, dial);
+            for (column, cell) in cells.iter().enumerate() {
                 let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
                 paint.say_at(
-                    area.x + wide * at as f32,
-                    y,
+                    area.x + 28.0 + wide * column as f32,
+                    *y,
                     &shown,
                     Weight::Regular,
                     size::SMALL,
@@ -1567,9 +1639,11 @@ fn sweep_report(
                 );
             }
         }
-        y += ROW;
+        if mouse.clicked(where_) {
+            act = Some(Act::PickRow(row.at));
+        }
+        *y += ROW;
     }
-    paint.reaches(y);
     act
 }
 

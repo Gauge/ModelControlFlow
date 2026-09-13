@@ -42,6 +42,7 @@ fn under() -> Under {
         draft_head: false,
         draft_depth: None,
         thinking_budget: Some(4096),
+        thinking_level: Some(1),
         temperature: Some(200),
         top_p: Some(950),
         top_k: Some(20),
@@ -305,4 +306,115 @@ fn every_ending_survives_the_round_trip() {
         let back = Row::from_line(&row.to_line()).expect("reads");
         assert_eq!(back.reading.ending, ending);
     }
+}
+
+#[test]
+fn readings_picked_out_are_forgotten_and_the_rest_are_kept() {
+    let scratch = Scratch::new("forget-some");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    for step in [256_u32, 512, 1024] {
+        ledger
+            .record(
+                &under(),
+                at(Step::Whole(step), 1),
+                &reading(Step::Whole(step), 1, 6),
+                "before",
+            )
+            .expect("written");
+    }
+    let gone = ledger
+        .forget(&under(), &[at(Step::Whole(512), 1)])
+        .expect("forgotten");
+    assert_eq!(gone, 1);
+    assert_eq!(ledger.rows().len(), 2);
+    let again = Ledger::open(&scratch.at()).expect("reopens");
+    assert_eq!(again.rows().len(), 2, "and the file on disk agrees");
+    assert!(
+        again.already(&under(), &at(Step::Whole(512), 1)).is_none(),
+        "what was forgotten is measured again next time"
+    );
+    assert!(
+        again.already(&under(), &at(Step::Whole(256), 1)).is_some(),
+        "and what was not picked is left alone"
+    );
+}
+
+#[test]
+fn forgetting_nothing_touches_nothing() {
+    let scratch = Scratch::new("forget-none");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    ledger
+        .record(
+            &under(),
+            at(Step::Whole(256), 1),
+            &reading(Step::Whole(256), 1, 6),
+            "before",
+        )
+        .expect("written");
+    assert_eq!(ledger.forget(&under(), &[]).expect("nothing"), 0);
+    assert_eq!(ledger.rows().len(), 1);
+}
+
+#[test]
+fn a_reading_taken_under_another_configuration_is_not_forgotten_by_mistake() {
+    let scratch = Scratch::new("forget-elsewhere");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    let mut elsewhere = under();
+    elsewhere.context = 262_144;
+    ledger
+        .record(
+            &elsewhere,
+            at(Step::Whole(256), 1),
+            &reading(Step::Whole(256), 1, 6),
+            "before",
+        )
+        .expect("written");
+    let gone = ledger
+        .forget(&under(), &[at(Step::Whole(256), 1)])
+        .expect("forgotten");
+    assert_eq!(
+        gone, 0,
+        "another configuration's reading is somebody else's"
+    );
+    assert_eq!(ledger.rows().len(), 1);
+}
+
+#[test]
+fn the_thinking_level_is_part_of_what_makes_a_configuration_that_configuration() {
+    let scratch = Scratch::new("level-in-the-base");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    let spot = at(Step::Whole(256), 1);
+    ledger
+        .record(&under(), spot, &reading(Step::Whole(256), 1, 6), "before")
+        .expect("written");
+    let mut louder = under();
+    louder.thinking_level = Some(3);
+    assert!(
+        ledger.already(&louder, &spot).is_none(),
+        "a reading taken at one thinking level says nothing about another"
+    );
+}
+
+#[test]
+fn a_sweep_of_the_thinking_level_ignores_the_level_in_the_base() {
+    let scratch = Scratch::new("level-dialled");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    let spot = At {
+        dial: Dial::ThinkingEffort,
+        step: Step::Whole(1),
+        set: 1,
+        repeat: 1,
+    };
+    let mut held = reading(Step::Whole(1), 1, 6);
+    held.dial = Dial::ThinkingEffort;
+    held.step = Step::Whole(1);
+    ledger
+        .record(&under(), spot, &held, "before")
+        .expect("written");
+    let mut louder = under();
+    louder.thinking_level = Some(3);
+    assert!(
+        ledger.already(&louder, &spot).is_some(),
+        "the level is what this sweep varies, so it is not part of the base it varies against"
+    );
 }

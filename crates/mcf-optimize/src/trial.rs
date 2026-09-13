@@ -57,8 +57,14 @@ pub fn body(asked: &Asked) -> Value {
     if let Some(on) = asked.thinking {
         switches.push(("enable_thinking", Value::Bool(on)));
     }
-    if let Some(effort) = &asked.effort {
-        switches.push(("reasoning_effort", Value::text(effort.clone())));
+    let dialled = asked
+        .dial
+        .template_kwarg()
+        .map(|kwarg| (kwarg, asked.dial.said(asked.step)));
+    match (&dialled, &asked.effort) {
+        (Some((kwarg, said)), _) => switches.push((kwarg, Value::text(said.clone()))),
+        (None, Some(effort)) => switches.push(("reasoning_effort", Value::text(effort.clone()))),
+        (None, None) => {}
     }
     let mut fields: Vec<(&str, Value)> = vec![
         (
