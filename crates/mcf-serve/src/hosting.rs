@@ -570,6 +570,30 @@ impl Hosting {
             self.reuse.checkpoints = 0;
         }
         self.started.architecture = architecture;
+        self.sampled_as_the_file_asks(file)
+    }
+
+    /// The sampling the file itself asks for. A model is published with the draw its makers
+    /// found it answers best under, written into its own header, and a model held at
+    /// somebody else's numbers is a model nobody has actually tried. MCF read these and
+    /// showed them; now it uses them.
+    ///
+    /// Only what the file says. Where it says nothing the engine's own default stands, which
+    /// is what MCF would have passed anyway.
+    #[must_use]
+    fn sampled_as_the_file_asks(mut self, file: &mcf_standin::gguf::Model) -> Self {
+        let Some(sampling) = mcf_standin::recommended::read(file).sampling().cloned() else {
+            return self;
+        };
+        if let Some(held) = sampling.temperature.known() {
+            self.started.temperature = Some(*held);
+        }
+        if let Some(held) = sampling.top_p.known() {
+            self.started.top_p = Some(*held);
+        }
+        if let Some(held) = sampling.top_k.known() {
+            self.started.top_k = Some(*held);
+        }
         self
     }
 

@@ -280,3 +280,66 @@ fn sampling_nobody_chose_writes_no_flags_and_leaves_the_engine_its_own() {
         assert!(!said.iter().any(|held| held == flag), "{flag} in {said:?}");
     }
 }
+
+fn a_file_declaring(pairs: &[(&str, mcf_standin::gguf::Value)]) -> mcf_standin::gguf::Model {
+    let mut metadata = std::collections::BTreeMap::new();
+    metadata.insert(
+        "general.architecture".to_owned(),
+        mcf_standin::gguf::Value::Text("a-family".to_owned()),
+    );
+    for (key, value) in pairs {
+        metadata.insert((*key).to_owned(), value.clone());
+    }
+    mcf_standin::gguf::Model {
+        version: 3,
+        metadata,
+        tensors: Vec::new(),
+        data_offset: 0,
+        alignment: 32,
+    }
+}
+
+/// A model is published with the draw its makers found it answers best under, written into
+/// its own header. MCF read those numbers and showed them, and held the model at the
+/// engine's defaults anyway.
+#[test]
+fn a_model_is_held_at_the_sampling_its_own_file_asks_for() {
+    use mcf_standin::gguf::Value;
+    let file = a_file_declaring(&[
+        ("general.sampling.temp", Value::Float(0.7)),
+        ("general.sampling.top_p", Value::Float(0.8)),
+        ("general.sampling.top_k", Value::Integer(20)),
+    ]);
+    let settings =
+        super::Hosting::recommended("llama.cpp", "a card", true, 4096, Some(8), true, None)
+            .tuned_for(&file);
+    assert_eq!(
+        settings.started.temperature,
+        Some(mcf_core::configuration::Thousandths(700))
+    );
+    assert_eq!(
+        settings.started.top_p,
+        Some(mcf_core::configuration::Thousandths(800))
+    );
+    assert_eq!(settings.started.top_k, Some(20));
+    let said = settings.started.arguments();
+    for flag in ["--temp", "--top-p", "--top-k"] {
+        assert!(
+            said.iter().any(|held| held == flag),
+            "{flag} never reaches the engine: {said:?}"
+        );
+    }
+}
+
+#[test]
+fn a_model_that_asks_for_nothing_is_left_at_the_engine_s_own_defaults() {
+    let settings =
+        super::Hosting::recommended("llama.cpp", "a card", true, 4096, Some(8), true, None)
+            .tuned_for(&a_file_declaring(&[]));
+    assert_eq!(settings.started.temperature, None);
+    assert_eq!(settings.started.top_p, None);
+    assert_eq!(
+        settings.started.top_k, None,
+        "a number MCF made up is not a default, it is a decision nobody took"
+    );
+}
