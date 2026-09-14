@@ -186,8 +186,8 @@ impl Hunt {
         else {
             return false;
         };
-        let margin = best.abs() / f64::from(Self::AS_GOOD);
-        let clearly_worse = |value: u32| score_of(value).is_none_or(|now| best - now > margin);
+        let clearly_worse =
+            |value: u32| score_of(value).is_none_or(|now| best - now > within_a_part_of(best));
         clearly_worse(highest) && clearly_worse(under_it)
     }
 
@@ -332,8 +332,14 @@ fn reads_as_well(scored: &[(Step, Option<f64>)], peak: u32, neighbour: u32) -> b
     let (Some(best), Some(beside)) = (score_of(peak), score_of(neighbour)) else {
         return false;
     };
-    let margin = best.abs() / f64::from(Hunt::AS_GOOD);
-    (best - beside).abs() <= margin
+    (best - beside).abs() <= within_a_part_of(best)
+}
+
+/// What counts as the same reading, for a reading this big. A share of it rather than a
+/// fixed amount, because eight hundred tokens a second and eight hundred and sixteen are
+/// the same reading, where sixteen tasks passed and thirty-two are not.
+fn within_a_part_of(best: f64) -> f64 {
+    best.abs() / f64::from(Hunt::AS_GOOD)
 }
 
 const fn one_value(step: Step) -> u32 {

@@ -60,7 +60,16 @@ fn no_shipped_type_holds_a_float() {
     );
 }
 
-const EXEMPT: [&str; 2] = ["mcf-standin", "mcf-desk"];
+/// Crates that hold floats in memory and are proven not to be able to persist them. What
+/// keeps a NaN out of the record is the direction of the dependencies, not the absence of
+/// the word `f64`: `a_float_cannot_reach_the_record` shows that nothing on this list can be
+/// reached from the crate that writes, and the check below is only a reminder for the crates
+/// that have no business with floats at all.
+///
+/// mcf-standin reads tensors. mcf-desk draws. mcf-optimize ranks readings — a rate is tokens
+/// over milliseconds and a score is a share of a set, and both are compared as floats and
+/// written as the integers they were counted from.
+const EXEMPT: [&str; 3] = ["mcf-standin", "mcf-desk", "mcf-optimize"];
 
 fn exempt(path: &Path) -> bool {
     if path.components().any(|component| {
@@ -101,7 +110,7 @@ fn a_float_cannot_reach_the_record() {
         .iter()
         .find(|member| member.name == "mcf-record")
         .expect("mcf-record is a member");
-    for float_holder in ["mcf-standin", "mcf-lab"] {
+    for float_holder in EXEMPT.iter().copied().chain(["mcf-lab"]) {
         assert!(
             !record.depends_on.contains(&float_holder),
             "mcf-record depends on {float_holder}, so a crate where floats live can reach \
