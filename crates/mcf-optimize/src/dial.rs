@@ -76,7 +76,7 @@ impl Dial {
     #[must_use]
     pub const fn span(self) -> Span {
         match self {
-            Self::ThinkingBudget => Span::new(0, 32_768, 256),
+            Self::ThinkingBudget => Span::new(0, crate::trial::TOKENS_THOUGHT, 256),
             Self::ThinkingLevel => Span::new(0, 7, 1),
             Self::Temperature => Span::new(0, 1000, 25),
             Self::TopP => Span::new(500, 1000, 10),

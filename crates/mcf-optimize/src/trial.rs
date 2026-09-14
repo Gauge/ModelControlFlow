@@ -37,6 +37,19 @@ pub const TOKENS_TIMED: u32 = 1024;
 /// apart climbs to the top of its span and calls that the answer.
 pub const TOKENS_PREFILLED: u32 = 32_768;
 
+/// The room a marked trial gets: how many tokens the model may spend on a set of tasks,
+/// thinking and answering together.
+pub const TOKENS_ANSWERED: u32 = 16_384;
+
+/// The most of that room a search will hand to thinking, which is half of it. A budget is
+/// only worth measuring if there is room left to answer in afterwards: a model given the
+/// whole of it thinks until the trial stops and never writes a word, which is a trial that
+/// costs what every other one costs and says nothing.
+///
+/// Measured on a set of eight tasks: eleven thousand tokens of thinking and three thousand
+/// of answer, so half leaves room twice over for the part that gets marked.
+pub const TOKENS_THOUGHT: u32 = TOKENS_ANSWERED.div_euclid(2);
+
 /// Room left at the end of the window so a prompt this long still has somewhere to answer.
 const KEPT_FOR_AN_ANSWER: u64 = 512;
 

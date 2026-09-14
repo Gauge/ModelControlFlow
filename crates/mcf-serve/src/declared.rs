@@ -280,7 +280,13 @@ impl Started {
         }
         if let Some(thinking) = self.thinking {
             out.push("--reasoning-budget".to_owned());
-            out.push(thinking.to_string());
+            // A budget of nothing is not what the engine reads a nought as. It reads it as no
+            // budget at all and lets the model think until it is finished — measured on a
+            // model whose template opens its own thinking section: two hundred and seventy
+            // three characters of thinking at nought, and none at one. So nothing is asked
+            // for as the smallest budget there is, and no budget at all is asked for by
+            // saying nothing, which is what the engine does by default anyway.
+            out.push(thinking.max(1).to_string());
         }
         if let Some(effort) = &self.effort {
             out.push("--reasoning-effort".to_owned());

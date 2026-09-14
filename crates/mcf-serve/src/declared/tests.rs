@@ -266,6 +266,11 @@ fn lifting_the_ceiling_needs_the_architecture_the_header_named() {
     );
 }
 
+/// A budget of nothing is a setting and not an absence — but it does not reach the engine
+/// as a nought, because the engine reads a nought as no budget at all and lets the model
+/// think until it is done. Measured on a model whose template opens its own thinking
+/// section: two hundred and seventy three characters of thinking asked for at nought, none
+/// at one. This test asserted the nought for as long as nobody had tried it.
 #[test]
 fn a_thinking_budget_of_zero_is_a_setting_not_an_absence() {
     let cut = Started {
@@ -275,7 +280,8 @@ fn a_thinking_budget_of_zero_is_a_setting_not_an_absence() {
     assert!(cut.asks_anything());
     assert_eq!(
         cut.arguments(),
-        vec!["--reasoning-budget".to_owned(), "0".to_owned()]
+        vec!["--reasoning-budget".to_owned(), "1".to_owned()],
+        "the smallest budget there is, which is the one that means nothing"
     );
     assert!(cut.said().contains("cut off at once"), "{}", cut.said());
 }

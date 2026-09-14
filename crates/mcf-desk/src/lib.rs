@@ -739,7 +739,7 @@ impl Optimizing {
     }
 }
 
-const SWEEP_CEILING: u32 = 16_384;
+const SWEEP_CEILING: u32 = mcf_optimize::trial::TOKENS_ANSWERED;
 
 const HOLDING_PATIENCE: std::time::Duration = std::time::Duration::from_mins(30);
 

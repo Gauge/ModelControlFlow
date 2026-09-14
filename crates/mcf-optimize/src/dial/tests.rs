@@ -195,3 +195,20 @@ fn rounding_counts_from_nothing_so_a_coarse_grain_lands_on_round_numbers() {
         "the floor is still the floor, however the grain falls"
     );
 }
+
+/// A budget is only worth measuring if there is room left to answer in afterwards. A model
+/// given the whole of a trial's room thinks until the trial stops and never writes a word,
+/// and that costs what every other trial costs while saying nothing.
+#[test]
+fn no_thinking_budget_reaches_past_the_room_a_trial_has_to_answer_in() {
+    let most = Dial::ThinkingBudget.span().ceiling;
+    assert!(
+        most.saturating_mul(2) <= crate::trial::TOKENS_ANSWERED,
+        "a budget of {most} inside a trial of {} leaves too little to answer in",
+        crate::trial::TOKENS_ANSWERED
+    );
+    assert!(
+        most >= 4096,
+        "and it still has to reach far enough up to be worth searching over"
+    );
+}

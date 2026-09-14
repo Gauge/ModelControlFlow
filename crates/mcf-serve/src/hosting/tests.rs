@@ -394,3 +394,45 @@ fn a_template_survives_the_round_trip_through_the_socket() {
         "a template emptied out is asking for the file's own back"
     );
 }
+
+/// A budget of nothing and no budget at all are opposites, and the engine spells them the
+/// same way if MCF is not careful: it reads `--reasoning-budget 0` as no budget, and lets
+/// the model think until it is done. Measured on a model whose template opens its own
+/// thinking section: two hundred and seventy three characters of thinking at nought, none
+/// at one. On a set of eight tasks the same nought filled sixteen thousand tokens over
+/// twelve minutes and never answered.
+#[test]
+fn asking_for_no_thinking_is_not_asking_for_no_budget() {
+    let none_at_all = crate::declared::Started {
+        thinking: Some(0),
+        ..crate::declared::Started::default()
+    };
+    let said = none_at_all.arguments();
+    let at = said.iter().position(|held| held == "--reasoning-budget");
+    assert_eq!(
+        at.and_then(|at| said.get(at.saturating_add(1)))
+            .map(String::as_str),
+        Some("1"),
+        "nothing is asked for as the smallest budget there is, not as nought: {said:?}"
+    );
+
+    let some = crate::declared::Started {
+        thinking: Some(4096),
+        ..crate::declared::Started::default()
+    };
+    let said = some.arguments();
+    let at = said.iter().position(|held| held == "--reasoning-budget");
+    assert_eq!(
+        at.and_then(|at| said.get(at.saturating_add(1)))
+            .map(String::as_str),
+        Some("4096"),
+        "and every other budget is itself: {said:?}"
+    );
+
+    let said = crate::declared::Started::default().arguments();
+    assert!(
+        !said.iter().any(|held| held == "--reasoning-budget"),
+        "no budget at all is asked for by saying nothing, which is what the engine does by \
+         default anyway: {said:?}"
+    );
+}
