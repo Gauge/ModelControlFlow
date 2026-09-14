@@ -525,12 +525,32 @@ pub struct Optimizing {
     pub picked: Vec<mcf_optimize::ledger::At>,
     pub last_said: Option<String>,
     pub run: Option<mcf_optimize::running::Running>,
+    /// What a finished sweep landed on, waiting to be told whether to keep it. A sweep
+    /// measures; what the model is held under does not move until somebody says it should.
+    pub settled: Option<mcf_optimize::dial::Step>,
+    /// What was said about the last value taken up, so the answer to a decision does not
+    /// vanish the moment it is made.
+    pub adopted: Option<String>,
 }
 
 impl Optimizing {
     #[must_use]
     pub fn left(&self) -> usize {
         self.sweep.trials().saturating_sub(self.done)
+    }
+
+    /// What one trial of this sweep asks for, so that how far into it the sweep has got can
+    /// be said against something. A reading trial reads a prompt; a writing one writes an
+    /// answer; a graded one answers the tasks.
+    #[must_use]
+    pub fn ceiling_of_a_trial(&self) -> u32 {
+        if self.sweep.dial.times_reading_the_prompt() {
+            return mcf_optimize::trial::TOKENS_PREFILLED;
+        }
+        if self.sweep.dial.only_changes_speed() {
+            return mcf_optimize::trial::TOKENS_TIMED;
+        }
+        SWEEP_CEILING
     }
 
     #[must_use]
@@ -670,12 +690,11 @@ impl Optimizing {
         self.way = mcf_optimize::hunt::Way::ByHand;
     }
 
-    pub fn cycle_repeats(&mut self) {
-        self.sweep.repeats = match self.sweep.repeats {
-            1 => 2,
-            2 => 3,
-            _ => 1,
-        };
+    /// How many times each value is measured. A picked number, not a cycled one: a control
+    /// that shows what it is set to is read at a glance, where one that has to be pressed
+    /// until it comes round again is not.
+    pub fn take_each(&mut self, times: usize) {
+        self.sweep.repeats = u8::try_from(times).unwrap_or(1).clamp(1, 3);
     }
 }
 
@@ -694,6 +713,44 @@ pub fn loading_line(body: &Value) -> Option<String> {
     match on {
         Some(on) => Some(format!("{on} loaded, {seconds}s so far")),
         None => Some(format!("{seconds}s so far")),
+    }
+}
+
+/// Where a dial lands in the settings a model is held under. One place says this, so a
+/// value taken up after a sweep is written exactly where the sweep was moving it.
+fn put_the_dial(
+    dial: mcf_optimize::dial::Dial,
+    step: mcf_optimize::dial::Step,
+    named: &[String],
+    settings: &mut mcf_serve::hosting::Hosting,
+) {
+    use mcf_optimize::dial::Dial;
+    match dial {
+        Dial::MicroBatch => {
+            let wanted = step.whole().unwrap_or(settings.ubatch);
+            settings.ubatch = wanted;
+            settings.batch = settings.batch.max(wanted);
+        }
+        Dial::ThinkingBudget => settings.started.thinking = step.whole(),
+        Dial::DraftDepth => {
+            let wanted = step.whole().unwrap_or(0);
+            settings.started.draft_head = wanted > 0;
+            settings.started.drafted = (wanted > 0).then_some(wanted);
+        }
+        Dial::ThinkingLevel => {
+            settings.started.effort = step
+                .whole()
+                .and_then(|at| usize::try_from(at).ok())
+                .and_then(|at| named.get(at))
+                .cloned();
+        }
+        Dial::Temperature => {
+            settings.started.temperature = step.thousandths();
+        }
+        Dial::TopP => {
+            settings.started.top_p = step.thousandths();
+        }
+        Dial::TopK => settings.started.top_k = step.whole(),
     }
 }
 
@@ -1556,7 +1613,10 @@ pub enum Shown {
 pub enum Act {
     Go(Page),
     LookUp,
-    Download { reference: String, file: String },
+    Download {
+        reference: String,
+        file: String,
+    },
     SearchHub,
     Scroll(Region, i32),
     Split(Splitter, i32),
@@ -1585,8 +1645,12 @@ pub enum Act {
     ForgetRow(mcf_optimize::ledger::At),
     PickNone,
     RerunPicked,
+    /// Take up the value a finished sweep landed on: write it into the settings above.
+    AdoptBest,
+    /// Leave the settings where they are, and stop asking.
+    KeepAsIs,
     TestSet(usize),
-    Repeats,
+    Takes(usize),
     Sweep,
     Contents(Page),
     Edit(Field, crate::ui::Touched),
@@ -1620,7 +1684,9 @@ pub enum Act {
     StopHosting,
     Close,
     Focus(Caret),
-    Ask { at: usize },
+    Ask {
+        at: usize,
+    },
     Choose(usize),
     Clear,
     Dismiss,
@@ -2083,7 +2149,7 @@ impl Desk {
             | Act::PickNone
             | Act::RerunPicked
             | Act::TestSet(_)
-            | Act::Repeats
+            | Act::Takes(_)
             | Act::Sweep
             | Act::Edit(..)
             | Act::Switch(_)
@@ -2129,6 +2195,7 @@ impl Desk {
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
             Act::RememberSettings => self.remember_settings(),
+            Act::AdoptBest | Act::KeepAsIs => self.decide_about_the_best(&act),
             Act::LastSettings => {
                 if let Some((last, _)) = &self.last_settings {
                     self.settings = Some(last.clone());
@@ -2351,6 +2418,42 @@ impl Desk {
             .as_ref()
             .and_then(|answer| answer.body.get("last"))
             .and_then(LastHold::from_value);
+    }
+
+    /// What to do with the value a finished sweep landed on. It is a decision either way:
+    /// leaving the settings alone is as much an answer as taking the value up, and both put
+    /// the question away.
+    fn decide_about_the_best(&mut self, act: &Act) {
+        if matches!(*act, Act::AdoptBest) {
+            self.adopt_the_best();
+            return;
+        }
+        self.optimizing.settled = None;
+        self.optimizing.adopted = None;
+    }
+
+    /// Write the value a sweep landed on into the settings above it, so that the next hold
+    /// runs under what was measured. Nothing is saved to disk and nothing is held: the
+    /// Configure tab's own buttons still do that, and this only moves the dial.
+    fn adopt_the_best(&mut self) {
+        let Some(step) = self.optimizing.settled else {
+            return;
+        };
+        let dial = self.optimizing.sweep.dial;
+        let named = self.optimizing.named.clone();
+        let Some(settings) = self.settings.as_mut() else {
+            self.optimizing.refused = Some("there are no settings to put this into yet".to_owned());
+            return;
+        };
+        let said = dial.said_among(step, &named);
+        put_the_dial(dial, step, &named, settings);
+        self.optimizing.settled = None;
+        self.optimizing.adopted = Some(format!(
+            "{} is now {said} — hold the model to run under it, or save it on the Configure \
+             tab to have it come back",
+            dial.label()
+        ));
+        self.read_the_ledger();
     }
 
     pub fn remember_settings(&mut self) {
@@ -3536,12 +3639,21 @@ impl Desk {
         if let Some(why) = run.refused.clone() {
             self.optimizing.refused = Some(why);
         }
-        if run.finished {
+        let ended = run.finished;
+        if ended {
             self.optimizing.last_said = Some(run.said());
             self.optimizing.running = false;
             self.optimizing.run = None;
         }
         self.read_the_ledger();
+        if ended {
+            self.optimizing.settled = self
+                .optimizing
+                .report
+                .best_by(self.optimizing.measure)
+                .map(|best| best.step);
+            self.optimizing.adopted = None;
+        }
         true
     }
 
@@ -3578,7 +3690,7 @@ impl Desk {
             | Act::PickNone
             | Act::RerunPicked => self.choosing_values(act),
             Act::TestSet(number) => self.optimizing.toggle_set(number),
-            Act::Repeats => self.optimizing.cycle_repeats(),
+            Act::Takes(times) => self.optimizing.take_each(times),
             Act::Sweep => self.start_or_stop_sweeping(),
             _ => return false,
         }

@@ -448,11 +448,11 @@ fn labelled(dial: Dial, at: Option<crate::ledger::At>, holding: Option<&str>) ->
     running.doing = at;
     running.holding = holding.map(str::to_owned);
     running.produced = 512;
-    running.label(&[], dial)
+    running.label(&[], dial, 4096)
 }
 
 #[test]
-fn a_trial_of_the_tasks_names_the_value_the_set_and_the_take() {
+fn a_trial_of_the_tasks_names_the_value_the_set_and_how_far_in_it_is() {
     let said = labelled(
         Dial::ThinkingBudget,
         Some(crate::ledger::At {
@@ -463,31 +463,67 @@ fn a_trial_of_the_tasks_names_the_value_the_set_and_the_take() {
         }),
         None,
     );
+    assert!(said.contains("4096"), "{said}");
+    assert!(said.contains("set 3"), "{said}");
+    assert!(said.contains("take 2"), "{said}");
     assert!(
-        said.contains("4096 on set 3 iteration 2 tokens 512"),
-        "{said}"
+        said.contains("wrote 512 of 4096"),
+        "how far through this one trial it is, against what it asked for: {said}"
     );
     assert!(said.starts_with("00:00:0"), "the clock leads: {said}");
 }
 
 #[test]
-fn a_timed_trial_names_no_set_because_it_runs_none() {
+fn a_take_that_is_the_only_take_is_not_counted_out_loud() {
     let said = labelled(
         Dial::MicroBatch,
         Some(crate::ledger::At {
             dial: Dial::MicroBatch,
             step: Step::Whole(1024),
             set: 1,
-            repeat: 4,
+            repeat: 1,
         }),
         None,
     );
-    assert!(said.contains("1024 iteration 4 tokens 512"), "{said}");
+    assert!(
+        !said.contains("take"),
+        "a take counter that is always one is a number to read and discard: {said}"
+    );
+}
+
+#[test]
+fn a_trial_that_reads_a_prompt_counts_what_it_read_rather_than_what_it_wrote() {
+    let said = labelled(
+        Dial::MicroBatch,
+        Some(crate::ledger::At {
+            dial: Dial::MicroBatch,
+            step: Step::Whole(1024),
+            set: 1,
+            repeat: 1,
+        }),
+        None,
+    );
+    assert!(
+        said.contains("read 512 of 4096"),
+        "nothing is written while a prompt is read, so a count of what was written would sit \
+         at nothing for the whole trial: {said}"
+    );
     assert!(
         !said.contains("set"),
         "a timed trial runs no tasks, so naming a set would be naming something that did not \
          happen: {said}"
     );
+}
+
+#[test]
+fn how_far_along_a_search_is_counts_rounds_because_it_has_no_total_to_count_towards() {
+    let scratch = Scratch::new("far-along");
+    let mut running = begun(&scratch, &[], &[]);
+    running.round = 4;
+    running.taken = 7;
+    assert_eq!(running.far_along(), "round 4 · 7 measured");
+    running.skipped = 2;
+    assert_eq!(running.far_along(), "round 4 · 7 measured, 2 already known");
 }
 
 #[test]
@@ -510,7 +546,7 @@ fn the_token_count_starts_again_with_each_trial() {
     running.produced = 4096;
     assert_eq!(running.produced, 4096);
     running.doing = None;
-    let said = running.label(&[], Dial::MicroBatch);
+    let said = running.label(&[], Dial::MicroBatch, 8192);
     assert!(
         !said.contains("4096"),
         "between trials there is no count to show: {said}"

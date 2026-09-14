@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use std::time::{Duration, Instant};
@@ -65,6 +66,10 @@ pub fn needs_a_fresh_hold(dial: Dial, held_at: Option<Step>, wanted: Step) -> bo
 #[derive(Debug)]
 pub enum Heard {
     Started(At),
+    /// Which round of the search the sweep has reached. An automatic search opens another
+    /// round whenever the last one found something, so this is the only honest measure of
+    /// how far along it is.
+    Round(u32),
     Holding(String),
     Producing(u64),
     Took(Box<Reading>),
@@ -184,6 +189,10 @@ fn sweeping(mut doing: Doing) {
             }
             break;
         };
+        let round = doing.course.hunt().map_or(0, crate::hunt::Hunt::round);
+        if doing.send.send(Heard::Round(round)).is_err() {
+            return;
+        }
         if doing.send.send(Heard::Started(spot)).is_err() {
             return;
         }
@@ -288,6 +297,7 @@ pub struct Running {
     pub produced: u64,
     pub stopped: Option<String>,
     pub finished: bool,
+    pub round: u32,
     started: Instant,
 }
 
@@ -344,6 +354,7 @@ impl Running {
             produced: 0,
             stopped: None,
             finished: false,
+            round: 0,
             started: Instant::now(),
         }
     }
@@ -377,6 +388,10 @@ impl Running {
                 }
                 Ok(Heard::Producing(held)) => {
                     self.produced = held;
+                    moved = true;
+                }
+                Ok(Heard::Round(round)) => {
+                    self.round = round;
                     moved = true;
                 }
                 Ok(Heard::Skipped(over)) => {
@@ -414,31 +429,51 @@ impl Running {
         moved
     }
 
-    /// What a sweep is doing this second, with the clock running: the time it has been
-    /// going, then the value, the set where the tasks are run, and which take of it.
+    /// What a sweep is doing this second: the clock, the value it is on, and how far into
+    /// that one trial it has got. Nothing that does not move — a take counter that is always
+    /// one, or a token count on work that writes no tokens, is a number to read and discard.
     #[must_use]
-    pub fn label(&self, named: &[String], dial: Dial) -> String {
+    pub fn label(&self, named: &[String], dial: Dial, ceiling: u32) -> String {
         let clock = as_a_clock(self.running_for());
         if let Some(said) = &self.holding {
-            return format!("{clock} — {said}");
+            return format!("{clock} · {said}");
         }
         let Some(at) = self.doing else {
             if self.finished {
-                return format!("{clock} — {}", self.said());
+                return clock;
             }
-            return format!("{clock} — starting");
+            return format!("{clock} · starting");
         };
-        let value = dial.said_among(at.step, named);
-        if dial.only_changes_speed() {
-            return format!(
-                "{clock} — {value} iteration {} tokens {}",
-                at.repeat, self.produced
-            );
+        let mut said = format!("{clock} · {}", dial.said_among(at.step, named));
+        if !dial.only_changes_speed() {
+            let _wrote = write!(said, " · set {}", at.set);
         }
-        format!(
-            "{clock} — {value} on set {} iteration {} tokens {}",
-            at.set, at.repeat, self.produced
-        )
+        if at.repeat > 1 {
+            let _wrote = write!(said, " · take {}", at.repeat);
+        }
+        let doing = if dial.times_reading_the_prompt() {
+            format!(" · read {} of {ceiling}", self.produced)
+        } else {
+            format!(" · wrote {} of {ceiling}", self.produced)
+        };
+        said.push_str(&doing);
+        said
+    }
+
+    /// How far through the sweep it is, in the only terms an automatic search can honestly
+    /// give: the round it is on and what it has measured. A search that opens another round
+    /// whenever the last one found something has no total to count towards.
+    #[must_use]
+    pub fn far_along(&self) -> String {
+        let mut said = match self.round {
+            0 => String::new(),
+            round => format!("round {round} · "),
+        };
+        let _wrote = write!(said, "{} measured", self.taken);
+        if self.skipped > 0 {
+            let _wrote = write!(said, ", {} already known", self.skipped);
+        }
+        said
     }
 
     #[must_use]

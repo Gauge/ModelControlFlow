@@ -141,6 +141,10 @@ pub fn body(asked: &Asked) -> Value {
                 ("ignore_eos", Value::Bool(true)),
                 ("stream", Value::Bool(true)),
                 ("cache_prompt", Value::Bool(false)),
+                // Nothing is written while a prompt is read, so without this a reading trial
+                // would show a still clock for as long as it takes. With it the engine says
+                // how far through the prompt it is as it goes.
+                ("return_progress", Value::Bool(true)),
             ]);
         }
         return Value::map([
@@ -300,7 +304,12 @@ pub fn ask(
             }
             let Ok(value) = parse(data) else { continue };
             counted = what_it_wrote(&value).or(counted);
-            read_in = what_it_read(&value).or(read_in);
+            if let Some(read) = what_it_read(&value) {
+                read_in = Some(read);
+                if asked.dial.times_reading_the_prompt() {
+                    along(read);
+                }
+            }
             let Some(piece) = spoken(&value) else {
                 continue;
             };
@@ -406,12 +415,17 @@ fn what_it_wrote(value: &Value) -> Option<u64> {
         .or_else(|| whole_in(value, "tokens_predicted"))
 }
 
-/// How many tokens of prompt the engine says it read. Only the chunk carrying the timings
-/// says, and it says it once.
+/// How many tokens of prompt the engine says it read. The chunk carrying the timings says
+/// so at the end; while it is still reading, the progress it reports says how far it has got.
 fn what_it_read(value: &Value) -> Option<u64> {
     value
         .get("timings")
         .and_then(|timings| whole_in(timings, "prompt_n"))
+        .or_else(|| {
+            value
+                .get("prompt_progress")
+                .and_then(|held| whole_in(held, "processed"))
+        })
 }
 
 /// A timed run that fell well short of what it asked for is not the same measurement.

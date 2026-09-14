@@ -1037,6 +1037,11 @@ fn model_page(
     drawn.or(act)
 }
 
+/// Where the value half of a labelled row starts. One column for every row that names a
+/// thing on the left and shows it on the right, so the names line up down the tab instead of
+/// each row choosing its own margin.
+const NAMED: f32 = 140.0;
+
 fn section(paint: &mut Painter, area: Box, y: f32, title: &str, because: &str) -> f32 {
     let ink = paint.ink;
     let below = a_section(paint, area, y, title);
@@ -1146,9 +1151,9 @@ fn base_configuration(paint: &mut Painter, desk: &Desk, area: Box, mut y: f32) -
         } else {
             value
         };
-        let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w - 150.0);
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w - NAMED - 10.0);
         paint.say_at(
-            area.x + 140.0,
+            area.x + NAMED,
             y,
             &shown,
             Weight::Regular,
@@ -1184,7 +1189,7 @@ fn how_it_searches(
         .iter()
         .map(|way| (way.label().to_owned(), *way == desk.optimizing.way))
         .collect();
-    let inset = Box::new(area.x + 110.0, area.y, (area.w - 110.0).max(120.0), area.h);
+    let inset = Box::new(area.x + NAMED, area.y, (area.w - NAMED).max(120.0), area.h);
     let (below, picked) = chips(paint, mouse, inset, y, &ways);
     if let Some(at) = picked {
         act = Some(Act::SweepWay(at));
@@ -1371,13 +1376,13 @@ fn a_value_of_my_own(
     let dial = desk.optimizing.sweep.dial;
     paint.say_at(
         area.x,
-        y + 6.0,
-        "Or a value of my own",
+        y + 7.0,
+        "Or my own",
         Weight::Regular,
         size::SMALL,
         ink.quiet,
     );
-    let field_at = Box::new(area.x + 160.0, y, 120.0, 28.0);
+    let field_at = Box::new(area.x + NAMED, y, 120.0, 28.0);
     let touched = ui::field(
         paint,
         mouse,
@@ -1392,7 +1397,7 @@ fn a_value_of_my_own(
     if ui::button(
         paint,
         mouse,
-        Box::new(area.x + 292.0, y, 80.0, 28.0),
+        Box::new(field_at.right() + 12.0, y, 80.0, 28.0),
         "Add",
         Kind::Ordinary,
     ) {
@@ -1401,7 +1406,7 @@ fn a_value_of_my_own(
     let unit = dial.unit();
     if !unit.is_empty() {
         paint.say_at(
-            area.x + 382.0,
+            field_at.right() + 104.0,
             y + 6.0,
             unit,
             Weight::Regular,
@@ -1450,33 +1455,54 @@ fn test_set(
         act = Some(Act::TestSet(at.saturating_add(1)));
     }
     y = below;
-    let repeats = format!("Repeats: {}", desk.optimizing.sweep.repeats);
-    let (pressed, area_of) = ui::fitted(paint, mouse, (area.x, y), &repeats, Kind::Ordinary);
-    if pressed {
-        act = Some(Act::Repeats);
-    }
     paint.say_at(
-        area_of.right() + 12.0,
-        y + 9.0,
+        area.x,
+        y + 7.0,
+        "Takes of each",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    let inset = Box::new(area.x + NAMED, area.y, (area.w - NAMED).max(120.0), area.h);
+    let takes: Vec<(String, bool)> = (1..=3_u8)
+        .map(|held| (held.to_string(), held == desk.optimizing.sweep.repeats))
+        .collect();
+    let (below, picked) = chips(paint, mouse, inset, y, &takes);
+    if let Some(at) = picked {
+        act = Some(Act::Takes(at.saturating_add(1)));
+    }
+    y = below;
+    paint.say_at(
+        area.x,
+        y,
         &desk.optimizing.sweep.said(),
         Weight::Regular,
         size::SMALL,
         ink.faint,
     );
-    (y + 44.0, act)
+    (y + 26.0, act)
 }
 
 const ROW: f32 = 19.0;
 
-fn run_row(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, y: f32) -> Option<Act> {
+/// The one line that says what the sweep is doing: the button, then what is happening now,
+/// then how far along it is. Nothing here moves sideways when a sweep starts or stops — a
+/// line that jumps as it updates is harder to read than one that stays put.
+fn run_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    y: f32,
+) -> (f32, Option<Act>) {
     let ink = paint.ink;
     let mut act = None;
     let label = if desk.optimizing.running {
-        "Stop".to_owned()
+        "Stop"
     } else if desk.optimizing.known > 0 {
-        "Carry on".to_owned()
+        "Carry on"
     } else {
-        "Run sweep".to_owned()
+        "Run sweep"
     };
     let idle = desk
         .why_the_dial_does_nothing(desk.optimizing.sweep.dial)
@@ -1486,33 +1512,10 @@ fn run_row(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, y: f32) -
     } else {
         Kind::Primary
     };
-    let (pressed, button) = ui::fitted(paint, mouse, (area.x, y), &label, kind);
+    let (pressed, button) = ui::fitted(paint, mouse, (area.x, y), label, kind);
     if pressed {
         act = Some(Act::Sweep);
     }
-    if desk.optimizing.running {
-        ui::progress(
-            paint,
-            Box::new(button.right() + 14.0, y + 13.0, 180.0, 6.0),
-            desk.optimizing.fraction(),
-        );
-    }
-    let doing = desk.optimizing.run.as_ref().map_or_else(
-        || desk.optimizing.standing(),
-        |run| run.label(&desk.optimizing.named, desk.optimizing.sweep.dial),
-    );
-    let at = if desk.optimizing.running {
-        button.right() + 206.0
-    } else {
-        button.right() + 14.0
-    };
-    let shown = paint.elide(
-        &doing,
-        Weight::Regular,
-        size::SMALL,
-        area.right() - at - 130.0,
-    );
-    paint.say_at(at, y + 9.0, &shown, Weight::Regular, size::SMALL, ink.faint);
     if !desk.optimizing.running && desk.optimizing.known > 0 {
         let (pressed, _box) = ui::fitted(
             paint,
@@ -1525,7 +1528,27 @@ fn run_row(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, y: f32) -
             act = Some(Act::ForgetReadings);
         }
     }
-    act
+    let said = desk.optimizing.run.as_ref().map_or_else(
+        || desk.optimizing.standing(),
+        |run| {
+            run.label(
+                &desk.optimizing.named,
+                desk.optimizing.sweep.dial,
+                desk.optimizing.ceiling_of_a_trial(),
+            )
+        },
+    );
+    let at = button.right() + 14.0;
+    let room = (area.right() - at - 130.0).max(60.0);
+    let shown = paint.elide(&said, Weight::Regular, size::SMALL, room);
+    paint.say_at(at, y + 9.0, &shown, Weight::Regular, size::SMALL, ink.ink);
+    let mut below = y + 34.0;
+    if let Some(run) = desk.optimizing.run.as_ref() {
+        let far = run.far_along();
+        paint.say_at(at, below, &far, Weight::Regular, size::SMALL, ink.faint);
+        below += 20.0;
+    }
+    (below + 6.0, act)
 }
 
 fn sweep_report(
@@ -1544,41 +1567,19 @@ fn sweep_report(
         "Report",
         "one row for every prompt run, exactly as it was measured",
     );
-    act = act.or(run_row(paint, desk, mouse, area, y));
+    let (below, pressed) = run_row(paint, desk, mouse, area, y);
+    act = act.or(pressed);
+    y = below;
     if let Some(why) = &desk.optimizing.refused {
-        let shown = paint.elide(why, Weight::Regular, size::SMALL, area.w - 20.0);
-        paint.say_at(
-            area.x,
-            y + 40.0,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.warn,
-        );
+        for line in paint.wrap(why, Weight::Regular, size::SMALL, area.w - 20.0) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
+            y += 16.0;
+        }
+        y += 6.0;
     }
-    y += 52.0;
-    let best = desk.optimizing.report.best_by(desk.optimizing.measure);
-    if let Some(best) = best {
-        let dial = desk.optimizing.sweep.dial;
-        let said = match desk.optimizing.measure {
-            mcf_optimize::reading::Measure::Speed => format!(
-                "Best so far: {} at {} tok/s over {} trial(s)",
-                dial.said(best.step),
-                best.tokens_a_second()
-                    .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}")),
-                best.trials
-            ),
-            mcf_optimize::reading::Measure::Correctness => format!(
-                "Best so far: {} at {}/{} over {} trial(s)",
-                dial.said(best.step),
-                best.passed,
-                best.of,
-                best.trials
-            ),
-        };
-        paint.say_at(area.x, y, &said, Weight::Bold, size::SMALL, ink.accent);
-        y += 22.0;
-    }
+    let (below, decided) = what_it_found(paint, desk, mouse, area, y);
+    act = act.or(decided);
+    y = below;
     if desk.optimizing.rows.is_empty() {
         paint.say_at(
             area.x,
@@ -1595,6 +1596,85 @@ fn sweep_report(
     act = act.or(rows_of_the_record(paint, desk, mouse, area, &mut y));
     paint.reaches(y);
     act
+}
+
+/// What the sweep makes of everything measured so far, and — once it has finished — the
+/// decision it leaves to the reader. A sweep measures; it does not move the settings above
+/// it until somebody says to.
+fn what_it_found(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    mut y: f32,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    if let Some(said) = &desk.optimizing.adopted {
+        for line in paint.wrap(said, Weight::Regular, size::SMALL, area.w - 20.0) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.accent);
+            y += 16.0;
+        }
+        return (y + 10.0, act);
+    }
+    let dial = desk.optimizing.sweep.dial;
+    let Some(best) = desk.optimizing.report.best_by(desk.optimizing.measure) else {
+        return (y, act);
+    };
+    let reading = match desk.optimizing.measure {
+        mcf_optimize::reading::Measure::Speed => format!(
+            "{} tok/s",
+            best.tokens_a_second()
+                .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.0}"))
+        ),
+        mcf_optimize::reading::Measure::Correctness => format!("{}/{}", best.passed, best.of),
+    };
+    let settled = desk.optimizing.settled.filter(|held| *held == best.step);
+    let heading = if settled.is_some() {
+        "Best"
+    } else {
+        "Best so far"
+    };
+    paint.say_at(
+        area.x,
+        y,
+        &format!(
+            "{heading}: {} at {reading}",
+            dial.said_among(best.step, &desk.optimizing.named)
+        ),
+        Weight::Bold,
+        size::SMALL,
+        ink.ink,
+    );
+    y += 22.0;
+    if settled.is_none() {
+        return (y, act);
+    }
+    let asks = format!("Set {} to this?", dial.label().to_lowercase());
+    paint.say_at(
+        area.x,
+        y + 8.0,
+        &asks,
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    let at = area.x + paint.measure(&asks, Weight::Regular, size::SMALL) + 14.0;
+    let (taken, drawn) = ui::fitted(paint, mouse, (at, y), "Use it", Kind::Primary);
+    if taken {
+        act = Some(Act::AdoptBest);
+    }
+    let (kept, _where) = ui::fitted(
+        paint,
+        mouse,
+        (drawn.right() + 10.0, y),
+        "Leave it",
+        Kind::Quiet,
+    );
+    if kept {
+        act = Some(Act::KeepAsIs);
+    }
+    (y + 44.0, act)
 }
 
 fn rows_of_the_record(

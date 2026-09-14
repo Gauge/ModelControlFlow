@@ -54,15 +54,21 @@ fn a_test_set_is_turned_off_and_on_again() {
 }
 
 #[test]
-fn repeats_cycle_one_two_three_and_back() {
+fn a_number_of_takes_is_picked_rather_than_cycled_through() {
     let mut desk = desk();
     assert_eq!(desk.optimizing.sweep.repeats, 1);
-    desk.act(Act::Repeats);
-    assert_eq!(desk.optimizing.sweep.repeats, 2);
-    desk.act(Act::Repeats);
-    assert_eq!(desk.optimizing.sweep.repeats, 3);
-    desk.act(Act::Repeats);
+    desk.act(Act::Takes(3));
+    assert_eq!(
+        desk.optimizing.sweep.repeats, 3,
+        "asking for three takes gives three, rather than one press towards them"
+    );
+    desk.act(Act::Takes(1));
     assert_eq!(desk.optimizing.sweep.repeats, 1);
+    desk.act(Act::Takes(99));
+    assert_eq!(
+        desk.optimizing.sweep.repeats, 3,
+        "and nothing outside what the control offers gets through it"
+    );
 }
 
 #[test]
@@ -755,4 +761,65 @@ fn moving_from_a_timed_setting_to_one_that_marks_answers_puts_the_sets_back() {
         8,
         "the tasks come back when the setting being dialled can change an answer"
     );
+}
+
+#[test]
+fn a_finished_sweep_asks_before_it_moves_anything() {
+    let mut desk = desk();
+    assert!(
+        desk.optimizing.settled.is_none(),
+        "nothing has been measured, so there is nothing to decide about"
+    );
+    desk.optimizing.settled = Some(mcf_optimize::dial::Step::Whole(2048));
+    desk.act(Act::KeepAsIs);
+    assert!(
+        desk.optimizing.settled.is_none(),
+        "leaving the settings alone is an answer, and it puts the question away"
+    );
+    assert!(
+        desk.optimizing.adopted.is_none(),
+        "and it says nothing was taken up, because nothing was"
+    );
+}
+
+#[test]
+fn every_setting_a_sweep_can_move_lands_somewhere_when_it_is_taken_up() {
+    for dial in mcf_optimize::dial::Dial::ALL {
+        let mut desk = desk();
+        desk.settings = Some(mcf_serve::hosting::Hosting::recommended(
+            "llama.cpp-vulkan",
+            "a card",
+            true,
+            131_072,
+            Some(32),
+            true,
+            None,
+        ));
+        let before = desk.settings.clone();
+        desk.optimizing.sweep = mcf_optimize::dial::Sweep::on(dial);
+        desk.optimizing.named = vec!["low".to_owned(), "high".to_owned()];
+        let step = dial.step_of(match dial.scale() {
+            mcf_optimize::dial::Scale::Whole => 1,
+            mcf_optimize::dial::Scale::Thousandths => 500,
+        });
+        desk.optimizing.settled = Some(step);
+        desk.act(Act::AdoptBest);
+        assert!(
+            desk.optimizing.settled.is_none(),
+            "{} left the question standing after it was answered",
+            dial.label()
+        );
+        assert!(
+            desk.optimizing.adopted.is_some(),
+            "{} said nothing about what it did",
+            dial.label()
+        );
+        assert_ne!(
+            desk.settings,
+            before,
+            "{} was taken up and nothing in the settings moved, so the sweep's answer went \
+             nowhere",
+            dial.label()
+        );
+    }
 }
