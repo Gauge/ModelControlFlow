@@ -610,10 +610,33 @@ impl Optimizing {
     }
 
     pub fn pick_way(&mut self, at: usize) {
+        if self.sweep.dial.is_named_by_the_model() {
+            self.refused = Some(format!(
+                "{} runs the levels this model names and nothing else, so there is no span to \
+                 search over",
+                self.sweep.dial.label().to_lowercase()
+            ));
+            return;
+        }
         if let Some(way) = mcf_optimize::hunt::Way::ALL.get(at) {
             self.way = *way;
             self.refused = None;
         }
+    }
+
+    /// A setting whose values are named by the model is swept over exactly those names. It
+    /// has no span to double through — the numbers are places in a list, and a search that
+    /// climbed past the end of the list would ask for a level the model never named and
+    /// write the number down as if it were one.
+    fn only_the_levels_the_model_names(&mut self) {
+        if !self.sweep.dial.is_named_by_the_model() {
+            return;
+        }
+        self.way = mcf_optimize::hunt::Way::ByHand;
+        self.sweep.steps = (0..self.named.len())
+            .filter_map(|at| u32::try_from(at).ok())
+            .map(mcf_optimize::dial::Step::Whole)
+            .collect();
     }
 
     pub fn pick_measure(&mut self, at: usize) {
@@ -644,12 +667,13 @@ impl Optimizing {
         }
     }
 
-    pub fn add_what_was_typed(&mut self) {
-        self.custom_refused = None;
+    /// What was typed into the field beside the offered values, if it is a value this dial
+    /// takes. There is nothing to press: a value that is set is a value that runs, so this
+    /// is read when the field changes and again when the sweep starts.
+    pub fn what_was_typed(&self) -> Result<Option<mcf_optimize::dial::Step>, String> {
         let typed = self.custom.trim().to_owned();
         if typed.is_empty() {
-            self.custom_refused = Some("type a value first".to_owned());
-            return;
+            return Ok(None);
         }
         let dial = self.sweep.dial;
         let Some(step) = dial.read_among(&typed, &self.named).or_else(|| {
@@ -657,11 +681,10 @@ impl Optimizing {
                 .then(|| read_a_value(dial, &typed))
                 .flatten()
         }) else {
-            self.custom_refused = Some(format!(
+            return Err(format!(
                 "{typed:?} is not a value {} takes",
                 dial.label().to_lowercase()
             ));
-            return;
         };
         let span = dial.span();
         let held = match step {
@@ -670,29 +693,21 @@ impl Optimizing {
             }
         };
         if !span.holds(held) {
-            self.custom_refused = Some(format!(
+            return Err(format!(
                 "{typed} is outside what this dial reaches — {} to {}",
                 dial.step_of(span.floor).said(),
                 dial.step_of(span.ceiling).said()
             ));
-            return;
         }
-        if self.sweep.steps.contains(&step) {
-            self.custom_refused = Some(format!("{} is already in the list", step.said()));
-            return;
-        }
-        self.sweep.steps.push(step);
-        self.sweep.steps.sort_by_key(|held| match *held {
-            mcf_optimize::dial::Step::Whole(value)
-            | mcf_optimize::dial::Step::Thousandths(value) => value,
-        });
-        self.custom.clear();
-        self.way = mcf_optimize::hunt::Way::ByHand;
+        Ok(Some(step))
     }
 
-    /// How many times each value is measured. A picked number, not a cycled one: a control
-    /// that shows what it is set to is read at a glance, where one that has to be pressed
-    /// until it comes round again is not.
+    /// Say straight away whether what has been typed will run, rather than at the moment the
+    /// sweep is started and it is too late to have meant something else.
+    pub fn look_at_what_was_typed(&mut self) {
+        self.custom_refused = self.what_was_typed().err();
+    }
+
     pub fn take_each(&mut self, times: usize) {
         self.sweep.repeats = u8::try_from(times).unwrap_or(1).clamp(1, 3);
     }
@@ -738,11 +753,20 @@ fn put_the_dial(
             settings.started.drafted = (wanted > 0).then_some(wanted);
         }
         Dial::ThinkingLevel => {
-            settings.started.effort = step
+            let wanted = step
                 .whole()
                 .and_then(|at| usize::try_from(at).ok())
                 .and_then(|at| named.get(at))
                 .cloned();
+            if wanted.as_deref() == Some(Dial::OFF) {
+                settings.started.effort = None;
+                settings.started.thinking = Some(0);
+                return;
+            }
+            settings.started.effort = wanted;
+            if settings.started.thinking == Some(0) {
+                settings.started.thinking = None;
+            }
         }
         Dial::Temperature => {
             settings.started.temperature = step.thousandths();
@@ -1638,7 +1662,6 @@ pub enum Act {
     SweepWay(usize),
     SweepMeasure(usize),
     CustomValue(crate::ui::Touched),
-    AddCustom,
     ForgetReadings,
     PickRow(mcf_optimize::ledger::At),
     RerunRow(mcf_optimize::ledger::At),
@@ -2024,7 +2047,7 @@ impl Desk {
 
     pub fn entered(&mut self) {
         if self.typing_into_a_value() {
-            self.optimizing.add_what_was_typed();
+            self.optimizing.look_at_what_was_typed();
             return;
         }
         match self.page {
@@ -2141,7 +2164,6 @@ impl Desk {
             | Act::SweepWay(_)
             | Act::SweepMeasure(_)
             | Act::CustomValue(_)
-            | Act::AddCustom
             | Act::ForgetReadings
             | Act::PickRow(_)
             | Act::RerunRow(_)
@@ -3310,12 +3332,27 @@ impl Desk {
         }
     }
 
+    /// The thinking levels a sweep of this model can run. Off comes first where thinking can
+    /// be turned off at all, which is wherever the template opens a thinking section: the
+    /// engine cuts the section short itself and does not need the template's help. The
+    /// template's own word for no thinking, where it has one, is dropped in favour of it —
+    /// that word only takes the level away and leaves the template's default behind.
     #[must_use]
     pub fn levels_of_the_model(&self) -> Vec<String> {
-        self.declared
-            .as_ref()
-            .map(|held| held.thinking.levels.clone())
-            .unwrap_or_default()
+        let Some(thinking) = self.declared.as_ref().map(|held| &held.thinking) else {
+            return Vec::new();
+        };
+        let named = mcf_optimize::dial::Dial::OFF;
+        let mut levels: Vec<String> = thinking
+            .levels
+            .iter()
+            .filter(|held| held.as_str() != "none" && held.as_str() != named)
+            .cloned()
+            .collect();
+        if thinking.section && !levels.is_empty() {
+            levels.insert(0, named.to_owned());
+        }
+        levels
     }
 
     #[must_use]
@@ -3418,8 +3455,10 @@ impl Desk {
         match *act {
             Act::SweepWay(at) => self.optimizing.pick_way(at),
             Act::SweepMeasure(at) => self.optimizing.pick_measure(at),
-            Act::CustomValue(touched) => self.optimizing.touch_the_custom(touched),
-            Act::AddCustom => self.optimizing.add_what_was_typed(),
+            Act::CustomValue(touched) => {
+                self.optimizing.touch_the_custom(touched);
+                self.optimizing.look_at_what_was_typed();
+            }
             Act::ForgetReadings => self.forget_readings(),
             Act::PickRow(at) => self.pick_row(at),
             Act::RerunRow(at) => self.rerun_one(at),
@@ -3521,6 +3560,23 @@ impl Desk {
         if let Some(why) = self.why_the_dial_does_nothing(self.optimizing.sweep.dial) {
             self.optimizing.refused = Some(why);
             return;
+        }
+        self.optimizing.named = self.levels_of_the_model();
+        self.optimizing.only_the_levels_the_model_names();
+        match self.optimizing.what_was_typed() {
+            Ok(Some(step)) if !self.optimizing.sweep.steps.contains(&step) => {
+                self.optimizing.sweep.steps.push(step);
+                self.optimizing.sweep.steps.sort_by_key(|held| match *held {
+                    mcf_optimize::dial::Step::Whole(value)
+                    | mcf_optimize::dial::Step::Thousandths(value) => value,
+                });
+            }
+            Ok(_) => {}
+            Err(why) => {
+                self.optimizing.custom_refused = Some(why.clone());
+                self.optimizing.refused = Some(why);
+                return;
+            }
         }
         let by_hand = self.optimizing.way == mcf_optimize::hunt::Way::ByHand;
         if exactly.is_none() && by_hand && self.optimizing.sweep.steps.is_empty() {
@@ -3682,7 +3738,6 @@ impl Desk {
             Act::SweepWay(_)
             | Act::SweepMeasure(_)
             | Act::CustomValue(_)
-            | Act::AddCustom
             | Act::ForgetReadings
             | Act::PickRow(_)
             | Act::RerunRow(_)

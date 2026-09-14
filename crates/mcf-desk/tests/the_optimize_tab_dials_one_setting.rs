@@ -179,82 +179,81 @@ fn a_sweep_with_no_test_set_is_refused_whichever_way_it_searches() {
 }
 
 #[test]
-fn a_value_typed_by_hand_joins_the_list_and_switches_to_choosing_by_hand() {
+fn a_value_typed_by_hand_is_a_value_that_runs_without_being_added() {
     let mut desk = desk();
-    desk.optimizing.sweep.steps.clear();
     desk.optimizing.custom.set("777");
-    desk.act(Act::AddCustom);
+    desk.act(Act::CustomValue(mcf_desk::ui::Touched::At(0)));
     assert!(
-        desk.optimizing
-            .sweep
-            .steps
-            .contains(&mcf_optimize::dial::Step::Whole(777)),
-        "a value typed in is a value to run"
+        desk.optimizing.custom_refused.is_none(),
+        "777 is a micro-batch, so there is nothing to say about it: {:?}",
+        desk.optimizing.custom_refused
     );
     assert_eq!(
-        desk.optimizing.way,
-        mcf_optimize::hunt::Way::ByHand,
-        "naming a value is choosing the values"
+        desk.optimizing.what_was_typed(),
+        Ok(Some(mcf_optimize::dial::Step::Whole(777))),
+        "a value that is set is a value that runs, and nothing has to be pressed for it"
     );
-    assert!(
-        desk.optimizing.custom.said().is_empty(),
-        "the box is cleared"
-    );
-    assert!(desk.optimizing.custom_refused.is_none());
 }
 
 #[test]
-fn a_typed_value_outside_the_dial_is_refused_and_says_the_range() {
+fn a_typed_value_outside_the_dial_is_refused_as_it_is_typed_and_says_the_range() {
     let mut desk = desk();
     desk.optimizing.custom.set("999999");
-    desk.act(Act::AddCustom);
+    desk.act(Act::CustomValue(mcf_desk::ui::Touched::At(0)));
     let why = desk.optimizing.custom_refused.clone().unwrap_or_default();
-    assert!(why.contains("outside"), "{why}");
     assert!(
-        !desk
-            .optimizing
-            .sweep
-            .steps
-            .contains(&mcf_optimize::dial::Step::Whole(999_999))
+        why.contains("outside"),
+        "saying so while it is being typed is the point, rather than at the moment the \
+         sweep is started and it is too late to have meant something else: {why}"
     );
+    assert!(desk.optimizing.what_was_typed().is_err());
 }
 
 #[test]
 fn a_typed_value_that_is_not_a_number_is_refused_by_name() {
     let mut desk = desk();
     desk.optimizing.custom.set("quite a lot");
-    desk.act(Act::AddCustom);
+    desk.act(Act::CustomValue(mcf_desk::ui::Touched::At(0)));
     let why = desk.optimizing.custom_refused.clone().unwrap_or_default();
     assert!(why.contains("quite a lot"), "the refusal quotes it: {why}");
 }
 
 #[test]
-fn a_value_already_in_the_list_is_not_added_twice() {
+fn a_value_typed_that_is_already_offered_is_not_run_twice() {
     let mut desk = desk();
-    desk.optimizing.sweep.steps.clear();
-    desk.optimizing.custom.set("512");
-    desk.act(Act::AddCustom);
-    desk.optimizing.custom.set("512");
-    desk.act(Act::AddCustom);
-    assert_eq!(desk.optimizing.sweep.steps.len(), 1);
-    let why = desk.optimizing.custom_refused.clone().unwrap_or_default();
-    assert!(why.contains("already"), "{why}");
+    let already = desk
+        .optimizing
+        .sweep
+        .steps
+        .first()
+        .copied()
+        .expect("a dial offers values of its own");
+    desk.optimizing.custom.set(already.said());
+    desk.act(Act::CustomValue(mcf_desk::ui::Touched::At(0)));
+    assert!(
+        desk.optimizing.custom_refused.is_none(),
+        "typing a value that is already on the list is not a mistake to be told about"
+    );
+    let before = desk.optimizing.sweep.steps.len();
+    desk.act(Act::Sweep);
+    assert_eq!(
+        desk.optimizing.sweep.steps.len(),
+        before,
+        "and it runs once rather than twice: {:?}",
+        desk.optimizing.sweep.steps
+    );
 }
 
 #[test]
 fn a_dial_read_in_thousandths_takes_a_value_with_a_point_in_it() {
     let mut desk = desk();
     desk.act(Act::Dial(dial_at(&desk, Dial::Temperature)));
-    desk.optimizing.sweep.steps.clear();
     desk.optimizing.custom.set("0.35");
-    desk.act(Act::AddCustom);
-    assert!(
-        desk.optimizing
-            .sweep
-            .steps
-            .contains(&mcf_optimize::dial::Step::Thousandths(350)),
-        "0.35 is 350 thousandths, and never 35 or 0: {:?}",
-        desk.optimizing.sweep.steps
+    desk.act(Act::CustomValue(mcf_desk::ui::Touched::At(0)));
+    assert_eq!(
+        desk.optimizing.what_was_typed(),
+        Ok(Some(mcf_optimize::dial::Step::Thousandths(350))),
+        "0.35 is 350 thousandths, and never 35 or 0"
     );
 }
 
@@ -464,18 +463,45 @@ fn a_draft_depth_is_refused_for_a_file_that_carries_no_draft_head() {
     assert!(why.contains("no draft head"), "{why}");
 }
 #[test]
-fn a_model_whose_template_reads_a_level_is_offered_it() {
+fn a_model_whose_template_reads_a_level_is_offered_it_with_off_in_front() {
     let desk = reading_a_level();
     assert!(desk.dials_offered().contains(&Dial::ThinkingLevel));
     assert_eq!(
         desk.levels_of_the_model(),
         vec![
-            "none".to_owned(),
+            mcf_optimize::dial::Dial::OFF.to_owned(),
             "low".to_owned(),
             "medium".to_owned(),
             "xhigh".to_owned()
         ],
-        "the levels offered are that model's own words, not a list MCF made up"
+        "the levels are that model's own words, not a list MCF made up — except off, which \
+         is no word at all: the engine cuts the thinking section short itself, so it holds \
+         wherever a template opens one"
+    );
+    assert!(
+        !desk.levels_of_the_model().iter().any(|held| held == "none"),
+        "and the template's own word for no level is not offered beside it, because asking \
+         for that word only takes the level away and leaves the template's default behind"
+    );
+}
+
+#[test]
+fn a_model_whose_template_opens_no_thinking_section_is_offered_no_way_to_turn_it_off() {
+    let mut desk = desk();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template(
+            "{{ reasoning_strength }} and no section at all",
+        ),
+        ..mcf_serve::declared::Declared::default()
+    });
+    assert!(
+        !desk
+            .levels_of_the_model()
+            .iter()
+            .any(|held| held == mcf_optimize::dial::Dial::OFF),
+        "there is nothing for the engine to cut short, so off would be a value that did \
+         nothing and said it did: {:?}",
+        desk.levels_of_the_model()
     );
 }
 
@@ -497,16 +523,18 @@ fn choosing_the_level_puts_every_level_the_model_takes_on_the_list() {
 }
 
 #[test]
-fn a_level_is_typed_in_as_one_of_the_model_s_own_words() {
+fn a_level_is_read_as_one_of_the_model_s_own_words() {
     let mut desk = reading_a_level();
     desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
-    desk.optimizing.sweep.steps.clear();
-    desk.optimizing.custom.set("xhigh");
-    desk.act(Act::AddCustom);
+    let named = desk.optimizing.named.clone();
     assert!(
-        desk.optimizing.sweep.steps.contains(&Step::Whole(3)),
-        "{:?} {:?}",
-        desk.optimizing.sweep.steps,
+        named.iter().any(|held| held == "xhigh"),
+        "this template names xhigh: {named:?}"
+    );
+    desk.optimizing.custom.set("xhigh");
+    assert!(
+        matches!(desk.optimizing.what_was_typed(), Ok(Some(Step::Whole(_)))),
+        "{named:?} {:?}",
         desk.optimizing.custom_refused
     );
 }
@@ -516,7 +544,7 @@ fn a_level_this_model_does_not_take_is_refused_even_though_another_model_would()
     let mut desk = reading_a_level();
     desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
     desk.optimizing.custom.set("high");
-    desk.act(Act::AddCustom);
+    desk.act(Act::CustomValue(mcf_desk::ui::Touched::At(0)));
     assert!(
         desk.optimizing.custom_refused.is_some(),
         "this template raises an exception for 'high', so sending it would fail the trial"
@@ -847,4 +875,47 @@ fn the_optimize_tab_names_things_in_one_column() {
         "a labelled row picked its own left margin instead of the one column the tab uses \
          (NAMED): {offenders:#?}"
     );
+}
+
+/// The values of a setting the model names are places in a list, not points on a span. A
+/// search that climbed through them would ask for the place after the last one and write
+/// the number down as if it were a level — a row reading "4" among low, medium and high.
+#[test]
+fn a_setting_the_model_names_is_never_searched_over_a_span_of_numbers() {
+    let mut desk = reading_a_level();
+    desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingLevel)));
+    let automatic = mcf_optimize::hunt::Way::ALL
+        .iter()
+        .position(|way| *way == mcf_optimize::hunt::Way::Halving)
+        .unwrap_or(0);
+    desk.act(Act::SweepWay(automatic));
+    assert_eq!(
+        desk.optimizing.way,
+        mcf_optimize::hunt::Way::ByHand,
+        "there is no span to search over, so asking for one is refused rather than obeyed"
+    );
+    assert!(
+        desk.optimizing.refused.is_some(),
+        "and it says so rather than quietly ignoring the press"
+    );
+
+    desk.optimizing.way = mcf_optimize::hunt::Way::Halving;
+    desk.act(Act::Sweep);
+    assert_eq!(
+        desk.optimizing.way,
+        mcf_optimize::hunt::Way::ByHand,
+        "however it got set, a sweep of a named setting runs the names"
+    );
+    let levels = desk.optimizing.named.len();
+    assert!(levels > 0, "this model names levels");
+    for step in &desk.optimizing.sweep.steps {
+        let at = match *step {
+            Step::Whole(held) | Step::Thousandths(held) => held as usize,
+        };
+        assert!(
+            at < levels,
+            "{at} is past the end of {:?}, so it would run as a number nobody named",
+            desk.optimizing.named
+        );
+    }
 }

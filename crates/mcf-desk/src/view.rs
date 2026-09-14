@@ -1197,24 +1197,27 @@ fn how_it_searches(
     let dial = desk.optimizing.sweep.dial;
     let span = dial.span();
 
-    paint.say_at(
-        area.x,
-        y + 7.0,
-        "Search",
-        Weight::Regular,
-        size::SMALL,
-        ink.quiet,
-    );
-    let ways: Vec<(String, bool)> = mcf_optimize::hunt::Way::ALL
-        .iter()
-        .map(|way| (way.label().to_owned(), *way == desk.optimizing.way))
-        .collect();
     let inset = Box::new(area.x + NAMED, area.y, (area.w - NAMED).max(120.0), area.h);
-    let (below, picked) = chips(paint, mouse, inset, y, &ways);
-    if let Some(at) = picked {
-        act = Some(Act::SweepWay(at));
+    let named_by_the_model = dial.is_named_by_the_model();
+    if !named_by_the_model {
+        paint.say_at(
+            area.x,
+            y + 7.0,
+            "Search",
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        let ways: Vec<(String, bool)> = mcf_optimize::hunt::Way::ALL
+            .iter()
+            .map(|way| (way.label().to_owned(), *way == desk.optimizing.way))
+            .collect();
+        let (below, picked) = chips(paint, mouse, inset, y, &ways);
+        if let Some(at) = picked {
+            act = Some(Act::SweepWay(at));
+        }
+        y = below;
     }
-    y = below;
 
     paint.say_at(
         area.x,
@@ -1240,7 +1243,10 @@ fn how_it_searches(
     y = below + 4.0;
 
     let automatic = desk.optimizing.way == mcf_optimize::hunt::Way::Halving;
-    let said = if automatic {
+    let said = if named_by_the_model {
+        let levels = desk.optimizing.named.join(", ");
+        format!("Runs every level this model names, and nothing else: {levels}.")
+    } else if automatic {
         format!(
             "Starts at {} and doubles, until a value comes back worse than the one below it. \
              Then it halves what is left either side of the best, down to steps of {}.",
@@ -1340,8 +1346,8 @@ fn setting_to_optimize(
     let (below, chosen) = how_it_searches(paint, desk, mouse, area, y);
     act = act.or(chosen);
     y = below;
-    if desk.optimizing.way == mcf_optimize::hunt::Way::Halving
-        && !desk.optimizing.sweep.dial.is_named_by_the_model()
+    if desk.optimizing.sweep.dial.is_named_by_the_model()
+        || desk.optimizing.way == mcf_optimize::hunt::Way::Halving
     {
         return (y, act);
     }
@@ -1414,20 +1420,11 @@ fn a_value_of_my_own(
     if touched != ui::Touched::No {
         act = Some(Act::CustomValue(touched));
     }
-    if ui::button(
-        paint,
-        mouse,
-        Box::new(field_at.right() + 12.0, y, 80.0, 28.0),
-        "Add",
-        Kind::Ordinary,
-    ) {
-        act = Some(Act::AddCustom);
-    }
     let unit = dial.unit();
     if !unit.is_empty() {
         paint.say_at(
-            field_at.right() + 104.0,
-            y + 6.0,
+            field_at.right() + 12.0,
+            y + 7.0,
             unit,
             Weight::Regular,
             size::SMALL,
@@ -1495,7 +1492,7 @@ fn test_set(
     paint.say_at(
         area.x,
         y,
-        &desk.optimizing.sweep.said(),
+        &desk.optimizing.sweep.said_among(&desk.optimizing.named),
         Weight::Regular,
         size::SMALL,
         ink.faint,

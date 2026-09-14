@@ -454,3 +454,39 @@ fn a_read_interrupted_by_a_signal_is_not_the_end_of_the_reply() {
          the end loses the rest of the reply"
     );
 }
+
+#[test]
+fn the_off_level_asks_for_a_budget_of_nothing_rather_than_for_a_word() {
+    let named = vec![
+        super::Dial::OFF.to_owned(),
+        "low".to_owned(),
+        "high".to_owned(),
+    ];
+    let mut held = asked(Dial::ThinkingLevel, Step::Whole(0));
+    held.named = named.clone();
+    let asking = super::body(&held);
+    assert_eq!(
+        asking.get("reasoning_budget_tokens"),
+        Some(&Value::Integer(0)),
+        "a budget of nothing is enforced by the engine, which watches for the tag the \
+         template opens a thinking section with"
+    );
+    assert!(
+        asking.get("reasoning_effort").is_none(),
+        "and no level is named, because no template has a word in its own vocabulary for \
+         none of them — asking for `none` only takes the word away and leaves the \
+         template's default in its place"
+    );
+
+    held.step = Step::Whole(2);
+    let asking = super::body(&held);
+    assert_eq!(
+        asking.get("reasoning_effort").and_then(Value::as_text),
+        Some("high"),
+        "every other level is the word itself"
+    );
+    assert!(
+        asking.get("reasoning_budget_tokens").is_none(),
+        "and nothing cuts it short"
+    );
+}

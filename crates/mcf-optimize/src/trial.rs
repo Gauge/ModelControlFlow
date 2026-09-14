@@ -171,7 +171,17 @@ pub fn body(asked: &Asked) -> Value {
     if let Some(field) = asked.dial.field() {
         if asked.dial.is_named_by_the_model() {
             let said = asked.dial.said_among(asked.step, &asked.named);
-            fields.push((field, Value::text(said)));
+            // Turning thinking off is not a word the template reads. A template that reads no
+            // level at all still opens its thinking section, and one that reads levels has no
+            // word in its own vocabulary for none of them — asking for "none" only takes the
+            // word away and leaves the template's own default in its place. What does turn it
+            // off is a budget of nothing, which the engine enforces itself by watching for the
+            // tag the section opens with.
+            if said == Dial::OFF {
+                fields.push(("reasoning_budget_tokens", Value::Integer(0)));
+            } else {
+                fields.push((field, Value::text(said)));
+            }
         } else {
             fields.push((field, sent(asked.step)));
         }

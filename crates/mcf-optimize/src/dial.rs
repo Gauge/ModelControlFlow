@@ -1,25 +1,34 @@
+/// The settings a sweep can move, in the order they are offered. How a prompt is fed
+/// through first, then how much the model thinks about it, then how it draws its tokens,
+/// then the draft head — which is the order somebody dialling a model in goes through them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Dial {
     #[default]
-    ThinkingBudget,
+    MicroBatch,
     ThinkingLevel,
+    ThinkingBudget,
     Temperature,
     TopP,
     TopK,
-    MicroBatch,
     DraftDepth,
 }
 
 impl Dial {
     pub const ALL: [Self; 7] = [
-        Self::ThinkingBudget,
+        Self::MicroBatch,
         Self::ThinkingLevel,
+        Self::ThinkingBudget,
         Self::Temperature,
         Self::TopP,
         Self::TopK,
-        Self::MicroBatch,
         Self::DraftDepth,
     ];
+
+    /// What a level named this means: not a word for the template to read, but the whole
+    /// thinking section cut off before it starts. The engine enforces it by watching for the
+    /// tag the template opens a thinking section with, so it holds whatever the template
+    /// makes of the words around it.
+    pub const OFF: &'static str = "off";
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -349,13 +358,21 @@ impl Sweep {
 
     #[must_use]
     pub fn said(&self) -> String {
+        self.said_among(&[])
+    }
+
+    /// What this sweep would run, in the words the values go by. A setting whose values are
+    /// named by the model is swept over the places in that list rather than over numbers,
+    /// and a summary that prints the places is a summary of something nobody set.
+    #[must_use]
+    pub fn said_among(&self, named: &[String]) -> String {
         if self.steps.is_empty() || self.sets.is_empty() {
             return "nothing to run: choose at least one value and one set".to_owned();
         }
         let steps = self
             .steps
             .iter()
-            .map(|step| step.said())
+            .map(|step| self.dial.said_among(*step, named))
             .collect::<Vec<_>>()
             .join(", ");
         format!(
