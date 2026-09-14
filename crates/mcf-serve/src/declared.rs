@@ -33,6 +33,9 @@ pub struct Declared {
     pub context: Option<u64>,
     pub architecture: Option<String>,
     pub thinking: crate::thinking::Thinking,
+    /// The chat template packed into the file: what the model was published to be addressed
+    /// with, and what MCF holds it under unless somebody edits it.
+    pub template: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,9 +56,14 @@ impl Declared {
     #[must_use]
     pub fn in_header(file: &Model) -> Self {
         let thinking = crate::thinking::Thinking::of(file);
+        let template = file
+            .get("tokenizer.chat_template")
+            .and_then(Held::as_text)
+            .map(str::to_owned);
         let Some(architecture) = file.architecture() else {
             return Self {
                 thinking,
+                template,
                 ..Self::default()
             };
         };
@@ -67,6 +75,7 @@ impl Declared {
         };
         Self {
             architecture: Some(architecture.to_owned()),
+            template,
             draft_head: number("nextn_predict_layers").filter(|layers| *layers > 0),
             rope: under("rope.scaling.type")
                 .and_then(Held::as_text)
@@ -116,6 +125,10 @@ impl Declared {
                 }),
             context: number(value.get("context")),
             thinking: crate::thinking::Thinking::from_value(value.get("thinking_levels")),
+            template: value
+                .get("template")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
         }
     }
 
@@ -152,6 +165,12 @@ impl Declared {
                     .map_or(Value::Null, |context| whole(u128::from(context))),
             ),
             ("thinking_levels", self.thinking.to_value()),
+            (
+                "template",
+                self.template
+                    .as_ref()
+                    .map_or(Value::Null, |held| Value::text(held.clone())),
+            ),
         ])
     }
 }

@@ -441,6 +441,10 @@ pub struct Hosting {
     pub projector: Option<String>,
     pub started: crate::declared::Started,
     pub tensor_split: Vec<u64>,
+    /// A chat template to hold the model under instead of the one packed into its file.
+    /// Nothing here means the file's own, which is what it was published with and what MCF
+    /// uses unless somebody says otherwise.
+    pub template: Option<String>,
 }
 
 fn spread(split: &[u64]) -> String {
@@ -496,6 +500,27 @@ pub struct Setting {
     pub because: &'static str,
 }
 
+/// Which projector a hold uses: the one asked for, or the one the model came with where
+/// nothing was asked, or none at all where it was asked for and left blank.
+fn projector_in(value: &Value, recommended: &Hosting) -> Option<String> {
+    match value.get("projector") {
+        None => recommended.projector.clone(),
+        Some(Value::Text(path)) if !path.is_empty() => Some(path.clone()),
+        Some(_) => None,
+    }
+}
+
+/// A chat template somebody has put in the settings, if it is one at all. Blank is nothing:
+/// a model with no template of its own is held the way it always was, and one whose template
+/// has been emptied out is asking for the file's own back.
+fn template_in(value: &Value) -> Option<String> {
+    value
+        .get("template")
+        .and_then(Value::as_text)
+        .filter(|held| !held.trim().is_empty())
+        .map(str::to_owned)
+}
+
 impl Hosting {
     #[must_use]
     pub fn recommended(
@@ -544,6 +569,7 @@ impl Hosting {
             projector: projector.map(|path| path.display().to_string()),
             started: crate::declared::Started::default(),
             tensor_split: Vec::new(),
+            template: None,
         }
     }
 
@@ -629,6 +655,7 @@ impl Hosting {
         model: &str,
         bind: &str,
         key_file: Option<&std::path::Path>,
+        template_file: Option<&std::path::Path>,
     ) -> Vec<String> {
         let mut out = vec![
             "--model".to_owned(),
@@ -702,6 +729,10 @@ impl Hosting {
         out.push(self.ubatch.min(self.batch).to_string());
         out.push("--threads-batch".to_owned());
         out.push(self.threads_batch.max(1).to_string());
+        if let Some(template_file) = template_file {
+            out.push("--chat-template-file".to_owned());
+            out.push(template_file.display().to_string());
+        }
         if let Some(key_file) = key_file {
             out.push("--api-key-file".to_owned());
             out.push(key_file.display().to_string());
@@ -1303,6 +1334,12 @@ impl Hosting {
             ("port", Value::Integer(i64::from(self.port))),
             ("api_key_set", Value::Bool(self.api_key.is_some())),
             (
+                "template",
+                self.template
+                    .as_ref()
+                    .map_or(Value::Null, |held| Value::text(held.clone())),
+            ),
+            (
                 "projector",
                 self.projector.clone().map_or(Value::Null, Value::text),
             ),
@@ -1465,15 +1502,12 @@ impl Hosting {
             port: number("port")
                 .and_then(|held| u16::try_from(held).ok())
                 .unwrap_or(recommended.port),
+            template: template_in(value),
             api_key: value
                 .get("api_key")
                 .and_then(Value::as_text)
                 .map(str::to_owned),
-            projector: match value.get("projector") {
-                None => recommended.projector.clone(),
-                Some(Value::Text(path)) if !path.is_empty() => Some(path.clone()),
-                Some(_) => None,
-            },
+            projector: projector_in(value, recommended),
             started: crate::declared::Started::from_value(value),
             tensor_split: recommended.tensor_split.clone(),
         }

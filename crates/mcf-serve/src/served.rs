@@ -440,6 +440,21 @@ pub fn engine_log_for(model: &Path) -> Option<PathBuf> {
     Some(directory.join(format!("{named}.jsonl")))
 }
 
+/// A chat template to hand the engine, written where the model is. The engine reads a
+/// template from a file rather than from an argument, so one that has been edited has to be
+/// somewhere on the disk before the engine starts; and a template is not a secret, so it is
+/// written to be read.
+fn template_written_beside(model: &Path, template: &str) -> Option<PathBuf> {
+    use std::io::Write as _;
+    let at = model
+        .parent()
+        .map_or_else(std::env::temp_dir, Path::to_path_buf)
+        .join(format!(".mcf-chat-template-{}.jinja", std::process::id()));
+    let mut file = std::fs::File::create(&at).ok()?;
+    file.write_all(template.as_bytes()).ok()?;
+    Some(at)
+}
+
 fn key_written_beside(model: &Path, key: &str) -> Option<PathBuf> {
     use std::io::Write as _;
     use std::os::unix::fs::OpenOptionsExt as _;
@@ -584,6 +599,11 @@ impl Served {
             .api_key
             .as_deref()
             .and_then(|key| key_written_beside(model, key));
+        let template_file = settings
+            .template
+            .as_deref()
+            .filter(|held| !held.trim().is_empty())
+            .and_then(|template| template_written_beside(model, template));
         let log_file = engine_log_for(model);
         let mut command = Command::new(&binary);
         command
@@ -591,6 +611,7 @@ impl Served {
                 &model.display().to_string(),
                 settings.bind(),
                 key_file.as_deref(),
+                template_file.as_deref(),
             ))
             .args(log_file.iter().flat_map(|at| {
                 [

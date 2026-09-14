@@ -1502,6 +1502,10 @@ fn test_set(
 
 const ROW: f32 = 19.0;
 
+/// How much of a template the box shows at once. Enough to read a block of it without
+/// pushing every setting under it off the page.
+const TEMPLATE_TALL: f32 = 200.0;
+
 /// The one line that says what the sweep is doing: the button, then what is happening now,
 /// then how far along it is. Nothing here moves sideways when a sweep starts or stops — a
 /// line that jumps as it updates is harder to read than one that stays put.
@@ -2201,6 +2205,65 @@ fn configure_tab(
         y += 34.0;
     }
     y = a_section(paint, area, y, "The model");
+    label(
+        paint,
+        y,
+        Row {
+            name: "Chat template",
+            because: "the Jinja the engine turns a conversation into tokens with. This is \
+                      the one packed into the model's own file, which is what it was \
+                      published to be addressed with; edit it and MCF holds the model \
+                      under what you leave here instead",
+        },
+        &mut hovered,
+    );
+    {
+        let focused = desk
+            .editing
+            .as_ref()
+            .is_some_and(|(editing, _)| *editing == crate::Field::ChatTemplate);
+        let held = if focused {
+            desk.typing_now().clone()
+        } else {
+            crate::typing::Typing::of(desk.template_now())
+        };
+        let box_of = Box::new(column, y - 6.0, control.max(240.0), TEMPLATE_TALL);
+        let (touched, moved) = ui::lines(
+            paint,
+            mouse,
+            box_of,
+            &held,
+            desk.scrolled(crate::Region::Template),
+            focused,
+        );
+        if touched != ui::Touched::No {
+            act = Some(Act::Edit(crate::Field::ChatTemplate, touched));
+        }
+        if (moved - desk.scrolled(crate::Region::Template)).abs() > 0.5 {
+            act = act.or(Some(Act::Scroll(
+                crate::Region::Template,
+                moved.round() as i32,
+            )));
+        }
+        y += TEMPLATE_TALL + 6.0;
+        if desk.template_is_the_model_s_own() {
+            paint.say_at(
+                column,
+                y,
+                "as the file has it",
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+        } else {
+            let (back, _where) =
+                ui::fitted(paint, mouse, (column, y - 6.0), "Put it back", Kind::Quiet);
+            if back {
+                act = Some(Act::TemplateAsPublished);
+            }
+        }
+        y += 30.0;
+    }
     label(
         paint,
         y,

@@ -192,3 +192,53 @@ fn no_level_asked_for_means_no_flag_written() {
         "leaving it alone leaves the model's own default alone"
     );
 }
+
+#[test]
+fn the_template_box_starts_on_the_one_the_model_was_published_with() {
+    let mut desk = mcf_desk::Desk::new(std::path::PathBuf::from("/tmp/mcf-template-test.sock"));
+    desk.declared = Some(mcf_serve::declared::Declared {
+        template: Some("{{ the file's own }}".to_owned()),
+        ..mcf_serve::declared::Declared::default()
+    });
+    desk.settings = Some(Hosting::recommended(
+        "llama.cpp",
+        "a card",
+        true,
+        4096,
+        Some(8),
+        true,
+        None,
+    ));
+    assert_eq!(
+        desk.template_now(),
+        "{{ the file's own }}",
+        "a model is addressed the way it was published to be addressed until somebody says \
+         otherwise"
+    );
+    assert!(desk.template_is_the_model_s_own());
+
+    desk.act(mcf_desk::Act::Edit(
+        mcf_desk::Field::ChatTemplate,
+        mcf_desk::ui::Touched::At(0),
+    ));
+    desk.typing()
+        .set("{%- if a, b %}\n  mine_own\n{%- endif %}");
+    desk.apply_edit();
+    assert_eq!(
+        desk.template_now(),
+        "{%- if a, b %}\n  mine_own\n{%- endif %}",
+        "commas, underscores and newlines all mean something in Jinja, and the box that \
+         takes numbers strips every one of them"
+    );
+    assert!(!desk.template_is_the_model_s_own());
+
+    desk.act(mcf_desk::Act::TemplateAsPublished);
+    assert_eq!(desk.template_now(), "{{ the file's own }}");
+    assert!(
+        desk.settings
+            .as_ref()
+            .is_some_and(|held| held.template.is_none()),
+        "put back means nothing of its own, so nothing is written out and the engine reads \
+         the file"
+    );
+}

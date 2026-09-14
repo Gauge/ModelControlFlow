@@ -3,13 +3,23 @@ pub struct Typing {
     said: String,
     caret: usize,
     anchor: usize,
+    /// The column a run of up-and-down movement started from. Going down from the middle of
+    /// a long line into a short one and on again comes back out at the column it set off
+    /// from, rather than at the end of the short line it passed through. Anything else the
+    /// caret does forgets it.
+    column: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum By {
     Character,
     Word,
+    /// To the start or the end of the line the caret is on. In text with no newlines in it
+    /// that is the whole of it, which is what a one-line box wants; in text with newlines it
+    /// is the line, which is what Home and End mean everywhere else.
     Line,
+    /// To the same column of the line above or below.
+    Row,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +37,7 @@ impl Typing {
             said,
             caret,
             anchor: caret,
+            column: None,
         }
     }
 
@@ -60,12 +71,14 @@ impl Typing {
     }
 
     pub fn clear(&mut self) {
+        self.column = None;
         self.said.clear();
         self.caret = 0;
         self.anchor = 0;
     }
 
     pub fn set(&mut self, said: impl Into<String>) {
+        self.column = None;
         *self = Self::of(said);
     }
 
@@ -104,6 +117,7 @@ impl Typing {
     }
 
     pub fn put(&mut self, text: &str, limit: usize) {
+        self.column = None;
         self.rub_out_any_selection();
         let room = limit.saturating_sub(self.said.chars().count());
         let kept: String = text
@@ -129,6 +143,7 @@ impl Typing {
     }
 
     pub fn rub(&mut self, way: Way, by: By) {
+        self.column = None;
         if self.rub_out_any_selection() {
             return;
         }
@@ -146,6 +161,14 @@ impl Typing {
     }
 
     pub fn go(&mut self, way: Way, by: By, keeping: bool) {
+        if by == By::Row {
+            let column = self.column.unwrap_or_else(|| self.column_now());
+            let to = self.a_row_away(way, column);
+            self.settle(to, keeping);
+            self.column = Some(column);
+            return;
+        }
+        self.column = None;
         if !keeping
             && by == By::Character
             && let Some((from, to)) = self.selection()
@@ -159,8 +182,9 @@ impl Typing {
 
     fn step(&self, way: Way, by: By) -> usize {
         match (way, by) {
-            (Way::Back, By::Line) => 0,
-            (Way::On, By::Line) => self.said.len(),
+            (Way::Back, By::Line) => self.line_began(),
+            (Way::On, By::Line) => self.line_ended(),
+            (way, By::Row) => self.a_row_away(way, self.column_now()),
             (Way::Back, By::Character) => self
                 .said
                 .get(..self.caret)
@@ -179,6 +203,58 @@ impl Typing {
             (Way::Back, By::Word) => self.word_boundary_back(),
             (Way::On, By::Word) => self.word_boundary_on(),
         }
+    }
+
+    /// Where the line the caret is on starts: just after the newline before it, or the very
+    /// beginning.
+    fn line_began(&self) -> usize {
+        self.said
+            .get(..self.caret)
+            .and_then(|before| before.rfind('\n').map(|at| at.saturating_add(1)))
+            .unwrap_or(0)
+    }
+
+    /// Where it ends: at the next newline, or the very end.
+    fn line_ended(&self) -> usize {
+        self.said
+            .get(self.caret..)
+            .and_then(|after| after.find('\n').map(|at| self.caret.saturating_add(at)))
+            .unwrap_or(self.said.len())
+    }
+
+    /// How far along its line the caret is, in characters rather than bytes, so that a line
+    /// with anything but ASCII in it does not land the caret inside a character.
+    fn column_now(&self) -> usize {
+        let began = self.line_began();
+        self.said
+            .get(began..self.caret)
+            .map_or(0, |held| held.chars().count())
+    }
+
+    /// This column, one line up or down, clamped to the end of the line it arrives at.
+    fn a_row_away(&self, way: Way, column: usize) -> usize {
+        let began = self.line_began();
+        let wanted = match way {
+            Way::Back => {
+                if began == 0 {
+                    return 0;
+                }
+                let above = self.said.get(..began.saturating_sub(1)).unwrap_or("");
+                above.rfind('\n').map_or(0, |at| at.saturating_add(1))
+            }
+            Way::On => {
+                let ended = self.line_ended();
+                if ended >= self.said.len() {
+                    return self.said.len();
+                }
+                ended.saturating_add(1)
+            }
+        };
+        let rest = self.said.get(wanted..).unwrap_or("");
+        let width = rest.find('\n').unwrap_or(rest.len());
+        let line = rest.get(..width).unwrap_or("");
+        let along = line.char_indices().nth(column).map_or(width, |(at, _)| at);
+        wanted.saturating_add(along)
     }
 
     fn word_boundary_back(&self) -> usize {
@@ -225,6 +301,7 @@ impl Typing {
     }
 
     pub fn place(&mut self, at: usize, keeping: bool) {
+        self.column = None;
         self.settle(at, keeping);
     }
 

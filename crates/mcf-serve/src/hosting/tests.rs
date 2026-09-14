@@ -20,7 +20,7 @@ fn a_model_that_fits_on_the_card_is_put_on_the_card() {
         recommended.gpu_layers > 0,
         "a model that fits on the card was recommended onto the processor"
     );
-    let arguments = recommended.arguments("/models/a.gguf", "127.0.0.1", None);
+    let arguments = recommended.arguments("/models/a.gguf", "127.0.0.1", None, None);
     let at = arguments
         .iter()
         .position(|held| held == "--n-gpu-layers")
@@ -111,7 +111,7 @@ fn a_setting_that_was_moved_says_so() {
 fn a_key_never_reaches_the_command_line() {
     let mut chosen = on_a_card();
     chosen.api_key = Some("a-secret-nobody-should-see".to_owned());
-    let bare = chosen.arguments("/model.gguf", "127.0.0.1", None);
+    let bare = chosen.arguments("/model.gguf", "127.0.0.1", None, None);
     assert!(
         !bare.iter().any(|held| held.contains("a-secret")),
         "a key reached the arguments: {bare:?}"
@@ -122,7 +122,7 @@ fn a_key_never_reaches_the_command_line() {
     );
 
     let named = std::path::Path::new("/run/user/1000/mcf/a-key");
-    let with = chosen.arguments("/model.gguf", "127.0.0.1", Some(named));
+    let with = chosen.arguments("/model.gguf", "127.0.0.1", Some(named), None);
     let at = with
         .iter()
         .position(|held| held == "--api-key-file")
@@ -177,7 +177,7 @@ fn a_hosted_model_is_on_this_computer_only() {
             .address()
             .starts_with(&format!("http://{LOOPBACK}:"))
     );
-    let arguments = recommended.arguments("/models/a.gguf", LOOPBACK, None);
+    let arguments = recommended.arguments("/models/a.gguf", LOOPBACK, None, None);
     let at = arguments
         .iter()
         .position(|held| held == "--host")
@@ -341,5 +341,56 @@ fn a_model_that_asks_for_nothing_is_left_at_the_engine_s_own_defaults() {
     assert_eq!(
         settings.started.top_k, None,
         "a number MCF made up is not a default, it is a decision nobody took"
+    );
+}
+
+#[test]
+fn a_model_is_held_under_its_own_template_unless_one_is_left_in_the_settings() {
+    let plain = super::Hosting::recommended("llama.cpp", "a card", true, 4096, Some(8), true, None);
+    assert_eq!(
+        plain.template, None,
+        "nothing here means the file's own, which is what it was published with"
+    );
+    let said = plain.arguments("/model.gguf", "127.0.0.1", None, None);
+    assert!(
+        !said.iter().any(|held| held == "--chat-template-file"),
+        "and the engine is told nothing, so it reads the one in the file: {said:?}"
+    );
+
+    let mut edited = plain.clone();
+    edited.template = Some("{{ messages }}".to_owned());
+    let at = std::path::Path::new("/tmp/a-template.jinja");
+    let said = edited.arguments("/model.gguf", "127.0.0.1", None, Some(at));
+    let at_flag = said.iter().position(|held| held == "--chat-template-file");
+    assert!(at_flag.is_some(), "{said:?}");
+    assert_eq!(
+        at_flag
+            .and_then(|at| said.get(at.saturating_add(1)))
+            .map(String::as_str),
+        Some("/tmp/a-template.jinja"),
+        "the engine reads a template from a file, so an edited one has to be on the disk"
+    );
+}
+
+#[test]
+fn a_template_survives_the_round_trip_through_the_socket() {
+    let recommended =
+        super::Hosting::recommended("llama.cpp", "a card", true, 4096, Some(8), true, None);
+    let mut held = recommended.clone();
+    held.template = Some("{%- if x %}\n  {{ y }},{{ z }}_w\n{%- endif %}".to_owned());
+    let back = super::Hosting::from_value(&held.to_value(), &recommended);
+    assert_eq!(
+        back.template, held.template,
+        "a template is Jinja: its newlines, its commas and its underscores are all load \\
+         bearing, and a round trip that trims or strips any of them is a round trip that \\
+         changes how the model is addressed"
+    );
+
+    let mut blank = recommended.clone();
+    blank.template = Some("   \n  ".to_owned());
+    assert_eq!(
+        super::Hosting::from_value(&blank.to_value(), &recommended).template,
+        None,
+        "a template emptied out is asking for the file's own back"
     );
 }

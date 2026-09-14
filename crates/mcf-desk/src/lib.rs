@@ -1283,6 +1283,7 @@ pub enum Picker {
 pub enum Region {
     Library,
     Page,
+    Template,
     Hub,
     Diagnostics,
     DiagnosticsPage,
@@ -1614,6 +1615,7 @@ pub enum Field {
     Temperature,
     TopP,
     TopK,
+    ChatTemplate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1727,6 +1729,8 @@ pub enum Act {
     Cycle(usize),
     Recommended,
     RememberSettings,
+    /// Put the chat template back to the one the model's own file carries.
+    TemplateAsPublished,
     LastSettings,
     HostIt,
     Build(String),
@@ -2068,7 +2072,21 @@ impl Desk {
             self.typed.put("\n", limit);
             return;
         }
+        if !with_control && self.typing_across_lines() {
+            let limit = Self::PASTE_LIMIT;
+            self.typing().put("\n", limit);
+            return;
+        }
         self.entered();
+    }
+
+    /// Whether what is being typed into is a box with more than one line in it, where the
+    /// arrow keys move between lines and return puts a new one in rather than finishing.
+    #[must_use]
+    pub fn typing_across_lines(&self) -> bool {
+        self.editing
+            .as_ref()
+            .is_some_and(|(field, _)| *field == Field::ChatTemplate)
     }
 
     pub fn entered(&mut self) {
@@ -2243,6 +2261,7 @@ impl Desk {
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
             Act::RememberSettings => self.remember_settings(),
+            Act::TemplateAsPublished => self.template_as_published_again(),
             Act::AdoptBest | Act::KeepAsIs => self.decide_about_the_best(&act),
             Act::LastSettings => {
                 if let Some((last, _)) = &self.last_settings {
@@ -3962,11 +3981,70 @@ impl Desk {
                 .started
                 .top_k
                 .map_or_else(String::new, |held| held.to_string()),
+            Field::ChatTemplate => self.template_now(),
         };
         self.editing = Some((field, crate::typing::Typing::of(now)));
         self.touch(touched);
         self.edit_refused = None;
         self.caret = Caret::Setting;
+    }
+
+    /// The template this model is held under: the one somebody has edited, or the one packed
+    /// into the file, which is what it was published to be addressed with.
+    #[must_use]
+    pub fn template_now(&self) -> String {
+        self.settings
+            .as_ref()
+            .and_then(|held| held.template.clone())
+            .or_else(|| {
+                self.declared
+                    .as_ref()
+                    .and_then(|held| held.template.clone())
+            })
+            .unwrap_or_default()
+    }
+
+    /// Put the template back to the one the file carries, and stop editing: what is in the
+    /// box is about to change under the caret, and a caret left where it was would be
+    /// somewhere else in a different template.
+    fn template_as_published_again(&mut self) {
+        self.editing = None;
+        if let Some(settings) = self.settings.as_mut() {
+            settings.template = None;
+        }
+    }
+
+    /// Whether the model is held under the template its own file carries.
+    #[must_use]
+    pub fn template_is_the_model_s_own(&self) -> bool {
+        self.settings
+            .as_ref()
+            .is_none_or(|held| held.template.is_none())
+    }
+
+    /// The template the file came with, before anybody touched it.
+    #[must_use]
+    pub fn template_as_published(&self) -> String {
+        self.declared
+            .as_ref()
+            .and_then(|held| held.template.clone())
+            .unwrap_or_default()
+    }
+
+    /// Keep an edited template, or — where it has been put back to what the file says — keep
+    /// nothing, so that the model goes on being held under its own and a template MCF never
+    /// has to write out is never written out.
+    fn take_the_template(&mut self, said: &str) {
+        let published = self.template_as_published();
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        settings.template = if said.trim().is_empty() || said == published {
+            None
+        } else {
+            Some(said.to_owned())
+        };
+        self.edit_refused = None;
     }
 
     #[allow(clippy::too_many_lines, reason = "one arm a field, each named")]
@@ -4022,6 +4100,10 @@ impl Desk {
         let Some((field, typed)) = self.editing.take() else {
             return;
         };
+        if field == Field::ChatTemplate {
+            self.take_the_template(typed.said());
+            return;
+        }
         let _listed = typed.trim().to_owned();
         let typed = typed.trim().replace([',', '_'], "");
         let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
@@ -4187,6 +4269,7 @@ impl Desk {
                 }
             }
             Field::Temperature | Field::TopP | Field::TopK => Self::sampled(settings, field, typed),
+            Field::ChatTemplate => None,
             Field::DraftDepth => {
                 if typed.is_empty() {
                     settings.started.drafted = None;
@@ -4580,6 +4663,18 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     sdl::KEY_ESCAPE => {
                         closing(&mut paint, &mut desk);
                         return Ok(());
+                    }
+                    key if matches!(key, sdl::KEY_UP | sdl::KEY_DOWN)
+                        && desk.takes_typing()
+                        && desk.typing_across_lines() =>
+                    {
+                        let way = if key == sdl::KEY_UP {
+                            crate::typing::Way::Back
+                        } else {
+                            crate::typing::Way::On
+                        };
+                        let keeping = sdl::event_has_shift(&event);
+                        desk.typing().go(way, crate::typing::By::Row, keeping);
                     }
                     key if matches!(key, sdl::KEY_LEFT | sdl::KEY_RIGHT) && desk.takes_typing() => {
                         let way = if key == sdl::KEY_LEFT {

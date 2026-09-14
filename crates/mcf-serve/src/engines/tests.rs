@@ -812,7 +812,7 @@ fn a_spread_names_a_share_for_each_card() {
         None,
     )
     .spread_over(vec![116_000_000_000, 101_000_000_000]);
-    let arguments = hosting.arguments("/model.gguf", "127.0.0.1", None);
+    let arguments = hosting.arguments("/model.gguf", "127.0.0.1", None, None);
     let at = arguments
         .iter()
         .position(|held| held == "--tensor-split")

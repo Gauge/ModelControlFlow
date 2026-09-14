@@ -264,3 +264,93 @@ fn a_double_press_takes_the_word_under_it_whichever_end_is_touched() {
         assert_eq!(held.selected(), "two", "touched at {at}");
     }
 }
+
+#[test]
+fn home_and_end_go_to_the_ends_of_the_line_the_caret_is_on() {
+    let mut held = Typing::of("one\ntwo\nthree");
+    held.place(5, false);
+    held.go(Way::Back, By::Line, false);
+    assert_eq!(
+        held.caret(),
+        4,
+        "the start of `two`, not the start of it all"
+    );
+    held.go(Way::On, By::Line, false);
+    assert_eq!(held.caret(), 7, "the end of `two`, not the end of it all");
+}
+
+#[test]
+fn a_box_with_one_line_in_it_is_unchanged_by_knowing_about_lines() {
+    let mut held = Typing::of("a single line");
+    held.place(4, false);
+    held.go(Way::Back, By::Line, false);
+    assert_eq!(held.caret(), 0);
+    held.go(Way::On, By::Line, false);
+    assert_eq!(held.caret(), "a single line".len());
+}
+
+#[test]
+fn up_and_down_keep_the_column_and_stop_at_the_ends() {
+    let mut held = Typing::of("alpha\nbe\ngamma");
+    held.place(4, false);
+    held.go(Way::On, By::Row, false);
+    assert_eq!(
+        held.caret(),
+        8,
+        "column four of a two-letter line is the end of it, not a caret past the newline"
+    );
+    held.go(Way::On, By::Row, false);
+    assert_eq!(
+        held.caret(),
+        13,
+        "the column comes back on a line long enough for it"
+    );
+    held.go(Way::On, By::Row, false);
+    assert_eq!(
+        held.caret(),
+        "alpha\nbe\ngamma".len(),
+        "the last line has nothing below it, so down goes to the end of it"
+    );
+    held.place(2, false);
+    held.go(Way::Back, By::Row, false);
+    assert_eq!(held.caret(), 0, "nor the first line anything above it");
+}
+
+#[test]
+fn a_caret_moved_by_a_row_never_lands_inside_a_character() {
+    let mut held = Typing::of("ααααα\nβ");
+    held.go(Way::On, By::Line, false);
+    held.go(Way::Back, By::Row, false);
+    let caret = held.caret();
+    assert!(
+        held.said().is_char_boundary(caret),
+        "{caret} is inside a character of {:?}",
+        held.said()
+    );
+    held.place(held.said().len(), false);
+    held.go(Way::Back, By::Row, false);
+    let caret = held.caret();
+    assert!(held.said().is_char_boundary(caret), "{caret}");
+}
+
+#[test]
+fn a_column_travelled_through_a_short_line_comes_back_out_the_other_side() {
+    let mut held = Typing::of("alpha\nbe\ngamma");
+    held.place(4, false);
+    held.go(Way::On, By::Row, false);
+    held.go(Way::On, By::Row, false);
+    assert_eq!(
+        held.caret(),
+        13,
+        "column four set off from `alpha`, and the two-letter line it passed through is not \
+         where it ends up"
+    );
+    held.go(Way::Back, By::Character, false);
+    held.go(Way::Back, By::Row, false);
+    held.go(Way::Back, By::Row, false);
+    assert_eq!(
+        held.caret(),
+        3,
+        "and moving any other way sets the column afresh"
+    );
+}

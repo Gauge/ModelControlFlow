@@ -602,3 +602,126 @@ pub fn splitter(
     }
     held.then_some(if upright { mouse.at.0 } else { mouse.at.1 })
 }
+
+/// How tall one line of a many-line box is.
+pub const LINE: f32 = 17.0;
+
+/// A box with more than one line in it. The chat template a model ships with runs to three
+/// hundred lines, so the one-line box the rest of the tab uses would show a three-hundredth
+/// of it at a time.
+///
+/// Lines are not wrapped: a template's lines are long and a wrapped one would move under the
+/// caret as it was edited. The line the caret is on scrolls sideways to keep up with it, the
+/// way the one-line box does, and `offset` scrolls the box up and down.
+pub fn lines(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    area: Box,
+    held: &crate::typing::Typing,
+    offset: f32,
+    focused: bool,
+) -> (Touched, f32) {
+    let ink = paint.ink;
+    let edge = if focused { ink.accent } else { ink.line };
+    paint.edge(area, RADIUS, edge, ink.card);
+    let inner = Box::new(
+        area.x + LEFT,
+        area.y + 6.0,
+        (area.w - LEFT - BAR - 6.0).max(20.0),
+        (area.h - 12.0).max(LINE),
+    );
+    let said = held.said();
+    let lines = lines_of(said);
+    let tall = f32::from(u16::try_from(lines.len().max(1)).unwrap_or(u16::MAX)) * LINE;
+    let moved = scroll_region(paint, mouse, area, offset, tall + 12.0);
+    let offset = moved.unwrap_or(offset);
+    let from = rows_in(offset);
+    let over = rows_in(inner.h).saturating_add(2);
+    let caret_at_line = line_holding(&lines, held.caret());
+    let selection = held.selection();
+    let mut touched = Touched::No;
+    // Where the first drawn line sits: the top of the box, less however far into that line
+    // the scroll has gone.
+    let top = inner.y - (offset - rows_down(from));
+    for (row, (began, line)) in lines.iter().enumerate().skip(from).take(over) {
+        let y = top + rows_down(row.saturating_sub(from));
+        if y + LINE < inner.y || y > inner.bottom() {
+            continue;
+        }
+        let ends = began.saturating_add(line.len());
+        let slide = if row == caret_at_line {
+            shown_from(paint, line, held.caret().saturating_sub(*began), inner.w)
+        } else {
+            0
+        };
+        let visible = line.get(slide..).unwrap_or("");
+        if let Some((one, two)) = selection
+            && two > *began
+            && one < ends
+        {
+            let one = one.clamp(*began, ends).saturating_sub(*began).max(slide);
+            let two = two.clamp(*began, ends).saturating_sub(*began).max(slide);
+            if two > one {
+                let before = line.get(slide..one).unwrap_or("");
+                let inside = line.get(one..two).unwrap_or("");
+                let x = inner.x + paint.measure(before, Weight::Regular, TEXT);
+                let wide = paint.measure(inside, Weight::Regular, TEXT);
+                paint.wash(Box::new(x, y, wide.min(inner.w), LINE), ink.accent, 70);
+            }
+        }
+        let shown = paint.elide(visible, Weight::Regular, TEXT, inner.w);
+        paint.say_at(inner.x, y + 1.0, &shown, Weight::Regular, TEXT, ink.ink);
+        if focused && row == caret_at_line {
+            let upto = line
+                .get(slide..held.caret().saturating_sub(*began))
+                .unwrap_or("");
+            let x = inner.x + paint.measure(upto, Weight::Regular, TEXT);
+            paint.wash(Box::new(x, y + 1.0, 1.5, LINE - 3.0), ink.accent, 255);
+        }
+        if mouse.over(area) && mouse.at.1 >= y && mouse.at.1 < y + LINE {
+            let at = began.saturating_add(slide + caret_at(paint, visible, inner.x, mouse.at.0));
+            touched = touch(mouse, area, at);
+        }
+    }
+    (touched, offset)
+}
+
+/// How many whole lines fit in a height, or how many a scroll has gone past. A count of rows
+/// on a screen either way.
+fn rows_in(height: f32) -> usize {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "clamped to nought and to more rows than any screen has, on the line above"
+    )]
+    {
+        (height / LINE).clamp(0.0, f32::from(MOST_ROWS)).floor() as usize
+    }
+}
+
+/// How far down that many rows reaches.
+fn rows_down(rows: usize) -> f32 {
+    f32::from(u16::try_from(rows).unwrap_or(MOST_ROWS)) * LINE
+}
+
+/// More rows than a screen has, which is where a count of them is cut off.
+const MOST_ROWS: u16 = 8192;
+
+/// Every line of the text, with the byte it starts at. A trailing newline makes a last line
+/// that is empty, which is a line a caret can sit on.
+fn lines_of(said: &str) -> Vec<(usize, &str)> {
+    let mut held = Vec::new();
+    let mut at = 0_usize;
+    for line in said.split('\n') {
+        held.push((at, line));
+        at = at.saturating_add(line.len()).saturating_add(1);
+    }
+    held
+}
+
+fn line_holding(lines: &[(usize, &str)], caret: usize) -> usize {
+    lines
+        .iter()
+        .rposition(|(began, _)| *began <= caret)
+        .unwrap_or(0)
+}
