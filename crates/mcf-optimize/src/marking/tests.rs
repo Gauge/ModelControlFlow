@@ -166,3 +166,23 @@ fn unmarked_answers_count_as_failed_rather_than_as_passed() {
     );
     assert!(held.why().is_some(), "and it says why it could not mark");
 }
+
+#[test]
+#[ignore = "marks a saved reply with the real container"]
+fn which_task_failed() {
+    let sp = "/tmp/claude-1001/-home-gauge/de864044-8c77-447c-816d-275ac51a12fb/scratchpad";
+    let content = std::fs::read_to_string(format!("{sp}/content.txt")).unwrap_or_default();
+    let set = crate::corpus::Set::numbered(2).expect("set 2");
+    let room = std::path::PathBuf::from(format!("{sp}/room2"));
+    let _swept = std::fs::remove_dir_all(&room);
+    let held = super::marked(
+        &room,
+        &set.tasks,
+        &content,
+        std::time::Duration::from_secs(600),
+    );
+    for (name, ok) in held.or_unmarked(&set.tasks) {
+        println!("  {} {name}", if ok { "PASS" } else { "FAIL" });
+    }
+    println!("  (files left in {})", room.display());
+}

@@ -11,7 +11,7 @@
  },
  {
   "n": "sudoku",
-  "p": "Write `solve_sudoku(grid)` taking a 9x9 list of lists with 0 for blanks. Return a solved grid, or None if unsolvable. Must not mutate the input. Use constraint propagation or backtracking.",
+  "p": "Write `solve_sudoku(grid)` taking a 9x9 list of lists with 0 for blanks. Return a solved grid, or None if it cannot be solved \u2014 including when the grid as given already breaks the rules, which you must therefore check before solving. Must not mutate the input. Use constraint propagation or backtracking.",
   "t": "g=[[5,3,0,0,7,0,0,0,0],[6,0,0,1,9,5,0,0,0],[0,9,8,0,0,0,0,6,0],[8,0,0,0,6,0,0,0,3],[4,0,0,8,0,3,0,0,1],[7,0,0,0,2,0,0,0,6],[0,6,0,0,0,0,2,8,0],[0,0,0,4,1,9,0,0,5],[0,0,0,0,8,0,0,7,9]]\nimport copy\ng2=copy.deepcopy(g)\ns=solve_sudoku(g)\nassert g==g2, 'input was mutated'\nassert s is not None\nfor r in s:\n    assert sorted(r)==list(range(1,10))\nfor c in range(9):\n    assert sorted(s[r][c] for r in range(9))==list(range(1,10))\nfor br in range(0,9,3):\n    for bc in range(0,9,3):\n        assert sorted(s[br+i][bc+j] for i in range(3) for j in range(3))==list(range(1,10))\nbad=[[1]*9 for _ in range(9)]\nassert solve_sudoku(bad) is None"
  },
  {
