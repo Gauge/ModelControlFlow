@@ -443,12 +443,22 @@ fn a_clock_counts_hours_minutes_and_seconds_with_their_noughts() {
 }
 
 fn labelled(dial: Dial, at: Option<crate::ledger::At>, holding: Option<&str>) -> String {
+    let measure = dial.ranked_by();
+    labelled_by(dial, measure, at, holding)
+}
+
+fn labelled_by(
+    dial: Dial,
+    measure: crate::reading::Measure,
+    at: Option<crate::ledger::At>,
+    holding: Option<&str>,
+) -> String {
     let scratch = Scratch::new("label");
     let mut running = begun(&scratch, &[], &[]);
     running.doing = at;
     running.holding = holding.map(str::to_owned);
     running.produced = 512;
-    running.label(&[], dial, 4096)
+    running.label(&[], dial, measure, 4096)
 }
 
 #[test]
@@ -546,7 +556,7 @@ fn the_token_count_starts_again_with_each_trial() {
     running.produced = 4096;
     assert_eq!(running.produced, 4096);
     running.doing = None;
-    let said = running.label(&[], Dial::MicroBatch, 8192);
+    let said = running.label(&[], Dial::MicroBatch, crate::reading::Measure::Speed, 8192);
     assert!(
         !said.contains("4096"),
         "between trials there is no count to show: {said}"

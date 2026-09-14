@@ -544,13 +544,13 @@ impl Optimizing {
     /// answer; a graded one answers the tasks.
     #[must_use]
     pub fn ceiling_of_a_trial(&self) -> u32 {
+        if self.measure.needs_the_answers_run() {
+            return SWEEP_CEILING;
+        }
         if self.sweep.dial.times_reading_the_prompt() {
             return mcf_optimize::trial::TOKENS_PREFILLED;
         }
-        if self.sweep.dial.only_changes_speed() {
-            return mcf_optimize::trial::TOKENS_TIMED;
-        }
-        SWEEP_CEILING
+        mcf_optimize::trial::TOKENS_TIMED
     }
 
     #[must_use]
@@ -639,8 +639,32 @@ impl Optimizing {
             .collect();
     }
 
+    /// Rank a sweep of this setting the way the setting asks to be ranked, and lay out the
+    /// run that goes with it. Marking the answers runs the sets; timing runs one trial and
+    /// takes the rate, so the sets would be eight times nothing.
+    pub fn rank_as_the_setting_asks(&mut self) {
+        self.measure = self.sweep.dial.ranked_by();
+        self.lay_out_the_run();
+    }
+
+    fn lay_out_the_run(&mut self) {
+        if self.measure.needs_the_answers_run() {
+            self.sweep.sets = mcf_optimize::corpus::Set::all()
+                .iter()
+                .map(|set| set.number)
+                .collect();
+            self.sweep.repeats = 1;
+            return;
+        }
+        self.sweep.sets = vec![1];
+        self.sweep.repeats = mcf_optimize::trial::TIMES_TIMED;
+    }
+
     pub fn pick_measure(&mut self, at: usize) {
-        if self.sweep.dial.only_changes_speed() {
+        let Some(measure) = mcf_optimize::reading::Measure::ALL.get(at).copied() else {
+            return;
+        };
+        if measure.needs_the_answers_run() && self.sweep.dial.cannot_change_an_answer() {
             self.refused = Some(format!(
                 "{} cannot change what a model answers, only how fast it answers it, so there \
                  is nothing for correctness to say about it",
@@ -648,10 +672,12 @@ impl Optimizing {
             ));
             return;
         }
-        if let Some(measure) = mcf_optimize::reading::Measure::ALL.get(at) {
-            self.measure = *measure;
-            self.refused = None;
+        self.refused = None;
+        if measure == self.measure {
+            return;
         }
+        self.measure = measure;
+        self.lay_out_the_run();
     }
 
     pub fn touch_the_custom(&mut self, touched: crate::ui::Touched) {
@@ -3414,7 +3440,11 @@ impl Desk {
             top_p: None,
             top_k: None,
             corpus: mcf_optimize::ledger::CORPUS,
-            timed: mcf_optimize::ledger::TIMED,
+            timed: if self.optimizing.measure.needs_the_answers_run() {
+                mcf_optimize::ledger::MARKED
+            } else {
+                mcf_optimize::ledger::TIMED
+            },
         })
     }
 
@@ -3659,8 +3689,7 @@ impl Desk {
             dial: self.optimizing.sweep.dial,
             ceiling: SWEEP_CEILING,
             named: self.levels_of_the_model(),
-            mark: self.optimizing.measure.needs_the_answers_run()
-                && !self.optimizing.sweep.dial.only_changes_speed(),
+            mark: self.optimizing.measure.needs_the_answers_run(),
             ready_within: HOLDING_PATIENCE,
             room: path
                 .parent()
@@ -3720,11 +3749,7 @@ impl Desk {
                 let offered = self.dials_offered();
                 let levels = self.levels_of_the_model();
                 self.optimizing.pick_dial_among(at, &offered);
-                if self.optimizing.sweep.dial.only_changes_speed() {
-                    self.optimizing.measure = mcf_optimize::reading::Measure::Speed;
-                    self.optimizing.sweep.sets = vec![1];
-                    self.optimizing.sweep.repeats = mcf_optimize::trial::TIMES_TIMED;
-                }
+                self.optimizing.rank_as_the_setting_asks();
                 if self.optimizing.sweep.dial.is_named_by_the_model() {
                     self.optimizing.way = mcf_optimize::hunt::Way::ByHand;
                     self.optimizing.sweep.steps = (0..levels.len())

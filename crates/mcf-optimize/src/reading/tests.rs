@@ -153,7 +153,7 @@ fn only_one_of_the_two_measures_needs_a_model_s_code_to_be_run() {
 #[test]
 fn a_timed_reading_is_shown_without_the_columns_that_would_be_dashes() {
     for dial in [Dial::MicroBatch, Dial::DraftDepth] {
-        let columns = Report::columns_of(dial);
+        let columns = Report::columns_of(dial, Measure::Speed);
         for gone in ["Set", "Score", "Tok/✓"] {
             assert!(
                 !columns.contains(&gone),
@@ -169,8 +169,8 @@ fn a_timed_reading_is_shown_without_the_columns_that_would_be_dashes() {
 
 #[test]
 fn a_sweep_that_times_reading_names_the_tokens_it_counted_as_the_prompt() {
-    let reading = Report::columns_of(Dial::MicroBatch);
-    let writing = Report::columns_of(Dial::DraftDepth);
+    let reading = Report::columns_of(Dial::MicroBatch, Measure::Speed);
+    let writing = Report::columns_of(Dial::DraftDepth, Measure::Speed);
     assert!(
         reading.contains(&"Prompt") && !reading.contains(&"Tokens"),
         "a micro-batch sweep counts the prompt it read, not an answer it wrote: {reading:?}"
@@ -183,23 +183,43 @@ fn a_sweep_that_times_reading_names_the_tokens_it_counted_as_the_prompt() {
 
 #[test]
 fn a_reading_of_the_tasks_keeps_the_columns_about_the_answers() {
-    let columns = Report::columns_of(Dial::ThinkingBudget);
+    let columns = Report::columns_of(Dial::ThinkingBudget, Measure::Correctness);
     for kept in ["Value", "Set", "Take", "Score", "Tokens", "Tok/s"] {
         assert!(columns.contains(&kept), "{kept} is missing: {columns:?}");
     }
 }
 
+/// The columns follow how the sweep is being ranked, not which setting it moves. A draft
+/// head can be marked or timed, and a table that showed a score column for a timed run
+/// would show a column of dashes.
+#[test]
+fn the_columns_follow_the_measure_rather_than_the_setting() {
+    let marked = Report::columns_of(Dial::DraftDepth, Measure::Correctness);
+    let timed = Report::columns_of(Dial::DraftDepth, Measure::Speed);
+    assert!(
+        marked.contains(&"Score") && marked.contains(&"Set"),
+        "{marked:?}"
+    );
+    assert!(
+        !timed.contains(&"Score") && !timed.contains(&"Set"),
+        "{timed:?}"
+    );
+}
+
 #[test]
 fn a_row_has_exactly_as_many_cells_as_the_table_has_columns() {
     for dial in Dial::ALL {
-        let held = at(dial.step_of(2), 1000, 1000, 4);
-        let cells = Report::cells_of(&held, dial, &[]);
-        assert_eq!(
-            cells.len(),
-            Report::columns_of(dial).len(),
-            "{} draws {cells:?} under {:?}",
-            dial.label(),
-            Report::columns_of(dial)
-        );
+        for measure in Measure::ALL {
+            let held = at(dial.step_of(2), 1000, 1000, 4);
+            let cells = Report::cells_of(&held, dial, measure, &[]);
+            assert_eq!(
+                cells.len(),
+                Report::columns_of(dial, measure).len(),
+                "{} ranked by {} draws {cells:?} under {:?}",
+                dial.label(),
+                measure.label(),
+                Report::columns_of(dial, measure)
+            );
+        }
     }
 }

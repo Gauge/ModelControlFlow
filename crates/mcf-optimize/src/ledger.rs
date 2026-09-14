@@ -11,13 +11,20 @@ const WHERE: Subsystem = Subsystem::new("mcf-optimize::ledger");
 
 pub const CORPUS: u32 = 1;
 
-/// Which way a speed trial was timed. A rate is only comparable with one taken the same
-/// way: a reading from before MCF knew that a micro-batch changes how fast a prompt is read
-/// rather than how fast an answer is written was timing the wrong work altogether, and one
-/// taken over a shorter prompt than this reads faster for that reason alone, because reading
-/// a prompt costs more per token the longer the prompt is. Raising this leaves every graded
-/// reading where it is and asks only for the timed ones again.
+/// Which way a speed trial was timed, against nothing at all for a reading that was marked
+/// rather than timed. A rate is only comparable with one taken the same way: a reading from
+/// before MCF knew that a micro-batch changes how fast a prompt is read rather than how fast
+/// an answer is written was timing the wrong work altogether, and one taken over a shorter
+/// prompt than this reads faster for that reason alone, because reading a prompt costs more
+/// per token the longer the prompt is.
+///
+/// A marked reading carries nothing here, so raising this leaves every one of those where it
+/// is and asks only for the timed ones again.
 pub const TIMED: u32 = 3;
+
+/// What a reading that was marked rather than timed carries, which is nothing: there is no
+/// rate in it for a way of timing to have spoiled.
+pub const MARKED: u32 = 0;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Under {
@@ -45,9 +52,6 @@ impl Under {
     #[must_use]
     pub fn without(&self, dial: Dial) -> Self {
         let mut held = self.clone();
-        if !dial.only_changes_speed() {
-            held.timed = 0;
-        }
         match dial {
             Dial::ThinkingBudget => held.thinking_budget = None,
             Dial::ThinkingLevel => held.thinking_level = None,

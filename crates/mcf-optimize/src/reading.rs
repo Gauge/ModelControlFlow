@@ -222,11 +222,11 @@ impl Report {
     /// The columns a reading of this dial is worth showing. A timed run marks no answers
     /// and runs no set, so those columns would be a row of dashes.
     #[must_use]
-    pub fn columns_of(dial: Dial) -> Vec<&'static str> {
-        if dial.times_reading_the_prompt() {
-            return vec!["Value", "Take", "Prompt", "Read tok/s", "Seconds", "Ending"];
-        }
-        if dial.only_changes_speed() {
+    pub fn columns_of(dial: Dial, measure: Measure) -> Vec<&'static str> {
+        if !measure.needs_the_answers_run() {
+            if dial.times_reading_the_prompt() {
+                return vec!["Value", "Take", "Prompt", "Read tok/s", "Seconds", "Ending"];
+            }
             return vec!["Value", "Take", "Tokens", "Tok/s", "Seconds", "Ending"];
         }
         vec![
@@ -235,7 +235,12 @@ impl Report {
     }
 
     #[must_use]
-    pub fn cells_of(reading: &Reading, dial: Dial, named: &[String]) -> Vec<String> {
+    pub fn cells_of(
+        reading: &Reading,
+        dial: Dial,
+        measure: Measure,
+        named: &[String],
+    ) -> Vec<String> {
         let rate = reading
             .tokens_a_second()
             .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}"));
@@ -244,7 +249,7 @@ impl Report {
             .checked_div(1000)
             .unwrap_or(0)
             .to_string();
-        if dial.only_changes_speed() {
+        if !measure.needs_the_answers_run() {
             return vec![
                 dial.said_among(reading.step, named),
                 reading.repeat.to_string(),

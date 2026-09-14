@@ -919,3 +919,79 @@ fn a_setting_the_model_names_is_never_searched_over_a_span_of_numbers() {
         );
     }
 }
+
+/// A setting is worth moving because of what it does to the answers, so marking them is the
+/// default nearly everywhere. The one exception is the setting that cannot touch an answer.
+#[test]
+fn every_setting_is_ranked_by_correctness_to_begin_with_except_the_micro_batch() {
+    for dial in Dial::ALL {
+        let mut desk = desk();
+        desk.act(Act::Dial(dial_at(&desk, dial)));
+        let wanted = if dial == Dial::MicroBatch {
+            mcf_optimize::reading::Measure::Speed
+        } else {
+            mcf_optimize::reading::Measure::Correctness
+        };
+        assert_eq!(
+            desk.optimizing.measure,
+            wanted,
+            "{} opens ranked by the wrong thing",
+            dial.label()
+        );
+        if wanted.needs_the_answers_run() {
+            assert_eq!(
+                desk.optimizing.sweep.sets.len(),
+                8,
+                "{} marks answers, so it runs the sets",
+                dial.label()
+            );
+        } else {
+            assert_eq!(
+                desk.optimizing.sweep.sets,
+                vec![1],
+                "{} takes a rate off one trial, so eight sets would be eight times nothing",
+                dial.label()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_draft_head_can_be_marked_now_that_its_answers_may_differ() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::DraftDepth)));
+    let speed = mcf_optimize::reading::Measure::ALL
+        .iter()
+        .position(|held| *held == mcf_optimize::reading::Measure::Speed)
+        .unwrap_or(0);
+    desk.act(Act::SweepMeasure(speed));
+    assert_eq!(
+        desk.optimizing.measure,
+        mcf_optimize::reading::Measure::Speed,
+        "and it can still be timed instead, which is what it was only ever able to be"
+    );
+    assert_eq!(
+        desk.optimizing.sweep.sets,
+        vec![1],
+        "and choosing that lays out the run that goes with it"
+    );
+    assert!(desk.optimizing.refused.is_none());
+}
+
+#[test]
+fn the_one_setting_that_cannot_change_an_answer_still_refuses_to_be_marked() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::MicroBatch)));
+    let correctness = mcf_optimize::reading::Measure::ALL
+        .iter()
+        .position(|held| *held == mcf_optimize::reading::Measure::Correctness)
+        .unwrap_or(0);
+    desk.act(Act::SweepMeasure(correctness));
+    assert_eq!(
+        desk.optimizing.measure,
+        mcf_optimize::reading::Measure::Speed,
+        "it stays where it was"
+    );
+    let why = desk.optimizing.refused.clone().unwrap_or_default();
+    assert!(why.contains("only how fast"), "{why}");
+}

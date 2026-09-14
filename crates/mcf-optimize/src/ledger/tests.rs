@@ -1,4 +1,4 @@
-use super::{At, CORPUS, Ledger, Row, TIMED, Under};
+use super::{At, CORPUS, Ledger, MARKED, Row, TIMED, Under};
 use crate::dial::{Dial, Step};
 use crate::reading::{Ending, Reading};
 
@@ -421,25 +421,27 @@ fn a_sweep_of_the_thinking_budget_ignores_the_budget_in_the_base() {
 }
 
 #[test]
-fn a_timed_reading_taken_the_old_way_is_taken_again_and_a_graded_one_is_not() {
+fn a_timed_reading_taken_the_old_way_is_taken_again_and_a_marked_one_is_not() {
     let scratch = Scratch::new("timed-again");
     let mut ledger = Ledger::open(&scratch.at()).expect("opens");
-    let mut before = under();
-    before.timed = TIMED.saturating_sub(1);
+    let mut the_old_way = under();
+    the_old_way.timed = TIMED.saturating_sub(1);
     let spot = at(Step::Whole(256), 1);
     ledger
-        .record(&before, spot, &reading(Step::Whole(256), 1, 6), "then")
+        .record(&the_old_way, spot, &reading(Step::Whole(256), 1, 6), "then")
         .expect("a reading is written");
+    let timed = under();
     assert!(
-        ledger.already(&under(), &spot).is_none(),
-        "a micro-batch reading timed the wrong work before, so its number is not one to skip \
-         ahead on"
+        ledger.already(&timed, &spot).is_none(),
+        "a reading timed the wrong work before, so its number is not one to skip ahead on"
     );
     assert!(
-        ledger.against(&under(), Dial::MicroBatch).is_empty(),
-        "nor is it one to show beside readings of something else"
+        ledger.against(&timed, Dial::MicroBatch).is_empty(),
+        "nor is it one to show beside readings taken another way"
     );
 
+    let mut marked = under();
+    marked.timed = MARKED;
     let graded = At {
         dial: Dial::ThinkingBudget,
         step: Step::Whole(4096),
@@ -450,12 +452,17 @@ fn a_timed_reading_taken_the_old_way_is_taken_again_and_a_graded_one_is_not() {
     told.dial = Dial::ThinkingBudget;
     told.step = Step::Whole(4096);
     ledger
-        .record(&before, graded, &told, "then")
+        .record(&marked, graded, &told, "then")
         .expect("a reading is written");
     assert!(
-        ledger.already(&under(), &graded).is_some(),
-        "how a speed trial is timed says nothing about a run that was marked, so raising it \
-         must not throw away work that cost a container to grade"
+        ledger.already(&marked, &graded).is_some(),
+        "a marked reading carries no way of timing, so there is none for a change to spoil \
+         — and work that cost a container to grade is not thrown away by one"
+    );
+    assert_eq!(
+        MARKED, 0,
+        "which is to say it carries nothing, the way every reading written before this \
+         field existed does"
     );
 }
 

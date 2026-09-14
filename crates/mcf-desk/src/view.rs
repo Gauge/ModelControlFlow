@@ -1304,7 +1304,7 @@ fn setting_to_optimize(
     let dial = desk.optimizing.sweep.dial;
     let how = if let Some(why) = desk.why_the_dial_does_nothing(dial) {
         why
-    } else if dial.only_changes_speed() {
+    } else if !desk.optimizing.measure.needs_the_answers_run() {
         format!(
             "{} cannot change what a model answers, only how fast — so each value is timed \
              over {} tokens and the rate is the reading, rather than running the tasks.",
@@ -1551,6 +1551,7 @@ fn run_row(
             run.label(
                 &desk.optimizing.named,
                 desk.optimizing.sweep.dial,
+                desk.optimizing.measure,
                 desk.optimizing.ceiling_of_a_trial(),
             )
         },
@@ -1704,7 +1705,7 @@ fn rows_of_the_record(
     let ink = paint.ink;
     let mut act = None;
     let dial = desk.optimizing.sweep.dial;
-    let columns = mcf_optimize::reading::Report::columns_of(dial);
+    let columns = mcf_optimize::reading::Report::columns_of(dial, desk.optimizing.measure);
     let across = u16::try_from(columns.len().max(1)).unwrap_or(9);
     let wide = ((area.w - 28.0 - BESIDE) / f32::from(across)).max(52.0);
     paint.say_at(
@@ -1829,8 +1830,12 @@ fn one_row(
                 ink.accent,
             );
         }
-        let cells =
-            mcf_optimize::reading::Report::cells_of(&row.reading, dial, &desk.optimizing.named);
+        let cells = mcf_optimize::reading::Report::cells_of(
+            &row.reading,
+            dial,
+            desk.optimizing.measure,
+            &desk.optimizing.named,
+        );
         for (column, cell) in cells.iter().enumerate() {
             let shown = paint.elide(cell, Weight::Regular, size::SMALL, wide - 8.0);
             paint.say_at(
@@ -1881,7 +1886,7 @@ fn optimize_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     let (below, picked) = setting_to_optimize(paint, desk, mouse, area, y);
     act = act.or(picked);
     y = below;
-    if !desk.optimizing.sweep.dial.only_changes_speed() {
+    if desk.optimizing.measure.needs_the_answers_run() {
         let (below, picked) = test_set(paint, desk, mouse, area, y);
         act = act.or(picked);
         y = below;

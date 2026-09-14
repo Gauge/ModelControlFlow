@@ -7,7 +7,7 @@ use crate::corpus::Set;
 use crate::course::{Course, Next};
 use crate::dial::{Dial, Step};
 use crate::ledger::{At, Ledger, Under};
-use crate::reading::{Reading, Report};
+use crate::reading::{Measure, Reading, Report};
 use crate::trial::{Asked, Endpoint, ask, reading_of};
 
 const MARKING_PATIENCE: Duration = Duration::from_secs(600);
@@ -209,6 +209,7 @@ fn sweeping(mut doing: Doing) {
                 }
             }
         }
+        let timed = !doing.course.measure().needs_the_answers_run();
         let Some(set) = Set::numbered(spot.set) else {
             let _sent = doing.send.send(Heard::Refused(format!(
                 "there is no test set numbered {}",
@@ -221,15 +222,15 @@ fn sweeping(mut doing: Doing) {
             dial: doing.dial,
             step: spot.step,
             repeat: spot.repeat,
-            ceiling: if doing.dial.times_reading_the_prompt() {
-                crate::trial::prompt_within(doing.under.context)
-            } else if doing.dial.only_changes_speed() {
-                crate::trial::TOKENS_TIMED
-            } else {
+            ceiling: if !timed {
                 doing.ceiling
+            } else if doing.dial.times_reading_the_prompt() {
+                crate::trial::prompt_within(doing.under.context)
+            } else {
+                crate::trial::TOKENS_TIMED
             },
             named: doing.named.clone(),
-            timing: doing.dial.only_changes_speed(),
+            timing: timed,
         };
         let began = Instant::now();
         let said = match answered(&mut doing, &asked, spot.step) {
@@ -242,7 +243,7 @@ fn sweeping(mut doing: Doing) {
         };
         held_at = Some(spot.step);
         let milliseconds = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let marking = doing.mark && !doing.dial.only_changes_speed();
+        let marking = doing.mark && !timed;
         let (judged, unmarked) = judged_by(marking, &doing.room, spot, &asked.set.tasks, &said);
         if let Some(why) = unmarked
             && doing.send.send(Heard::Stopped(why)).is_err()
@@ -433,7 +434,7 @@ impl Running {
     /// that one trial it has got. Nothing that does not move — a take counter that is always
     /// one, or a token count on work that writes no tokens, is a number to read and discard.
     #[must_use]
-    pub fn label(&self, named: &[String], dial: Dial, ceiling: u32) -> String {
+    pub fn label(&self, named: &[String], dial: Dial, measure: Measure, ceiling: u32) -> String {
         let clock = as_a_clock(self.running_for());
         if let Some(said) = &self.holding {
             return format!("{clock} · {said}");
@@ -445,13 +446,14 @@ impl Running {
             return format!("{clock} · starting");
         };
         let mut said = format!("{clock} · {}", dial.said_among(at.step, named));
-        if !dial.only_changes_speed() {
+        let timed = !measure.needs_the_answers_run();
+        if !timed {
             let _wrote = write!(said, " · set {}", at.set);
         }
         if at.repeat > 1 {
             let _wrote = write!(said, " · take {}", at.repeat);
         }
-        let doing = if dial.times_reading_the_prompt() {
+        let doing = if timed && dial.times_reading_the_prompt() {
             format!(" · read {} of {ceiling}", self.produced)
         } else {
             format!(" · wrote {} of {ceiling}", self.produced)

@@ -355,25 +355,39 @@ fn a_timed_run_that_stopped_early_is_not_offered_as_a_rate() {
 }
 
 #[test]
-fn the_settings_that_only_change_speed_are_the_ones_that_cannot_change_an_answer() {
-    assert!(Dial::MicroBatch.only_changes_speed());
+fn one_setting_cannot_change_an_answer_and_the_rest_are_marked_by_default() {
     assert!(
-        Dial::DraftDepth.only_changes_speed(),
-        "a draft head's guesses are checked against the model, so the tokens are identical"
+        Dial::MicroBatch.cannot_change_an_answer(),
+        "a micro-batch is how many prompt tokens go through the device in one pass; the \
+         tokens that come back are the same tokens whatever it is"
     );
-    for dial in [
-        Dial::ThinkingBudget,
-        Dial::ThinkingLevel,
-        Dial::Temperature,
-        Dial::TopP,
-        Dial::TopK,
-    ] {
+    assert_eq!(
+        Dial::MicroBatch.ranked_by(),
+        crate::reading::Measure::Speed,
+        "so there is nothing for a marked answer to say about it"
+    );
+    for dial in Dial::ALL {
+        if dial == Dial::MicroBatch {
+            continue;
+        }
         assert!(
-            !dial.only_changes_speed(),
-            "{} changes what comes back",
+            !dial.cannot_change_an_answer(),
+            "{} can change what comes back",
+            dial.label()
+        );
+        assert_eq!(
+            dial.ranked_by(),
+            crate::reading::Measure::Correctness,
+            "{} is worth moving because of what it does to the answers, and the rate comes \
+             off the same run for free",
             dial.label()
         );
     }
+    assert!(
+        !Dial::DraftDepth.cannot_change_an_answer(),
+        "a draft head's check preserves the distribution rather than the draw, so what \
+         comes back is a legitimate answer and not necessarily the same one"
+    );
 }
 
 #[test]
