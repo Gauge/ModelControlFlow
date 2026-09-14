@@ -43,6 +43,36 @@ fn peaking_at(peak: u32) -> impl Fn(u32) -> Option<f64> {
     move |value| Some(-f64::from(value.abs_diff(peak)))
 }
 
+/// What this machine actually read, micro-batch by micro-batch, over a prompt of 32768
+/// tokens with nothing else running — straight lines drawn between the rungs that were
+/// measured. The dip at 512 is real and repeatable, and it is the shape that decides
+/// whether a climb survives one bad reading or answers the rung before it.
+fn as_this_machine_reads(value: u32) -> Option<f64> {
+    let curve: [(u32, f64); 8] = [
+        (256, 712.8),
+        (512, 652.7),
+        (1024, 718.6),
+        (2048, 757.1),
+        (4096, 780.5),
+        (8192, 783.5),
+        (16_384, 744.3),
+        (32_768, 729.4),
+    ];
+    let mut held = curve.first().map(|pair| pair.1)?;
+    for pair in curve.windows(2) {
+        let (Some((low, at_low)), Some((high, at_high))) =
+            (pair.first().copied(), pair.get(1).copied())
+        else {
+            continue;
+        };
+        if value >= low && value <= high && high > low {
+            let across = f64::from(value.saturating_sub(low)) / f64::from(high.saturating_sub(low));
+            held = at_high.mul_add(across, at_low * (1.0 - across));
+        }
+    }
+    Some(held)
+}
+
 #[test]
 fn every_automatic_search_opens_on_one_value_and_doubles_from_there() {
     for dial in Dial::ALL {
@@ -122,12 +152,12 @@ fn doubling_from_nothing_is_the_finest_step_the_setting_takes() {
 fn the_first_round_after_the_turn_is_halfway_to_each_value_beside_the_peak() {
     let (_, run) = hunted(Dial::MicroBatch, peaking_at(2048));
     assert_eq!(
-        run.get(..5),
-        Some([256, 512, 1024, 2048, 4096].as_slice()),
-        "it doubles until 4096 comes back worse than 2048: {run:?}"
+        run.get(..6),
+        Some([256, 512, 1024, 2048, 4096, 8192].as_slice()),
+        "it doubles until 4096 comes back worse than 2048, and once more to be sure: {run:?}"
     );
     assert_eq!(
-        run.get(5..7),
+        run.get(6..8),
         Some([1536, 3072].as_slice()),
         "then the first round after the turn is 2048 - (2048 - 1024) / 2 below and \
          2048 + (4096 - 2048) / 2 above, and nothing else: {run:?}"
@@ -139,13 +169,14 @@ fn halving_cuts_the_bracket_the_two_values_beside_the_peak_make() {
     let (hunt, run) = hunted(Dial::MicroBatch, peaking_at(2048));
     assert_eq!(hunt.phase(), Phase::Closing);
     assert!(hunt.settled());
-    let climb: Vec<u32> = vec![256, 512, 1024, 2048, 4096];
+    let climb: Vec<u32> = vec![256, 512, 1024, 2048, 4096, 8192];
     for rung in &climb {
         assert!(run.contains(rung), "the climb up to the turn: {run:?}");
     }
     assert!(
-        !run.contains(&8192),
-        "4096 came back worse than 2048, so there was no reason to go on doubling: {run:?}"
+        run.contains(&8192) && !run.contains(&16_384),
+        "4096 came back worse than 2048, and 8192 confirms it — one rung to be sure, not a \
+         climb to the top of the span: {run:?}"
     );
     assert!(
         run.contains(&3072) && run.contains(&1536),
@@ -168,14 +199,28 @@ fn halving_cuts_the_bracket_the_two_values_beside_the_peak_make() {
 }
 
 #[test]
-fn a_value_that_could_not_be_measured_ends_the_climb_rather_than_being_climbed_past() {
-    let (hunt, run) = hunted(Dial::MicroBatch, |value| {
+fn one_value_that_could_not_be_measured_does_not_end_a_climb_and_two_do() {
+    let (one_gone, run) = hunted(Dial::MicroBatch, |value| {
         (value != 1024).then(|| f64::from(value))
     });
-    assert_eq!(hunt.phase(), Phase::Closing);
+    assert_eq!(
+        one_gone.phase(),
+        Phase::Climbing,
+        "one value that would not run is one bad reading, and a climb that ends on one of \
+         those ends wherever the machine hiccupped: {run:?}"
+    );
+
+    let (both_gone, run) = hunted(Dial::MicroBatch, |value| {
+        (!(1024..=2048).contains(&value)).then(|| f64::from(value))
+    });
+    assert_eq!(
+        both_gone.phase(),
+        Phase::Closing,
+        "two in a row is the setting, not the machine: {run:?}"
+    );
     assert!(
-        !run.contains(&2048),
-        "a value with no reading to score is not a value to climb past: {run:?}"
+        !run.contains(&4096),
+        "and there is nothing above two values that would not run worth climbing to: {run:?}"
     );
 }
 
@@ -264,4 +309,87 @@ fn the_automatic_way_is_the_one_offered_first() {
         Some(&Way::Halving),
         "closing in automatically is the usual way to dial something in"
     );
+}
+
+#[test]
+fn a_search_says_which_of_the_three_ways_it_stopped() {
+    use super::Settled;
+    let (nothing_worse, _) = hunted(Dial::MicroBatch, |value| Some(f64::from(value)));
+    assert_eq!(
+        nothing_worse.why_it_settled(),
+        Some(Settled::NothingGotWorse),
+        "a search that ran out of span has not seen a peak at all, and saying so is what \
+         tells somebody the span is the thing to raise"
+    );
+    assert!(
+        nothing_worse.said().contains("raise the span"),
+        "{}",
+        nothing_worse.said()
+    );
+
+    let (as_fine, _) = hunted(Dial::MicroBatch, peaking_at(2048));
+    assert_eq!(
+        as_fine.why_it_settled(),
+        Some(Settled::AsFineAsItGoes),
+        "readings that differ by a clear amount are halved between until the setting itself \
+         runs out of steps"
+    );
+
+    let (too_close, run) = hunted(Dial::MicroBatch, as_this_machine_reads);
+    assert_eq!(
+        too_close.why_it_settled(),
+        Some(Settled::TooCloseToTell),
+        "on this machine 4096 and 8192 read within half a per cent of each other, which is \
+         inside what one take can tell apart, so halving between them measures the noise \
+         rather than the setting: {run:?}"
+    );
+    assert!(
+        too_close
+            .said()
+            .contains("as close as one take can place it"),
+        "and it says so, because how much to trust the answer is part of the answer: {}",
+        too_close.said()
+    );
+}
+
+/// The whole search, run against what this machine actually measured. A micro-batch of 512
+/// reads nine per cent below both its neighbours here, which is the shape that decides
+/// whether a climb survives a bad reading or answers the rung before it.
+#[test]
+fn the_search_finds_the_peak_of_a_curve_with_a_real_dip_in_it() {
+    let (hunt, run) = hunted(Dial::MicroBatch, as_this_machine_reads);
+    let best = run
+        .iter()
+        .copied()
+        .filter_map(|held| as_this_machine_reads(held).map(|score| (held, score)))
+        .max_by(|one, two| one.1.total_cmp(&two.1))
+        .map(|(held, _)| held);
+    assert_eq!(
+        best,
+        Some(8192),
+        "the best reading on this curve is at 8192, and a search that stops short of it has \
+         answered the shape of its own rule rather than the shape of the machine: {run:?}"
+    );
+    assert!(
+        run.contains(&512),
+        "512 is the dip, and the climb walks through it rather than round it: {run:?}"
+    );
+    assert!(
+        run.len() <= 12,
+        "and surviving the dip costs one trial, not a sweep nobody waits out: {run:?}"
+    );
+    assert!(hunt.settled(), "{}", hunt.said());
+}
+
+#[test]
+fn nothing_a_search_says_says_the_same_thing_twice() {
+    for dial in Dial::ALL {
+        let (hunt, _) = hunted(dial, peaking_at(dial.climbs_from()));
+        let said = hunt.said();
+        assert!(
+            !said.contains("settled: settled") && !said.matches("round").count().gt(&1),
+            "{}: {said}",
+            dial.label()
+        );
+    }
 }

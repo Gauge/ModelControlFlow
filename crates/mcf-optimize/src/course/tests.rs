@@ -267,7 +267,7 @@ fn an_automatic_course_doubles_until_a_value_is_worse_and_then_closes_in() {
         let away = value.abs_diff(1024).div_euclid(256);
         let passed = 8_u32.saturating_sub(away);
         report.record(reading(at.step, at.set, at.repeat, passed));
-        if [256, 512, 1024, 2048].contains(&value) {
+        if value.is_power_of_two() && value >= 256 {
             climbed.push(value);
         } else {
             closed.push(value);
@@ -276,16 +276,17 @@ fn an_automatic_course_doubles_until_a_value_is_worse_and_then_closes_in() {
     climbed.sort_unstable();
     assert_eq!(
         climbed,
-        vec![256, 512, 1024, 2048],
-        "it doubles from the bottom until 2048 comes back worse than 1024"
+        vec![256, 512, 1024, 2048, 4096],
+        "it doubles from the bottom until 2048 comes back worse than 1024, and once more to \
+         be sure of it"
     );
     assert!(
-        !closed.contains(&4096) && !closed.contains(&8192),
-        "and having turned, it does not go on doubling: {closed:?}"
+        !climbed.contains(&8192),
+        "one rung to confirm the turn, not a climb to the top of the span: {climbed:?}"
     );
     assert!(
         closed.iter().any(|held| (1024..2048).contains(held)),
-        "it closes in between the rung that improved and the one that did not: {closed:?}"
+        "then it closes in between the rung that improved and the one that did not: {closed:?}"
     );
 }
 
@@ -428,7 +429,11 @@ fn a_search_that_runs_out_of_room_to_halve_says_it_settled() {
         report.record(held);
     }
     let why = course.stopped().unwrap_or_default();
-    assert!(why.contains("settled"), "{why}");
+    assert!(
+        why.contains("the answer") || why.contains("the best"),
+        "a search that stops says which of the ways it stopped, in words rather than in the \
+         word `settled`: {why}"
+    );
 }
 
 #[test]

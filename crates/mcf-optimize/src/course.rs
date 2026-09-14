@@ -202,7 +202,7 @@ impl Course {
             return false;
         };
         if hunt.settled() {
-            self.stopped = Some(format!("the search settled: {}", hunt.said()));
+            self.stopped = Some(hunt.said());
             return false;
         }
         let Some(best) = report.best_by(measure).map(|summary| summary.step) else {
@@ -222,7 +222,7 @@ impl Course {
             .collect();
         let opened = hunt.stepped_on(best, &report.scored_by(measure), &already);
         if opened.is_empty() {
-            self.stopped = Some(format!("the search settled: {}", hunt.said()));
+            self.stopped = Some(hunt.said());
             return false;
         }
         for step in opened {

@@ -47,6 +47,18 @@ impl Phase {
     }
 }
 
+/// Why a search stopped. Three different things, and which one it was says how much to
+/// trust the answer: a search that ran out of span has not seen a peak at all, one that ran
+/// out of grain has found the best value the setting can be set to, and one that stopped
+/// because the values either side read the same has found a peak this measurement cannot
+/// place any more exactly than that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settled {
+    NothingGotWorse,
+    AsFineAsItGoes,
+    TooCloseToTell,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hunt {
     dial: Dial,
@@ -54,7 +66,7 @@ pub struct Hunt {
     gap: u32,
     round: u32,
     asked: Vec<u32>,
-    settled: bool,
+    settled: Option<Settled>,
 }
 
 impl Hunt {
@@ -67,7 +79,7 @@ impl Hunt {
             gap: span.finest,
             round: 1,
             asked: vec![span.clamped(dial.climbs_from())],
-            settled: false,
+            settled: None,
         }
     }
 
@@ -93,6 +105,11 @@ impl Hunt {
 
     #[must_use]
     pub const fn settled(&self) -> bool {
+        self.settled.is_some()
+    }
+
+    #[must_use]
+    pub const fn why_it_settled(&self) -> Option<Settled> {
         self.settled
     }
 
@@ -118,7 +135,7 @@ impl Hunt {
         scored: &[(Step, Option<f64>)],
         already: &[Step],
     ) -> Vec<Step> {
-        if self.settled {
+        if self.settled.is_some() {
             return Vec::new();
         }
         if self.phase == Phase::Climbing {
@@ -130,14 +147,22 @@ impl Hunt {
         self.closed_in_on(best, scored, already)
     }
 
-    /// Whether the value it climbed to last came back worse than what is below it. Worse
-    /// than the best of them rather than worse than whichever happened to be last: on a
-    /// setting that improves and then falls away those are the same rung, and where they
-    /// differ it is because one reading came back low, which is a reason to keep climbing
-    /// rather than a reason to stop.
+    /// Whether the climb is over. Three things have to hold, and each was put there by a
+    /// measurement rather than by taste.
     ///
-    /// And clearly worse, not worse by a hair. One take of a trial is not exact, so a value
-    /// that reads within a whisker of the best has not told us anything has turned.
+    /// Worse than the best below it, not worse than whichever rung happened to be last. On a
+    /// setting that improves and then falls away those are the same rung; where they differ
+    /// it is because one reading came back low.
+    ///
+    /// And clearly worse, not worse by a hair — one take of a trial is not exact, so a value
+    /// reading within a whisker of the best has said nothing about a turn.
+    ///
+    /// And confirmed, rather than taken on the first bad reading. A micro-batch of 512 reads
+    /// nine per cent below both of its neighbours on the machine this was written on: going
+    /// up, 712, 652, 718, 757, 780, 783. A climb that ended at the first value worse than
+    /// the one before it answered 256 and stopped, five rungs below the best there was. So
+    /// the rung above a bad one is tried before the climb is called over, and one dip costs
+    /// a trial instead of the answer.
     ///
     /// A value that produced no reading to score is worse than one that did: there is
     /// nothing above a value that could not be measured worth climbing to.
@@ -148,20 +173,22 @@ impl Hunt {
                 .find(|(step, _)| one_value(*step) == wanted)
                 .and_then(|(_, held)| *held)
         };
-        let Some(highest) = self.asked.last().copied() else {
+        let mut top = self.asked.iter().rev();
+        let (Some(highest), Some(under_it)) = (top.next().copied(), top.next().copied()) else {
             return false;
         };
         let Some(best) = self
             .asked
             .iter()
-            .filter(|held| **held != highest)
+            .filter(|held| **held != highest && **held != under_it)
             .filter_map(|held| score_of(*held))
             .max_by(f64::total_cmp)
         else {
             return false;
         };
         let margin = best.abs() / f64::from(Self::AS_GOOD);
-        score_of(highest).is_none_or(|now| best - now > margin)
+        let clearly_worse = |value: u32| score_of(value).is_none_or(|now| best - now > margin);
+        clearly_worse(highest) && clearly_worse(under_it)
     }
 
     /// The next rung up, or nothing left once the span runs out. A climb that reaches the
@@ -172,7 +199,7 @@ impl Hunt {
         let highest = self.asked.last().copied().unwrap_or(self.dial.span().floor);
         let next = self.dial.climbs_to(highest);
         if next <= highest || self.asked.contains(&next) {
-            self.settled = true;
+            self.settled = Some(Settled::NothingGotWorse);
             return Vec::new();
         }
         self.round = self.round.saturating_add(1);
@@ -212,6 +239,7 @@ impl Hunt {
         let above = seen.iter().find(|held| **held > peak).copied();
         let mut next = Vec::new();
         let mut widest = 0;
+        let mut too_close = false;
         for (neighbour, away, halfway) in [
             below.map(|held| {
                 let away = peak.saturating_sub(held);
@@ -226,7 +254,11 @@ impl Hunt {
         .flatten()
         {
             widest = widest.max(away);
-            if away < span.finest || reads_as_well(scored, peak, neighbour) {
+            if reads_as_well(scored, peak, neighbour) {
+                too_close = true;
+                continue;
+            }
+            if away < span.finest {
                 continue;
             }
             let landed = span.rounded(halfway);
@@ -236,7 +268,11 @@ impl Hunt {
             next.push(landed);
         }
         if next.is_empty() {
-            self.settled = true;
+            self.settled = Some(if too_close {
+                Settled::TooCloseToTell
+            } else {
+                Settled::AsFineAsItGoes
+            });
             self.gap = widest;
             return Vec::new();
         }
@@ -252,37 +288,30 @@ impl Hunt {
 
     #[must_use]
     pub fn said(&self) -> String {
-        if self.settled {
-            if self.phase == Phase::Climbing {
-                return format!(
-                    "settled after {} round(s): nothing above {} came back worse, so the top \
-                     of the span is the answer",
-                    self.round,
-                    self.dial
-                        .step_of(self.asked.last().copied().unwrap_or(0))
-                        .said()
-                );
+        match self.settled {
+            Some(Settled::NothingGotWorse) => format!(
+                "nothing above {} came back worse, so the top of the span is the answer — \
+                 raise the span to look further",
+                self.dial
+                    .step_of(self.asked.last().copied().unwrap_or(0))
+                    .said()
+            ),
+            Some(Settled::TooCloseToTell) => {
+                "the values either side read as well as the best does, which is as close as \
+                 one take can place it"
+                    .to_owned()
             }
-            return format!(
-                "settled after {} round(s): the values either side of the best are within {} \
-                 of it, which is as fine as this setting goes",
-                self.round,
+            Some(Settled::AsFineAsItGoes) => format!(
+                "the values either side are within {} of the best, which is as fine as this \
+                 setting goes",
                 self.dial.step_of(self.dial.span().finest).said()
-            );
+            ),
+            None if self.phase == Phase::Climbing => "doubling".to_owned(),
+            None => format!(
+                "halving a bracket {} wide",
+                self.dial.step_of(self.gap).said()
+            ),
         }
-        if self.phase == Phase::Climbing {
-            return format!(
-                "round {}, doubling — {} value(s) tried so far",
-                self.round,
-                self.asked.len()
-            );
-        }
-        format!(
-            "round {}, halving a bracket {} wide — {} value(s) tried so far",
-            self.round,
-            self.dial.step_of(self.gap).said(),
-            self.asked.len()
-        )
     }
 }
 

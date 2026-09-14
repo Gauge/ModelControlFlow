@@ -476,38 +476,25 @@ impl Running {
         said
     }
 
+    /// What a sweep has come to, in one sentence. What it counted, and then why it stopped
+    /// counting — each said once, because a line that says the same thing twice is a line
+    /// that gets cut off before its end.
     #[must_use]
     pub fn said(&self) -> String {
         if let Some(why) = &self.refused {
             return format!("stopped: {why}");
         }
+        let counted = self.far_along();
         if self.finished {
-            let said = format!(
-                "finished — {} measured, {} already known",
-                self.taken, self.skipped
-            );
             return match &self.stopped {
-                Some(why) => format!("{said}. {why}"),
-                None => said,
+                Some(why) => format!("{counted} · {why}"),
+                None => counted,
             };
         }
         if let Some(said) = &self.holding {
-            return format!(
-                "{said} — {} done, {} already known",
-                self.taken, self.skipped
-            );
+            return format!("{counted} · {said}");
         }
-        match self.doing {
-            Some(at) => format!(
-                "measuring {} on set {}, take {} — {} done, {} already known",
-                at.step.said(),
-                at.set,
-                at.repeat,
-                self.taken,
-                self.skipped
-            ),
-            None => format!("{} done, {} already known", self.taken, self.skipped),
-        }
+        counted
     }
 }
 
