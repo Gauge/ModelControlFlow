@@ -27,6 +27,20 @@ mod size {
     pub(super) const HEAD: f32 = 17.0;
 }
 
+/// The vertical rhythm. Every gap down a tab is one of these, so that blocks of the same
+/// kind sit the same distance apart wherever they appear rather than each place picking a
+/// number that looked right on its own.
+mod gap {
+    /// One wrapped line of small text.
+    pub(super) const LINE: f32 = 16.0;
+    /// One row of a list that names a thing on the left and shows it on the right.
+    pub(super) const ROW: f32 = 20.0;
+    /// How tall a button, a field or a chip is.
+    pub(super) const CONTROL: f32 = 28.0;
+    /// Between one block within a section and the next.
+    pub(super) const BLOCK: f32 = 12.0;
+}
+
 pub const UNKNOWN: &str = "Unknown";
 
 pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
@@ -1062,7 +1076,7 @@ fn section(paint: &mut Painter, area: Box, y: f32, title: &str, because: &str) -
         size::SMALL,
         ink.faint,
     );
-    below + 14.0
+    below + gap::BLOCK
 }
 
 fn chips(
@@ -1079,14 +1093,20 @@ fn chips(
         let wide = paint.measure(label, Weight::Bold, size::SMALL) + 24.0;
         if x + wide > area.right() {
             x = area.x;
-            line += 34.0;
+            line += gap::CONTROL + 6.0;
         }
-        if ui::nav(paint, mouse, Box::new(x, line, wide, 28.0), label, *on) {
+        if ui::nav(
+            paint,
+            mouse,
+            Box::new(x, line, wide, gap::CONTROL),
+            label,
+            *on,
+        ) {
             picked = Some(at);
         }
         x += wide + 6.0;
     }
-    (line + 38.0, picked)
+    (line + gap::CONTROL + gap::BLOCK, picked)
 }
 
 fn base_configuration(paint: &mut Painter, desk: &Desk, area: Box, mut y: f32) -> f32 {
@@ -1160,9 +1180,9 @@ fn base_configuration(paint: &mut Painter, desk: &Desk, area: Box, mut y: f32) -
             size::SMALL,
             if moving { ink.accent } else { ink.ink },
         );
-        y += 20.0;
+        y += gap::ROW;
     }
-    y + 12.0
+    y + gap::BLOCK
 }
 
 fn how_it_searches(
@@ -1236,9 +1256,9 @@ fn how_it_searches(
     };
     for line in paint.wrap(&said, Weight::Regular, size::SMALL, area.w - 20.0) {
         paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
-        y += 16.0;
+        y += gap::LINE;
     }
-    (y + 10.0, act)
+    (y + gap::BLOCK, act)
 }
 
 fn setting_to_optimize(
@@ -1314,9 +1334,9 @@ fn setting_to_optimize(
             size::SMALL,
             if idle { ink.warn } else { ink.faint },
         );
-        y += 16.0;
+        y += gap::LINE;
     }
-    y += 10.0;
+    y += gap::BLOCK;
     let (below, chosen) = how_it_searches(paint, desk, mouse, area, y);
     act = act.or(chosen);
     y = below;
@@ -1359,7 +1379,7 @@ fn the_values_by_hand(
     if let Some(at) = picked {
         act = Some(Act::SweepValue(at));
     }
-    y = below + 6.0;
+    y = below;
     let (below, typed) = a_value_of_my_own(paint, desk, mouse, area, y);
     (below, act.or(typed))
 }
@@ -1414,13 +1434,13 @@ fn a_value_of_my_own(
             ink.faint,
         );
     }
-    y += 34.0;
+    y += gap::CONTROL + gap::BLOCK;
     if let Some(why) = &desk.optimizing.custom_refused {
         for line in paint.wrap(why, Weight::Regular, size::SMALL, area.w - 20.0) {
             paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
-            y += 16.0;
+            y += gap::LINE;
         }
-        y += 4.0;
+        y += gap::BLOCK;
     }
     (y, act)
 }
@@ -1480,7 +1500,7 @@ fn test_set(
         size::SMALL,
         ink.faint,
     );
-    (y + 26.0, act)
+    (y + gap::LINE + gap::BLOCK, act)
 }
 
 const ROW: f32 = 19.0;
@@ -1542,11 +1562,11 @@ fn run_row(
     let room = (area.right() - at - 130.0).max(60.0);
     let shown = paint.elide(&said, Weight::Regular, size::SMALL, room);
     paint.say_at(at, y + 9.0, &shown, Weight::Regular, size::SMALL, ink.ink);
-    let mut below = y + 34.0;
+    let mut below = y + gap::CONTROL + 6.0;
     if let Some(run) = desk.optimizing.run.as_ref() {
         let far = run.far_along();
         paint.say_at(at, below, &far, Weight::Regular, size::SMALL, ink.faint);
-        below += 20.0;
+        below += gap::ROW;
     }
     (below + 6.0, act)
 }
@@ -1573,9 +1593,9 @@ fn sweep_report(
     if let Some(why) = &desk.optimizing.refused {
         for line in paint.wrap(why, Weight::Regular, size::SMALL, area.w - 20.0) {
             paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
-            y += 16.0;
+            y += gap::LINE;
         }
-        y += 6.0;
+        y += gap::BLOCK;
     }
     let (below, decided) = what_it_found(paint, desk, mouse, area, y);
     act = act.or(decided);
@@ -1613,9 +1633,9 @@ fn what_it_found(
     if let Some(said) = &desk.optimizing.adopted {
         for line in paint.wrap(said, Weight::Regular, size::SMALL, area.w - 20.0) {
             paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.accent);
-            y += 16.0;
+            y += gap::LINE;
         }
-        return (y + 10.0, act);
+        return (y + gap::BLOCK, act);
     }
     let dial = desk.optimizing.sweep.dial;
     let Some(best) = desk.optimizing.report.best_by(desk.optimizing.measure) else {
@@ -1646,7 +1666,7 @@ fn what_it_found(
         size::SMALL,
         ink.ink,
     );
-    y += 22.0;
+    y += gap::ROW;
     if settled.is_none() {
         return (y, act);
     }
@@ -1674,7 +1694,7 @@ fn what_it_found(
     if kept {
         act = Some(Act::KeepAsIs);
     }
-    (y + 44.0, act)
+    (y + gap::CONTROL + gap::BLOCK, act)
 }
 
 fn rows_of_the_record(

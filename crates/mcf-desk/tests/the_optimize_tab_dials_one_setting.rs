@@ -823,3 +823,28 @@ fn every_setting_a_sweep_can_move_lands_somewhere_when_it_is_taken_up() {
         );
     }
 }
+
+/// One column for every row that names a thing on the left and shows it on the right. The
+/// tab is read down the left edge, and a left edge that moves from block to block is read
+/// three times instead of once.
+#[test]
+fn the_optimize_tab_names_things_in_one_column() {
+    let source = include_str!("../src/view.rs");
+    let mut offenders = Vec::new();
+    for (number, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//") || trimmed.starts_with("///") {
+            continue;
+        }
+        for margin in ["area.x + 110.0", "area.x + 140.0", "area.x + 160.0"] {
+            if line.contains(margin) {
+                offenders.push(format!("view.rs:{}: {margin}", number.saturating_add(1)));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a labelled row picked its own left margin instead of the one column the tab uses \
+         (NAMED): {offenders:#?}"
+    );
+}
