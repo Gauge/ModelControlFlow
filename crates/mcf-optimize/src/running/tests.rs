@@ -53,6 +53,7 @@ fn begun(scratch: &Scratch, steps: &[u32], sets: &[usize]) -> Running {
     );
     Running::begun(
         Orders {
+            switch: false,
             endpoint: Endpoint {
                 port: 1,
                 key: None,
@@ -186,6 +187,7 @@ fn a_run_that_cannot_hold_the_model_says_so_and_measures_nothing() {
     );
     let mut running = Running::begun(
         super::Orders {
+            switch: false,
             endpoint: Endpoint {
                 port: 1,
                 key: None,
@@ -370,6 +372,7 @@ fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
     let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let kept = std::sync::Arc::clone(&asked);
     let mut doing = super::Doing {
+        switch: false,
         send,
         course: Course::laid_out(
             under(),
@@ -402,6 +405,7 @@ fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
         asked_to_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     let trial = Asked {
+        switch: false,
         set: crate::corpus::Set::numbered(1).expect("set one"),
         dial: Dial::MicroBatch,
         step: Step::Whole(256),

@@ -9,6 +9,7 @@ fn asked(dial: Dial, step: Step) -> Asked {
         panic!("set one is compiled in");
     };
     Asked {
+        switch: false,
         set,
         dial,
         step,
@@ -470,7 +471,7 @@ fn a_read_interrupted_by_a_signal_is_not_the_end_of_the_reply() {
 }
 
 #[test]
-fn the_off_level_asks_for_a_budget_of_nothing_rather_than_for_a_word() {
+fn turning_thinking_off_is_asked_for_the_way_each_model_answers_to() {
     let named = vec![
         super::Dial::OFF.to_owned(),
         "low".to_owned(),
@@ -481,15 +482,34 @@ fn the_off_level_asks_for_a_budget_of_nothing_rather_than_for_a_word() {
     let asking = super::body(&held);
     assert_eq!(
         asking.get("reasoning_budget_tokens"),
-        Some(&Value::Integer(0)),
-        "a budget of nothing is enforced by the engine, which watches for the tag the \
-         template opens a thinking section with"
+        Some(&Value::Integer(1)),
+        "a template that does not read the switch is stopped by the engine, which watches \
+         for the tag the thinking section opens with. One token and not nought: a budget of \
+         nought is read as no budget at all, and the model thinks until it is finished — \
+         measured, four thousand three hundred characters of it"
     );
     assert!(
         asking.get("reasoning_effort").is_none(),
         "and no level is named, because no template has a word in its own vocabulary for \
          none of them — asking for `none` only takes the word away and leaves the \
          template's default in its place"
+    );
+
+    let mut with_a_switch = held.clone();
+    with_a_switch.switch = true;
+    let asking = super::body(&with_a_switch);
+    assert_eq!(
+        asking
+            .get("chat_template_kwargs")
+            .and_then(|held| held.get("enable_thinking")),
+        Some(&Value::Bool(false)),
+        "a template that reads the switch is told false and stops. Measured on one that \
+         does: nothing at all, against four thousand three hundred characters when asked \
+         the other way"
+    );
+    assert!(
+        asking.get("reasoning_budget_tokens").is_none(),
+        "and it is not also given a budget, which is the way that does not work here"
     );
 
     held.step = Step::Whole(2);

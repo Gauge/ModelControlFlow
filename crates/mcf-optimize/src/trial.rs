@@ -103,6 +103,9 @@ pub struct Asked {
     pub ceiling: u32,
     pub named: Vec<String>,
     pub timing: bool,
+    /// Whether this model's template reads `enable_thinking`. It decides how thinking is
+    /// turned off, and the two ways are not interchangeable.
+    pub switch: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,14 +174,8 @@ pub fn body(asked: &Asked) -> Value {
     if let Some(field) = asked.dial.field() {
         if asked.dial.is_named_by_the_model() {
             let said = asked.dial.said_among(asked.step, &asked.named);
-            // Turning thinking off is not a word the template reads. A template that reads no
-            // level at all still opens its thinking section, and one that reads levels has no
-            // word in its own vocabulary for none of them — asking for "none" only takes the
-            // word away and leaves the template's own default in its place. What does turn it
-            // off is a budget of nothing, which the engine enforces itself by watching for the
-            // tag the section opens with.
             if said == Dial::OFF {
-                fields.push(("reasoning_budget_tokens", Value::Integer(0)));
+                fields.push(turning_thinking_off(asked.switch));
             } else {
                 fields.push((field, Value::text(said)));
             }
@@ -187,6 +184,31 @@ pub fn body(asked: &Asked) -> Value {
         }
     }
     Value::map(fields)
+}
+
+/// How to ask for no thinking at all. Two ways, and which one works depends on the model.
+///
+/// A template that reads `enable_thinking` is told false, and stops. Measured on a model
+/// whose template reads it: nothing, against four thousand three hundred characters of
+/// thinking when asked the other way.
+///
+/// A template that does not read it — gpt-oss does not — is stopped by the engine instead,
+/// which watches for the tag the thinking section opens with and closes it. That costs a
+/// token of thinking rather than none, because a budget of nothing is not a budget of
+/// nothing: the engine reads it as no budget at all and lets the model think until it is
+/// finished. Measured the same way: a budget of nought left the thinking running, and a
+/// budget above nought cut it where it said it would.
+///
+/// Asking for a level of "none" does neither. The engine takes the word away and the
+/// template falls back to whatever it does by default.
+fn turning_thinking_off(switch: bool) -> (&'static str, Value) {
+    if switch {
+        return (
+            "chat_template_kwargs",
+            Value::map([("enable_thinking", Value::Bool(false))]),
+        );
+    }
+    ("reasoning_budget_tokens", Value::Integer(1))
 }
 
 #[must_use]
@@ -279,6 +301,7 @@ pub fn ask(
     let mut ending = Ending::Answered;
     let mut why = None;
     let mut counted: Option<u64> = None;
+    let mut thinking: usize = 0;
     let mut read_in: Option<u64> = None;
     let mut cut_short = None;
     'reading: loop {
@@ -324,7 +347,8 @@ pub fn ask(
                 continue;
             };
             produced = produced.saturating_add(1);
-            answer.push_str(&piece);
+            answer.push_str(&piece.answer);
+            thinking = thinking.saturating_add(piece.thought.len());
             if produced
                 .checked_rem(TOLD_EVERY)
                 .is_some_and(|left| left == 0)
@@ -350,14 +374,17 @@ pub fn ask(
     } else {
         counted.unwrap_or(produced)
     };
-    if let Some(broke) = cut_short {
-        ending = Ending::Failed;
-        why = Some(format!(
-            "the reply stopped arriving after {counted_now} token(s): {broke}"
-        ));
-    } else {
-        (ending, why) = how_it_ended(asked, counted_now, produced, ending, why, &whole);
-    }
+    (ending, why) = came_to(
+        asked,
+        Ended {
+            counted: counted_now,
+            produced,
+            thinking,
+            answered: !answer.trim().is_empty(),
+        },
+        (ending, why, cut_short),
+        &whole,
+    );
     let _elapsed = started.elapsed();
     Ok(Said {
         answer,
@@ -439,14 +466,52 @@ fn what_it_read(value: &Value) -> Option<u64> {
 }
 
 /// A timed run that fell well short of what it asked for is not the same measurement.
+/// What a trial came to, counted up.
+#[derive(Clone, Copy)]
+struct Ended {
+    /// What the engine says it generated, thinking included.
+    counted: u64,
+    /// How many chunks carried anything.
+    produced: u64,
+    /// How much of what came back was the model thinking rather than answering.
+    thinking: usize,
+    /// Whether there is an answer here at all, as opposed to a budget spent getting ready
+    /// to write one.
+    answered: bool,
+}
+
+/// What a trial came to, whether it ran out of connection or ran to its end.
+fn came_to(
+    asked: &Asked,
+    held: Ended,
+    (ending, why, cut_short): (Ending, Option<String>, Option<String>),
+    whole: &str,
+) -> (Ending, Option<String>) {
+    if let Some(broke) = cut_short {
+        return (
+            Ending::Failed,
+            Some(format!(
+                "the reply stopped arriving after {} token(s): {broke}",
+                held.counted
+            )),
+        );
+    }
+    how_it_ended(asked, held, ending, why, whole)
+}
+
 fn how_it_ended(
     asked: &Asked,
-    counted: u64,
-    produced: u64,
+    held: Ended,
     ending: Ending,
     why: Option<String>,
     whole: &str,
 ) -> (Ending, Option<String>) {
+    let Ended {
+        counted,
+        produced,
+        thinking,
+        answered,
+    } = held;
     if produced == 0 {
         return (Ending::Failed, Some(what_came_back(whole)));
     }
@@ -468,6 +533,20 @@ fn how_it_ended(
         }
         return (ending, why);
     }
+    // A model that thought until its budget ran out has not answered wrongly; it has not
+    // answered. Marking that as nought out of eight says the value was tried and found
+    // wanting, when what happened is that the trial never reached the part being marked.
+    if !answered {
+        return (
+            Ending::Filled,
+            Some(format!(
+                "the model was still thinking when its {} tokens ran out — {thinking} \
+                 characters of it and not a word of answer. There is nothing here to mark: \
+                 give it more room, or less thinking to do",
+                asked.ceiling
+            )),
+        );
+    }
     if ending == Ending::Answered && produced >= u64::from(asked.ceiling).saturating_sub(4) {
         return (Ending::Filled, why);
     }
@@ -488,22 +567,46 @@ fn sent(step: Step) -> Value {
     Value::Integer(i64::from(step.whole().unwrap_or(0)))
 }
 
-fn spoken(value: &Value) -> Option<String> {
+/// What arrived in one chunk: what the model answered, and what it was thinking. They are
+/// kept apart because only one of them is the answer. A model that thinks in code writes
+/// fenced blocks while it is working out what to write, and marking those instead of the
+/// solutions marks a draft the model itself went on to throw away.
+struct Piece {
+    answer: String,
+    thought: String,
+}
+
+impl Piece {
+    fn is_empty(&self) -> bool {
+        self.answer.is_empty() && self.thought.is_empty()
+    }
+}
+
+fn spoken(value: &Value) -> Option<Piece> {
     let Some(choices) = value.get("choices") else {
         let said = value.get("content").and_then(Value::as_text)?;
-        return (!said.is_empty()).then(|| said.to_owned());
+        return (!said.is_empty()).then(|| Piece {
+            answer: said.to_owned(),
+            thought: String::new(),
+        });
     };
     let Value::List(choices) = choices else {
         return None;
     };
     let delta = choices.first()?.get("delta")?;
-    let content = delta.get("content").and_then(Value::as_text).unwrap_or("");
-    let thought = delta
-        .get("reasoning_content")
-        .and_then(Value::as_text)
-        .unwrap_or("");
-    let said = format!("{thought}{content}");
-    (!said.is_empty()).then_some(said)
+    let held = Piece {
+        answer: delta
+            .get("content")
+            .and_then(Value::as_text)
+            .unwrap_or("")
+            .to_owned(),
+        thought: delta
+            .get("reasoning_content")
+            .and_then(Value::as_text)
+            .unwrap_or("")
+            .to_owned(),
+    };
+    (!held.is_empty()).then_some(held)
 }
 
 #[must_use]

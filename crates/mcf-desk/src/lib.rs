@@ -3708,6 +3708,10 @@ impl Desk {
             dial: self.optimizing.sweep.dial,
             ceiling: SWEEP_CEILING,
             named: self.levels_of_the_model(),
+            switch: self
+                .declared
+                .as_ref()
+                .is_some_and(|held| held.thinking.switch),
             mark: self.optimizing.measure.needs_the_answers_run(),
             ready_within: HOLDING_PATIENCE,
             room: path

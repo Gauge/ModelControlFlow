@@ -89,6 +89,7 @@ struct Doing {
     dial: Dial,
     ceiling: u32,
     named: Vec<String>,
+    switch: bool,
     mark: bool,
     room: std::path::PathBuf,
     ready_within: Duration,
@@ -167,6 +168,26 @@ fn answered(doing: &mut Doing, asked: &Asked, step: Step) -> Result<crate::trial
     })
 }
 
+/// What one trial asks for: how much room it gets, and whether it is timed or marked.
+fn trial_for(doing: &Doing, spot: At, set: Set, timed: bool) -> Asked {
+    Asked {
+        set,
+        dial: doing.dial,
+        step: spot.step,
+        repeat: spot.repeat,
+        ceiling: if !timed {
+            doing.ceiling
+        } else if doing.dial.times_reading_the_prompt() {
+            crate::trial::prompt_within(doing.under.context)
+        } else {
+            crate::trial::TOKENS_TIMED
+        },
+        named: doing.named.clone(),
+        timing: timed,
+        switch: doing.switch,
+    }
+}
+
 fn sweeping(mut doing: Doing) {
     let mut held_at: Option<Step> = None;
     loop {
@@ -217,21 +238,7 @@ fn sweeping(mut doing: Doing) {
             )));
             continue;
         };
-        let asked = Asked {
-            set,
-            dial: doing.dial,
-            step: spot.step,
-            repeat: spot.repeat,
-            ceiling: if !timed {
-                doing.ceiling
-            } else if doing.dial.times_reading_the_prompt() {
-                crate::trial::prompt_within(doing.under.context)
-            } else {
-                crate::trial::TOKENS_TIMED
-            },
-            named: doing.named.clone(),
-            timing: timed,
-        };
+        let asked = trial_for(&doing, spot, set, timed);
         let began = Instant::now();
         let said = match answered(&mut doing, &asked, spot.step) {
             Ok(said) => said,
@@ -277,6 +284,9 @@ pub struct Orders {
     pub dial: Dial,
     pub ceiling: u32,
     pub named: Vec<String>,
+    /// Whether this model's template reads `enable_thinking`, which decides how a trial
+    /// asks for no thinking at all.
+    pub switch: bool,
     pub mark: bool,
     pub room: std::path::PathBuf,
     pub ready_within: Duration,
@@ -315,6 +325,7 @@ impl Running {
             endpoint,
             under,
             dial,
+            switch,
             ceiling,
             named,
             mark,
@@ -326,6 +337,7 @@ impl Running {
         let asked_to_stop = Arc::clone(&stop);
         let _worker = std::thread::spawn(move || {
             sweeping(Doing {
+                switch,
                 send,
                 course,
                 ledger,
