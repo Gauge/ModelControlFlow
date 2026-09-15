@@ -119,8 +119,8 @@ impl Dial {
         match self {
             Self::MicroBatch | Self::ThinkingBudget | Self::DraftDepth => Climb::Doubling,
             Self::Temperature => Climb::Evenly(200),
-            Self::TopP => Climb::Evenly(50),
-            Self::TopK => Climb::Evenly(20),
+            Self::TopP => Climb::Evenly(100),
+            Self::TopK => Climb::Evenly(40),
             Self::ThinkingLevel => Climb::Evenly(1),
         }
     }
