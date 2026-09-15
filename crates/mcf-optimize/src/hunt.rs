@@ -1,4 +1,5 @@
 use crate::dial::{Dial, Step};
+use crate::reading::Scored;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Way {
@@ -143,12 +144,7 @@ impl Hunt {
     /// What to run next, given everything measured so far. While it is climbing that is the
     /// last value doubled, until one comes back worse than the one below it; from then on it
     /// is the halfway point between the best and each of the two values beside it.
-    pub fn stepped_on(
-        &mut self,
-        best: Step,
-        scored: &[(Step, Option<f64>)],
-        already: &[Step],
-    ) -> Vec<Step> {
+    pub fn stepped_on(&mut self, best: Step, scored: &[Scored], already: &[Step]) -> Vec<Step> {
         if self.settled.is_some() {
             return Vec::new();
         }
@@ -215,13 +211,8 @@ impl Hunt {
     ///
     /// A value that produced no reading to score is worse than one that did: there is
     /// nothing above a value that could not be measured worth climbing to.
-    fn has_turned(&self, scored: &[(Step, Option<f64>)]) -> bool {
-        let score_of = |wanted: u32| {
-            scored
-                .iter()
-                .find(|(step, _)| one_value(*step) == wanted)
-                .and_then(|(_, held)| *held)
-        };
+    fn has_turned(&self, scored: &[Scored]) -> bool {
+        let read = |wanted: u32| scored.iter().find(|held| one_value(held.step) == wanted);
         let mut top = self.asked.iter().rev();
         let (Some(highest), Some(under_it)) = (top.next().copied(), top.next().copied()) else {
             return false;
@@ -230,13 +221,18 @@ impl Hunt {
             .asked
             .iter()
             .filter(|held| **held != highest && **held != under_it)
-            .filter_map(|held| score_of(*held))
-            .max_by(f64::total_cmp)
+            .filter_map(|held| read(*held))
+            .filter(|held| held.score.is_some())
+            .max_by(|one, two| {
+                one.score
+                    .unwrap_or(f64::MIN)
+                    .total_cmp(&two.score.unwrap_or(f64::MIN))
+            })
         else {
             return false;
         };
         let clearly_worse =
-            |value: u32| score_of(value).is_none_or(|now| best - now > within_a_part_of(best));
+            |value: u32| read(value).is_none_or(|held| held.clearly_worse_than(best));
         clearly_worse(highest) && clearly_worse(under_it)
     }
 
@@ -279,13 +275,12 @@ impl Hunt {
         vec![self.dial.step_of(next)]
     }
 
-    /// How close a neighbour's reading has to be to the best before there is no point
-    /// splitting the difference again: within one part in this many. One take of a trial is
-    /// not exact, and two values whose readings are that close are two values this
-    /// measurement cannot tell apart, so halving between them measures the noise rather than
-    /// the setting.
-    const AS_GOOD: u32 = 50;
-
+    // How far apart two readings have to be is not a constant, and the constant that used to
+    // sit here was a rate's applied to everything. A share of tasks passed carries its own
+    // error — sixty-four tasks are worth six points either way, eight of them eighteen — and
+    // a rule that called a one-point gap clearly worse than the best turned a climb on noise
+    // and walked away from the half of the span the answer was in. Each reading brings its
+    // own bar now; see `Scored`.
     /// How many rounds in a row have to come back with nothing better before a search is
     /// over. Two, for the same reason a climb turns on two: halving a wide bracket can put
     /// both probes on the flat of a curve while the round after them lands on the peak.
@@ -296,12 +291,7 @@ impl Hunt {
     /// once they have both come back worse, so each round cuts the bracket in half. A side
     /// falls away once its neighbour is closer than the setting can be set, or once that
     /// neighbour reads as well as the best does — and when both have, the search is done.
-    fn closed_in_on(
-        &mut self,
-        best: Step,
-        scored: &[(Step, Option<f64>)],
-        already: &[Step],
-    ) -> Vec<Step> {
+    fn closed_in_on(&mut self, best: Step, scored: &[Scored], already: &[Step]) -> Vec<Step> {
         let span = self.dial.span();
         let peak = one_value(best);
         let mut seen: Vec<u32> = self
@@ -318,15 +308,9 @@ impl Hunt {
         // says the search has converged is a round that came back with nothing better than
         // the round before it.
         if let Some(was) = self.best_was {
-            let score_of = |wanted: u32| {
-                scored
-                    .iter()
-                    .find(|(step, _)| one_value(*step) == wanted)
-                    .and_then(|(_, held)| *held)
-            };
-            if let (Some(now), Some(before)) = (score_of(peak), score_of(was)) {
-                let margin = now.abs() / f64::from(Self::AS_GOOD);
-                if now - before <= margin {
+            let read = |wanted: u32| scored.iter().find(|held| one_value(held.step) == wanted);
+            if let (Some(now), Some(before)) = (read(peak), read(was)) {
+                if now.clearly_worse_than(before) || !before.clearly_worse_than(now) {
                     self.flat_rounds = self.flat_rounds.saturating_add(1);
                     if self.flat_rounds >= Self::FLAT_ROUNDS {
                         self.settled = Some(self.why_it_stops(peak));
@@ -411,13 +395,6 @@ impl Hunt {
             ),
         }
     }
-}
-
-/// What counts as the same reading, for a reading this big. A share of it rather than a
-/// fixed amount, because eight hundred tokens a second and eight hundred and sixteen are
-/// the same reading, where sixteen tasks passed and thirty-two are not.
-fn within_a_part_of(best: f64) -> f64 {
-    best.abs() / f64::from(Hunt::AS_GOOD)
 }
 
 const fn one_value(step: Step) -> u32 {

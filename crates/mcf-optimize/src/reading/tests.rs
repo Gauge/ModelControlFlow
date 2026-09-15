@@ -1,4 +1,4 @@
-use super::{Ending, Measure, Reading, Report};
+use super::{Ending, Measure, Reading, Report, Scored, Summary};
 use crate::dial::{Dial, Step};
 
 fn reading(step: u32, set: usize, passed: u32, ending: Ending) -> Reading {
@@ -224,4 +224,66 @@ fn a_row_has_exactly_as_many_cells_as_the_table_has_columns() {
             );
         }
     }
+}
+
+/// What a reading is worth knowing to. A rate timed once repeats to about a fiftieth; a
+/// share of tasks passed is a count of coin flips and repeats to nothing like that.
+#[test]
+fn a_reading_carries_how_far_out_it_could_be() {
+    let marked = |passed: u32, of: u32| Summary {
+        step: Step::Whole(1),
+        trials: 1,
+        passed,
+        of,
+        runaways: 0,
+        produced: 0,
+        milliseconds: 0,
+    };
+    let one_set = marked(4, 8).error_of(Measure::Correctness);
+    let eight_sets = marked(32, 64).error_of(Measure::Correctness);
+    assert!(
+        (17.0..19.0).contains(&one_set),
+        "eight tasks are worth about eighteen points either way, not two: {one_set}"
+    );
+    assert!(
+        (6.0..7.0).contains(&eight_sets),
+        "sixty-four of them about six: {eight_sets}"
+    );
+    assert!(
+        eight_sets < one_set,
+        "and more tasks is a tighter reading, which is the whole reason to run them"
+    );
+}
+
+/// The rule that used to stand here called a gap of one point clearly worse than the best,
+/// on a reading good to six. It turned a climb on noise: a top-p sweep read 54.6% at 0.5 and
+/// 43.8% at 0.7 — eleven points apart on sixty-four tasks, where the bar is eighteen — and
+/// walked away from the half of the span the answer was in.
+#[test]
+fn two_readings_differ_only_by_more_than_the_pair_of_them_can_tell_apart() {
+    let at = |score: f64, of: u32| {
+        let share = score / 100.0;
+        Scored {
+            step: Step::Whole(1),
+            score: Some(score),
+            error: (share * (1.0 - share) / f64::from(of)).sqrt() * 100.0,
+        }
+    };
+    assert!(
+        !at(43.8, 64).clearly_worse_than(&at(54.6, 64)),
+        "eleven points on sixty-four tasks is not a difference anybody measured"
+    );
+    assert!(
+        at(43.8, 320).clearly_worse_than(&at(54.6, 320)),
+        "on three hundred and twenty of them it is"
+    );
+    let nothing = Scored {
+        step: Step::Whole(1),
+        score: None,
+        error: 0.0,
+    };
+    assert!(
+        nothing.clearly_worse_than(&at(50.0, 64)),
+        "a value that could not be measured at all is worse than one that could"
+    );
 }

@@ -2,6 +2,16 @@ use super::{Hunt, Phase, Way};
 use crate::dial::{Dial, Step};
 use crate::trial::TIMES_TIMED;
 
+/// A reading of a value, scored the way a marked set of sixty-four tasks is scored, with the
+/// error that carries. What the search is handed in a sweep, in the shape it is handed it.
+fn marked(step: Step, score: Option<f64>) -> crate::reading::Scored {
+    let error = score.map_or(0.0, |held| {
+        let share = (held / 100.0).clamp(0.0, 1.0);
+        (share * (1.0 - share) / 64.0).sqrt() * 100.0
+    });
+    crate::reading::Scored { step, score, error }
+}
+
 fn one(step: Step) -> u32 {
     match step {
         Step::Whole(held) | Step::Thousandths(held) => held,
@@ -19,13 +29,19 @@ fn hunted(dial: Dial, score: impl Fn(u32) -> Option<f64>) -> (Hunt, Vec<u32>) {
     let mut hunt = Hunt::started(dial);
     let mut run: Vec<Step> = hunt.asked();
     for _ in 0..64 {
-        let scored: Vec<(Step, Option<f64>)> =
-            run.iter().map(|step| (*step, score(one(*step)))).collect();
+        let scored: Vec<crate::reading::Scored> = run
+            .iter()
+            .map(|step| marked(*step, score(one(*step))))
+            .collect();
         let Some(best) = scored
             .iter()
-            .filter_map(|(step, held)| held.map(|held| (*step, held)))
-            .max_by(|one, two| one.1.total_cmp(&two.1))
-            .map(|(step, _)| step)
+            .filter(|held| held.score.is_some())
+            .max_by(|one, two| {
+                one.score
+                    .unwrap_or(f64::MIN)
+                    .total_cmp(&two.score.unwrap_or(f64::MIN))
+            })
+            .map(|held| held.step)
         else {
             break;
         };
@@ -287,7 +303,8 @@ fn a_settled_hunt_asks_for_nothing_more() {
     let (mut hunt, run) = hunted(Dial::DraftDepth, peaking_at(4));
     assert!(hunt.settled());
     let steps: Vec<Step> = run.iter().map(|held| Step::Whole(*held)).collect();
-    let scored: Vec<(Step, Option<f64>)> = steps.iter().map(|step| (*step, Some(1.0))).collect();
+    let scored: Vec<crate::reading::Scored> =
+        steps.iter().map(|step| marked(*step, Some(1.0))).collect();
     assert!(hunt.stepped_on(Step::Whole(4), &scored, &steps).is_empty());
 }
 
@@ -477,7 +494,10 @@ fn a_search_lands_on_a_value_as_good_as_the_best_there_is() {
             // that much short of the best and no more.
             let width = f64::from(span.ceiling.saturating_sub(span.floor).max(1));
             let a_step = 30.0 * f64::from(span.finest.max(1)) / width;
-            let margin = there.abs() / f64::from(super::Hunt::AS_GOOD) + a_step;
+            let margin = crate::reading::Scored::apart(
+                marked(dial.step_of(aim), Some(there)).error,
+                marked(dial.step_of(best), Some(here)).error,
+            ) + a_step;
             assert!(
                 there - here <= margin,
                 "{} aimed at {} landed on {}, which reads {here:.1} against {there:.1} — \
