@@ -103,15 +103,39 @@ impl Dial {
         }
     }
 
-    /// The rung above this one. Doubling, except from nothing, where there is nothing to
-    /// double and the finest step the setting takes is the next thing up.
+    /// How a climb gets from one rung to the next.
+    ///
+    /// A setting whose useful values are spread over orders of magnitude is walked by
+    /// doubling: a micro-batch runs from two hundred and fifty six to thirty-two thousand,
+    /// and stepping through that evenly would be a hundred and twenty rungs.
+    ///
+    /// One whose values live on a short even scale is walked in equal steps. Doubling
+    /// through a temperature spends its first rungs at nought point nought two five,
+    /// nought point nought five and nought point one — three trials inside a tenth of the
+    /// scale, where nothing an answer does can be told apart — and then steps from nought
+    /// point four straight over nought point six to nought point eight.
+    #[must_use]
+    pub const fn climbs_by(self) -> Climb {
+        match self {
+            Self::MicroBatch | Self::ThinkingBudget | Self::DraftDepth => Climb::Doubling,
+            Self::Temperature => Climb::Evenly(200),
+            Self::TopP => Climb::Evenly(50),
+            Self::TopK => Climb::Evenly(20),
+            Self::ThinkingLevel => Climb::Evenly(1),
+        }
+    }
+
+    /// The rung above this one.
     #[must_use]
     pub fn climbs_to(self, from: u32) -> u32 {
         let span = self.span();
-        if from == 0 {
-            return span.clamped(span.finest);
+        match self.climbs_by() {
+            // Nothing doubled is still nothing, so the first rung above it is the finest
+            // step the setting takes.
+            Climb::Doubling if from == 0 => span.clamped(span.finest),
+            Climb::Doubling => span.clamped(from.saturating_mul(2)),
+            Climb::Evenly(by) => span.clamped(from.saturating_add(by)),
         }
-        span.clamped(from.saturating_mul(2))
     }
 
     #[must_use]
@@ -235,6 +259,13 @@ impl Dial {
             .and_then(|at| u32::try_from(at).ok())
             .map(Step::Whole)
     }
+}
+
+/// How the rungs of a climb are spaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Climb {
+    Doubling,
+    Evenly(u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

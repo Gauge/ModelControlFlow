@@ -212,3 +212,77 @@ fn no_thinking_budget_reaches_past_the_room_a_trial_has_to_answer_in() {
         "and it still has to reach far enough up to be worth searching over"
     );
 }
+
+/// A climb walks the rungs a person would have picked by hand. Doubling suits a setting
+/// whose useful values are spread over orders of magnitude and suits nothing else: through a
+/// temperature it spends three of its first four rungs inside a tenth of the scale, where
+/// nothing an answer does can be told apart, and then steps from 0.4 straight over 0.6.
+#[test]
+fn a_short_even_scale_is_climbed_in_even_steps() {
+    let rungs = |dial: Dial| {
+        let mut at = dial.climbs_from();
+        let mut held = vec![at];
+        while at < dial.span().ceiling && held.len() < 40 {
+            at = dial.climbs_to(at);
+            held.push(at);
+        }
+        held
+    };
+    assert_eq!(
+        rungs(Dial::Temperature),
+        vec![0, 200, 400, 600, 800, 1000],
+        "which reads 0, 0.2, 0.4, 0.6, 0.8, 1"
+    );
+    assert_eq!(
+        rungs(Dial::TopP).len(),
+        11,
+        "0.5 to 1 in twentieths, which is the grain people actually set a top-p at"
+    );
+    assert!(rungs(Dial::TopP).contains(&950), "0.95 among them");
+    assert!(
+        [0, 20, 40, 100]
+            .iter()
+            .all(|held| rungs(Dial::TopK).contains(held)),
+        "{:?}",
+        rungs(Dial::TopK)
+    );
+    assert_eq!(
+        rungs(Dial::MicroBatch),
+        vec![256, 512, 1024, 2048, 4096, 8192, 16_384, 32_768],
+        "a span of orders of magnitude is still doubled: stepping it evenly would be a \
+         hundred and twenty rungs"
+    );
+    assert_eq!(
+        rungs(Dial::ThinkingBudget),
+        vec![0, 256, 512, 1024, 2048, 4096, 8192],
+        "and nothing doubled is still nothing, so the rung above it is the finest step"
+    );
+}
+
+/// Where a setting offers values by hand, the ladder it offers and the ladder it climbs are
+/// the same ladder. Two different answers to "what is worth trying" is one of them wrong.
+#[test]
+fn the_values_offered_by_hand_are_the_ones_a_climb_walks() {
+    for dial in [Dial::Temperature, Dial::TopP, Dial::TopK] {
+        let mut at = dial.climbs_from();
+        let mut climbed = vec![at];
+        while at < dial.span().ceiling && climbed.len() < 40 {
+            at = dial.climbs_to(at);
+            climbed.push(at);
+        }
+        let offered: Vec<u32> = dial
+            .suggested()
+            .iter()
+            .map(|step| match *step {
+                Step::Whole(held) | Step::Thousandths(held) => held,
+            })
+            .collect();
+        for held in &offered {
+            assert!(
+                climbed.contains(held),
+                "{} offers {held} by hand and never climbs to it: {climbed:?}",
+                dial.label()
+            );
+        }
+    }
+}

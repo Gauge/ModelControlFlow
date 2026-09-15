@@ -128,7 +128,8 @@ fn a_climb_doubles_and_keeps_doubling_while_each_value_beats_the_one_below_it() 
 
 #[test]
 fn doubling_from_nothing_is_the_finest_step_the_setting_takes() {
-    let (_, run) = hunted(Dial::TopK, |value| Some(f64::from(value)));
+    let dial = Dial::ThinkingBudget;
+    let (_, run) = hunted(dial, |value| Some(f64::from(value)));
     assert_eq!(
         run.first().copied(),
         Some(0),
@@ -136,13 +137,15 @@ fn doubling_from_nothing_is_the_finest_step_the_setting_takes() {
     );
     assert_eq!(
         run.get(1).copied(),
-        Some(Dial::TopK.span().finest),
+        Some(dial.span().finest),
         "so the rung above nothing is the smallest step there is: {run:?}"
     );
     for pair in run.windows(2).skip(1) {
-        let (below, above) = (pair[0], pair[1]);
+        let (Some(below), Some(above)) = (pair.first().copied(), pair.get(1).copied()) else {
+            continue;
+        };
         assert!(
-            above == below.saturating_mul(2) || above == Dial::TopK.span().ceiling,
+            above == below.saturating_mul(2) || above == dial.span().ceiling,
             "every rung after that is a doubling, or the top of the span: {run:?}"
         );
     }
@@ -274,7 +277,16 @@ fn an_automatic_search_of_any_setting_asks_for_few_enough_values_to_sit_through(
     const AT_MOST: usize = 20;
     for dial in Dial::ALL {
         let span = dial.span();
-        for aim in [span.floor, dial.climbs_from(), span.ceiling] {
+        // every rung the climb can turn on, not a few likely ones: the worst case is the
+        // thing being bounded, and it does not announce which value it lives at.
+        let mut aims = vec![span.floor, span.ceiling];
+        let mut at = dial.climbs_from();
+        aims.push(at);
+        while at < span.ceiling && aims.len() < 64 {
+            at = dial.climbs_to(at);
+            aims.push(at);
+        }
+        for aim in aims {
             let (_, run) = hunted(dial, peaking_at(aim));
             assert!(
                 run.len() <= AT_MOST,
