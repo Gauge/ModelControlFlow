@@ -9,12 +9,11 @@ use crate::reading::{Ending, Reading};
 
 const WHERE: Subsystem = Subsystem::new("mcf-optimize::ledger");
 
-/// Which set of tasks a marked reading was taken against. A score is only comparable with
-/// one taken on the same tasks, so a task whose wording changes retires the scores that came
-/// before it: the sudoku task demanded that a solver reject a grid whose given values
-/// already conflict, and did not say so, which cost every model that read it exactly what it
-/// was told and no more.
-pub const CORPUS: u32 = 2;
+/// Which set of tasks a marked reading was taken against, and what was counted. A score is
+/// only comparable with one taken the same way, so both retire what came before them: the
+/// sudoku task demanded a solver reject a grid whose givens already conflict without saying
+/// so, and a score used to count tasks where it now counts the claims those tasks make.
+pub const CORPUS: u32 = 3;
 
 /// Which way a speed trial was timed, against nothing at all for a reading that was marked
 /// rather than timed. A rate is only comparable with one taken the same way: a reading from

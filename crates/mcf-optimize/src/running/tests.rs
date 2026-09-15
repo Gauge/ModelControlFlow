@@ -302,7 +302,11 @@ fn a_sweep_that_is_not_marking_calls_nothing_right_and_starts_no_container() {
         &one_task(),
         &said_with("```python\ndef add(a,b): return a+b\n```"),
     );
-    assert_eq!(judged, vec![("adds".to_owned(), false)]);
+    assert_eq!(
+        judged,
+        crate::marking::nothing_held(&one_task()),
+        "no claim held, and every task still says how many it makes"
+    );
     assert!(unmarked.is_none());
     assert!(!room.exists(), "nothing was written anywhere");
 }
@@ -325,10 +329,10 @@ fn a_marked_sweep_actually_runs_the_code_and_says_whether_it_passed() {
         unmarked, None,
         "podman is here, so there is no reason marking could not happen"
     );
-    assert_eq!(
-        judged,
-        vec![("adds".to_owned(), true)],
-        "code that satisfies the check is code that passed"
+    let first = judged.first().expect("the one task");
+    assert!(
+        first.whole() && first.of > 0,
+        "code that satisfies every claim the check makes is code that passed: {judged:?}"
     );
     assert!(
         !room.join("set-1-256-1").exists(),
@@ -350,7 +354,16 @@ fn a_marked_sweep_fails_code_that_does_not_satisfy_the_check() {
         &one_task(),
         &said_with("### SOLUTION 1\n```python\ndef add(a, b):\n    return a * b\n```"),
     );
-    assert_eq!(judged, vec![("adds".to_owned(), false)]);
+    // The check makes two claims: add(2,2)==4 and add(1,5)==6. Multiplication gets the
+    // first of those right by luck and the second wrong, and that is the whole point of
+    // counting claims — half right and nowhere at all used to read the same.
+    let first = judged.first().expect("the one task");
+    assert_eq!(
+        (first.passed, first.of),
+        (1, 2),
+        "code that satisfies one claim of two is marked one of two: {judged:?}"
+    );
+    assert!(!first.whole(), "and it did not pass");
 }
 
 #[test]

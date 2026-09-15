@@ -644,15 +644,19 @@ pub fn reading_of(
     asked: &Asked,
     said: &Said,
     milliseconds: u64,
-    passed: &[(String, bool)],
+    passed: &[crate::marking::Checked],
 ) -> Reading {
     Reading {
         dial: asked.dial,
         step: asked.step,
         set: asked.set.number,
         repeat: asked.repeat,
-        passed: u32::try_from(passed.iter().filter(|(_, ok)| *ok).count()).unwrap_or(u32::MAX),
-        of: u32::try_from(asked.set.tasks.len()).unwrap_or(u32::MAX),
+        // The claims a check makes, not the tasks it covers. A solution most of the way there
+        // and one that did nothing both score nought out of eight when the task is the unit,
+        // and a set of eight is worth eighteen points either way as a reading — far too coarse
+        // to tell two settings apart. The same run, counted by claim, is worth about six.
+        passed: passed.iter().map(|held| held.passed).sum(),
+        of: passed.iter().map(|held| held.of).sum(),
         produced: if asked.timing && asked.dial.times_reading_the_prompt() {
             said.read_in.unwrap_or(0)
         } else {
@@ -661,7 +665,10 @@ pub fn reading_of(
         milliseconds,
         ending: said.ending,
         why: said.why.clone(),
-        per_task: passed.to_vec(),
+        per_task: passed
+            .iter()
+            .map(|held| (held.name.clone(), held.whole()))
+            .collect(),
     }
 }
 

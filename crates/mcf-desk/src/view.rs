@@ -2025,7 +2025,7 @@ enum Control {
     Idle(String),
     Pick(Picker, String),
     Words(crate::Field, String, &'static str),
-    Number(crate::Field, String),
+    Number(crate::Field, String, String),
     Flip(crate::Switch, bool),
 }
 
@@ -2374,7 +2374,20 @@ fn configure_tab(
     let pick = |held: Picker, shown: String| Control::Pick(held, shown);
     let words =
         |field: crate::Field, now: String, empty: &'static str| Control::Words(field, now, empty);
-    let number = |field: crate::Field, now: String| Control::Number(field, now);
+    let number = |field: crate::Field, now: String| Control::Number(field, now, String::new());
+    // What the model's own file asks for, in the words `mcf settings` uses for it. A blank
+    // box is otherwise the same blank whether the file said nothing or MCF lost what it said.
+    let published = |of: &dyn Fn(&mcf_serve::hosting::Hosting) -> Option<String>| -> String {
+        desk.recommended
+            .as_ref()
+            .and_then(of)
+            .unwrap_or_else(|| "the engine's own".to_owned())
+    };
+    let sampled = |field: crate::Field,
+                   now: String,
+                   of: &dyn Fn(&mcf_serve::hosting::Hosting) -> Option<String>| {
+        Control::Number(field, now, published(of))
+    };
     let flip = |held: crate::Switch, on: bool| Control::Flip(held, on);
     let sections: Vec<(&'static str, Vec<(&'static str, Control)>)> = vec![
         (
@@ -2515,32 +2528,35 @@ fn configure_tab(
             vec![
                 (
                     "Temperature",
-                    number(
+                    sampled(
                         crate::Field::Temperature,
                         settings
                             .started
                             .temperature
                             .map_or_else(String::new, |held| held.to_string()),
+                        &|held| held.started.temperature.map(|it| it.to_string()),
                     ),
                 ),
                 (
                     "Top-p",
-                    number(
+                    sampled(
                         crate::Field::TopP,
                         settings
                             .started
                             .top_p
                             .map_or_else(String::new, |held| held.to_string()),
+                        &|held| held.started.top_p.map(|it| it.to_string()),
                     ),
                 ),
                 (
                     "Top-k",
-                    number(
+                    sampled(
                         crate::Field::TopK,
                         settings
                             .started
                             .top_k
                             .map_or_else(String::new, |held| held.to_string()),
+                        &|held| held.started.top_k.map(|it| it.to_string()),
                     ),
                 ),
             ],
@@ -2661,8 +2677,8 @@ fn configure_tab(
                         act = Some(Act::Edit(field, touched));
                     }
                 }
-                Control::Number(field, now) => {
-                    let (touched, _) = typed_in(paint, mouse, y, field, now, "");
+                Control::Number(field, now, empty) => {
+                    let (touched, _) = typed_in(paint, mouse, y, field, now, &empty);
                     if touched != ui::Touched::No {
                         act = Some(Act::Edit(field, touched));
                     }

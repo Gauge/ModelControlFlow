@@ -31,15 +31,9 @@ fn judged_by(
     spot: At,
     tasks: &[crate::corpus::Task],
     said: &crate::trial::Said,
-) -> (Vec<(String, bool)>, Option<String>) {
+) -> (Vec<crate::marking::Checked>, Option<String>) {
     if !mark {
-        return (
-            tasks
-                .iter()
-                .map(|task| (task.name.clone(), false))
-                .collect(),
-            None,
-        );
+        return (crate::marking::nothing_held(tasks), None);
     }
     let here = room.join(format!(
         "set-{}-{}-{}",

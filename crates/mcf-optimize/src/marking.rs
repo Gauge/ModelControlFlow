@@ -10,21 +10,35 @@ const A_TASK: Duration = Duration::from_secs(20);
 const MEMORY: &str = "512m";
 const PROCESSES: &str = "128";
 
+/// What one task's check made of an answer: how many of its claims held, out of how many it
+/// makes. Counting the claims rather than the task tells a solution that got most of the way
+/// there from one that did nothing, which is the difference a sampling setting moves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Checked {
+    pub name: String,
+    pub passed: u32,
+    pub of: u32,
+}
+
+impl Checked {
+    #[must_use]
+    pub const fn whole(&self) -> bool {
+        self.of > 0 && self.passed >= self.of
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Marked {
-    By(Vec<(String, bool)>),
+    By(Vec<Checked>),
     Unmarked(String),
 }
 
 impl Marked {
     #[must_use]
-    pub fn or_unmarked(self, tasks: &[Task]) -> Vec<(String, bool)> {
+    pub fn or_unmarked(self, tasks: &[Task]) -> Vec<Checked> {
         match self {
             Self::By(held) => held,
-            Self::Unmarked(_) => tasks
-                .iter()
-                .map(|task| (task.name.clone(), false))
-                .collect(),
+            Self::Unmarked(_) => nothing_held(tasks),
         }
     }
 
@@ -48,27 +62,99 @@ pub fn where_podman_is() -> Option<PathBuf> {
     None
 }
 
+/// Every claim a set of tasks makes, with none of them held. What a set scores when the
+/// model wrote nothing worth running.
+#[must_use]
+pub fn nothing_held(tasks: &[Task]) -> Vec<Checked> {
+    tasks
+        .iter()
+        .map(|task| Checked {
+            name: task.name.clone(),
+            passed: 0,
+            of: claims_in(&task.checked),
+        })
+        .collect()
+}
+
+/// How many claims a check makes. Counted off the source so that a task which never ran at
+/// all still has a denominator: a model that wrote nothing scored nought out of nine, not
+/// nought out of nothing.
+#[must_use]
+pub fn claims_in(checked: &str) -> u32 {
+    let held = checked
+        .lines()
+        .filter(|line| line.trim_start().starts_with("assert "))
+        .count();
+    u32::try_from(held).unwrap_or(u32::MAX).max(1)
+}
+
+/// What runs inside the container: each answer, then its check, with the check's claims
+/// counted one by one rather than the whole thing standing or falling on the first one that
+/// does not hold.
+///
+/// A claim is an `assert` in the check. They are rewritten to record themselves and carry
+/// on, so a solution that is wrong in one place is still marked on the rest — and where the
+/// code raises instead, what held up to that point is what is reported. A claim inside a
+/// loop counts once and holds only if it held every time round.
 #[must_use]
 pub fn the_runner() -> String {
     let seconds = A_TASK.as_secs();
+    let harness = ONE_TASK.replace('\n', "\\n").replace('"', "\\\"");
     format!(
         "import subprocess, sys, pathlib\n\
+         one = pathlib.Path('/tmp/one.py')\n\
+         one.write_text(\"{harness}\")\n\
          for path in sorted(pathlib.Path('/work').glob('task-*.py')):\n\
         \x20   name = path.stem\n\
+        \x20   check = path.with_name(name.replace('task-', 'check-') + '.py')\n\
+        \x20   passed = total = 0\n\
         \x20   try:\n\
-        \x20       done = subprocess.run([sys.executable, str(path)], capture_output=True,\n\
-        \x20                             timeout={seconds})\n\
-        \x20       print(name, 'PASS' if done.returncode == 0 else 'FAIL', flush=True)\n\
+        \x20       done = subprocess.run([sys.executable, str(one), str(path), str(check)],\n\
+        \x20                             capture_output=True, timeout={seconds})\n\
+        \x20       for line in done.stdout.decode('utf-8', 'replace').splitlines():\n\
+        \x20           if line.startswith('#MCF '):\n\
+        \x20               _mark, passed, total = line.split()\n\
         \x20   except subprocess.TimeoutExpired:\n\
-        \x20       print(name, 'FAIL', flush=True)\n"
+        \x20       pass\n\
+        \x20   print(name, passed, total, flush=True)\n"
     )
 }
 
-#[must_use]
-pub fn a_task_file(block: &str, checked: &str) -> String {
-    format!("{block}\n\n{checked}\n")
-}
+/// The harness that marks one answer against one check, written into the container's own
+/// scratch space because the work it reads is mounted read only.
+const ONE_TASK: &str = r"import ast, sys
+block = open(sys.argv[1]).read()
+check = open(sys.argv[2]).read()
+tree = ast.parse(check)
+total = 0
+class Count(ast.NodeTransformer):
+    def visit_Assert(self, node):
+        global total
+        at = total
+        total += 1
+        return ast.copy_location(ast.Expr(ast.Call(
+            func=ast.Name(id='_mcf', ctx=ast.Load()),
+            args=[ast.Constant(at), node.test], keywords=[])), node)
+tree = Count().visit(tree)
+ast.fix_missing_locations(tree)
+failed = set()
+ran = set()
+def _mcf(at, ok):
+    ran.add(at)
+    if not ok:
+        failed.add(at)
+room = {'_mcf': _mcf}
+try:
+    exec(compile(block, 'answer', 'exec'), room)
+    exec(compile(tree, 'check', 'exec'), room)
+except BaseException:
+    pass
+print('#MCF', len(ran - failed), total)
+";
 
+/// The answer and the check go into two files rather than one. The check's claims are
+/// rewritten before they run so each can be counted, and rewriting the model's own code
+/// along with them would be marking something nobody wrote.
 pub fn laid_out(room: &Path, tasks: &[Task], blocks: &[String]) -> Result<usize, String> {
     std::fs::create_dir_all(room).map_err(|error| error.to_string())?;
     let mut written: usize = 0;
@@ -80,9 +166,16 @@ pub fn laid_out(room: &Path, tasks: &[Task], blocks: &[String]) -> Result<usize,
             continue;
         }
         let number = at.saturating_add(1);
-        let path = room.join(format!("task-{number:02}.py"));
-        std::fs::write(&path, a_task_file(block, &task.checked))
-            .map_err(|error| error.to_string())?;
+        std::fs::write(
+            room.join(format!("task-{number:02}.py")),
+            format!("{block}\n"),
+        )
+        .map_err(|error| error.to_string())?;
+        std::fs::write(
+            room.join(format!("check-{number:02}.py")),
+            format!("{}\n", task.checked),
+        )
+        .map_err(|error| error.to_string())?;
         written = written.saturating_add(1);
     }
     std::fs::write(room.join("mark.py"), the_runner()).map_err(|error| error.to_string())?;
@@ -90,27 +183,30 @@ pub fn laid_out(room: &Path, tasks: &[Task], blocks: &[String]) -> Result<usize,
 }
 
 #[must_use]
-pub fn read_the_verdicts(said: &str, tasks: &[Task]) -> Vec<(String, bool)> {
-    let mut held: Vec<(String, bool)> = tasks
-        .iter()
-        .map(|task| (task.name.clone(), false))
-        .collect();
+pub fn read_the_verdicts(said: &str, tasks: &[Task]) -> Vec<Checked> {
+    let mut held = nothing_held(tasks);
     for line in said.lines() {
         let mut parts = line.split_whitespace();
         let Some(name) = parts.next() else { continue };
-        let passed = parts.next() == Some("PASS");
-        let Some(number) = name.strip_prefix("task-") else {
+        let passed = parts.next().and_then(|held| held.parse::<u32>().ok());
+        let of = parts.next().and_then(|held| held.parse::<u32>().ok());
+        let Some(at) = name
+            .strip_prefix("task-")
+            .and_then(|number| number.parse::<usize>().ok())
+            .and_then(|number| number.checked_sub(1))
+        else {
             continue;
         };
-        let Ok(number) = number.parse::<usize>() else {
+        let Some(slot) = held.get_mut(at) else {
             continue;
         };
-        let Some(at) = number.checked_sub(1) else {
-            continue;
-        };
-        if let Some(slot) = held.get_mut(at) {
-            slot.1 = passed;
+        // The count the container made of the claims is the better one — it saw them run,
+        // where the count taken off the source only saw them written. Where nothing came
+        // back, what was written still gives the task a denominator.
+        if let Some(of) = of.filter(|held| *held > 0) {
+            slot.of = of;
         }
+        slot.passed = passed.unwrap_or(0).min(slot.of);
     }
     held
 }
@@ -148,24 +244,14 @@ pub fn marked(room: &Path, tasks: &[Task], answer: &str, patience: Duration) -> 
     };
     let blocks = crate::trial::blocks(answer);
     if blocks.is_empty() {
-        return Marked::By(
-            tasks
-                .iter()
-                .map(|task| (task.name.clone(), false))
-                .collect(),
-        );
+        return Marked::By(nothing_held(tasks));
     }
     let written = match laid_out(room, tasks, &blocks) {
         Ok(written) => written,
         Err(why) => return Marked::Unmarked(why),
     };
     if written == 0 {
-        return Marked::By(
-            tasks
-                .iter()
-                .map(|task| (task.name.clone(), false))
-                .collect(),
-        );
+        return Marked::By(nothing_held(tasks));
     }
     let mut child = match std::process::Command::new(&podman)
         .env_remove("XDG_DATA_HOME")
