@@ -52,6 +52,7 @@ fn desk_with(rows: usize) -> Desk {
             produced: 8000,
             milliseconds: 140_000,
             ending: Ending::Answered,
+            why: None,
             per_task: Vec::new(),
         };
         desk.optimizing.report.record(reading.clone());

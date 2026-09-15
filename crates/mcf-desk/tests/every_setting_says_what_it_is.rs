@@ -242,3 +242,83 @@ fn the_template_box_starts_on_the_one_the_model_was_published_with() {
          the file"
     );
 }
+
+/// Off is MCF's own word for no thinking at all, and two crates hold it because neither
+/// depends on the other. They have to hold the same word: a template that checks its own
+/// vocabulary refuses the whole request over one it does not know, which is how a hold made
+/// with `--reasoning-effort off` answered every trial of every setting in seven milliseconds
+/// with nothing in it.
+#[test]
+fn the_word_for_no_thinking_is_the_same_word_in_both_places() {
+    assert_eq!(
+        mcf_optimize::dial::Dial::OFF,
+        mcf_serve::thinking::OFF,
+        "the sweep and the engine flags would disagree about what off means"
+    );
+}
+
+#[test]
+fn mcf_s_own_word_for_no_thinking_never_reaches_a_template() {
+    let held = mcf_serve::declared::Started {
+        effort: Some(mcf_serve::thinking::OFF.to_owned()),
+        ..mcf_serve::declared::Started::default()
+    };
+    let said = held.arguments();
+    assert!(
+        !said.iter().any(|flag| flag == "--reasoning-effort"),
+        "no template knows this word: one that checks its vocabulary raises on it and \
+         refuses the request, and one that does not falls back to its own default: {said:?}"
+    );
+
+    let real = mcf_serve::declared::Started {
+        effort: Some("low".to_owned()),
+        ..mcf_serve::declared::Started::default()
+    };
+    assert!(
+        real.arguments()
+            .iter()
+            .any(|flag| flag == "--reasoning-effort"),
+        "and a level the model does name goes through"
+    );
+}
+
+#[test]
+fn choosing_off_by_hand_turns_it_off_the_way_a_sweep_does() {
+    let mut desk = mcf_desk::Desk::new(std::path::PathBuf::from("/tmp/mcf-off-test.sock"));
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template(
+            "{% if reasoning_effort not in ('xhigh','medium','low') %}{{ raise_exception('no') }}\
+             {% endif %}<think>",
+        ),
+        ..mcf_serve::declared::Declared::default()
+    });
+    desk.settings = Some(Hosting::recommended(
+        "llama.cpp",
+        "a card",
+        true,
+        4096,
+        Some(8),
+        true,
+        None,
+    ));
+    let levels = desk.levels_of_the_model();
+    let at = levels
+        .iter()
+        .position(|held| held == mcf_serve::thinking::OFF)
+        .expect("a template that opens a thinking section is offered off");
+    desk.act(mcf_desk::Act::ThinkingLevel(at + 1));
+    let started = &desk.settings.as_ref().expect("settings").started;
+    assert_eq!(
+        started.effort, None,
+        "off is not a level to name, it is a budget of nothing"
+    );
+    assert_eq!(started.thinking, Some(0));
+    assert!(
+        !started
+            .arguments()
+            .iter()
+            .any(|flag| flag == "--reasoning-effort"),
+        "{:?}",
+        started.arguments()
+    );
+}

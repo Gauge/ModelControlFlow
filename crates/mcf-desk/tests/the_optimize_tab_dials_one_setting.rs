@@ -599,6 +599,7 @@ fn opening_the_tab_reads_what_was_already_measured() {
             produced: 10,
             milliseconds: 10,
             ending: mcf_optimize::reading::Ending::Answered,
+            why: None,
             per_task: Vec::new(),
         },
     });
@@ -645,6 +646,7 @@ fn a_row(step: u32, set: usize, repeat: u8) -> mcf_optimize::ledger::Row {
             produced: 100,
             milliseconds: 1000,
             ending: mcf_optimize::reading::Ending::Answered,
+            why: None,
             per_task: Vec::new(),
         },
     }

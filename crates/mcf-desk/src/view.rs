@@ -1772,6 +1772,7 @@ fn rows_of_the_record(
     );
     *y += 20.0;
     let band = paint.clipped();
+    let mut why = None;
     for row in &desk.optimizing.rows {
         act = one_row(
             paint,
@@ -1783,10 +1784,18 @@ fn rows_of_the_record(
                 wide,
                 dial,
                 band,
+                why: &mut why,
             },
             row,
         )
         .or(act);
+    }
+    if let Some(said) = why {
+        *y += 6.0;
+        for line in paint.wrap(&said, Weight::Regular, size::SMALL, area.w - 20.0) {
+            paint.say_at(area.x, *y, &line, Weight::Regular, size::SMALL, ink.warn);
+            *y += gap::LINE;
+        }
     }
     act
 }
@@ -1797,6 +1806,10 @@ struct RowAt<'a> {
     wide: f32,
     dial: mcf_optimize::dial::Dial,
     band: Option<Box>,
+    /// Where the reason the row under the mouse ended as it did is put, to be shown under
+    /// the table. A reading that failed and does not say what it hit is a reading nobody
+    /// can act on.
+    why: &'a mut Option<String>,
 }
 
 fn one_row(
@@ -1813,6 +1826,7 @@ fn one_row(
         wide,
         dial,
         band,
+        why,
     } = where_it_goes;
     let mut act = None;
     let below = *y + ROW;
@@ -1853,6 +1867,11 @@ fn one_row(
         }
         beside_a_row(paint, mouse, again, "Again", ink.accent);
         beside_a_row(paint, mouse, gone, "Forget", ink.warn);
+        if mouse.over(where_)
+            && let Some(said) = &row.reading.why
+        {
+            *why = Some(said.clone());
+        }
     }
     if mouse.clicked(again) {
         act = Some(Act::RerunRow(row.at));

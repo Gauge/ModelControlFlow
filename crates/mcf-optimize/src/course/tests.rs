@@ -56,6 +56,7 @@ fn reading(step: Step, set: usize, repeat: u8, passed: u32) -> Reading {
         produced: 1000,
         milliseconds: 10_000,
         ending: Ending::Answered,
+        why: None,
         per_task: Vec::new(),
     }
 }
@@ -316,6 +317,7 @@ fn an_automatic_course_finishes_rather_than_halving_forever() {
             produced: 100,
             milliseconds: 1000,
             ending: Ending::Answered,
+            why: None,
             per_task: Vec::new(),
         });
         rounds += 1;

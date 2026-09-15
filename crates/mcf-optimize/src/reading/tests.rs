@@ -12,6 +12,7 @@ fn reading(step: u32, set: usize, passed: u32, ending: Ending) -> Reading {
         produced: 10_000,
         milliseconds: 100_000,
         ending,
+        why: None,
         per_task: Vec::new(),
     }
 }
@@ -88,6 +89,7 @@ fn at(step: Step, produced: u64, milliseconds: u64, passed: u32) -> Reading {
         produced,
         milliseconds,
         ending: Ending::Answered,
+        why: None,
         per_task: Vec::new(),
     }
 }

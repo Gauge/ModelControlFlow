@@ -3812,12 +3812,32 @@ impl Desk {
         }
     }
 
+    /// Choosing a thinking level by hand, which goes through exactly the mapping a sweep
+    /// uses. Off is MCF's own word and reaches no template: one that checks its vocabulary
+    /// refuses the whole request over it, which is how every trial of every setting on a
+    /// hold made this way came back in seven milliseconds with nothing in it.
     fn pick_a_level(&mut self, at: usize) {
         self.open = None;
         let named = self.levels_of_the_model();
-        if let Some(settings) = self.settings.as_mut() {
-            settings.started.effort = at.checked_sub(1).and_then(|at| named.get(at)).cloned();
-        }
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        let Some(wanted) = at.checked_sub(1) else {
+            settings.started.effort = None;
+            return;
+        };
+        let Some(step) = u32::try_from(wanted)
+            .ok()
+            .map(mcf_optimize::dial::Step::Whole)
+        else {
+            return;
+        };
+        put_the_dial(
+            mcf_optimize::dial::Dial::ThinkingLevel,
+            step,
+            &named,
+            settings,
+        );
     }
 
     fn configure(&mut self, act: &Act) {

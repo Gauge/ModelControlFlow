@@ -293,6 +293,7 @@ impl Row {
                 produced: big("produced"),
                 milliseconds: big("milliseconds"),
                 ending,
+                why: found.get("why").and_then(Value::as_text).map(str::to_owned),
                 per_task,
             },
         })
@@ -306,6 +307,13 @@ fn found(reading: &Reading) -> Value {
         ("produced", whole(reading.produced)),
         ("milliseconds", whole(reading.milliseconds)),
         ("ending", Value::text(reading.ending.label())),
+        (
+            "why",
+            reading
+                .why
+                .as_ref()
+                .map_or(Value::Null, |held| Value::text(held.clone())),
+        ),
         (
             "per_task",
             Value::List(

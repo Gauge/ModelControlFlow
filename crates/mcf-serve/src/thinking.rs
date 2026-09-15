@@ -2,6 +2,12 @@ use mcf_standin::gguf::{Model, Value};
 
 pub const CONVENTIONAL: [&str; 3] = ["low", "medium", "high"];
 
+/// What MCF calls no thinking at all. It is MCF's word and not any template's: a template
+/// that validates its own vocabulary raises on it, and one that does not falls back to its
+/// default. Whatever asks for it has to turn it into something an engine acts on before it
+/// reaches one.
+pub const OFF: &str = "off";
+
 const RANKED: [&str; 5] = ["none", "low", "medium", "high", "xhigh"];
 
 const TAGS: [&str; 6] = [

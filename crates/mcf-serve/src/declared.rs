@@ -288,9 +288,16 @@ impl Started {
             // saying nothing, which is what the engine does by default anyway.
             out.push(thinking.max(1).to_string());
         }
-        if let Some(effort) = &self.effort {
+        // Off is MCF's word for no thinking at all, and no template knows it: one that checks
+        // its own vocabulary raises on it and refuses the whole request, and one that does not
+        // quietly falls back to its default. What turns thinking off is the budget above.
+        if let Some(effort) = self
+            .effort
+            .as_deref()
+            .filter(|held| *held != crate::thinking::OFF)
+        {
             out.push("--reasoning-effort".to_owned());
-            out.push(effort.clone());
+            out.push(effort.to_owned());
         }
         if let Some(temperature) = self.temperature {
             out.push("--temp".to_owned());

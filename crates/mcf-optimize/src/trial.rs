@@ -660,6 +660,7 @@ pub fn reading_of(
         },
         milliseconds,
         ending: said.ending,
+        why: said.why.clone(),
         per_task: passed.to_vec(),
     }
 }

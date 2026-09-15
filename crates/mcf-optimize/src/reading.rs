@@ -36,6 +36,11 @@ pub struct Reading {
     pub produced: u64,
     pub milliseconds: u64,
     pub ending: Ending,
+    /// Why it ended that way, where that is not obvious from the ending alone. A reading
+    /// that failed and does not say what it hit is a reading nobody can act on: it is the
+    /// difference between "the engine said nothing at all" and "the model ran out of room",
+    /// and between either of those and a value that is genuinely no good.
+    pub why: Option<String>,
     pub per_task: Vec<(String, bool)>,
 }
 

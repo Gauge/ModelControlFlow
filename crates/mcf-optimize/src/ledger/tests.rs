@@ -71,6 +71,7 @@ fn reading(step: Step, set: usize, passed: u32) -> Reading {
         produced: 4096,
         milliseconds: 60_000,
         ending: Ending::Answered,
+        why: None,
         per_task: vec![("one".to_owned(), true), ("two".to_owned(), false)],
     }
 }

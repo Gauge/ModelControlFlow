@@ -154,6 +154,7 @@ fn everything_already_in_the_ledger_is_reported_as_known_rather_than_measured() 
                     produced: 900,
                     milliseconds: 9000,
                     ending: crate::reading::Ending::Answered,
+                    why: None,
                     per_task: Vec::new(),
                 },
                 "before",
