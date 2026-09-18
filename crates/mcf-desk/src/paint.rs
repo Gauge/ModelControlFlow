@@ -330,6 +330,20 @@ impl Painter {
         self.clipped
     }
 
+    /// Whether anything between these two heights would land inside the clip.
+    ///
+    /// A scrolled page lays out everything it holds and shows the band that is scrolled
+    /// to. Drawing the rest costs a fill or a glyph apiece for pixels the clip throws
+    /// away, which is what made a shelf of eight hundred models draw at ten frames a
+    /// second. Laying a row out is cheap; drawing it is not, so what is off the page is
+    /// laid out and not drawn.
+    fn band_shows(&self, top: f32, bottom: f32) -> bool {
+        match self.clipped {
+            None => true,
+            Some(clip) => bottom >= clip.y && top <= clip.bottom(),
+        }
+    }
+
     pub fn clip(&mut self, area: Box) {
         self.clipped = Some(area);
         let where_ = Rect {
@@ -347,17 +361,28 @@ impl Painter {
     }
 
     pub fn rect(&mut self, area: Box, colour: Rgb) {
+        // `physical` is what notes how far down the page reaches, so it runs either way:
+        // a scrollbar's length is a property of everything laid out, not of what shows.
         let where_ = self.physical(area);
+        if !self.band_shows(area.y, area.bottom()) {
+            return;
+        }
         self.surface.fill_with(where_, colour, 255);
     }
 
     pub fn wash(&mut self, area: Box, colour: Rgb, alpha: u8) {
         let where_ = self.physical(area);
+        if !self.band_shows(area.y, area.bottom()) {
+            return;
+        }
         self.surface.fill_with(where_, colour, alpha);
     }
 
     pub fn rule(&mut self, from: (f32, f32), to: (f32, f32), colour: Rgb, alpha: u8) {
         self.reach(from.1.max(to.1));
+        if !self.band_shows(from.1.min(to.1), from.1.max(to.1)) {
+            return;
+        }
         self.surface.line(
             (from.0 * self.scale, from.1 * self.scale),
             (to.0 * self.scale, to.1 * self.scale),
@@ -519,6 +544,11 @@ impl Painter {
     ) -> f32 {
         let pixels = size * self.scale;
         self.reach(y + size * 0.35);
+        // Off the page: the width is still what it would have been, so whatever is placed
+        // after it sits where it would have sat.
+        if !self.band_shows(y - size * 1.3, y + size * 0.5) {
+            return x + self.measure(text, weight, size);
+        }
         let Some((held, _)) = self.ensure(weight, pixels) else {
             return x;
         };

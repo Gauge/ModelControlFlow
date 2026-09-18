@@ -7,17 +7,28 @@
 use std::path::{Path, PathBuf};
 
 /// Bytes a microsecond is megabytes a second, near enough to state a rate in.
+#[expect(
+    clippy::integer_division,
+    reason = "a whole rate; the remainder is noise"
+)]
 fn rate(bytes: u64, micros: u128) -> u64 {
     u64::try_from(u128::from(bytes) / micros.max(1)).unwrap_or(u64::MAX)
 }
 
 /// Microseconds, as seconds and thousandths.
+#[expect(clippy::integer_division, reason = "seconds and thousandths, exactly")]
 fn said(micros: u128) -> String {
     format!("{}.{:03}s", micros / 1_000_000, (micros / 1_000) % 1_000)
 }
 
+/// One span as a percentage of another.
+#[expect(clippy::integer_division, reason = "a whole percentage")]
+fn share(held: u128, of: u128) -> u128 {
+    held.saturating_mul(100) / of.max(1)
+}
+
 fn size_of(path: &Path) -> u64 {
-    std::fs::metadata(path).map(|held| held.len()).unwrap_or(0)
+    std::fs::metadata(path).map_or(0, |held| held.len())
 }
 
 #[test]
@@ -91,7 +102,7 @@ fn how_fast_a_library_is() {
         "{threads} at a time: {} = {} MB/s, {}% of the time one at a time took",
         said(together),
         rate(bytes, together),
-        together.saturating_mul(100) / one_at_a_time.max(1)
+        share(together, one_at_a_time)
     );
 }
 

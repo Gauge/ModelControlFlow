@@ -9,9 +9,13 @@ use mcf_desk::{Desk, Hosted, Model, Page, Tally, Use};
 use mcf_record::json::Value;
 
 fn a_busy_desk(tallies: usize) -> Desk {
+    let many: usize = std::env::var("MCF_FRAME_MODELS")
+        .ok()
+        .and_then(|held| held.parse().ok())
+        .unwrap_or(40);
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.page = Page::Hosting;
-    desk.models = (0..40)
+    desk.models = (0..many)
         .map(|at| Model {
             name: format!("Model-{at}-Q4_K_M"),
             path: format!("/store/owner/Model-{at}-GGUF/Model-{at}-Q4_K_M.gguf"),
