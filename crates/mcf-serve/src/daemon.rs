@@ -300,8 +300,60 @@ const RATE_OVER_AT_LEAST_NS: u64 = 400_000_000;
 /// window above, and a caller asking far more often than that only shortens it.
 const READINGS_KEPT: usize = 64;
 
+/// How many requests an engine has finished, and the generated-token count it stood at
+/// when the last one did.
+struct Served {
+    requests: u64,
+    generated: u64,
+}
+
+/// What each engine has served. llama.cpp publishes no count of requests, so MCF keeps
+/// its own: the generated-token counter only moves when a request finishes, so every
+/// climb in it is a request that came back.
+static SERVED: std::sync::Mutex<std::collections::BTreeMap<String, Served>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// How many requests this engine has finished.
+///
+/// Counted from the generated-token counter, which llama.cpp advances once per finished
+/// request rather than token by token. Two requests finishing between one reading and the
+/// next are therefore one climb and are counted once; the tokens themselves are exact
+/// either way. A counter that has gone backwards is an engine started again under the
+/// hold, so the count starts again with it.
+fn requests_served(reach: &crate::served::Reach, generated: Option<u64>) -> Option<u64> {
+    let generated = generated?;
+    let mut served = SERVED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let held = served.entry(where_it_answers(reach)).or_insert(Served {
+        requests: 0,
+        generated,
+    });
+    Some(count_the_climb(held, generated))
+}
+
+/// Move a count on by one reading of the generated-token counter.
+///
+/// Held apart from the store it is kept in so that the counting itself can be tested
+/// without an engine to read.
+fn count_the_climb(held: &mut Served, generated: u64) -> u64 {
+    if generated < held.generated {
+        // The counter went backwards: an engine started again under the hold. Its count
+        // starts again with it, and whatever it has already written is one request.
+        held.requests = u64::from(generated > 0);
+    } else if generated > held.generated {
+        held.requests = held.requests.saturating_add(1);
+    }
+    held.generated = generated;
+    held.requests
+}
+
 fn energy_of(reach: &crate::served::Reach) -> Option<(u64, u64)> {
     let _forgotten = COUNTED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&where_it_answers(reach));
+    let _served = SERVED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&where_it_answers(reach));
@@ -395,11 +447,17 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
             })
     };
     let in_flight = crate::served::tokens_in_flight(reach);
-    let generated =
-        whole("generated_tokens").map(|finished| finished.saturating_add(in_flight.unwrap_or(0)));
+    let finished = whole("generated_tokens");
+    let generated = finished.map(|finished| finished.saturating_add(in_flight.unwrap_or(0)));
     let prompted = whole("prompted_tokens");
     if let Some(generated) = generated {
         fields.push(("generated_tokens_live", as_whole(generated)));
+    }
+    // Counted off the finished total, not the live one: the live figure includes tokens
+    // of a request still being written, which climbs within one request and would be
+    // read as several.
+    if let Some(requests) = requests_served(reach, finished) {
+        fields.push(("requests_served", as_whole(requests)));
     }
     let now = SystemClock.now();
     let spent = energy_since_start(reach).unwrap_or_default();

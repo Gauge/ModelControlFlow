@@ -42,6 +42,11 @@ impl Machine {
         command.env("XDG_DATA_HOME", &self.0);
         command.env("XDG_RUNTIME_DIR", &self.0);
         command.env_remove("HOME");
+        // The store MCF actually uses is whatever `MCF_MODELS` names, in preference to
+        // XDG_DATA_HOME — so leaving it set lets the machine running the suite hand every
+        // test its own model library. That is not isolation: a check walks hundreds of
+        // gigabytes of somebody's real weights, and an acquisition lands among them.
+        command.env_remove("MCF_MODELS");
         command
     }
 }

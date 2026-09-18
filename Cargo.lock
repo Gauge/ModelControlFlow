@@ -65,7 +65,7 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "mcf-checks"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-helper",
@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "mcf-cli"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-desk",
@@ -90,11 +90,11 @@ dependencies = [
 
 [[package]]
 name = "mcf-core"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 
 [[package]]
 name = "mcf-desk"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-optimize",
@@ -105,14 +105,14 @@ dependencies = [
 
 [[package]]
 name = "mcf-helper"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
 ]
 
 [[package]]
 name = "mcf-hub"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-record",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "mcf-optimize"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-record",
@@ -131,21 +131,21 @@ dependencies = [
 
 [[package]]
 name = "mcf-prototype-adversarial"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
 ]
 
 [[package]]
 name = "mcf-prototype-kernel-slope"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
 ]
 
 [[package]]
 name = "mcf-prototype-thread-scaling"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-standin",
@@ -153,14 +153,14 @@ dependencies = [
 
 [[package]]
 name = "mcf-record"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
 ]
 
 [[package]]
 name = "mcf-serve"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-hub",
@@ -170,14 +170,14 @@ dependencies = [
 
 [[package]]
 name = "mcf-standin"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
 ]
 
 [[package]]
 name = "mcf-tui"
-version = "0.2.1-m1"
+version = "0.2.2-m1"
 dependencies = [
  "mcf-core",
  "mcf-record",

@@ -1401,6 +1401,103 @@ mod the_hold {
         }
     }
 
+    /// An average is a total over the time actually spent on it, which is exact and needs
+    /// no sampling. The rates worked out between two readings a second apart read 0.0
+    /// almost always, because these counters only move when a request finishes.
+    mod averages {
+        use mcf_record::json::Value;
+
+        fn a_hold_that(said: &[(&str, &str)]) -> crate::Use {
+            crate::Use::from_value(&Value::map(
+                said.iter()
+                    .map(|(key, held)| ((*key).to_owned(), Value::text((*held).to_owned())))
+                    .collect::<Vec<_>>(),
+            ))
+        }
+
+        #[test]
+        fn generation_is_what_was_written_over_the_time_spent_writing_it() {
+            let read = a_hold_that(&[
+                ("generated_tokens", "7844"),
+                ("engine_generating_seconds", "198.664"),
+            ]);
+            let rate = read.generation_average().expect("both counters are there");
+            assert!(
+                (rate - 39.48).abs() < 0.05,
+                "7,844 tokens over 198.7 s is about 39.5 a second, not {rate}"
+            );
+        }
+
+        #[test]
+        fn prefill_is_held_apart_from_generation() {
+            // The two run an order of magnitude apart, and an average across both would
+            // describe neither.
+            let read = a_hold_that(&[
+                ("prompted_tokens", "275698"),
+                ("engine_prompt_seconds", "781.316"),
+            ]);
+            let rate = read.prefill_average().expect("both counters are there");
+            assert!(
+                (rate - 352.87).abs() < 0.5,
+                "275,698 tokens over 781.3 s is about 353 a second, not {rate}"
+            );
+        }
+
+        #[test]
+        fn a_hold_that_has_spent_no_time_yet_averages_nothing() {
+            // Not nought: nought a second is a claim about a model that has not been
+            // asked for anything, and dividing by it is worse.
+            let read = a_hold_that(&[
+                ("generated_tokens", "0"),
+                ("engine_generating_seconds", "0"),
+            ]);
+            assert_eq!(read.generation_average(), None);
+            assert_eq!(crate::Use::default().prefill_average(), None);
+        }
+
+        #[test]
+        fn what_one_request_came_to_is_the_total_over_the_requests() {
+            let read = a_hold_that(&[("generated_tokens", "7844"), ("requests_served", "6")]);
+            let each = read.a_request(read.generated).expect("six requests");
+            assert!(
+                (each - 1_307.3).abs() < 0.5,
+                "7,844 tokens over 6 requests is about 1,307 each, not {each}"
+            );
+        }
+
+        #[test]
+        fn nothing_served_yet_is_no_average_rather_than_a_division_by_nought() {
+            let read = a_hold_that(&[("generated_tokens", "7844"), ("requests_served", "0")]);
+            assert_eq!(read.a_request(read.generated), None);
+        }
+
+        #[test]
+        fn the_cache_share_is_of_the_whole_prompt() {
+            // Against what was read plus what was reused, not against what was read: a
+            // share shown beside the wrong total invites arithmetic that will not come out.
+            let read = a_hold_that(&[
+                ("prompted_tokens", "275698"),
+                ("prompt_tokens_reused", "3648300"),
+            ]);
+            let share = read.cache_share().expect("both counts are there");
+            assert!(
+                (share - 0.9297).abs() < 0.005,
+                "3,648,300 of 3,923,998 asked is about 93%, not {share}"
+            );
+        }
+
+        #[test]
+        fn time_working_is_reading_and_writing_together() {
+            let read = a_hold_that(&[
+                ("engine_prompt_seconds", "781.316"),
+                ("engine_generating_seconds", "198.664"),
+            ]);
+            let spent = read.seconds_working().expect("both counters are there");
+            assert!((spent - 979.98).abs() < 0.05, "spent {spent}");
+            assert_eq!(crate::Use::default().seconds_working(), None);
+        }
+    }
+
     #[test]
     fn an_engine_that_publishes_only_some_counts_still_draws() {
         // Engines differ in what they publish. Refusing the reading outright drew an
@@ -1839,6 +1936,9 @@ mod the_server_page {
                     "engine_said_prompt_tokens_per_second",
                     Value::text("424.925"),
                 ),
+                ("engine_prompt_seconds", Value::text("781.316")),
+                ("engine_generating_seconds", Value::text("198.664")),
+                ("requests_served", Value::text("6")),
                 ("card_power_watts", Value::text("53.098")),
                 ("card_energy_joules", Value::text("230066.655")),
                 ("card_energy_over_seconds", Value::text("3351.704")),
@@ -1863,8 +1963,8 @@ mod the_server_page {
         desk.chosen = Some(0);
         desk.hosted = Some(a_hold());
         // An hour of a real hold: two spells of work with a lull between them and a long
-        // idle stretch after, which is the shape a rate has to be able to show and a
-        // running total cannot.
+        // idle stretch after. A total climbs through each spell and stands level between
+        // them, which is how the plot says when the work happened.
         let began = std::time::Instant::now()
             .checked_sub(std::time::Duration::from_mins(50))
             .unwrap_or_else(std::time::Instant::now);

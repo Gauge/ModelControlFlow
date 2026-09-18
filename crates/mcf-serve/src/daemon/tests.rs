@@ -1057,3 +1057,50 @@ llamacpp:n_decode_total 30
         );
     }
 }
+
+/// llama.cpp publishes no count of requests, so MCF keeps its own: the generated-token
+/// counter only moves when a request finishes, so every climb in it is a request that
+/// came back.
+mod requests_served {
+    use crate::daemon::{Served, count_the_climb};
+
+    fn counted(readings: &[u64]) -> u64 {
+        let mut held = Served {
+            requests: 0,
+            generated: readings.first().copied().unwrap_or(0),
+        };
+        let mut served = 0;
+        for reading in readings.iter().skip(1) {
+            served = count_the_climb(&mut held, *reading);
+        }
+        served
+    }
+
+    #[test]
+    fn a_hold_that_has_answered_nothing_has_served_nothing() {
+        assert_eq!(counted(&[0, 0, 0, 0]), 0);
+    }
+
+    #[test]
+    fn each_climb_in_the_counter_is_one_request() {
+        // Level between requests, a step at each one: the engine advances this counter
+        // when a request finishes, not token by token.
+        assert_eq!(counted(&[0, 0, 512, 512, 512, 1_100, 1_100, 1_640]), 3);
+    }
+
+    #[test]
+    fn a_climb_held_across_several_readings_is_still_one_request() {
+        assert_eq!(
+            counted(&[0, 512, 512, 512, 512]),
+            1,
+            "a counter standing still is a hold waiting, not a request an instant"
+        );
+    }
+
+    #[test]
+    fn an_engine_started_again_under_the_hold_starts_the_count_again() {
+        // The counter going backwards is the only sign MCF gets of a restart, and a count
+        // that carried on would describe two engines as one.
+        assert_eq!(counted(&[0, 900, 1_400, 40, 90]), 2);
+    }
+}

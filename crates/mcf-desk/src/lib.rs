@@ -207,6 +207,15 @@ pub struct Use {
     /// whether the head was earning its keep while a model was actually being used.
     pub drafted: Option<u64>,
     pub drafted_taken: Option<u64>,
+    /// How long the engine has spent reading prompts and how long writing answers. The
+    /// counters MCF divides by to state an average: a total over the time actually spent
+    /// on it is exact and needs no sampling, where a difference between two readings a
+    /// second apart is nothing at all between requests.
+    pub engine_prompt_seconds: Option<f32>,
+    pub engine_generating_seconds: Option<f32>,
+    /// How many requests the hold has answered. Counted by the daemon, because the engine
+    /// publishes no such figure of its own.
+    pub requests_served: Option<u64>,
 }
 
 impl Use {
@@ -271,6 +280,9 @@ impl Use {
             deepest: count("deepest_tokens"),
             drafted: count("drafted_tokens"),
             drafted_taken: count("drafted_tokens_taken"),
+            engine_prompt_seconds: rate("engine_prompt_seconds"),
+            engine_generating_seconds: rate("engine_generating_seconds"),
+            requests_served: count("requests_served"),
         }
     }
 
@@ -306,6 +318,76 @@ impl Use {
             .filter(|rate| *rate > 0.0)
             .or(self.engine_prompted_per_second)
     }
+
+    /// What the hold has averaged while generating: everything written, over the time
+    /// actually spent writing it.
+    ///
+    /// This is a division of two counters, not a difference between two readings. The
+    /// token counters only move when a request finishes, so a difference taken a second
+    /// apart is nought almost always and a whole answer's worth once in a while — which
+    /// is what had the rate cards reading 0.0 while the model was plainly working. An
+    /// average over time spent is exact, and says something from the first request on.
+    #[must_use]
+    pub fn generation_average(&self) -> Option<f32> {
+        over(self.generated, self.engine_generating_seconds)
+    }
+
+    /// The same for reading prompts. Held apart from generation because the two run an
+    /// order of magnitude apart, and an average across both describes neither.
+    #[must_use]
+    pub fn prefill_average(&self) -> Option<f32> {
+        over(self.prompted, self.engine_prompt_seconds)
+    }
+
+    /// How much of everything asked for the engine answered out of its cache, as a share.
+    /// Stated against the whole prompt, which is what was read plus what was reused.
+    #[must_use]
+    pub fn cache_share(&self) -> Option<f32> {
+        let reused = self.prompt_reused?;
+        let asked = reused.saturating_add(self.prompted.unwrap_or(0));
+        if asked == 0 {
+            return None;
+        }
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "token counts, shown as a whole percentage"
+        )]
+        let share = reused as f32 / asked as f32;
+        Some(share.clamp(0.0, 1.0))
+    }
+
+    /// The time the hold has spent working: reading prompts and writing answers together.
+    #[must_use]
+    pub fn seconds_working(&self) -> Option<f32> {
+        match (self.engine_prompt_seconds, self.engine_generating_seconds) {
+            (None, None) => None,
+            (prompting, generating) => Some(prompting.unwrap_or(0.0) + generating.unwrap_or(0.0)),
+        }
+    }
+
+    /// What one request came to on average, for a count the hold keeps. Nothing until a
+    /// request has finished: a total divided by no requests is not an average.
+    #[must_use]
+    pub fn a_request(&self, of: Option<u64>) -> Option<f32> {
+        let requests = self.requests_served.filter(|served| *served > 0)?;
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "counts of tokens and of requests, shown to a whole number"
+        )]
+        let each = of? as f32 / requests as f32;
+        Some(each)
+    }
+}
+
+/// A total over a span of seconds, where both are there and the span is real.
+fn over(total: Option<u64>, seconds: Option<f32>) -> Option<f32> {
+    let seconds = seconds.filter(|spent| *spent > 0.0)?;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a token count over seconds, shown to one decimal"
+    )]
+    let total = total? as f32;
+    Some(total / seconds)
 }
 
 impl Hosted {

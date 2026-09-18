@@ -2837,10 +2837,11 @@ fn statistics_tab(paint: &mut Painter, desk: &Desk, area: Box, held: &Model) {
     y += 20.0;
     let y = use_tiles(paint, in_use, Box::new(right.x, y, right.w, 0.0));
     let y = machine_and_run_tiles(paint, desk, Box::new(right.x, y + 8.0, right.w, 0.0));
-    let _below = token_rates(
+    let _below = token_totals(
         paint,
+        desk,
         &desk.tallies,
-        Box::new(right.x, y + 8.0, right.w, 74.0),
+        Box::new(right.x, y + 8.0, right.w, 108.0),
     );
 }
 
@@ -5310,8 +5311,22 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
     let count = |held: Option<u64>| held.map(words::grouped);
     let bytes = |held: Option<u64>| held.map(gigabytes);
     let mut tiles: Vec<(&str, Option<String>)> = vec![
-        ("Generation tok/s", rate(in_use.generating_per_second())),
-        ("Prefill tok/s", rate(in_use.prompting_per_second())),
+        // Averages over the time the engine says it spent, for the same reason the server
+        // page states them: a rate taken between two readings of counters that only move
+        // when a request finishes reads 0.0 while the model is working.
+        (
+            "Generation tok/s",
+            rate(
+                in_use
+                    .generation_average()
+                    .or(in_use.generating_per_second()),
+            ),
+        ),
+        (
+            "Prefill tok/s",
+            rate(in_use.prefill_average().or(in_use.prompting_per_second())),
+        ),
+        ("Requests served", count(in_use.requests_served)),
         (
             "Generated tokens",
             count(in_use.generated_live.or(in_use.generated)),
@@ -5396,27 +5411,35 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
 /// reading.
 type Series = (&'static str, fn(&crate::Tally) -> u64);
 
-/// How wide one reading's column is. Wide enough to see, narrow enough that an hour of
-/// them fits across a plot.
-const SLOT: f32 = 2.0;
+/// How many bands the fill under a curve is drawn in. The curve only ever climbs, so each
+/// band is one rectangle reaching to the right edge — which is what makes a fading fill
+/// cheap enough to draw every frame. Enough of them that the fade reads as a fade rather
+/// than as a stack of slabs.
+const BANDS: usize = 16;
 
-/// Tokens through the hold over time: what came in, what the model read, what it wrote.
+/// How strong the fill is where it meets the curve at the top of the plot.
+const FILL: f32 = 74.0;
+
+/// Tokens through the hold: what came in, what the model read, what it wrote.
 ///
-/// Rates, not totals. A total only ever climbs, so its shape is the same whether the work
-/// came in one burst or trickled all afternoon — an hour idle after a busy morning leaves
-/// a graph full to the top saying nothing about either. A rate falls back to nothing when
-/// nothing is happening, which is the thing worth seeing.
+/// Totals, drawn as they stand rather than as a rate. These counters only move when a
+/// request finishes, so a difference between two readings a second apart is nought almost
+/// always and a whole answer's worth once in a while — a rate worked out from them says
+/// the model is idle while it is working. The total itself has no such trouble: it stands
+/// level while nothing finishes and climbs where something did, so the shape says when the
+/// work happened and the slope says how fast it went.
 ///
 /// Three plots rather than three lines on one: reading a prompt runs an order of magnitude
 /// faster than writing an answer, and on a shared scale the writing is a line along the
 /// floor.
-fn token_rates(
+fn token_totals(
     paint: &mut Painter,
+    desk: &Desk,
     tallies: &std::collections::VecDeque<crate::Tally>,
     at: Box,
 ) -> f32 {
     let ink = paint.ink;
-    spaced(paint, at.x, at.y, "throughput · tokens a second", ink.faint);
+    spaced(paint, at.x, at.y, "tokens · this hold", ink.faint);
     let plot = Box::new(at.x, at.y + 16.0, at.w, (at.h - 16.0).max(30.0));
     let span = tallies
         .front()
@@ -5427,7 +5450,10 @@ fn token_rates(
             paint.say_right(
                 at.right(),
                 at.y - 2.0,
-                &format!("over the last {}", crate::ago_said(seconds)),
+                &format!(
+                    "a step is a request · over the last {}",
+                    crate::ago_said(seconds)
+                ),
                 Weight::Regular,
                 size::SMALL,
                 ink.faint,
@@ -5438,7 +5464,7 @@ fn token_rates(
             paint.say_at(
                 plot.x + 12.0,
                 plot.y + 8.0,
-                "waiting for a second reading — a rate is a difference between two",
+                "waiting for a second reading — a plot is drawn between two",
                 Weight::Regular,
                 size::SMALL,
                 ink.faint,
@@ -5446,116 +5472,183 @@ fn token_rates(
             return plot.bottom();
         }
     }
-    // The heading already gives the unit, so each plot names its phase and nothing else.
-    let of: [Series; 3] = [
-        ("Prompt", |tally| tally.asked),
-        ("Prefill", |tally| tally.processed),
-        ("Generation", |tally| tally.written),
+    let in_use = desk
+        .hosted
+        .as_ref()
+        .and_then(|hosting| hosting.in_use.as_ref());
+    // Each plot names its phase and states its own total, so a plot answers how much and
+    // how often without looking anywhere else.
+    let of: [(Series, Option<u64>); 3] = [
+        (
+            ("Prompt", |tally| tally.asked),
+            in_use.and_then(|in_use| {
+                in_use
+                    .prompt_reused
+                    .map(|reused| reused.saturating_add(in_use.prompted.unwrap_or(0)))
+            }),
+        ),
+        (
+            ("Prefilled", |tally| tally.processed),
+            in_use.and_then(|in_use| in_use.prompted),
+        ),
+        (
+            ("Generated", |tally| tally.written),
+            in_use.and_then(|in_use| in_use.generated_live.or(in_use.generated)),
+        ),
     ];
     let across = (plot.w - 20.0) / 3.0;
-    for (index, (label, reading)) in of.into_iter().enumerate() {
+    for (index, ((label, reading), total)) in of.into_iter().enumerate() {
         #[allow(
             clippy::cast_precision_loss,
             reason = "three plots: the index cannot lose one"
         )]
         let column = index as f32;
         let cell = Box::new(plot.x + (across + 10.0) * column, plot.y, across, plot.h);
-        one_rate(paint, tallies, reading, label, cell);
+        let each = in_use
+            .and_then(|in_use| in_use.a_request(total))
+            .map(|each| format!("{} a request", words::grouped(each.round().max(0.0) as u64)));
+        one_total(paint, tallies, reading, label, total, each, cell);
     }
     plot.bottom()
 }
 
-/// The rate of one count, column by column.
-///
-/// Where more readings fall in a column than there are pixels for, the column takes the
-/// largest of them: a burst that lasted ten seconds of a minute is the thing worth seeing,
-/// and averaging it away would hide exactly what the graph is for.
-fn one_rate(
+/// One count as it stands: the total in the head, the climb in the plot, what one request
+/// came to underneath.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one plot: the count to draw, what to call it, and the two figures beside it"
+)]
+fn one_total(
     paint: &mut Painter,
     tallies: &std::collections::VecDeque<crate::Tally>,
     reading: fn(&crate::Tally) -> u64,
     label: &str,
+    total: Option<u64>,
+    each: Option<String>,
     at: Box,
 ) {
     let ink = paint.ink;
     paint.edge(at, 6.0, ink.line, ink.card);
-    let plot = Box::new(at.x + 10.0, at.y + 26.0, at.w - 20.0, at.h - 34.0);
+    spaced(paint, at.x + 12.0, at.y + 11.0, label, ink.faint);
+    let said = total.map_or_else(|| words::UNMEASURED.to_owned(), words::grouped);
+    let named = spaced_width(paint, label);
+    let shown = paint.elide(&said, Weight::Bold, size::SMALL, at.w - 24.0 - named);
+    paint.say_right(
+        at.right() - 12.0,
+        at.y + 10.0,
+        &shown,
+        Weight::Bold,
+        size::SMALL,
+        if total.is_some() { ink.ink } else { ink.faint },
+    );
+    let foot = 18.0;
+    let plot = Box::new(
+        at.x + 11.0,
+        at.y + 32.0,
+        at.w - 22.0,
+        (at.h - 32.0 - foot).max(12.0),
+    );
+    if let Some(each) = each {
+        paint.say_at(
+            plot.x + 1.0,
+            plot.bottom() + 4.0,
+            &each,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    paint.rect(Box::new(plot.x, plot.bottom() - 1.0, plot.w, 1.0), ink.line);
+    draw_the_climb(paint, tallies, reading, plot);
+}
 
+/// The shape of one count climbing across the window.
+///
+/// Drawn against the window's own first reading rather than against nought: a hold that
+/// has served millions of tokens would otherwise draw this morning's work as a flat line
+/// at the top of the plot, saying nothing about the last hour. The total in the head is
+/// the absolute figure; the plot is what has happened since the window opened.
+fn draw_the_climb(
+    paint: &mut Painter,
+    tallies: &std::collections::VecDeque<crate::Tally>,
+    reading: fn(&crate::Tally) -> u64,
+    plot: Box,
+) {
+    let ink = paint.ink;
+    let Some((first, last)) = tallies.front().zip(tallies.back()) else {
+        return;
+    };
+    let base = reading(first);
+    let climb = reading(last).saturating_sub(base);
+    if climb == 0 {
+        return;
+    }
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "a count of columns across a plot, far inside usize"
     )]
-    let columns = ((plot.w / SLOT).floor() as usize).max(1);
-    let mut bars = vec![0.0_f32; columns];
-    let readings = tallies.len().saturating_sub(1);
-    for (at_reading, pair) in tallies.iter().zip(tallies.iter().skip(1)).enumerate() {
-        let Some(rate) = crate::Tally::per_second(*pair.0, *pair.1, reading) else {
+    let columns = (plot.w.max(2.0) as usize).max(2);
+    // A running maximum, so that a counter which stalls or an engine started again under
+    // the hold cannot make the curve fall. A total that fell would not be a total.
+    let mut climbed = 0.0_f32;
+    let mut shape: Vec<f32> = Vec::with_capacity(columns);
+    for column in 0..columns {
+        let at_reading = column
+            .saturating_mul(tallies.len().saturating_sub(1))
+            .checked_div(columns.saturating_sub(1))
+            .unwrap_or(0);
+        let held = tallies
+            .get(at_reading)
+            .map_or(0, |tally| reading(tally).saturating_sub(base));
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "token counts, as a share of the window's own climb"
+        )]
+        let of_the_climb = held as f32 / climb as f32;
+        climbed = climbed.max(of_the_climb.clamp(0.0, 1.0));
+        shape.push(climbed);
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a count of bands, a single digit"
+    )]
+    let bands = BANDS as f32;
+    for band in 0..BANDS {
+        #[allow(clippy::cast_precision_loss, reason = "a band index, a single digit")]
+        let from_top = band as f32;
+        // The fill is one rectangle a band, because the curve only climbs: everything
+        // right of where it first reaches this band's height is under the curve.
+        let above = 1.0 - (from_top + 0.5) / bands;
+        let Some(first) = shape.iter().position(|share| *share >= above) else {
             continue;
         };
-        // Oldest on the left, newest on the right, whatever the window holds.
-        let column = at_reading
-            .saturating_mul(columns)
-            .checked_div(readings.max(1))
-            .unwrap_or(0)
-            .min(columns.saturating_sub(1));
-        if let Some(held) = bars.get_mut(column) {
-            *held = held.max(rate);
-        }
-    }
-    let peak = bars.iter().copied().fold(0.0_f32, f32::max);
-    let now = bars.last().copied().unwrap_or(0.0);
-
-    spaced(paint, at.x + 12.0, at.y + 9.0, label, ink.faint);
-    // Beside the label, not over on the right: the figure for now is right-aligned there,
-    // and the two ran into one another.
-    if peak > 0.0 {
-        let after = at.x + 12.0 + spaced_width(paint, label) + 10.0;
-        let peak_said = format!("peak {peak:.0}");
-        let room = at.right() - 60.0 - after;
-        if paint.measure(&peak_said, Weight::Regular, size::SMALL) <= room {
-            paint.say_at(
-                after,
-                at.y + 8.0,
-                &peak_said,
-                Weight::Regular,
-                size::SMALL,
-                ink.faint,
-            );
-        }
-    }
-    let said = if peak > 0.0 {
-        format!("{now:.1}")
-    } else {
-        words::UNMEASURED.to_owned()
-    };
-    let shown = paint.elide(&said, Weight::Bold, size::BODY, at.w - 24.0);
-    paint.say_right(
-        at.right() - 12.0,
-        at.y + 7.0,
-        &shown,
-        Weight::Bold,
-        size::BODY,
-        if peak > 0.0 { ink.ink } else { ink.faint },
-    );
-
-    if peak <= 0.0 {
-        paint.rect(Box::new(plot.x, plot.bottom() - 1.0, plot.w, 1.0), ink.line);
-        return;
-    }
-    // Drawn from nothing, because a rate of nothing is a real reading: it is the hold
-    // sitting idle, and that is half of what this graph has to say.
-    for (column, rate) in bars.iter().enumerate() {
-        if *rate <= 0.0 {
-            continue;
-        }
         #[allow(
             clippy::cast_precision_loss,
             reason = "a column index across a plot, far inside f32"
         )]
-        let x = plot.x + column as f32 * SLOT;
-        let tall = ((rate / peak) * plot.h).clamp(1.0, plot.h);
-        paint.rect(Box::new(x, plot.bottom() - tall, SLOT, tall), ink.accent);
+        let x = plot.x + first as f32;
+        let top = plot.bottom() - plot.h * (1.0 - from_top / bands);
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "an alpha, worked out to fall inside a byte"
+        )]
+        let alpha = (FILL * (1.0 - from_top / bands)).clamp(0.0, 255.0) as u8;
+        paint.wash(
+            Box::new(x, top, (plot.right() - x).max(0.0), plot.h / bands),
+            ink.accent,
+            alpha,
+        );
+    }
+    for (column, pair) in shape.iter().zip(shape.iter().skip(1)).enumerate() {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a column index across a plot, far inside f32"
+        )]
+        let x = plot.x + column as f32;
+        let y = |share: f32| plot.bottom() - share * plot.h;
+        paint.rule((x, y(*pair.0)), (x + 1.0, y(*pair.1)), ink.accent, 255);
     }
 }
 
@@ -6120,18 +6213,38 @@ fn held_chip(paint: &mut Painter, desk: &Desk, x: f32, y: f32) -> f32 {
     pill.right()
 }
 
-/// What to put beside a rate: the engine's own average over the whole hold, where that is
-/// not simply the figure already shown. With no reading of its own yet MCF shows the
-/// engine's average as the rate, and printing the same number twice says nothing.
-fn beside_the_rate(shown: Option<f32>, average: Option<f32>) -> Option<String> {
-    let average = average?;
-    if shown.is_some_and(|shown| (shown - average).abs() < 0.05) {
-        return Some("average over the hold".to_owned());
+/// How long a span of work is said. Seconds while a hold is young, because "0 min" for
+/// the first minute of a hold reads as nothing having happened.
+fn spent_said(seconds: f32) -> String {
+    if seconds >= 60.0 {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a span of seconds, shown as a clock"
+        )]
+        let whole = seconds.max(0.0) as u64;
+        clock(whole)
+    } else {
+        format!("{seconds:.1} s")
     }
-    Some(format!("hold average {average:.1}"))
 }
 
-/// The two rates, and how busy the engine is, as three cards across the top of the column.
+/// One card across the top of the column: what it is called, the figure, the unit the
+/// figure is in, the line underneath, and whether the figure is the loud one.
+type Card = (
+    &'static str,
+    Option<String>,
+    Option<&'static str>,
+    Option<String>,
+    bool,
+);
+
+/// What the hold has served, and what it has averaged, as four cards across the top.
+///
+/// Averages rather than rates: both figures are a total over the time actually spent on
+/// it, which is exact and reads true from the first finished request. The rates worked out
+/// between two readings sat at 0.0 almost always, because these counters only move when a
+/// request finishes.
 fn rate_cards(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let ink = paint.ink;
     let Some(in_use) = desk
@@ -6141,46 +6254,61 @@ fn rate_cards(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     else {
         return at.y;
     };
-    let across = (at.w - 20.0) / 3.0;
-    let cards: [(&str, Option<String>, Option<String>, bool); 3] = [
+    let across = (at.w - 30.0) / 4.0;
+    let cards: [Card; 4] = [
         (
-            "Generation tok/s",
-            in_use
-                .generating_per_second()
-                .map(|rate| format!("{rate:.1}")),
-            beside_the_rate(
-                in_use.generating_per_second(),
-                in_use.engine_generated_per_second,
-            ),
+            "Requests served",
+            in_use.requests_served.map(words::grouped),
+            None,
+            // Only where the engine says: "not measured yet in flight, not measured yet
+            // queued" filled the line and said nothing at all.
+            match (in_use.processing, in_use.queued) {
+                (None, None) => None,
+                (in_flight, queued) => Some(format!(
+                    "{} in flight, {} queued",
+                    words::grouped(in_flight.unwrap_or(0)),
+                    words::grouped(queued.unwrap_or(0)),
+                )),
+            },
             true,
         ),
         (
-            "Prefill tok/s",
+            "Generation",
+            in_use.generation_average().map(|rate| format!("{rate:.1}")),
+            Some("tok/s"),
             in_use
-                .prompting_per_second()
-                .map(|rate| format!("{rate:.1}")),
-            beside_the_rate(
-                in_use.prompting_per_second(),
-                in_use.engine_prompted_per_second,
-            ),
+                .engine_generating_seconds
+                .map(|spent| format!("avg · {} generating", spent_said(spent))),
             false,
         ),
         (
-            "Active requests",
-            in_use.processing.map(words::grouped),
+            "Prefill",
+            in_use.prefill_average().map(|rate| format!("{rate:.0}")),
+            Some("tok/s"),
             in_use
-                .queued
-                .map(|queued| format!("{} waiting", words::grouped(queued))),
+                .engine_prompt_seconds
+                .map(|spent| format!("avg · {} prefilling", spent_said(spent))),
+            false,
+        ),
+        (
+            "Cache hit",
+            in_use
+                .cache_share()
+                .map(|share| format!("{:.0}%", share * 100.0)),
+            None,
+            in_use
+                .prompt_reused
+                .map(|reused| format!("{} tokens reused", words::grouped(reused))),
             false,
         ),
     ];
-    for (index, (label, figure, beside, loud)) in cards.into_iter().enumerate() {
+    for (index, (label, figure, unit, under, loud)) in cards.into_iter().enumerate() {
         #[allow(
             clippy::cast_precision_loss,
-            reason = "three cards: the index cannot lose one"
+            reason = "four cards: the index cannot lose one"
         )]
         let column = index as f32;
-        let card = Box::new(at.x + (across + 10.0) * column, at.y, across, 64.0);
+        let card = Box::new(at.x + (across + 10.0) * column, at.y, across, 78.0);
         ui::card(paint, card, false);
         spaced(paint, card.x + 14.0, card.y + 12.0, label, ink.faint);
         // A figure MCF was not given is said small. At the figure's own size the words
@@ -6190,38 +6318,107 @@ fn rate_cards(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
             None => (words::UNMEASURED.to_owned(), ink.faint, size::BODY),
         };
         let shown = paint.elide(&said, Weight::Bold, tall, card.w - 28.0);
-        paint.say_at(
-            card.x + 14.0,
-            card.y + 26.0 + (26.0 - tall) * 0.55,
-            &shown,
-            Weight::Bold,
-            tall,
-            colour,
-        );
-        // Only where it fits beside the label rather than on top of it. On a narrow
-        // window these two ran into one another and both became unreadable.
-        if let Some(beside) = beside {
-            let named = spaced_width(paint, label);
-            let room = card.w - 28.0 - named - 12.0;
-            if paint.measure(&beside, Weight::Regular, size::SMALL) <= room {
-                paint.say_right(
-                    card.right() - 14.0,
-                    card.y + 12.0,
-                    &beside,
+        let top = card.y + 30.0 + (26.0 - tall) * 0.55;
+        paint.say_at(card.x + 14.0, top, &shown, Weight::Bold, tall, colour);
+        // The unit sits on the figure's baseline rather than its top, so that a small
+        // word beside a large number does not read as a superscript.
+        if let Some(unit) = unit.filter(|_| tall > size::BODY) {
+            let after = card.x + 14.0 + paint.measure(&shown, Weight::Bold, tall) + 6.0;
+            if after + paint.measure(unit, Weight::Regular, size::SMALL) <= card.right() - 12.0 {
+                paint.say_at(
+                    after,
+                    top + 12.0,
+                    unit,
                     Weight::Regular,
                     size::SMALL,
                     ink.faint,
                 );
             }
         }
+        if let Some(under) = under {
+            let shown = paint.elide(&under, Weight::Regular, size::SMALL, card.w - 28.0);
+            paint.say_at(
+                card.x + 14.0,
+                card.y + 58.0,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+        }
     }
-    at.y + 74.0
+    at.y + 88.0
 }
 
-/// What the hold has done, in rows rather than in boxes.
+/// What one request came to, on average.
+///
+/// The figure a reader actually wants from a hold that is idle at the moment they look:
+/// not what is happening this second, but what happens when something does.
+fn per_request_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
+    let ink = paint.ink;
+    let Some(in_use) = desk
+        .hosted
+        .as_ref()
+        .and_then(|hosting| hosting.in_use.as_ref())
+    else {
+        return y;
+    };
+    if in_use.requests_served.unwrap_or(0) == 0 {
+        return y;
+    }
+    spaced(paint, at.x, y, "per request", ink.faint);
+    y += 21.0;
+    let whole = |each: Option<f32>| {
+        each.map(|each| {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "an average of token counts, shown whole"
+            )]
+            let whole = each.round().max(0.0) as u64;
+            words::grouped(whole)
+        })
+    };
+    let asked = in_use
+        .prompt_reused
+        .map(|reused| reused.saturating_add(in_use.prompted.unwrap_or(0)));
+    let mut rows: Vec<(&str, String, Option<String>)> = Vec::new();
+    if let Some(said) = whole(in_use.a_request(asked)) {
+        rows.push(("Prompt", said, Some("tokens".to_owned())));
+    }
+    if let Some(said) = whole(in_use.a_request(in_use.prompt_reused)) {
+        let share = in_use
+            .cache_share()
+            .map(|share| format!("{:.0}%", share * 100.0));
+        rows.push(("Cached", said, share));
+    }
+    if let Some(said) = whole(in_use.a_request(in_use.generated)) {
+        rows.push(("Generated", said, Some("tokens".to_owned())));
+    }
+    if let Some(rate) = in_use.prefill_average() {
+        rows.push(("Prefill", format!("{rate:.0}"), Some("tok/s".to_owned())));
+    }
+    if let Some(rate) = in_use.generation_average() {
+        rows.push(("Generation", format!("{rate:.1}"), Some("tok/s".to_owned())));
+    }
+    if let Some(seconds) = in_use.seconds_working()
+        && let Some(requests) = in_use.requests_served.filter(|served| *served > 0)
+    {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a count of requests, shown against a span of seconds"
+        )]
+        let requests = requests as f32;
+        rows.push(("Time", spent_said(seconds / requests), None));
+    }
+    figure_rows(paint, at, y, &rows)
+}
+
+/// Where the hold's time has gone, in rows rather than in boxes.
 ///
 /// Figures the size of a headline, seventeen of them, said nothing about which mattered.
-/// These are the counters: worth reading, not worth watching, so they are quiet.
+/// These are the counters: worth reading, not worth watching, so they are quiet. The
+/// token totals are not among them any more — each one stands in the head of its own plot.
 fn work_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
     let ink = paint.ink;
     let Some(in_use) = desk
@@ -6231,28 +6428,17 @@ fn work_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
     else {
         return y;
     };
-    spaced(paint, at.x, y, "since this hold started", ink.faint);
+    spaced(paint, at.x, y, "time spent", ink.faint);
     y += 21.0;
     let mut rows: Vec<(&str, String, Option<String>)> = Vec::new();
-    if let Some(out) = in_use.generated_live.or(in_use.generated) {
-        rows.push(("Generated tokens", words::grouped(out), None));
+    if let Some(spent) = in_use.engine_generating_seconds {
+        rows.push(("Generating", spent_said(spent), None));
     }
-    if let Some(read) = in_use.prompted {
-        rows.push(("Prefill tokens", words::grouped(read), None));
+    if let Some(spent) = in_use.engine_prompt_seconds {
+        rows.push(("Prefilling", spent_said(spent), None));
     }
     if let Some(decodes) = in_use.decodes {
         rows.push(("Decode calls", words::grouped(decodes), None));
-    }
-    // Stated against everything that was asked for, not against what was read: reuse is a
-    // share of the whole prompt, and a share shown beside the wrong total invites the
-    // reader to check arithmetic that will not come out.
-    if let Some(reused) = in_use.prompt_reused {
-        let asked = reused.saturating_add(in_use.prompted.unwrap_or(0));
-        let share = reused
-            .saturating_mul(100)
-            .checked_div(asked)
-            .map(|share| format!("{share}% of {} asked", words::grouped(asked)));
-        rows.push(("Cached tokens", words::grouped(reused), share));
     }
     if let Some(share) = in_use.draft_taken_share() {
         rows.push((
@@ -6280,6 +6466,21 @@ fn work_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
             ink.faint,
         );
         return y + 22.0;
+    }
+    figure_rows(paint, at, y, &rows)
+}
+
+/// A block of quiet figures, two to a line: what it is called on the left, the figure on
+/// the right, and whatever qualifies the figure just inside it.
+fn figure_rows(
+    paint: &mut Painter,
+    at: Box,
+    mut y: f32,
+    rows: &[(&str, String, Option<String>)],
+) -> f32 {
+    let ink = paint.ink;
+    if rows.is_empty() {
+        return y;
     }
     let across = (at.w - 26.0) / 2.0;
     for (index, (label, figure, beside)) in rows.iter().enumerate() {
@@ -6460,17 +6661,19 @@ fn server_column_body(paint: &mut Painter, desk: &Desk, area: Box) -> f32 {
     let _ended = held_chip(paint, desk, area.x + after + 14.0, top + 24.0);
 
     let mut y = rate_cards(paint, desk, Box::new(area.x, top + 56.0, area.w, 0.0));
-    y = token_rates(
-        paint,
-        &desk.tallies,
-        Box::new(area.x, y + 6.0, area.w, 74.0),
-    );
-    y = work_rows(
+    y = token_totals(
         paint,
         desk,
-        Box::new(area.x, y + 10.0, area.w, 0.0),
-        y + 10.0,
+        &desk.tallies,
+        Box::new(area.x, y + 6.0, area.w, 108.0),
     );
+    y = per_request_rows(
+        paint,
+        desk,
+        Box::new(area.x, y + 14.0, area.w, 0.0),
+        y + 14.0,
+    );
+    y = work_rows(paint, desk, Box::new(area.x, y + 6.0, area.w, 0.0), y + 6.0);
     y = machine_and_run_tiles(paint, desk, Box::new(area.x, y + 4.0, area.w, 0.0));
 
     y = hold_status(paint, desk, Box::new(area.x, y, area.w, 0.0));
