@@ -76,7 +76,9 @@ pub(crate) fn run(
     let mut unanswered = 0_usize;
     let mut corrupt = 0_usize;
 
-    for held in wanted {
+    let hashed = bytes_here_for_each(&wanted);
+
+    for (index, held) in wanted.iter().enumerate() {
         let Ok(provenance) = &held.provenance else {
             lines.push(format!(
                 "  {} — nothing beside it says where it came from, so there is nothing to \
@@ -86,7 +88,10 @@ pub(crate) fn run(
             continue;
         };
 
-        let (said, matched) = bytes_here(&held.path, provenance);
+        let (said, matched) = match hashed.iter().find(|(at, _)| *at == index) {
+            Some((_, hashed)) => hashed.clone(),
+            None => bytes_here(&held.path, provenance),
+        };
         lines.extend(said);
         if matched == Some(false) {
             corrupt = corrupt.saturating_add(1);
@@ -202,6 +207,59 @@ fn upstream(
     };
     lines.push(format!("      upstream: {}", observed.found));
     Some(observed)
+}
+
+/// How many artifacts MCF hashes at once.
+///
+/// Eight threads ask for about three gigabytes a second, which is as much as a fast disk
+/// will give and enough to keep the cores that matter busy. Every core at once would only
+/// queue deeper on the disk, and on a spinning one it would turn one sequential read into
+/// a scramble of seeks and come out slower than doing them one at a time.
+const AT_ONCE: usize = 8;
+
+/// What hashing one artifact said, and whether its bytes still match.
+type Hashed = (Vec<String>, Option<bool>);
+
+/// Hash every artifact that has a digest recorded, several at a time.
+///
+/// Hashing is the whole cost of a check — a library of large models is hundreds of
+/// gigabytes, and MCF reads every byte of it at a few hundred megabytes a second on one
+/// core. One artifact at a time made that a wait of many minutes while thirty-one cores
+/// sat idle. Each thread takes the next artifact not yet claimed, so one enormous file
+/// does not hold up the rest, and the findings are put back in the order they were asked
+/// for rather than the order they finished.
+fn bytes_here_for_each(wanted: &[&Held]) -> Vec<(usize, Hashed)> {
+    let at_once = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZero::get)
+        .min(AT_ONCE)
+        .min(wanted.len())
+        .max(1);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done: std::sync::Mutex<Vec<(usize, Hashed)>> = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..at_once {
+            let _hashing = scope.spawn(|| {
+                loop {
+                    let mine = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(held) = wanted.get(mine) else {
+                        return;
+                    };
+                    let Ok(provenance) = &held.provenance else {
+                        continue;
+                    };
+                    let said = bytes_here(&held.path, provenance);
+                    done.lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push((mine, said));
+                }
+            });
+        }
+    });
+    let mut hashed = done
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    hashed.sort_by_key(|(at, _)| *at);
+    hashed
 }
 
 fn bytes_here(path: &Path, provenance: &Provenance) -> (Vec<String>, Option<bool>) {

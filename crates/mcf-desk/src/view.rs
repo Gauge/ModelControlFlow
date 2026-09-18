@@ -5568,27 +5568,21 @@ fn one_total(
 /// has served millions of tokens would otherwise draw this morning's work as a flat line
 /// at the top of the plot, saying nothing about the last hour. The total in the head is
 /// the absolute figure; the plot is what has happened since the window opened.
-fn draw_the_climb(
-    paint: &mut Painter,
+/// The curve, a column a pixel: how far up the plot the count stood at each column, as a
+/// share of everything it climbed across the window.
+fn the_shape_of_it(
     tallies: &std::collections::VecDeque<crate::Tally>,
     reading: fn(&crate::Tally) -> u64,
-    plot: Box,
-) {
-    let ink = paint.ink;
-    let Some((first, last)) = tallies.front().zip(tallies.back()) else {
-        return;
-    };
-    let base = reading(first);
-    let climb = reading(last).saturating_sub(base);
-    if climb == 0 {
-        return;
-    }
+    base: u64,
+    climb: u64,
+    wide: f32,
+) -> Vec<f32> {
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "a count of columns across a plot, far inside usize"
     )]
-    let columns = (plot.w.max(2.0) as usize).max(2);
+    let columns = (wide.max(2.0) as usize).max(2);
     // A running maximum, so that a counter which stalls or an engine started again under
     // the hold cannot make the curve fall. A total that fell would not be a total.
     let mut climbed = 0.0_f32;
@@ -5609,6 +5603,25 @@ fn draw_the_climb(
         climbed = climbed.max(of_the_climb.clamp(0.0, 1.0));
         shape.push(climbed);
     }
+    shape
+}
+
+fn draw_the_climb(
+    paint: &mut Painter,
+    tallies: &std::collections::VecDeque<crate::Tally>,
+    reading: fn(&crate::Tally) -> u64,
+    plot: Box,
+) {
+    let ink = paint.ink;
+    let Some((first, last)) = tallies.front().zip(tallies.back()) else {
+        return;
+    };
+    let base = reading(first);
+    let climb = reading(last).saturating_sub(base);
+    if climb == 0 {
+        return;
+    }
+    let shape = the_shape_of_it(tallies, reading, base, climb, plot.w);
     #[allow(
         clippy::cast_precision_loss,
         reason = "a count of bands, a single digit"
@@ -5641,14 +5654,51 @@ fn draw_the_climb(
             alpha,
         );
     }
-    for (column, pair) in shape.iter().zip(shape.iter().skip(1)).enumerate() {
-        #[allow(
-            clippy::cast_precision_loss,
-            reason = "a column index across a plot, far inside f32"
-        )]
-        let x = plot.x + column as f32;
-        let y = |share: f32| plot.bottom() - share * plot.h;
-        paint.rule((x, y(*pair.0)), (x + 1.0, y(*pair.1)), ink.accent, 255);
+    // A line a column was eight hundred of them a frame for a shape that is flat between
+    // requests. One line a run of equal height draws the same staircase in a few dozen:
+    // a tread where nothing finished, a riser where something did.
+    let y = |share: f32| plot.bottom() - share * plot.h;
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a column index across a plot, far inside f32"
+    )]
+    let x = |column: usize| plot.x + column as f32;
+    let mut run = 0_usize;
+    for column in 1..shape.len() {
+        let held = shape.get(column).copied().unwrap_or(0.0);
+        let standing = shape.get(run).copied().unwrap_or(0.0);
+        // Within half a pixel is the same height: a riser nobody can see is not a step,
+        // and drawing it costs a line either way.
+        if (y(held) - y(standing)).abs() < 0.5 && column + 1 < shape.len() {
+            continue;
+        }
+        let ended = column.saturating_sub(1).max(run);
+        if ended > run {
+            paint.rule(
+                (x(run), y(standing)),
+                (x(ended), y(standing)),
+                ink.accent,
+                255,
+            );
+        }
+        paint.rule(
+            (x(ended), y(standing)),
+            (x(column), y(held)),
+            ink.accent,
+            255,
+        );
+        run = column;
+    }
+    if run == 0 {
+        // One height throughout: a hold that has done nothing since the window opened is
+        // still a reading, and a flat line is what it looks like.
+        let standing = shape.first().copied().unwrap_or(0.0);
+        paint.rule(
+            (x(0), y(standing)),
+            (x(shape.len().saturating_sub(1)), y(standing)),
+            ink.accent,
+            255,
+        );
     }
 }
 
