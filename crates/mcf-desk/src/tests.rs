@@ -1127,15 +1127,17 @@ fn a_daemon_of_another_age_is_shown_and_one_of_the_same_age_is_not() {
     );
 }
 
+/// Removal is asked for on the downloads page and nowhere else, so nothing ticked is
+/// nothing to ask about.
 #[test]
 fn removing_nothing_opens_nothing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    desk.page = Page::Models;
-    desk.chosen = None;
-    desk.act(crate::Act::AskToRemove);
+    desk.page = Page::Downloads;
+    desk.picked.clear();
+    desk.act(crate::Act::RemovePicked);
     assert!(
         desk.removing.is_none(),
-        "with no model chosen there is nothing to ask about"
+        "with nothing ticked there is nothing to ask about"
     );
 }
 
@@ -2461,5 +2463,121 @@ mod the_disk {
             desk.picked_the_served().is_some(),
             "the one thing on this page that cannot simply go has to be said so"
         );
+    }
+}
+
+/// Removing a model is asked for on the downloads page and nowhere else.
+///
+/// It used to be an action on a model's own page, and the dialogue was drawn there — so
+/// when the downloads page learnt to ask, nothing drew the answer and the removal could
+/// not be carried through at all.
+mod removal_lives_on_the_downloads_page {
+    use super::the_server_page::{a_desk, drawn, pixel};
+
+    fn about_to_remove() -> crate::Desk {
+        let mut desk = a_desk();
+        desk.page = crate::Page::Downloads;
+        let path = desk
+            .models
+            .first()
+            .map(|held| held.path.clone())
+            .expect("a model");
+        desk.act(crate::Act::PickOnDisk(path));
+        desk
+    }
+
+    #[test]
+    fn ticking_and_asking_opens_the_question() {
+        let mut desk = about_to_remove();
+        assert!(desk.removing.is_none());
+        desk.act(crate::Act::RemovePicked);
+        let removing = desk.removing.as_ref().expect("the question is open");
+        assert_eq!(removing.models.len(), 1);
+        assert!(!removing.finished());
+    }
+
+    #[test]
+    fn the_question_is_drawn_on_the_page_that_asked_it() {
+        let mut desk = about_to_remove();
+        let before = drawn(&desk, 1400, 1024);
+        desk.act(crate::Act::RemovePicked);
+        let after = drawn(&desk, 1400, 1024);
+        // The dialogue takes the page, so what the shelf drew is no longer there. Before
+        // this, asking changed nothing on screen and the removal could not be finished.
+        let moved = (120..600).any(|y| pixel(&before, 500, y) != pixel(&after, 500, y));
+        assert!(
+            moved,
+            "asking to remove drew nothing, so there is no way to answer"
+        );
+    }
+
+    #[test]
+    fn it_will_not_go_ahead_until_it_is_told_why() {
+        let mut desk = about_to_remove();
+        desk.act(crate::Act::RemovePicked);
+        desk.act(crate::Act::DoRemove);
+        let removing = desk.removing.as_ref().expect("still open");
+        assert!(!removing.finished(), "it went ahead with no reason given");
+        assert!(
+            removing
+                .refused
+                .as_deref()
+                .is_some_and(|why| why.contains("Say why")),
+            "{:?}",
+            removing.refused
+        );
+    }
+
+    #[test]
+    fn giving_it_up_puts_the_question_away_and_leaves_the_tick() {
+        let mut desk = about_to_remove();
+        desk.act(crate::Act::RemovePicked);
+        desk.act(crate::Act::CancelRemove);
+        assert!(desk.removing.is_none());
+        assert_eq!(
+            desk.picked.len(),
+            1,
+            "what was ticked stays ticked: nothing was removed"
+        );
+    }
+
+    #[test]
+    fn several_ticked_is_one_question_about_all_of_them() {
+        let mut desk = a_desk();
+        desk.page = crate::Page::Downloads;
+        for at in 0..2 {
+            desk.models.push(crate::Model {
+                name: format!("Another-Q{at}"),
+                path: format!("/store/owner/Another-GGUF/Another-Q{at}.gguf"),
+                file: format!("Another-Q{at}.gguf"),
+                repository: Some("owner/Another-GGUF".to_owned()),
+                bytes: Some(1_000_000_000),
+                ..crate::Model::default()
+            });
+        }
+        for held in desk.models.clone() {
+            desk.act(crate::Act::PickOnDisk(held.path));
+        }
+        assert_eq!(desk.picked.len(), 3, "three ticked");
+        desk.act(crate::Act::RemovePicked);
+        let removing = desk.removing.as_ref().expect("open");
+        assert_eq!(removing.models.len(), 3);
+        assert_eq!(
+            removing.name, "3 models",
+            "one question named for the lot of them"
+        );
+    }
+
+    #[test]
+    fn the_models_page_no_longer_offers_it() {
+        let mut desk = a_desk();
+        desk.page = crate::Page::Models;
+        desk.chosen = Some(0);
+        let paint = drawn(&desk, 1400, 1024);
+        // Nothing on the models page opens the question, so nothing on that page draws
+        // it either: the page is unchanged whatever is chosen.
+        assert!(desk.removing.is_none());
+        let _drew = pixel(&paint, 700, 500);
+        assert_eq!(paint.paper().expect("paper").width, 1400);
     }
 }

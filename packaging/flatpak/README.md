@@ -27,7 +27,7 @@ what the bundle carries is what the manifest says.
 
 ```
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user ./ModelControlFlow-0.2.0-m1.flatpak
+flatpak install --user ./ModelControlFlow-0.2.1-m1.flatpak
 ```
 
 The first line is needed once: the bundle depends on

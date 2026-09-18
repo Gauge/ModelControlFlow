@@ -698,9 +698,7 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     if desk.hub_chosen.is_some() || desk.pending.is_some() {
         return over.or(act);
     }
-    if desk.removing.is_some() {
-        return removal_page(paint, desk, mouse, pane).or(act);
-    }
+
     let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
         paint.say_at(
             right,
@@ -972,6 +970,11 @@ fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
 fn downloads(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
+    // What is about to be removed takes the page, because it is a question and the rest
+    // of the page is the answer to a different one.
+    if desk.removing.is_some() {
+        return removal_page(paint, desk, mouse, area);
+    }
     spaced(paint, area.x, area.y, "downloads", ink.faint);
     let weights = desk.weights.bytes;
     paint.say_at(
@@ -4143,9 +4146,9 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         Kind::Ordinary,
         Act::Tab(crate::Tab::Contents),
     ));
-    if !this_one && desk.chosen.is_some() {
-        actions.push(("Remove…".to_owned(), Kind::Quiet, Act::AskToRemove));
-    }
+    // Removing a model is not one of the things a model's own page does. It is a disk
+    // being cleared, and that is the downloads page — where what is on the disk, what it
+    // comes to, and what removing it would give back are all in view at once.
     for (label, kind, what) in actions {
         let where_ = Box::new(area.x, y, list - 20.0, 30.0);
         let needs_one = true;

@@ -2207,7 +2207,6 @@ pub enum Act {
     PauseSweep,
     Contents(Page),
     Edit(Field, crate::ui::Touched),
-    AskToRemove,
     RemoveReason(crate::ui::Touched),
     PurgeToggle,
     DoRemove,
@@ -2916,11 +2915,9 @@ impl Desk {
             Act::HostIt => self.host_it(),
             Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
-            Act::AskToRemove
-            | Act::RemoveReason(_)
-            | Act::PurgeToggle
-            | Act::DoRemove
-            | Act::CancelRemove => self.removal(&act),
+            Act::RemoveReason(_) | Act::PurgeToggle | Act::DoRemove | Act::CancelRemove => {
+                self.removal(&act);
+            }
             Act::Close | Act::Copy(_) => {}
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
@@ -3305,7 +3302,6 @@ impl Desk {
 
     fn removal(&mut self, act: &Act) {
         match act {
-            Act::AskToRemove => self.ask_to_remove(),
             Act::RemoveReason(touched) => self.touch_the_reason(*touched),
             Act::PurgeToggle => {
                 if let Some(removing) = self.removing.as_mut() {
@@ -3422,82 +3418,6 @@ impl Desk {
             refused,
             done: None,
         });
-    }
-
-    pub fn ask_to_remove(&mut self) {
-        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
-            return;
-        };
-        let models = vec![held.path.clone()];
-        let name = held.name.clone();
-        match ask(
-            &self.socket,
-            &Request::Removal {
-                model: held.path.clone(),
-            },
-        ) {
-            Ok(answer) if answer.served => {
-                let whole = |key: &str| {
-                    answer
-                        .body
-                        .get(key)
-                        .and_then(Value::as_integer)
-                        .and_then(|held| u64::try_from(held).ok())
-                };
-                let text = |key: &str| {
-                    answer
-                        .body
-                        .get(key)
-                        .and_then(Value::as_text)
-                        .unwrap_or_default()
-                        .to_owned()
-                };
-                let files = match answer.body.get("files") {
-                    Some(Value::List(listed)) => listed.iter().map(gone_from).collect(),
-                    _ => Vec::new(),
-                };
-                self.removing = Some(Removing {
-                    models,
-                    name,
-                    files,
-                    bytes: whole("bytes"),
-                    reversible: matches!(answer.body.get("reversible"), Some(Value::Bool(true))),
-                    shelf: text("shelf"),
-                    reason: crate::typing::Typing::of(String::new()),
-                    purge: false,
-                    refused: None,
-                    done: None,
-                });
-            }
-            Ok(answer) => {
-                self.removing = Some(Removing {
-                    models,
-                    name,
-                    files: Vec::new(),
-                    bytes: None,
-                    reversible: false,
-                    shelf: String::new(),
-                    reason: crate::typing::Typing::of(String::new()),
-                    purge: false,
-                    refused: Some(refused_because(&answer.body)),
-                    done: None,
-                });
-            }
-            Err(why) => {
-                self.removing = Some(Removing {
-                    models,
-                    name,
-                    files: Vec::new(),
-                    bytes: None,
-                    reversible: false,
-                    shelf: String::new(),
-                    reason: crate::typing::Typing::of(String::new()),
-                    purge: false,
-                    refused: Some(why),
-                    done: None,
-                });
-            }
-        }
     }
 
     fn touch_the_reason(&mut self, touched: crate::ui::Touched) {
