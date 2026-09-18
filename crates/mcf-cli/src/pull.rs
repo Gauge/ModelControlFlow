@@ -195,7 +195,13 @@ fn free_memory() -> Result<mcf_core::measurement::Bytes, String> {
 }
 
 fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Response {
-    let done = match mcf_hub::acquisition::one(hub, listing, entry, root) {
+    let done = match mcf_hub::acquisition::one(
+        hub,
+        listing,
+        entry,
+        root,
+        &mcf_hub::stopping::Stopping::never(),
+    ) {
         Ok(done) => done,
         Err(failure) => return refused("nothing was acquired", &failure),
     };

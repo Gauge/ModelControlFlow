@@ -115,8 +115,9 @@ fn every_menu_entry_reaches_something_built() {
     let named: Vec<&str> = Page::MENU.iter().map(|(_, label)| *label).collect();
     assert_eq!(
         named,
-        ["Server", "Models", "Exit"],
-        "the window's places are the server, the library, and Exit"
+        ["Server", "Models", "Downloads", "Exit"],
+        "the window's places are the server, the library, the queue of what is arriving, \
+         and Exit"
     );
     for (page, label) in Page::MENU {
         assert_eq!(page.section(), *page, "{label} is not a section of its own");
@@ -142,16 +143,41 @@ fn an_empty_field_asks_for_nothing() {
     );
 }
 
+/// A transfer takes nothing away from the window.
+///
+/// It is queued in the daemon, so it is not the window's one job: asking for a file does
+/// not stop a listing that is still running, and it does not have to wait for one either.
+/// It used to replace whatever the window was doing, which meant one file at a time and
+/// only while the window stayed open.
 #[test]
-fn only_one_thing_runs_at_a_time() {
+fn asking_for_a_file_does_not_stop_what_the_window_was_doing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.typed.set("owner/repository");
     desk.look_up();
     assert!(matches!(desk.doing, crate::Doing::Listing(_)));
     desk.download("owner/repository", "a-model.gguf");
     assert!(
-        matches!(desk.doing, crate::Doing::Downloading(_)),
-        "starting a download did not replace what was running"
+        matches!(desk.doing, crate::Doing::Listing(_)),
+        "asking for a file threw away the listing that was still running"
+    );
+}
+
+/// And one can be asked for while another is already on its way.
+#[test]
+fn one_file_on_its_way_does_not_refuse_the_next() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.download("owner/repository", "one.gguf");
+    desk.download("owner/repository", "two.gguf");
+    // Nothing is listening at /nowhere, so both are refused by the daemon rather than
+    // queued; what matters is that the second was attempted at all, which the old
+    // one-at-a-time rule would not have allowed.
+    assert!(
+        desk.notices.about(crate::ABOUT_TRANSFERS).is_some(),
+        "a refusal from the daemon is where a transfer that cannot be queued is reported"
+    );
+    assert!(
+        !desk.doing.busy(),
+        "a transfer must not be holding the window's job slot"
     );
 }
 
@@ -241,6 +267,7 @@ fn what_is_hosted_carries_where_it_answers() {
         projector: None,
         takes: None,
         api_key: false,
+        open: false,
         network_address: None,
         in_use: None,
     });
@@ -294,6 +321,7 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
         projector: None,
         takes: None,
         api_key: false,
+        open: false,
         network_address: None,
         in_use: None,
     });
@@ -447,11 +475,19 @@ fn a_refused_build_lands_on_its_own_card() {
         }
     }
     assert!(desk.building.is_none(), "{:?}", desk.building);
-    let (failed, why) = desk.build_failed.clone().expect("the refusal is kept");
-    assert_eq!(failed, "llama.cpp");
+    let held = desk
+        .notices
+        .about("engine:llama.cpp")
+        .expect("the refusal is kept");
+    assert_eq!(held.tone, crate::notice::Tone::Refused);
+    assert!(held.what.contains("llama.cpp"), "{}", held.what);
+    let why = held.detail.clone().unwrap_or_default();
     assert!(why.contains("not answering"), "{why}");
     desk.build("llama.cpp");
-    assert!(desk.build_failed.is_none());
+    assert!(
+        desk.notices.about("engine:llama.cpp").is_none(),
+        "asking again puts the old refusal away"
+    );
 }
 
 #[test]
@@ -611,6 +647,7 @@ fn a_run_on_the_hosted_model_is_said_to_cost_a_second_copy() {
         projector: None,
         takes: None,
         api_key: false,
+        open: false,
         network_address: None,
         in_use: None,
     });
@@ -651,7 +688,11 @@ fn start_server_takes_the_key_being_typed_and_names_the_field_it_needs() {
     desk.flip(crate::Switch::Open);
     assert!(desk.settings.as_ref().is_some_and(|held| held.open));
     desk.host_it();
-    let why = desk.host_refused.clone().unwrap_or_default();
+    let why = desk
+        .notices
+        .about(crate::ABOUT_HOLD)
+        .map(|held| held.what.clone())
+        .unwrap_or_default();
     assert!(why.contains("API key field"), "{why}");
     assert!(
         !matches!(desk.doing, crate::Doing::Hosting(_)),
@@ -668,13 +709,15 @@ fn start_server_takes_the_key_being_typed_and_names_the_field_it_needs() {
         Some("mcf-home"),
         "the key typed is the key the hold gets"
     );
+    let said = desk
+        .notices
+        .about(crate::ABOUT_HOLD)
+        .map(|held| held.what.clone());
     assert!(
-        !desk
-            .host_refused
+        !said
             .as_deref()
             .is_some_and(|why| why.contains("API key field")),
-        "with a key, the hold is not refused for one: {:?}",
-        desk.host_refused
+        "with a key, the hold is not refused for one: {said:?}"
     );
 }
 
@@ -853,11 +896,13 @@ fn a_pick_not_here_downloads_first_and_then_does_the_thing() {
     desk.act(crate::Act::DownloadThen(std::boxed::Box::new(
         crate::Act::HostIt,
     )));
-    assert!(
-        matches!(desk.doing, crate::Doing::Downloading(_)),
-        "the download did not go first"
+    assert_eq!(
+        desk.after_download,
+        Some(crate::Act::HostIt),
+        "what to do once the file is here was not remembered, so it would never be done: \
+         a queued transfer answers at once, and the thing waiting on it is picked up when \
+         the file lands"
     );
-    assert_eq!(desk.after_download, Some(crate::Act::HostIt));
     desk.models = vec![Model {
         name: "Model-Q8_0".to_owned(),
         path: "/store/owner/Model-GGUF/Model-Q8_0.gguf".to_owned(),
@@ -1027,6 +1072,7 @@ fn closing_lets_go_of_what_is_held_and_of_nothing_else() {
         projector: None,
         takes: None,
         api_key: false,
+        open: false,
         network_address: None,
         in_use: None,
     });
@@ -1098,7 +1144,7 @@ fn a_removal_will_not_go_ahead_until_it_is_told_why() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.page = Page::Models;
     desk.removing = Some(crate::Removing {
-        model: "/m/a-model.gguf".to_owned(),
+        models: vec!["/m/a-model.gguf".to_owned()],
         name: "a-model".to_owned(),
         files: Vec::new(),
         bytes: Some(1024),
@@ -1133,7 +1179,7 @@ fn a_reason_being_typed_takes_the_keys_ahead_of_the_filter() {
     desk.page = Page::Models;
     desk.filter.set("a-family");
     desk.removing = Some(crate::Removing {
-        model: "/m/a-model.gguf".to_owned(),
+        models: vec!["/m/a-model.gguf".to_owned()],
         name: "a-model".to_owned(),
         files: Vec::new(),
         bytes: None,
@@ -1163,7 +1209,7 @@ fn escape_puts_a_removal_back_without_removing_anything() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.page = Page::Models;
     desk.removing = Some(crate::Removing {
-        model: "/m/a-model.gguf".to_owned(),
+        models: vec!["/m/a-model.gguf".to_owned()],
         name: "a-model".to_owned(),
         files: Vec::new(),
         bytes: None,
@@ -1183,7 +1229,7 @@ fn deleting_is_asked_for_separately_from_removing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
     desk.page = Page::Models;
     desk.removing = Some(crate::Removing {
-        model: "/m/a-model.gguf".to_owned(),
+        models: vec!["/m/a-model.gguf".to_owned()],
         name: "a-model".to_owned(),
         files: Vec::new(),
         bytes: None,
@@ -1203,4 +1249,1217 @@ fn deleting_is_asked_for_separately_from_removing() {
     );
     desk.act(crate::Act::PurgeToggle);
     assert_eq!(desk.removing.as_ref().map(|held| held.purge), Some(false));
+}
+
+/// Everything the window shows about a hold comes out of one answer.
+///
+/// It used to ask twice, once for each half it wanted. The daemon works a rate out as the
+/// difference between the counters at one answer and the counters at the next, so the
+/// second ask measured the milliseconds since the first — no whole token arrives in that
+/// time, and every rate read zero for as long as the model was working.
+mod the_hold {
+    use crate::Desk;
+    use mcf_record::json::Value;
+    use mcf_serve::control::Answer;
+
+    fn an_answer() -> Answer {
+        Answer::served(Value::map([
+            ("hosting", Value::text("/store/a-model.gguf")),
+            ("address", Value::text("http://127.0.0.1:8080/")),
+            ("since", Value::text("2026-09-17T10:00:00Z")),
+            ("settings", Value::map([("context", Value::Integer(8192))])),
+            (
+                "use",
+                Value::map([
+                    ("generated_tokens", Value::text("512")),
+                    ("prompted_tokens", Value::text("96641")),
+                    ("prompt_tokens_reused", Value::text("2.16578e+06")),
+                    ("generated_tokens_per_second", Value::text("41.500")),
+                    ("uptime_seconds", Value::Integer(60)),
+                ]),
+            ),
+            (
+                "under_test",
+                Value::map([
+                    ("model", Value::text("/store/under-test.gguf")),
+                    ("engine", Value::text("provisioned llama.cpp @abc")),
+                    ("use", Value::map([("decodes", Value::text("9"))])),
+                ]),
+            ),
+        ]))
+    }
+
+    fn a_desk() -> Desk {
+        Desk::new(std::path::PathBuf::from("/nowhere"))
+    }
+
+    #[test]
+    fn one_answer_carries_the_hold_what_is_under_test_and_the_figures() {
+        let mut desk = a_desk();
+        desk.took_the_hosted(Ok(an_answer()));
+
+        let held = desk.hosted.as_ref().expect("the hold was read");
+        assert_eq!(held.model, "/store/a-model.gguf");
+        let figures = held.in_use.as_ref().expect("the figures were read");
+        assert_eq!(figures.generated, Some(512));
+        assert_eq!(figures.generated_per_second, Some(41.5));
+        assert!(
+            desk.under_test.is_some(),
+            "what is under test came out of the same answer, not a second ask"
+        );
+        assert!(
+            !desk.busy,
+            "a served answer does not leave the window waiting"
+        );
+    }
+
+    #[test]
+    fn every_reading_that_arrives_is_kept_for_the_graph_that_draws_them() {
+        let mut desk = a_desk();
+        for _ in 0..3 {
+            desk.took_the_hosted(Ok(an_answer()));
+        }
+        assert_eq!(
+            desk.tallies.len(),
+            3,
+            "the graph is drawn from what was read, so a reading dropped is a gap in it"
+        );
+        let newest = desk.tallies.back().copied().expect("a reading");
+        assert_eq!(newest.written, 512);
+        assert_eq!(newest.processed, 96_641);
+        assert_eq!(
+            newest.asked,
+            96_641 + 2_165_780,
+            "what was asked for is what was read plus what the cache saved reading"
+        );
+    }
+
+    /// A rate is a difference over a span, and both halves of that have to be right.
+    mod rates {
+        use crate::Tally;
+        use std::time::{Duration, Instant};
+
+        /// Two readings a known span apart. Both are built from one instant, so the span
+        /// is exactly what it says rather than that plus however long the test took.
+        fn two(gap: u64, before: u64, after: u64) -> (Tally, Tally) {
+            let base = Instant::now();
+            let reading = |written, at| Tally {
+                asked: 0,
+                processed: 0,
+                written,
+                at,
+            };
+            (
+                reading(before, base),
+                reading(
+                    after,
+                    base.checked_add(Duration::from_secs(gap))
+                        .expect("a later instant"),
+                ),
+            )
+        }
+
+        fn written_per_second(gap: u64, before: u64, after: u64) -> Option<f32> {
+            let (then, now) = two(gap, before, after);
+            Tally::per_second(then, now, |held| held.written)
+        }
+
+        #[test]
+        fn a_count_climbing_over_a_second_is_that_many_a_second() {
+            assert_eq!(written_per_second(1, 100, 145), Some(45.0));
+        }
+
+        #[test]
+        fn a_span_longer_than_a_second_is_divided_by_what_it_was() {
+            // The poll asks about once a second, but a busy daemon answers slower. Taking
+            // the span as one second regardless would report a hold as four times busier
+            // than it was.
+            assert_eq!(written_per_second(4, 100, 280), Some(45.0));
+        }
+
+        #[test]
+        fn a_hold_doing_nothing_reads_as_nothing_rather_than_as_no_reading() {
+            assert_eq!(
+                written_per_second(1, 100, 100),
+                Some(0.0),
+                "idle is a real reading, and it is the half of the graph that says when \
+                 the work was not happening"
+            );
+        }
+
+        #[test]
+        fn two_readings_at_the_same_moment_yield_no_rate() {
+            assert_eq!(written_per_second(0, 100, 100), None);
+        }
+
+        #[test]
+        fn a_count_that_went_backwards_is_not_a_negative_rate() {
+            // An engine restarted under the hold starts its counters again.
+            assert_eq!(written_per_second(1, 900, 12), None);
+        }
+    }
+
+    #[test]
+    fn an_engine_that_publishes_only_some_counts_still_draws() {
+        // Engines differ in what they publish. Refusing the reading outright drew an
+        // empty graph beside figures that were plainly there.
+        let only_written =
+            crate::Use::from_value(&Value::map([("generated_tokens", Value::text("512"))]));
+        let tally = crate::Tally::of(&only_written).expect("one count is enough");
+        assert_eq!(tally.written, 512);
+        assert_eq!(tally.processed, 0);
+        assert_eq!(tally.asked, 0);
+
+        assert!(
+            crate::Tally::of(&crate::Use::default()).is_none(),
+            "a reading that says nothing about tokens is not a reading to draw"
+        );
+    }
+
+    #[test]
+    fn an_answer_that_did_not_come_leaves_the_last_figures_standing() {
+        let mut desk = a_desk();
+        desk.took_the_hosted(Ok(an_answer()));
+        desk.took_the_hosted(Err("MCF did not answer".to_owned()));
+        assert!(
+            desk.hosted.is_some(),
+            "a poll that timed out threw away figures that were still the best known"
+        );
+        assert!(desk.busy, "and the window says it is waiting");
+    }
+
+    #[test]
+    fn a_hold_that_has_been_let_go_is_read_as_nothing_held() {
+        let mut desk = a_desk();
+        desk.took_the_hosted(Ok(an_answer()));
+        desk.took_the_hosted(Ok(Answer::served(Value::map([("hosting", Value::Null)]))));
+        assert!(
+            desk.hosted.is_none(),
+            "nothing is held and it still said so"
+        );
+        assert!(
+            desk.tallies.is_empty(),
+            "counts from a hold that is gone start again at nought in the next one, so \
+             keeping them would draw a cliff that never happened"
+        );
+    }
+}
+
+/// A repository's quantizations are separate models on this disk.
+///
+/// Each is its own file, with its own size, its own settings and its own place in the
+/// record, so each is chosen, held and removed on its own. The library used to show one
+/// row per repository and choose its first file when that row was pressed, which left
+/// every other quantization of it unreachable — including for removal.
+mod quantizations {
+    use crate::{Desk, Model};
+
+    fn a_quant(file: &str) -> Model {
+        Model {
+            name: file.trim_end_matches(".gguf").to_owned(),
+            path: format!("/store/owner/Small-GGUF/{file}"),
+            file: file.to_owned(),
+            repository: Some("owner/Small-GGUF".to_owned()),
+            bytes: Some(1_000),
+            ..Model::default()
+        }
+    }
+
+    fn a_desk() -> Desk {
+        let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+        desk.models = vec![
+            a_quant("Small-Q4_K_M.gguf"),
+            a_quant("Small-Q8_0.gguf"),
+            Model {
+                name: "Alone-Q8_0".to_owned(),
+                path: "/store/other/Alone-GGUF/Alone-Q8_0.gguf".to_owned(),
+                file: "Alone-Q8_0.gguf".to_owned(),
+                repository: Some("other/Alone-GGUF".to_owned()),
+                ..Model::default()
+            },
+        ];
+        desk
+    }
+
+    #[test]
+    fn a_repository_opens_out_into_its_quantizations_and_folds_away_again() {
+        let mut desk = a_desk();
+        let repository = "owner/Small-GGUF";
+        assert!(!desk.is_opened_out(Some(repository)));
+
+        desk.act(crate::Act::OpenOut(repository.to_owned()));
+        assert!(
+            desk.is_opened_out(Some(repository)),
+            "there was nothing to press, so only the first quantization could be reached"
+        );
+
+        desk.act(crate::Act::OpenOut(repository.to_owned()));
+        assert!(!desk.is_opened_out(Some(repository)));
+    }
+
+    #[test]
+    fn opening_one_repository_out_does_not_open_the_others() {
+        let mut desk = a_desk();
+        desk.act(crate::Act::OpenOut("owner/Small-GGUF".to_owned()));
+        assert!(!desk.is_opened_out(Some("other/Alone-GGUF")));
+        assert!(!desk.is_opened_out(None));
+    }
+
+    #[test]
+    fn choosing_a_quantization_makes_that_file_the_subject() {
+        let mut desk = a_desk();
+        desk.act(crate::Act::Choose(1));
+        assert_eq!(
+            desk.chosen
+                .and_then(|at| desk.models.get(at))
+                .map(|held| held.file.clone()),
+            Some("Small-Q8_0.gguf".to_owned()),
+            "the second quantization was chosen and the first was made the subject"
+        );
+    }
+
+    #[test]
+    fn what_stays_behind_a_removal_is_counted_and_named() {
+        let desk = a_desk();
+        let (others, repository) = desk
+            .others_of_the_repository("/store/owner/Small-GGUF/Small-Q4_K_M.gguf")
+            .expect("the repository holds another");
+        assert_eq!(others, 1);
+        assert_eq!(repository, "owner/Small-GGUF");
+    }
+
+    #[test]
+    fn a_repository_holding_one_quantization_has_nothing_staying_behind() {
+        let desk = a_desk();
+        assert!(
+            desk.others_of_the_repository("/store/other/Alone-GGUF/Alone-Q8_0.gguf")
+                .is_none(),
+            "saying nothing stays behind is only honest when something does"
+        );
+    }
+
+    #[test]
+    fn a_quantizations_row_shows_what_sets_it_apart_not_what_it_shares() {
+        let said = crate::view::quantization_said(&a_quant("Small-UD-Q4_K_XL.gguf"));
+        assert_eq!(
+            said, "UD-Q4_K_XL",
+            "the repository's name is on the row above; repeating it pushes the part that \
+             differs off the end of the row"
+        );
+    }
+
+    #[test]
+    fn a_file_that_shares_no_prefix_with_its_repository_is_shown_whole() {
+        let mut odd = a_quant("something-else-Q8_0.gguf");
+        odd.repository = Some("owner/Unrelated-GGUF".to_owned());
+        assert_eq!(
+            crate::view::quantization_said(&odd),
+            "something-else-Q8_0",
+            "trimming a prefix that is not there must not leave an empty row"
+        );
+    }
+}
+
+/// What the window makes of the figures the daemon sends.
+///
+/// The numbers come off a real hold: a current llama.cpp that had served about ninety-six
+/// thousand prompt tokens and generated twenty-three thousand.
+mod the_figures {
+    use crate::Use;
+    use mcf_record::json::Value;
+
+    fn as_the_daemon_sends_them() -> Value {
+        Value::map([
+            ("prompted_tokens", Value::text("96641")),
+            ("generated_tokens", Value::text("23210")),
+            ("generated_tokens_live", Value::Integer(23_210)),
+            ("decodes", Value::text("23381")),
+            ("deepest_tokens", Value::text("42094")),
+            ("prompt_tokens_reused", Value::text("2.16578e+06")),
+            ("engine_said_tokens_per_second", Value::text("45.4769")),
+            (
+                "engine_said_prompt_tokens_per_second",
+                Value::text("424.925"),
+            ),
+            ("resident_bytes", Value::Integer(4_539_359_232)),
+            ("card_bytes", Value::Integer(70_623_830_016)),
+            ("uptime_seconds", Value::Integer(3_352)),
+        ])
+    }
+
+    #[test]
+    fn every_figure_the_daemon_sends_is_read() {
+        let read = Use::from_value(&as_the_daemon_sends_them());
+        assert_eq!(read.prompted, Some(96_641));
+        assert_eq!(read.generated, Some(23_210));
+        assert_eq!(read.decodes, Some(23_381));
+        assert_eq!(read.deepest, Some(42_094));
+        assert_eq!(read.resident, Some(4_539_359_232));
+        assert_eq!(read.card, Some(70_623_830_016));
+        assert_eq!(read.uptime_seconds, Some(3_352));
+    }
+
+    #[test]
+    fn a_count_the_engine_wrote_with_an_exponent_is_read_whole() {
+        let read = Use::from_value(&as_the_daemon_sends_them());
+        assert_eq!(
+            read.prompt_reused,
+            Some(2_165_780),
+            "the engine writes large counters with an exponent, and they have to survive \
+             being read"
+        );
+    }
+
+    #[test]
+    fn a_count_past_what_a_single_holds_exactly_is_not_rounded() {
+        let held = Value::map([("prompted_tokens", Value::text("99000001"))]);
+        assert_eq!(
+            Use::from_value(&held).prompted,
+            Some(99_000_001),
+            "a single holds whole numbers exactly only to about sixteen million, and a \
+             token count passes that on the long session where it is worth reading"
+        );
+    }
+
+    #[test]
+    fn a_hold_with_no_two_readings_yet_shows_the_engines_own_average() {
+        let read = Use::from_value(&as_the_daemon_sends_them());
+        assert_eq!(
+            read.generated_per_second, None,
+            "MCF has not worked a rate out yet: there has only been one reading"
+        );
+        assert_eq!(
+            read.generating_per_second(),
+            Some(45.4769),
+            "with nothing of its own to show, the window must show what the engine says \
+             rather than nothing — nothing reads as a model doing nothing"
+        );
+        assert_eq!(read.prompting_per_second(), Some(424.925));
+    }
+
+    #[test]
+    fn mcfs_own_reading_is_preferred_once_there_is_one() {
+        let mut held = as_the_daemon_sends_them();
+        if let Value::Map(fields) = &mut held {
+            let _put = fields.insert(
+                "generated_tokens_per_second".to_owned(),
+                Value::text("61.250"),
+            );
+        }
+        let read = Use::from_value(&held);
+        assert_eq!(
+            read.generating_per_second(),
+            Some(61.25),
+            "MCF's own reading is the live one; the engine's is an average over the hold"
+        );
+    }
+
+    #[test]
+    fn a_rate_of_nothing_falls_back_rather_than_reading_as_a_stalled_model() {
+        let mut held = as_the_daemon_sends_them();
+        if let Value::Map(fields) = &mut held {
+            let _put = fields.insert(
+                "generated_tokens_per_second".to_owned(),
+                Value::text("0.000"),
+            );
+        }
+        assert_eq!(
+            Use::from_value(&held).generating_per_second(),
+            Some(45.4769),
+            "a reading of zero taken across too short a span is not a model doing nothing"
+        );
+    }
+
+    #[test]
+    fn an_engine_that_publishes_no_cache_gauge_reports_no_cache_figure() {
+        let read = Use::from_value(&as_the_daemon_sends_them());
+        assert_eq!(read.cache_used, None);
+        assert_eq!(read.cache_tokens, None);
+        assert!(
+            read.deepest.is_some(),
+            "and what the engine publishes instead is there to show in its place"
+        );
+    }
+}
+
+/// What the page says about who can reach the hold.
+///
+/// The key itself is deliberately kept off the wire. Reading the key field to decide what
+/// to say found nothing every time, so a hold answering the network with a key set was
+/// described as "API key: none (localhost only)" — directly above its own network address.
+mod reachability {
+    use crate::Hosted;
+    use mcf_record::json::Value;
+    use mcf_serve::control::Answer;
+
+    fn a_hold(open: bool, key_set: bool) -> Answer {
+        Answer::served(Value::map([
+            ("hosting", Value::text("/store/a-model.gguf")),
+            ("address", Value::text("http://127.0.0.1:17817")),
+            (
+                "network_address",
+                if open {
+                    Value::text("http://192.168.1.10:17817")
+                } else {
+                    Value::Null
+                },
+            ),
+            ("since", Value::text("2026-09-17T20:01:23Z")),
+            (
+                "settings",
+                Value::map([
+                    ("context", Value::Integer(262_144)),
+                    ("open", Value::Bool(open)),
+                    ("api_key_set", Value::Bool(key_set)),
+                ]),
+            ),
+        ]))
+    }
+
+    fn read(open: bool, key_set: bool) -> Hosted {
+        let mut desk = crate::Desk::new(std::path::PathBuf::from("/nowhere"));
+        desk.took_the_hosted(Ok(a_hold(open, key_set)));
+        desk.hosted.expect("the hold was read")
+    }
+
+    #[test]
+    fn a_hold_that_answers_the_network_with_a_key_says_so() {
+        let held = read(true, true);
+        assert!(held.open, "it is bound to the network and must say so");
+        assert!(
+            held.api_key,
+            "the key is kept off the wire, so whether one is set has to be said separately \
+             — reading the key field itself always found nothing"
+        );
+    }
+
+    #[test]
+    fn a_hold_that_answers_only_this_computer_says_that() {
+        let held = read(false, false);
+        assert!(!held.open);
+        assert!(!held.api_key);
+    }
+
+    #[test]
+    fn a_hold_open_to_the_network_without_a_key_is_not_described_as_private() {
+        let held = read(true, false);
+        assert!(
+            held.open,
+            "describing this one as reachable from this computer only would be describing \
+             it as safe when anything that can route here can use it"
+        );
+        assert!(!held.api_key);
+    }
+}
+
+/// Whether the draft head is earning its keep.
+///
+/// MCF has a setting for it and a sweep that searches it, so a hold that is using one is
+/// owed the figure while it is being used rather than only in a sweep's report.
+mod the_draft_head {
+    use crate::Use;
+    use mcf_record::json::Value;
+
+    fn with(drafted: Option<&str>, taken: Option<&str>) -> Use {
+        let mut fields: Vec<(&str, Value)> = Vec::new();
+        if let Some(drafted) = drafted {
+            fields.push(("drafted_tokens", Value::text(drafted)));
+        }
+        if let Some(taken) = taken {
+            fields.push(("drafted_tokens_taken", Value::text(taken)));
+        }
+        Use::from_value(&Value::map(fields))
+    }
+
+    #[test]
+    fn a_share_is_shown_of_what_was_actually_proposed() {
+        let read = with(Some("1000"), Some("750"));
+        assert_eq!(read.draft_taken_share(), Some(0.75));
+    }
+
+    #[test]
+    fn a_hold_with_no_draft_head_is_not_reported_as_a_draft_head_failing() {
+        assert_eq!(
+            with(Some("0"), Some("0")).draft_taken_share(),
+            None,
+            "a share of nothing proposed is not a figure, and nought per cent would say \
+             the head had failed at something it was never asked to do"
+        );
+        assert_eq!(with(None, None).draft_taken_share(), None);
+    }
+
+    #[test]
+    fn an_engine_that_says_nothing_about_drafting_yields_no_share() {
+        assert_eq!(with(Some("1000"), None).draft_taken_share(), None);
+    }
+
+    #[test]
+    fn a_share_is_never_shown_above_the_whole() {
+        assert_eq!(
+            with(Some("100"), Some("140")).draft_taken_share(),
+            Some(1.0),
+            "whatever an engine reports, more taken than proposed is not a share above one"
+        );
+    }
+}
+
+/// The server page, actually drawn.
+///
+/// The page is two things side by side now — the model down the left, the machine down a
+/// rail on the right — where it used to be one column with three tables of machine
+/// readings stacked on top, pushing the model's own figures and the message box below the
+/// fold. These render it on paper and read the pixels back.
+mod the_server_page {
+    use crate::paint::{NIGHT, Painter};
+    use crate::{Desk, Hosted, Model, Page, Use};
+    use mcf_record::json::Value;
+
+    fn a_hold() -> Hosted {
+        Hosted {
+            model: "/store/owner/Held-GGUF/Held-Q6_K.gguf".to_owned(),
+            address: "http://127.0.0.1:17817".to_owned(),
+            since: "2026-09-17T20:01:23Z".to_owned(),
+            context: Some(262_144),
+            cache: mcf_core::configuration::CacheType::default(),
+            projector: None,
+            takes: None,
+            api_key: true,
+            open: true,
+            network_address: Some("http://192.168.1.10:17817".to_owned()),
+            in_use: Some(Use::from_value(&Value::map([
+                ("prompted_tokens", Value::text("96641")),
+                ("generated_tokens", Value::text("23210")),
+                ("decodes", Value::text("23381")),
+                ("deepest_tokens", Value::text("42094")),
+                ("prompt_tokens_reused", Value::text("2.16578e+06")),
+                ("engine_said_tokens_per_second", Value::text("45.4769")),
+                (
+                    "engine_said_prompt_tokens_per_second",
+                    Value::text("424.925"),
+                ),
+                ("card_power_watts", Value::text("53.098")),
+                ("card_energy_joules", Value::text("230066.655")),
+                ("card_energy_over_seconds", Value::text("3351.704")),
+                ("resident_bytes", Value::Integer(4_539_359_232)),
+                ("card_bytes", Value::Integer(70_623_830_016)),
+                ("uptime_seconds", Value::Integer(3_352)),
+            ]))),
+        }
+    }
+
+    pub(super) fn a_desk() -> Desk {
+        let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+        desk.page = Page::Hosting;
+        desk.models = vec![Model {
+            name: "Held-Q6_K".to_owned(),
+            path: "/store/owner/Held-GGUF/Held-Q6_K.gguf".to_owned(),
+            file: "Held-Q6_K.gguf".to_owned(),
+            repository: Some("owner/Held-GGUF".to_owned()),
+            bytes: Some(65_000_000_000),
+            ..Model::default()
+        }];
+        desk.chosen = Some(0);
+        desk.hosted = Some(a_hold());
+        // An hour of a real hold: two spells of work with a lull between them and a long
+        // idle stretch after, which is the shape a rate has to be able to show and a
+        // running total cannot.
+        let began = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_mins(50))
+            .unwrap_or_else(std::time::Instant::now);
+        let (mut asked, mut processed, mut written) = (1_800_000_u64, 80_000_u64, 19_000_u64);
+        for second in 0..3_000_u64 {
+            let busy = matches!(second, 120..=520 | 1_250..=1_640);
+            if busy {
+                // A burst reads a long prompt and then writes an answer at a tenth the rate.
+                let reading = matches!(second % 90, 0..=12);
+                asked += if reading { 9_400 } else { 60 };
+                processed += if reading { 410 } else { 12 };
+                written += if reading { 0 } else { 46 };
+            }
+            desk.tallies.push_back(crate::Tally {
+                asked,
+                processed,
+                written,
+                at: began
+                    .checked_add(std::time::Duration::from_secs(second))
+                    .unwrap_or(began),
+            });
+        }
+        desk
+    }
+
+    /// Draw the whole window on paper and hand back what drew it, so the pixels can be
+    /// read off it.
+    pub(super) fn drawn(desk: &Desk, width: u32, height: u32) -> Painter {
+        let mut paint = match Painter::on_paper(width, height, 1.0, NIGHT) {
+            Ok(paint) => paint,
+            // The face is built by this crate's build script; if it is genuinely missing
+            // there is nothing here to test, and saying so beats a failure that reads like
+            // a layout fault.
+            Err(why) => panic!("the window's own face could not be loaded: {why}"),
+        };
+        let _act = crate::view::draw(&mut paint, desk, &crate::ui::Mouse::default());
+        paint
+    }
+
+    /// One repository of the shot's shelf: its name, and the variants on it.
+    type Shelved = (&'static str, &'static [(&'static str, u64, Option<u32>)]);
+
+    /// The shot's shelf, as models.
+    fn shelved(shelf: &[Shelved]) -> Vec<Model> {
+        let mut held = Vec::new();
+        for (repository, variants) in shelf {
+            for (file, bytes, parts) in *variants {
+                held.push(Model {
+                    name: (*file).to_owned(),
+                    path: format!("/store/{repository}/{file}.gguf"),
+                    file: format!("{file}.gguf"),
+                    repository: Some((*repository).to_owned()),
+                    bytes: Some(*bytes),
+                    parts: *parts,
+                    ..Model::default()
+                });
+            }
+        }
+        held
+    }
+
+    /// A desk with something for the strip to say, for the shot only.
+    fn a_talkative_desk() -> Desk {
+        let mut desk = a_desk();
+        // Something for the strip to say, so the shot shows it doing its job.
+        desk.notices.say(
+            crate::notice::Notice::new(
+                crate::notice::Tone::Working,
+                crate::ABOUT_TRANSFERS_WORK,
+                "Getting Small-Q8_0",
+            )
+            .so_far(Some(0.46))
+            .saying("294 MB of 639 MB"),
+        );
+        desk.notices.say(
+            crate::notice::Notice::new(
+                crate::notice::Tone::Refused,
+                "engine:llama.cpp",
+                "Could not build llama.cpp",
+            )
+            .saying("podman is not at /usr/bin/podman or /usr/local/bin/podman"),
+        );
+        desk.notices.say(
+            crate::notice::Notice::new(
+                crate::notice::Tone::Done,
+                crate::ABOUT_HOLD,
+                "Server stopped: Held-Q6_K",
+            )
+            .saying("freed 4.5 GB RAM, 70.6 GB VRAM"),
+        );
+        desk.notices.say(crate::notice::Notice::new(
+            crate::notice::Tone::Warning,
+            "network",
+            "The hold answers the network without an API key",
+        ));
+        desk.notices_open = std::env::var("MCF_SHOT_OPEN").is_ok();
+        a_shelf(&mut desk);
+        desk
+    }
+
+    /// A shelf worth looking at, put on a desk for the shot.
+    fn a_shelf(desk: &mut Desk) {
+        // A shelf worth looking at: several repositories of very different size, a split
+        // variant, one being served, and a projector nobody's model is left for.
+        desk.page = std::env::var("MCF_SHOT_PAGE")
+            .ok()
+            .and_then(|held| match held.as_str() {
+                "downloads" => Some(crate::Page::Downloads),
+                _ => None,
+            })
+            .unwrap_or(desk.page);
+        desk.disk = Some(crate::Storage {
+            total: 1_900_000_000_000,
+            free: 1_200_000_000_000,
+        });
+        let shelf: [Shelved; 4] = [
+            (
+                "owner/Coder-Next-GGUF",
+                &[
+                    ("Coder-Next-Q6_K-00001-of-00003", 65_600_000_000, Some(3)),
+                    ("Coder-Next-Q4_K_M", 48_500_000_000, None),
+                    ("Coder-Next-UD-IQ4_NL", 39_200_000_000, None),
+                ],
+            ),
+            (
+                "owner/Big-35B-GGUF",
+                &[
+                    ("Big-35B-BF16-00001-of-00002", 69_400_000_000, Some(2)),
+                    ("Big-35B-Q8_0", 36_900_000_000, None),
+                ],
+            ),
+            (
+                "owner/Middle-31B-GGUF",
+                &[("Middle-31B-UD-Q4_K_XL", 17_300_000_000, None)],
+            ),
+            (
+                "owner/Small-20B-GGUF",
+                &[("Small-20B-Q8_0", 12_100_000_000, None)],
+            ),
+        ];
+        desk.models = shelved(&shelf);
+        desk.weights = crate::Weights {
+            bytes: 300_000_000_000,
+            files: 13,
+            orphans: vec![
+                crate::Orphan {
+                    path: "/store/owner/Gone-27B-GGUF/mmproj-BF16.gguf".to_owned(),
+                    bytes: 931_000_000,
+                },
+                crate::Orphan {
+                    path: "/store/owner/Also-Gone-GGUF/mmproj-F16.gguf".to_owned(),
+                    bytes: 878_000_000,
+                },
+            ],
+        };
+        desk.chosen = Some(1);
+        let _ticked = desk
+            .picked
+            .insert("/store/owner/Coder-Next-GGUF/Coder-Next-Q4_K_M.gguf".to_owned());
+        let _opened = desk.opened_out.insert("owner/Coder-Next-GGUF".to_owned());
+        let _opened = desk.opened_out.insert("owner/Big-35B-GGUF".to_owned());
+    }
+
+    /// Write a drawn page out so it can be looked at. Ignored: it is for eyes, not for
+    /// the suite, and it writes a file.
+    #[test]
+    #[ignore = "writes a file; run it by name to look at the page"]
+    fn look_at_it() {
+        let wide = std::env::var("MCF_SHOT_WIDTH")
+            .ok()
+            .and_then(|held| held.parse().ok())
+            .unwrap_or(1400);
+        let paint = drawn(&a_talkative_desk(), wide, 1024);
+        let paper = paint.paper().expect("paper");
+        let mut out = format!("P6\n{} {}\n255\n", paper.width, paper.height).into_bytes();
+        for y in 0..paper.height {
+            for x in 0..paper.width {
+                let (red, green, blue) = paper.at(x, y).unwrap_or((0, 0, 0));
+                out.extend_from_slice(&[red, green, blue]);
+            }
+        }
+        // Into the temp directory unless told otherwise: an ignored test is still a test,
+        // and one that litters the tree it is run from is a nuisance.
+        let at = std::env::var("MCF_SHOT").unwrap_or_else(|_| {
+            std::env::temp_dir()
+                .join("mcf-server-page.ppm")
+                .display()
+                .to_string()
+        });
+        std::fs::write(&at, out).expect("written");
+        println!("wrote {at}");
+    }
+
+    /// One pixel of a drawn page.
+    pub(super) fn pixel(paint: &Painter, x: u32, y: u32) -> (u8, u8, u8) {
+        paint
+            .paper()
+            .expect("drawing on paper yields paper")
+            .at(x, y)
+            .expect("a pixel inside the page")
+    }
+
+    #[test]
+    fn it_draws_at_every_width_without_coming_apart() {
+        let desk = a_desk();
+        // Across the width the page stops railing and starts stacking, and either side of
+        // it: a threshold is where geometry goes wrong.
+        for width in [420, 700, 919, 920, 921, 1280, 1920, 2560] {
+            let paint = drawn(&desk, width, 1024);
+            assert_eq!(
+                paint.paper().expect("paper").width,
+                width,
+                "drew at the wrong width"
+            );
+        }
+    }
+
+    #[test]
+    fn it_draws_with_nothing_held_at_all() {
+        let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+        desk.page = Page::Hosting;
+        for width in [420, 1280] {
+            let _drew = drawn(&desk, width, 1024);
+        }
+    }
+
+    #[test]
+    fn it_draws_while_the_machine_has_reported_nothing() {
+        // Every reading absent is the state a daemon that has just started is in, and it
+        // is the state that turns a missing figure into a panic if anything divides by one.
+        let mut desk = a_desk();
+        desk.reading = mcf_tui::machine::Reading::default();
+        desk.hosted = Some(Hosted {
+            in_use: Some(Use::default()),
+            ..a_hold()
+        });
+        let _drew = drawn(&desk, 1280, 1024);
+    }
+
+    #[test]
+    fn the_machine_sits_beside_the_model_rather_than_above_it() {
+        let paint = drawn(&a_desk(), 1400, 1024);
+        // The rail paints itself in the card colour against the page's ground, so where
+        // it is can be read straight off the paper.
+        let in_the_rail = pixel(&paint, 1400 - 60, 700);
+        let in_the_column = pixel(&paint, 600, 700);
+        assert_eq!(
+            in_the_rail, NIGHT.card,
+            "there is no rail down the right: the machine is not beside the model"
+        );
+        assert_eq!(
+            in_the_column, NIGHT.ground,
+            "the rail has spread across the column"
+        );
+    }
+
+    #[test]
+    fn a_window_too_narrow_for_a_rail_stacks_instead() {
+        let paint = drawn(&a_desk(), 800, 1024);
+        let at_the_edge = pixel(&paint, 800 - 60, 700);
+        assert_eq!(
+            at_the_edge, NIGHT.ground,
+            "a rail was drawn in a window too narrow to hold one beside a column of prose"
+        );
+    }
+
+    /// The rail runs to the window's own edges — top, bottom and right. Inset by the
+    /// page's padding it floated, and read as a card that happened to be tall.
+    #[test]
+    fn the_rail_runs_edge_to_edge() {
+        let paint = drawn(&a_desk(), 1400, 1024);
+        // Up to the strip along the foot, which is card-coloured too — so the rail is
+        // checked within its own extent rather than against a pixel the strip also paints.
+        for y in [1, 200, 500, 800, 970] {
+            assert_eq!(
+                pixel(&paint, 1400 - 60, y),
+                NIGHT.card,
+                "the rail stops short at y {y}"
+            );
+        }
+        assert_eq!(
+            pixel(&paint, 1399, 500),
+            NIGHT.card,
+            "the rail does not reach the right edge, so it floats"
+        );
+    }
+}
+
+/// The strip along the foot, drawn.
+///
+/// It is the one place the window says anything in passing, so it is on every page, it is
+/// always in the same place, and it never covers what it is reporting about.
+mod the_strip {
+    use super::the_server_page::{a_desk, drawn, pixel};
+    use crate::paint::NIGHT;
+
+    /// Where the strip is, in a window of this size.
+    fn in_the_strip(height: u32) -> u32 {
+        height - 17
+    }
+
+    #[test]
+    fn it_is_there_on_every_page() {
+        for page in [
+            crate::Page::Hosting,
+            crate::Page::Models,
+            crate::Page::Downloads,
+            crate::Page::Host,
+        ] {
+            let mut desk = a_desk();
+            desk.page = page;
+            let paint = drawn(&desk, 1400, 1024);
+            assert_eq!(
+                pixel(&paint, 700, in_the_strip(1024)),
+                NIGHT.card,
+                "no strip on {page:?}: the one place MCF says things has to be every place"
+            );
+        }
+    }
+
+    #[test]
+    fn it_says_what_is_happening_and_takes_it_back_when_it_stops() {
+        let mut desk = a_desk();
+        assert!(desk.notices.foremost().is_none());
+        desk.notices
+            .working(crate::ABOUT_TRANSFERS_WORK, "Getting one.gguf");
+        assert_eq!(
+            desk.notices.foremost().map(|held| held.what.as_str()),
+            Some("Getting one.gguf")
+        );
+        desk.notices.forget(crate::ABOUT_TRANSFERS_WORK);
+        assert!(
+            desk.notices.foremost().is_none(),
+            "work that has stopped must stop being reported"
+        );
+    }
+
+    #[test]
+    fn opening_the_list_takes_room_from_the_page_rather_than_covering_it() {
+        let mut desk = a_desk();
+        desk.notices.refused("hold", "Could not hold it");
+        let shut = drawn(&desk, 1400, 1024);
+        desk.notices_open = true;
+        let open = drawn(&desk, 1400, 1024);
+        // With the list open the page is shorter, so what was drawn part way down the
+        // column is no longer there. Covering it would have left it exactly as it was.
+        let moved = (200..900).any(|y| pixel(&shut, 400, y) != pixel(&open, 400, y));
+        assert!(
+            moved,
+            "the list covered the page instead of taking room from it"
+        );
+    }
+
+    #[test]
+    fn the_list_only_opens_when_there_is_something_in_it() {
+        let mut desk = a_desk();
+        desk.notices_open = true;
+        let empty = drawn(&desk, 1400, 1024);
+        desk.notices_open = false;
+        let shut = drawn(&desk, 1400, 1024);
+        assert_eq!(
+            (200..900)
+                .filter(|y| pixel(&empty, 400, *y) != pixel(&shut, 400, *y))
+                .count(),
+            0,
+            "an empty list still took room from the page"
+        );
+    }
+
+    #[test]
+    fn a_daemon_that_is_not_answering_is_said_once_and_then_taken_back() {
+        let mut desk = a_desk();
+        desk.refusal = Some("MCF is not answering on this computer".to_owned());
+        desk.tell_what_is_happening();
+        desk.tell_what_is_happening();
+        assert_eq!(
+            desk.notices.len(),
+            1,
+            "a condition said every frame must not stack up once a frame"
+        );
+        assert_eq!(
+            desk.notices
+                .about(crate::ABOUT_DAEMON)
+                .map(|held| held.tone),
+            Some(crate::notice::Tone::Refused)
+        );
+
+        desk.refusal = None;
+        desk.tell_what_is_happening();
+        assert!(
+            desk.notices.about(crate::ABOUT_DAEMON).is_none(),
+            "a condition that has gone must stop being reported"
+        );
+    }
+}
+
+/// The downloads page as a page about a disk.
+///
+/// It was the transfer queue and nothing else, so the one page about files said nothing
+/// about the disk they were on — and nothing on it could be removed.
+mod the_disk {
+    use crate::{Orphan, Storage, Weights};
+    use mcf_record::json::Value;
+
+    fn a_shelf() -> Vec<Value> {
+        // As the daemon sends it: two variants of one repository, and a projector each
+        // beside a model and left behind on its own.
+        vec![
+            Value::map([
+                ("path", Value::text("/store/owner/Kept-GGUF/Kept-Q8_0.gguf")),
+                ("bytes", Value::Integer(12_000_000_000)),
+                ("companion", Value::Bool(false)),
+            ]),
+            Value::map([
+                (
+                    "path",
+                    Value::text("/store/owner/Kept-GGUF/mmproj-F16.gguf"),
+                ),
+                ("bytes", Value::Integer(900_000_000)),
+                ("companion", Value::Bool(true)),
+            ]),
+            Value::map([
+                (
+                    "path",
+                    Value::text("/store/owner/Gone-GGUF/mmproj-BF16.gguf"),
+                ),
+                ("bytes", Value::Integer(931_000_000)),
+                ("companion", Value::Bool(true)),
+            ]),
+        ]
+    }
+
+    #[test]
+    fn the_shelf_is_weighed_with_the_companions_counted() {
+        let weighed = crate::weighed(&a_shelf());
+        assert_eq!(
+            weighed.bytes,
+            12_000_000_000 + 900_000_000 + 931_000_000,
+            "a projector takes the same disk as anything else, so a figure that left it \
+             out would be short"
+        );
+        assert_eq!(weighed.files, 3);
+    }
+
+    #[test]
+    fn a_projector_beside_a_model_is_the_models_and_one_on_its_own_is_not() {
+        let weighed = crate::weighed(&a_shelf());
+        assert_eq!(weighed.orphans.len(), 1);
+        assert_eq!(
+            weighed.orphans.first().map(|held| held.path.as_str()),
+            Some("/store/owner/Gone-GGUF/mmproj-BF16.gguf")
+        );
+        assert_eq!(weighed.reclaimable(), 931_000_000);
+    }
+
+    #[test]
+    fn nothing_is_orphaned_where_every_projector_has_its_model() {
+        let held = vec![
+            Value::map([
+                ("path", Value::text("/store/owner/Kept-GGUF/Kept-Q8_0.gguf")),
+                ("bytes", Value::Integer(1)),
+                ("companion", Value::Bool(false)),
+            ]),
+            Value::map([
+                (
+                    "path",
+                    Value::text("/store/owner/Kept-GGUF/mmproj-F16.gguf"),
+                ),
+                ("bytes", Value::Integer(1)),
+                ("companion", Value::Bool(true)),
+            ]),
+        ];
+        assert!(crate::weighed(&held).orphans.is_empty());
+    }
+
+    #[test]
+    fn the_orphans_are_largest_first_because_that_is_what_is_worth_removing() {
+        let mut held = a_shelf();
+        held.push(Value::map([
+            (
+                "path",
+                Value::text("/store/owner/Also-Gone-GGUF/mmproj-F16.gguf"),
+            ),
+            ("bytes", Value::Integer(5_000_000_000)),
+            ("companion", Value::Bool(true)),
+        ]));
+        let weighed = crate::weighed(&held);
+        let sizes: Vec<u64> = weighed.orphans.iter().map(|one| one.bytes).collect();
+        assert_eq!(sizes, vec![5_000_000_000, 931_000_000]);
+    }
+
+    #[test]
+    fn what_a_disk_holds_is_stated_as_shares_of_two_different_things() {
+        let volume = Storage {
+            total: 2_000_000_000_000,
+            free: 1_000_000_000_000,
+        };
+        assert_eq!(volume.used(), 1_000_000_000_000);
+        // Half of what is used, a quarter of the disk: two answers to two questions, and
+        // showing one as the other is how a page misleads.
+        assert_eq!(volume.share_of_what_is_used(500_000_000_000), Some(50));
+        assert_eq!(volume.share_of_the_disk(500_000_000_000), Some(25));
+    }
+
+    #[test]
+    fn a_share_of_a_disk_that_reported_nothing_is_not_a_share_of_nought() {
+        let empty = Storage { total: 0, free: 0 };
+        assert_eq!(empty.share_of_the_disk(1), None);
+        assert_eq!(empty.share_of_what_is_used(1), None);
+    }
+
+    #[test]
+    fn a_terabyte_is_said_as_one() {
+        assert_eq!(
+            crate::words::size_in_words(Some(1_200_000_000_000)).as_deref(),
+            Some("1.2 TB"),
+            "a disk said to hold 1200 GB is a disk nobody reads at a glance"
+        );
+        assert_eq!(
+            crate::words::size_in_words(Some(48_500_000_000)).as_deref(),
+            Some("48 GB")
+        );
+    }
+
+    #[test]
+    fn ticking_a_variant_chooses_it_and_ticking_it_again_does_not() {
+        let mut desk = super::the_server_page::a_desk();
+        let path = desk
+            .models
+            .first()
+            .map(|held| held.path.clone())
+            .expect("a model");
+        desk.act(crate::Act::PickOnDisk(path.clone()));
+        assert!(desk.picked.contains(&path));
+        desk.act(crate::Act::PickOnDisk(path.clone()));
+        assert!(desk.picked.is_empty(), "the same tick box must untick it");
+    }
+
+    #[test]
+    fn what_is_chosen_is_weighed_so_the_page_can_say_what_would_go() {
+        let mut desk = super::the_server_page::a_desk();
+        desk.weights = Weights {
+            bytes: 0,
+            files: 0,
+            orphans: vec![Orphan {
+                path: "/store/owner/Gone-GGUF/mmproj-BF16.gguf".to_owned(),
+                bytes: 931_000_000,
+            }],
+        };
+        let model = desk.models.first().cloned().expect("a model");
+        desk.act(crate::Act::PickOnDisk(model.path.clone()));
+        desk.act(crate::Act::PickOnDisk(
+            "/store/owner/Gone-GGUF/mmproj-BF16.gguf".to_owned(),
+        ));
+        assert_eq!(
+            desk.picked_bytes(),
+            model.bytes.unwrap_or(0) + 931_000_000,
+            "an orphaned projector is weighed too, or the total is short of what goes"
+        );
+    }
+
+    #[test]
+    fn ticking_every_orphan_takes_the_lot() {
+        let mut desk = super::the_server_page::a_desk();
+        desk.weights = Weights {
+            bytes: 0,
+            files: 0,
+            orphans: vec![
+                Orphan {
+                    path: "/a/mmproj.gguf".to_owned(),
+                    bytes: 1,
+                },
+                Orphan {
+                    path: "/b/mmproj.gguf".to_owned(),
+                    bytes: 2,
+                },
+            ],
+        };
+        desk.act(crate::Act::PickTheOrphans);
+        assert_eq!(desk.picked.len(), 2);
+        desk.act(crate::Act::ClearPicked);
+        assert!(desk.picked.is_empty());
+    }
+
+    #[test]
+    fn the_model_being_served_is_named_before_it_can_be_removed_by_accident() {
+        let mut desk = super::the_server_page::a_desk();
+        let served = desk
+            .hosted
+            .as_ref()
+            .map(|hosting| hosting.model.clone())
+            .expect("a hold");
+        assert!(desk.picked_the_served().is_none());
+        desk.act(crate::Act::PickOnDisk(served));
+        assert!(
+            desk.picked_the_served().is_some(),
+            "the one thing on this page that cannot simply go has to be said so"
+        );
+    }
 }

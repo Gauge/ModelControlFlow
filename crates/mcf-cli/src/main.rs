@@ -3,6 +3,7 @@ mod ask;
 mod check;
 mod desk;
 mod doctor;
+mod downloads;
 mod explain;
 mod failures;
 mod hosting;
@@ -103,6 +104,16 @@ enum Request<'a> {
         reference: &'a str,
         file: &'a str,
     },
+    Downloads,
+    Queue {
+        reference: &'a str,
+        file: &'a str,
+    },
+    AboutDownload {
+        id: u64,
+        about: downloads::About,
+    },
+    ForgetDownloads,
     Settings {
         at: Option<u64>,
         held_as: Option<mcf_core::configuration::CacheType>,
@@ -391,6 +402,36 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["share", "--into", into] => Request::Share { into: Some(into) },
         ["share", argument, ..] => Request::UnexpectedArgument {
             command: "share",
+            argument,
+        },
+        ["downloads"] => Request::Downloads,
+        ["downloads", "add", reference, file] => Request::Queue { reference, file },
+        ["downloads", "clear"] => Request::ForgetDownloads,
+        ["downloads", told @ ("pause" | "resume" | "cancel"), id] => match id.parse::<u64>() {
+            Ok(id) => Request::AboutDownload {
+                id,
+                about: match *told {
+                    "pause" => downloads::About::Pause,
+                    "resume" => downloads::About::Resume,
+                    _ => downloads::About::Cancel,
+                },
+            },
+            Err(_) => Request::NameExpected {
+                command: "downloads",
+                argument: id,
+                needs: "<id>",
+            },
+        },
+        ["downloads", "add", ..] => Request::MissingArgument {
+            command: "downloads",
+            needs: "add <owner/name> <file>",
+        },
+        ["downloads", "pause" | "resume" | "cancel"] => Request::MissingArgument {
+            command: "downloads",
+            needs: "<id>",
+        },
+        ["downloads", argument, ..] => Request::UnexpectedArgument {
+            command: "downloads",
             argument,
         },
         ["status"] => Request::Status,
@@ -1039,6 +1080,21 @@ const COMMANDS: &str = "\
     \x20 mcf support [--into <path>]         what a maintainer would need to\n\
     \x20                                     read this machine's sensors, as a\n\
     \x20                                     file you read before you send it\n\
+    \x20 mcf downloads                       the queue of files MCF is\n\
+    \x20                                     bringing here: one line each,\n\
+    \x20                                     how far along and what state\n\
+    \x20 mcf downloads add                   ask for one without waiting for\n\
+    \x20     <owner/name> <file>             it. Several can be on their way\n\
+    \x20                                     at once, and they keep arriving\n\
+    \x20                                     with nothing watching — unlike\n\
+    \x20                                     `mcf pull`, which waits\n\
+    \x20 mcf downloads pause <id>            stop one where it stands; what\n\
+    \x20                                     arrived stays on the disk\n\
+    \x20 mcf downloads resume <id>           carry on from wherever it got to\n\
+    \x20 mcf downloads cancel <id>           give one up, and sweep what had\n\
+    \x20                                     arrived\n\
+    \x20 mcf downloads clear                 drop the finished ones from the\n\
+    \x20                                     list\n\
     \x20 mcf status                          ask a running daemon what it is\n\
     \x20                                     and what it is holding\n\
     \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
@@ -1201,6 +1257,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Unhost => hosting::unhost(),
         Request::Offered { reference } => acquire::offered(reference, None, false),
         Request::Acquire { reference, file } => acquire::acquire(reference, file, None),
+        Request::Downloads => downloads::listed(),
+        Request::Queue { reference, file } => downloads::queue(reference, file, None),
+        Request::AboutDownload { id, about } => downloads::about(*id, *about),
+        Request::ForgetDownloads => downloads::forget(),
         Request::Provision { name, into } => provision::run(*name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {

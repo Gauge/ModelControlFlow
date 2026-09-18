@@ -60,6 +60,10 @@ pub fn needs_a_fresh_hold(dial: Dial, held_at: Option<Step>, wanted: Step) -> bo
 #[derive(Debug)]
 pub enum Heard {
     Started(At),
+    /// Whether the sweep is waiting to be told to carry on. Sent when it starts waiting
+    /// and again when it stops, so that what the window shows is what the sweep is doing
+    /// rather than what it was last asked to do.
+    Paused(bool),
     /// Which round of the search the sweep has reached. An automatic search opens another
     /// round whenever the last one found something, so this is the only honest measure of
     /// how far along it is.
@@ -90,6 +94,7 @@ struct Doing {
     host: Hosting,
     recorded: std::boxed::Box<dyn Fn() -> String + Send>,
     asked_to_stop: Arc<AtomicBool>,
+    asked_to_wait: Arc<AtomicBool>,
 }
 
 enum Stopped {
@@ -182,10 +187,38 @@ fn trial_for(doing: &Doing, spot: At, set: Set, timed: bool) -> Asked {
     }
 }
 
+/// How often a paused sweep looks to see whether it has been told to carry on.
+const WHILE_PAUSED: Duration = Duration::from_millis(200);
+
+/// Wait here for as long as the sweep is paused, and say whether it should carry on.
+///
+/// A sweep is paused between trials, never inside one. A trial part way through is a
+/// reading part way through, and a reading that was taken across a pause is a reading
+/// of nothing — the engine sat idle for however long the pause lasted, and the rate that
+/// came out of it would be written into the ledger as if it meant something.
+fn waited_out(doing: &Doing) -> bool {
+    if !doing.asked_to_wait.load(Ordering::Relaxed) {
+        return !doing.asked_to_stop.load(Ordering::Relaxed);
+    }
+    if doing.send.send(Heard::Paused(true)).is_err() {
+        return false;
+    }
+    while doing.asked_to_wait.load(Ordering::Relaxed) {
+        if doing.asked_to_stop.load(Ordering::Relaxed) {
+            return false;
+        }
+        std::thread::sleep(WHILE_PAUSED);
+    }
+    doing.send.send(Heard::Paused(false)).is_ok() && !doing.asked_to_stop.load(Ordering::Relaxed)
+}
+
 fn sweeping(mut doing: Doing) {
     let mut held_at: Option<Step> = None;
     loop {
         if doing.asked_to_stop.load(Ordering::Relaxed) {
+            break;
+        }
+        if !waited_out(&doing) {
             break;
         }
         let before = doing.course.skipped();
@@ -293,6 +326,7 @@ pub type Hosting =
 pub struct Running {
     heard: Receiver<Heard>,
     stop: Arc<AtomicBool>,
+    wait: Arc<AtomicBool>,
     pub report: Report,
     pub doing: Option<At>,
     pub taken: usize,
@@ -303,7 +337,14 @@ pub struct Running {
     pub stopped: Option<String>,
     pub finished: bool,
     pub round: u32,
+    /// Whether the sweep has actually stopped where it stands, as opposed to having been
+    /// asked to. A sweep asked to wait finishes the trial it is in first.
+    pub waiting: bool,
     started: Instant,
+    /// How long the sweep has spent waiting to be told to carry on, so that the clock
+    /// beside it counts work rather than counting a pause as though it were work.
+    paused_for: Duration,
+    paused_at: Option<Instant>,
 }
 
 impl Running {
@@ -328,7 +369,9 @@ impl Running {
         } = orders;
         let (send, heard) = channel();
         let stop = Arc::new(AtomicBool::new(false));
+        let wait = Arc::new(AtomicBool::new(false));
         let asked_to_stop = Arc::clone(&stop);
+        let asked_to_wait = Arc::clone(&wait);
         let _worker = std::thread::spawn(move || {
             sweeping(Doing {
                 switch,
@@ -347,11 +390,13 @@ impl Running {
                 host,
                 recorded: std::boxed::Box::new(recorded),
                 asked_to_stop,
+                asked_to_wait,
             });
         });
         Self {
             heard,
             stop,
+            wait,
             report: Report::default(),
             doing: None,
             taken: 0,
@@ -362,11 +407,17 @@ impl Running {
             stopped: None,
             finished: false,
             round: 0,
+            waiting: false,
             started: Instant::now(),
+            paused_for: Duration::ZERO,
+            paused_at: None,
         }
     }
 
     pub fn stop(&self) {
+        // Cleared, so that a sweep paused and then stopped is not left asleep waiting for
+        // a carry-on that is never coming.
+        self.wait.store(false, Ordering::Relaxed);
         self.stop.store(true, Ordering::Relaxed);
     }
 
@@ -375,15 +426,48 @@ impl Running {
         self.stop.load(Ordering::Relaxed)
     }
 
+    /// Ask the sweep to stop where it stands, after the trial it is in. What it has
+    /// measured is already in the ledger, so nothing is lost by waiting and nothing is
+    /// repeated by carrying on.
+    pub fn pause(&self) {
+        self.wait.store(true, Ordering::Relaxed);
+    }
+
+    /// Tell a paused sweep to carry on.
+    pub fn resume(&self) {
+        self.wait.store(false, Ordering::Relaxed);
+    }
+
+    /// Whether the sweep has been asked to wait. It may still be finishing a trial.
+    #[must_use]
+    pub fn asked_to_wait(&self) -> bool {
+        self.wait.load(Ordering::Relaxed)
+    }
+
+    /// How long the sweep has been working, not counting time spent paused. A clock that
+    /// counted a pause would read as though the sweep were slower than it is.
     #[must_use]
     pub fn running_for(&self) -> std::time::Duration {
-        self.started.elapsed()
+        let paused = match self.paused_at {
+            Some(since) => self.paused_for.saturating_add(since.elapsed()),
+            None => self.paused_for,
+        };
+        self.started.elapsed().saturating_sub(paused)
     }
 
     pub fn hear(&mut self) -> bool {
         let mut moved = false;
         loop {
             match self.heard.try_recv() {
+                Ok(Heard::Paused(waiting)) => {
+                    self.waiting = waiting;
+                    if waiting {
+                        self.paused_at = Some(Instant::now());
+                    } else if let Some(since) = self.paused_at.take() {
+                        self.paused_for = self.paused_for.saturating_add(since.elapsed());
+                    }
+                    moved = true;
+                }
                 Ok(Heard::Started(at)) => {
                     self.doing = Some(at);
                     self.produced = 0;
@@ -423,6 +507,10 @@ impl Running {
                 Ok(Heard::Ended) => {
                     self.finished = true;
                     self.doing = None;
+                    self.waiting = false;
+                    if let Some(since) = self.paused_at.take() {
+                        self.paused_for = self.paused_for.saturating_add(since.elapsed());
+                    }
                     moved = true;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -442,6 +530,12 @@ impl Running {
     #[must_use]
     pub fn label(&self, named: &[String], dial: Dial, measure: Measure, ceiling: u32) -> String {
         let clock = as_a_clock(self.running_for());
+        if self.waiting {
+            return format!("{clock} · paused");
+        }
+        if self.asked_to_wait() {
+            return format!("{clock} · pausing after this trial");
+        }
         if let Some(said) = &self.holding {
             return format!("{clock} · {said}");
         }
@@ -498,6 +592,12 @@ impl Running {
                 Some(why) => format!("{counted} · {why}"),
                 None => counted,
             };
+        }
+        if self.waiting {
+            return format!("{counted} · paused where it stood — carry on to take the rest");
+        }
+        if self.asked_to_wait() {
+            return format!("{counted} · pausing once this trial is done");
         }
         if let Some(said) = &self.holding {
             return format!("{counted} · {said}");

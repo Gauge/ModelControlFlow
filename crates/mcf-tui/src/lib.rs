@@ -75,6 +75,7 @@ struct Console {
     models: Vec<Held>,
     card_unused: Option<String>,
     components: Vec<(String, String, bool, bool, bool)>,
+    queue: Vec<screens::downloads::Arriving>,
     said: Option<(String, Ink)>,
     sampler: machine::Sampler,
     reading: machine::Reading,
@@ -137,6 +138,37 @@ fn measured_ends(held: &Value) -> screens::host::Measured {
     ends
 }
 
+fn arriving_from(row: &Value) -> screens::downloads::Arriving {
+    let text = |key: &str| {
+        row.get(key)
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let count = |key: &str| {
+        row.get(key)
+            .and_then(Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok())
+            .unwrap_or(0)
+    };
+    screens::downloads::Arriving {
+        id: count("id"),
+        reference: text("reference"),
+        file: text("file"),
+        part: count("part"),
+        parts: count("parts"),
+        arrived: count("arrived_bytes"),
+        whole: count("whole_bytes"),
+        state: text("state"),
+        // One line of it. The whole refusal is in the record, which `mcf failures` reads.
+        why: row
+            .get("why")
+            .filter(|held| !matches!(held, Value::Null))
+            .and_then(mcf_record::decode::failure_said)
+            .and_then(|said| said.lines().next().map(str::to_owned)),
+    }
+}
+
 fn name_of(model: &Value) -> String {
     model
         .get("path")
@@ -160,6 +192,7 @@ impl Console {
             models: Vec::new(),
             card_unused: None,
             components: Vec::new(),
+            queue: Vec::new(),
             said: None,
             sampler: machine::Sampler::new(),
             reading: machine::Reading::default(),
@@ -214,9 +247,48 @@ impl Console {
             }
             _ => Vec::new(),
         };
+        self.read_the_queue();
         if self.row >= self.models.len() {
             self.row = self.models.len().saturating_sub(1);
         }
+    }
+
+    /// What MCF is bringing here. Read off the daemon like everything else, because the
+    /// queue lives there: this screen and the window are looking at the same one.
+    fn read_the_queue(&mut self) {
+        let Ok(answer) = ask(&self.socket, &Request::Transfers) else {
+            return;
+        };
+        if !answer.served {
+            return;
+        }
+        self.take_the_queue(&answer.body);
+    }
+
+    fn take_the_queue(&mut self, body: &Value) {
+        let Some(rows) = body.get("transfers").and_then(Value::as_list) else {
+            return;
+        };
+        self.queue = rows.iter().map(arriving_from).collect();
+        if self.at == Where::Downloads && self.row >= self.queue.len() {
+            self.row = self.queue.len().saturating_sub(1);
+        }
+    }
+
+    /// Pause, carry on, give up, or drop the finished ones — whichever key was pressed.
+    fn told_about_a_transfer(&mut self, asked: &Request, did: &str) {
+        match ask(&self.socket, asked) {
+            Ok(answer) if answer.served => {
+                self.take_the_queue(&answer.body);
+                self.said = Some((did.to_owned(), Ink::Held));
+            }
+            Ok(answer) => self.said = Some((why(&answer.body), Ink::Refusal)),
+            Err(error) => self.said = Some((error, Ink::Refusal)),
+        }
+    }
+
+    fn the_chosen_transfer(&self) -> Option<u64> {
+        self.queue.get(self.row).map(|held| held.id)
     }
 
     fn describe(model: &Value) -> Held {
@@ -295,6 +367,7 @@ impl Console {
     fn rows(&self) -> usize {
         match self.at {
             Where::Models => self.models.len(),
+            Where::Downloads => self.queue.len(),
             _ => 0,
         }
     }
@@ -335,7 +408,7 @@ impl Console {
         } else {
             0
         };
-        if matches!(screen, Where::Models) {
+        if matches!(screen, Where::Models | Where::Downloads) {
             self.refresh();
         }
     }
@@ -376,6 +449,9 @@ fn draw(console: &Console, into: &mut Screen) {
             console.button,
             console.on_buttons,
         ),
+        Where::Downloads => {
+            screens::downloads::draw(into, from, &console.queue, console.row);
+        }
         Where::Components => {
             into.put(2, from + 1, "COMPONENTS", Ink::Heading);
             if console.components.is_empty() {
@@ -553,6 +629,36 @@ fn act(console: &mut Console, key: Key) -> Leaving {
             Key::Character('r') => {
                 console.said = None;
                 console.refresh();
+            }
+            Key::Character('p') if console.at == Where::Downloads => {
+                if let Some(id) = console.the_chosen_transfer() {
+                    console.told_about_a_transfer(
+                        &Request::PauseTransfer { id },
+                        "stopped where it stood — what arrived stays on the disk",
+                    );
+                }
+            }
+            Key::Character('c') if console.at == Where::Downloads => {
+                if let Some(id) = console.the_chosen_transfer() {
+                    console.told_about_a_transfer(
+                        &Request::ResumeTransfer { id },
+                        "carrying on from wherever it got to",
+                    );
+                }
+            }
+            Key::Character('x') if console.at == Where::Downloads => {
+                if let Some(id) = console.the_chosen_transfer() {
+                    console.told_about_a_transfer(
+                        &Request::GiveUpTransfer { id },
+                        "given up, and what had arrived swept",
+                    );
+                }
+            }
+            Key::Character('d') if console.at == Where::Downloads => {
+                console.told_about_a_transfer(
+                    &Request::ForgetTransfers,
+                    "the finished ones are off the list",
+                );
             }
             Key::Character('S') => console.confirming = true,
             _ => {}

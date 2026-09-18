@@ -457,6 +457,18 @@ pub(crate) fn stop(reason: &str) -> Response {
     }
 }
 
+/// Ask the daemon, starting it if it is not up. Every command that wants one quick answer
+/// wants this: a daemon that is not running is not a reason to refuse.
+pub(crate) fn asked(request: &Request) -> Result<Answer, String> {
+    let Some(socket) = socket_path() else {
+        return Err("MCF has nowhere to put a control socket on this machine".to_owned());
+    };
+    if let Some(why) = ensure_running(&socket) {
+        return Err(format!("MCF could not start\n  {why}"));
+    }
+    ask(&socket, request)
+}
+
 pub(crate) fn ask(socket: &std::path::Path, request: &Request) -> Result<Answer, String> {
     let mut connection = UnixStream::connect(socket).map_err(|error| {
         format!(

@@ -599,3 +599,461 @@ fn a_files_name_shortens_toward_its_repositorys() {
     assert_eq!(super::shorter_name(""), None);
     assert_eq!(super::shorter_name("-"), None);
 }
+
+/// A rate is a difference between two readings, and the span between them has to be long
+/// enough for a whole token to have arrived in it.
+///
+/// The window used to ask what the hold was doing twice in a row, a millisecond apart. The
+/// second ask measured against the first, no token had arrived in between, and so every
+/// rate read zero for as long as the model was working — which is exactly when a rate is
+/// worth reading. Readings are kept in a short history now and the one to measure against
+/// is chosen from it, so how often somebody asks cannot decide what the answer is.
+mod rates {
+    use super::super::{RATE_OVER_AT_LEAST_NS, READINGS_KEPT, readings_for};
+    use crate::served::Reach;
+    use mcf_core::time::{Instant, Monotonic};
+
+    fn a_reach(port: u16) -> Reach {
+        Reach::Port { port, key: None }
+    }
+
+    /// A clock this test holds the hands of. Readings are chosen by how far apart they
+    /// are, so the test has to be able to say how far apart they are rather than sleep
+    /// and hope.
+    fn at(nanos: u64) -> Instant<Monotonic> {
+        Instant::from_nanos(nanos.saturating_add(1_000_000_000_000))
+    }
+
+    #[test]
+    fn the_first_reading_measures_against_nothing_and_states_no_rate() {
+        let (against, over) = readings_for(&a_reach(19_001), at(0), Some(0), Some(0));
+        assert!(
+            against.is_none(),
+            "a rate was stated against a reading that was never taken"
+        );
+        assert_eq!(over, 0);
+    }
+
+    #[test]
+    fn two_readings_a_moment_apart_state_no_rate_rather_than_a_rate_of_zero() {
+        let reach = a_reach(19_002);
+        let _first = readings_for(&reach, at(0), Some(100), Some(10));
+        let (against, over) = readings_for(&reach, at(1_000_000), Some(100), Some(10));
+        assert!(
+            against.is_none(),
+            "a rate measured over no time at all reads as a model doing nothing when it is \
+             working: {over}ns"
+        );
+    }
+
+    #[test]
+    fn a_reading_far_enough_back_is_what_a_rate_is_measured_against() {
+        let reach = a_reach(19_003);
+        let _first = readings_for(&reach, at(0), Some(100), Some(10));
+        let later = at(RATE_OVER_AT_LEAST_NS.saturating_mul(2));
+        let (against, over) = readings_for(&reach, later, Some(300), Some(40));
+        let against = against.expect("the reading taken a moment ago is there to measure against");
+        assert_eq!(against.generated, 100);
+        assert_eq!(against.prompted, 10);
+        assert!(
+            over >= RATE_OVER_AT_LEAST_NS,
+            "a rate was stated over a span shorter than MCF states rates over: {over}ns"
+        );
+    }
+
+    #[test]
+    fn asking_far_more_often_than_once_a_second_still_measures_over_a_usable_span() {
+        let reach = a_reach(19_004);
+        let step = RATE_OVER_AT_LEAST_NS.saturating_div(8);
+        let mut generated = 0;
+        let mut last = None;
+        for tick in 0..24_u64 {
+            generated += 5;
+            last = Some(readings_for(
+                &reach,
+                at(step.saturating_mul(tick)),
+                Some(generated),
+                Some(0),
+            ));
+        }
+        let (against, over) = last.expect("there were readings");
+        assert!(
+            against.is_some(),
+            "a caller asking eight times a second was told no rate at all"
+        );
+        assert!(
+            over >= RATE_OVER_AT_LEAST_NS,
+            "the span was decided by how often the caller asked rather than by MCF: {over}ns"
+        );
+    }
+
+    #[test]
+    fn the_history_of_one_engine_does_not_grow_without_end() {
+        let reach = a_reach(19_005);
+        for tick in 0..(READINGS_KEPT.saturating_mul(3) as u64) {
+            let _read = readings_for(
+                &reach,
+                at(tick.saturating_mul(1_000_000)),
+                Some(tick),
+                Some(0),
+            );
+        }
+        let held = super::super::COUNTED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let kept = held
+            .get(&super::super::where_it_answers(&reach))
+            .expect("kept");
+        assert!(
+            kept.len() <= READINGS_KEPT,
+            "a daemon left up for a week would hold every reading it ever took: {}",
+            kept.len()
+        );
+    }
+}
+
+/// The queue of what MCF is bringing here, over the control socket.
+///
+/// A transfer is not a hold: it writes bytes to a disk and takes nothing from whatever is
+/// running, so several are asked for at once and none of them waits on the one-model rule.
+/// Everything about the queue is answered in one shape, because every client reads it with
+/// the same code.
+mod the_queue {
+    use super::{Machine, Request, ask, running};
+    use mcf_record::json::Value;
+
+    fn rows(body: &Value) -> Vec<Value> {
+        body.get("transfers")
+            .and_then(Value::as_list)
+            .unwrap_or_else(|| panic!("the queue's rows are at the top of every answer: {body:?}"))
+            .to_vec()
+    }
+
+    fn stop(socket: &std::path::Path) {
+        let _stopped = ask(
+            socket,
+            &Request::Stop {
+                reason: "the test is done with it".to_owned(),
+            },
+        );
+    }
+
+    fn asking_for(file: &str) -> Request {
+        Request::Queue {
+            reference: "owner/model".to_owned(),
+            file: file.to_owned(),
+            from: Some("http://127.0.0.1:1/".to_owned()),
+        }
+    }
+
+    #[test]
+    fn more_than_one_file_is_asked_for_and_none_of_them_waits_on_the_others() {
+        let machine = Machine::new("queue-several");
+        let (handle, socket) = running(machine.places());
+
+        let mut ids = Vec::new();
+        for file in ["one.gguf", "two.gguf", "three.gguf"] {
+            let answered = ask(&socket, &asking_for(file));
+            assert!(answered.served, "{:?}", answered.body);
+            let id = answered
+                .body
+                .get("id")
+                .and_then(Value::as_integer)
+                .expect("a transfer is numbered so it can be spoken about");
+            assert!(!ids.contains(&id), "two transfers were given one number");
+            ids.push(id);
+        }
+        let listed = ask(&socket, &Request::Transfers);
+        assert!(listed.served, "{:?}", listed.body);
+        assert_eq!(
+            rows(&listed.body).len(),
+            3,
+            "a file asked for while others were arriving was refused or dropped"
+        );
+
+        stop(&socket);
+        let _ended = handle.join();
+    }
+
+    #[test]
+    fn every_answer_about_the_queue_has_the_same_shape() {
+        let machine = Machine::new("queue-shape");
+        let (handle, socket) = running(machine.places());
+
+        // Asking for one, listing them, and dropping the finished ones are the three
+        // answers that always come back served, whatever state a transfer has reached.
+        // Pausing is not: by the time this runs the transfer may already have failed, and
+        // a pause of something that has finished is rightly refused.
+        let queued = ask(&socket, &asking_for("one.gguf"));
+        let _read = rows(&queued.body);
+        for asked in [Request::Transfers, Request::ForgetTransfers] {
+            let answered = ask(&socket, &asked);
+            assert!(
+                answered.served,
+                "{asked:?} was refused: {:?}",
+                answered.body
+            );
+            let _read = rows(&answered.body);
+        }
+
+        stop(&socket);
+        let _ended = handle.join();
+    }
+
+    #[test]
+    fn nothing_the_queue_never_had_is_answered_about() {
+        let machine = Machine::new("queue-unknown");
+        let (handle, socket) = running(machine.places());
+
+        for asked in [
+            Request::PauseTransfer { id: 404 },
+            Request::ResumeTransfer { id: 404 },
+            Request::GiveUpTransfer { id: 404 },
+        ] {
+            let answered = ask(&socket, &asked);
+            assert!(
+                !answered.served,
+                "{asked:?} was answered about a transfer that does not exist: {:?}",
+                answered.body
+            );
+        }
+
+        stop(&socket);
+        let _ended = handle.join();
+    }
+
+    #[test]
+    fn a_file_the_repository_does_not_publish_is_refused_and_says_so_in_the_queue() {
+        let machine = Machine::new("queue-refused");
+        let (handle, socket) = running(machine.places());
+
+        let queued = ask(&socket, &asking_for("nothing.gguf"));
+        assert!(queued.served, "the asking itself is answered at once");
+
+        // Nothing is listening on port 1, so the transfer fails. What matters is that it
+        // fails in the queue with a refusal to read, rather than vanishing.
+        let mut settled = None;
+        for _ in 0..80 {
+            let listed = ask(&socket, &Request::Transfers);
+            let held = rows(&listed.body);
+            let first = held.first().cloned().expect("it is still in the queue");
+            let state = first
+                .get("state")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned();
+            if state == "failed" {
+                settled = Some(first);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let failed = settled.expect("a transfer that cannot be made must say so, not hang");
+        assert!(
+            failed
+                .get("why")
+                .is_some_and(|why| !matches!(why, Value::Null)),
+            "a failure the operator cannot read is one they cannot act on: {failed:?}"
+        );
+
+        stop(&socket);
+        let _ended = handle.join();
+    }
+
+    #[test]
+    fn the_finished_are_forgotten_when_asked_and_not_before() {
+        let machine = Machine::new("queue-forget");
+        let (handle, socket) = running(machine.places());
+
+        let queued = ask(&socket, &asking_for("one.gguf"));
+        let id = u64::try_from(
+            queued
+                .body
+                .get("id")
+                .and_then(Value::as_integer)
+                .expect("numbered"),
+        )
+        .expect("a number");
+        let _given = ask(&socket, &Request::GiveUpTransfer { id });
+
+        let forgotten = ask(&socket, &Request::ForgetTransfers);
+        assert!(forgotten.served, "{:?}", forgotten.body);
+        assert!(
+            forgotten
+                .body
+                .get("forgotten")
+                .and_then(Value::as_integer)
+                .is_some(),
+            "what was dropped is not said: {:?}",
+            forgotten.body
+        );
+
+        stop(&socket);
+        let _ended = handle.join();
+    }
+}
+
+/// What MCF reads off an engine's own counters.
+///
+/// The names are the engine's, and they change between builds. Reading only the names one
+/// build happened to use leaves a figure reading "not measured yet" for the life of every
+/// hold — a measurement that looks like it failed rather than one that was never offered.
+mod engine_counters {
+    use super::super::counters;
+
+    /// Trimmed from what a current llama.cpp actually served on this machine, counters and
+    /// all. The two `kv_cache_*` gauges are absent from it: they were dropped when the
+    /// cache was unified, and what replaces them is the deepest sequence seen and how much
+    /// of a prompt was reused.
+    const AS_SERVED: &str = "\
+# HELP llamacpp:prompt_tokens_total Number of prompt tokens processed
+# TYPE llamacpp:prompt_tokens_total counter
+llamacpp:prompt_tokens_total 96641
+llamacpp:prompt_tokens_cached_total 2.16578e+06
+llamacpp:prompt_seconds_total 227.44
+llamacpp:tokens_predicted_total 23210
+llamacpp:tokens_predicted_seconds_total 507.005
+llamacpp:n_decode_total 23381
+llamacpp:n_tokens_max 42094
+llamacpp:spec_decode_num_draft_tokens_total 0
+llamacpp:spec_decode_num_accepted_tokens_total 0
+llamacpp:prompt_tokens_seconds 424.925
+llamacpp:predicted_tokens_seconds 45.4769
+llamacpp:requests_processing 0
+llamacpp:requests_deferred 0
+llamacpp:n_busy_slots_per_decode 1
+";
+
+    /// The older spelling, which MCF must go on reading: an engine built before the cache
+    /// was unified is still a provisioned engine somebody is holding a model on.
+    const AS_ONCE_SERVED: &str = "\
+llamacpp:prompt_tokens_total 10
+llamacpp:tokens_predicted_total 20
+llamacpp:kv_cache_usage_ratio 0.5
+llamacpp:kv_cache_tokens 1234
+llamacpp:n_decode_total 30
+";
+
+    fn read(metrics: &str, key: &str) -> Option<String> {
+        counters(metrics)
+            .into_iter()
+            .find(|(name, _)| *name == key)
+            .and_then(|(_, value)| value.as_text().map(str::to_owned))
+    }
+
+    #[test]
+    fn what_a_current_engine_serves_is_all_read() {
+        for (key, expected) in [
+            ("prompted_tokens", "96641"),
+            ("generated_tokens", "23210"),
+            ("decodes", "23381"),
+            ("requests_processing", "0"),
+            ("requests_queued", "0"),
+        ] {
+            assert_eq!(read(AS_SERVED, key).as_deref(), Some(expected), "{key}");
+        }
+    }
+
+    #[test]
+    fn the_figures_that_replaced_the_cache_gauges_are_read() {
+        assert_eq!(
+            read(AS_SERVED, "deepest_tokens").as_deref(),
+            Some("42094"),
+            "the deepest sequence the engine has seen went unread, and the tile that would \
+             have shown it read as a measurement that failed"
+        );
+        assert_eq!(
+            read(AS_SERVED, "prompt_tokens_reused").as_deref(),
+            Some("2.16578e+06"),
+            "what the prompt cache saved went unread — on a conversation that keeps its \
+             prefix this is most of the prompt"
+        );
+    }
+
+    #[test]
+    fn the_engines_own_average_throughput_is_read() {
+        assert_eq!(
+            read(AS_SERVED, "engine_said_tokens_per_second").as_deref(),
+            Some("45.4769")
+        );
+        assert_eq!(
+            read(AS_SERVED, "engine_said_prompt_tokens_per_second").as_deref(),
+            Some("424.925")
+        );
+    }
+
+    #[test]
+    fn an_older_engines_cache_gauges_are_still_read() {
+        assert_eq!(
+            read(AS_ONCE_SERVED, "cache_used_ratio").as_deref(),
+            Some("0.5")
+        );
+        assert_eq!(
+            read(AS_ONCE_SERVED, "cache_tokens").as_deref(),
+            Some("1234")
+        );
+        assert_eq!(
+            read(AS_ONCE_SERVED, "generated_tokens").as_deref(),
+            Some("20")
+        );
+    }
+
+    #[test]
+    fn a_body_that_is_not_metrics_at_all_yields_nothing() {
+        // What a 401 looks like. It has a space in it, so it splits like a metric line;
+        // nothing it splits into is a name MCF knows, and nothing must come of it.
+        let refused = "{\"error\":{\"message\":\"Invalid API Key\",\"code\":401}}";
+        assert!(counters(refused).is_empty(), "{:?}", counters(refused));
+        assert!(counters("").is_empty());
+    }
+
+    #[test]
+    fn comments_are_not_counters() {
+        let only_help = "# HELP llamacpp:prompt_tokens_total Number of prompt tokens\n\
+                         # TYPE llamacpp:prompt_tokens_total counter\n";
+        assert!(counters(only_help).is_empty());
+    }
+
+    #[test]
+    fn every_name_read_is_one_the_window_asks_for() {
+        // The daemon and the window agree on these names by nothing but spelling, so the
+        // spelling is what this pins.
+        let read: Vec<&str> = counters(AS_SERVED)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        for wanted in [
+            "prompted_tokens",
+            "generated_tokens",
+            "decodes",
+            "deepest_tokens",
+            "prompt_tokens_reused",
+            "engine_said_tokens_per_second",
+        ] {
+            assert!(read.contains(&wanted), "{wanted} is not among {read:?}");
+        }
+    }
+
+    #[test]
+    fn a_count_past_what_a_single_holds_exactly_survives_the_reading() {
+        // Sixteen million is where an f32 stops holding whole numbers exactly. A token
+        // counter passes it on a long session, which is when it is worth reading.
+        let big = "llamacpp:tokens_predicted_total 99000001\n";
+        let said = read(big, "generated_tokens").expect("read");
+        let held = mcf_record::json::Value::text(said.clone());
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the cast the window makes, which is what this is about"
+        )]
+        let as_read = held
+            .as_text()
+            .and_then(|text| text.trim().parse::<f64>().ok())
+            .map(|held| held as u64);
+        assert_eq!(
+            as_read,
+            Some(99_000_001),
+            "the count came back rounded: {said}"
+        );
+    }
+}

@@ -18,6 +18,7 @@ pub struct Hub {
     base: Url,
     wire: Box<dyn Wire>,
     credential: Option<Credential>,
+    stopping: crate::stopping::Stopping,
 }
 
 impl core::fmt::Debug for Hub {
@@ -26,6 +27,7 @@ impl core::fmt::Debug for Hub {
             .field("base", &self.base.to_string())
             .field("wire", &self.wire.describe())
             .field("authenticated", &self.credential.is_some())
+            .field("stopping", &self.stopping)
             .finish()
     }
 }
@@ -37,7 +39,16 @@ impl Hub {
             base,
             wire,
             credential: None,
+            stopping: crate::stopping::Stopping::never(),
         }
+    }
+
+    /// Let whoever asked for this transfer stop it part way through. Without this a
+    /// transfer runs until the file is whole or the hub gives up.
+    #[must_use]
+    pub fn stopped_by(mut self, stopping: crate::stopping::Stopping) -> Self {
+        self.stopping = stopping;
+        self
     }
 
     #[must_use]
@@ -268,6 +279,7 @@ impl Hub {
         let mut sink = Digesting {
             into: std::io::BufWriter::new(file),
             digest: Sha256::default(),
+            stopping: self.stopping.clone(),
         };
         let exchanged = wire::vetted(self.wire.as_ref(), &request, &mut sink, &|response| {
             self.status_is_an_answer(response, &url, reference)?;
@@ -542,10 +554,19 @@ impl std::io::Write for Bounded {
 struct Digesting<W: std::io::Write> {
     into: W,
     digest: Sha256,
+    stopping: crate::stopping::Stopping,
 }
+
+/// What a transfer that was asked to stop says to the wire underneath it. The bytes
+/// already written stay on disk; this only ends the writing.
+pub const STOPPED: &str = "the transfer was asked to stop";
 
 impl<W: std::io::Write> std::io::Write for Digesting<W> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.stopping.asked() {
+            self.into.flush()?;
+            return Err(std::io::Error::other(STOPPED));
+        }
         let written = self.into.write(bytes)?;
         self.digest.update(bytes.get(..written).unwrap_or_default());
         Ok(written)

@@ -27,11 +27,34 @@ pub struct Acquired {
     pub resumed: bool,
 }
 
+/// What a transfer stopped part way through says. It is not a fault: the operator asked,
+/// the bytes that arrived are on disk, and the same call resumes from there.
+fn interrupted(entry: &Entry, partial: &Path) -> Failure {
+    let reached = std::fs::metadata(partial).map_or(0, |about| about.len());
+    Failure::new(
+        Category::TransferInterrupted,
+        Attribution::User,
+        Disposition::Partial,
+        WHERE,
+        "the transfer was stopped where it stood, and this is how far it got",
+    )
+    .with_context("file", entry.path.clone())
+    .with_context("promised", entry.size.to_string())
+    .with_context("reached", reached.to_string())
+    .with_context("partial_file", partial.display().to_string())
+    .with_context(
+        "what_to_do",
+        "what arrived is kept: asking for the same file again continues from here rather \
+         than starting over",
+    )
+}
+
 pub fn acquire(
     source: &dyn Source,
     reference: &Reference,
     entry: &Entry,
     into: &Path,
+    stopping: &crate::stopping::Stopping,
 ) -> Result<Acquired> {
     if into.exists() {
         let held = checksum_of(into)?;
@@ -57,6 +80,9 @@ pub fn acquire(
     let mut resumed = false;
 
     while attempts < ATTEMPTS {
+        if stopping.asked() {
+            return Err(interrupted(entry, &partial));
+        }
         attempts += 1;
         let held = if partial.exists() {
             size_of(&partial)?
@@ -64,20 +90,25 @@ pub fn acquire(
             0
         };
 
-        if held == 0 {
-            let _delivered = source.fetch(reference, entry, &partial)?;
+        let went = if held == 0 {
+            source.fetch(reference, entry, &partial).map(|_| false)
         } else {
             match source.fetch_from(reference, entry, held, &partial) {
-                Ok(_delivered) => {
-                    resumed = true;
-                }
+                Ok(_delivered) => Ok(true),
                 Err(failure) if failure.category() == Category::HubUnreachable => {
                     let _discarded = std::fs::remove_file(&partial);
-                    let _delivered = source.fetch(reference, entry, &partial)?;
+                    source.fetch(reference, entry, &partial).map(|_| false)
                 }
-                Err(failure) => return Err(failure),
+                Err(failure) => Err(failure),
             }
+        };
+        // Asked before the failure is read, because a transfer stopped on purpose fails
+        // on its way out — and a pause reported as a fault is a pause that looks like a
+        // broken hub, and that this loop would spend its remaining attempts retrying.
+        if stopping.asked() {
+            return Err(interrupted(entry, &partial));
         }
+        resumed |= went?;
 
         let arrived = size_of(&partial)?;
         if let Err(failure) = inspect::arrived_as_promised(entry, arrived)

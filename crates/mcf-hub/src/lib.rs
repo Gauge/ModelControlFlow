@@ -11,5 +11,6 @@ pub mod offer;
 pub mod recommendation;
 pub mod reference;
 pub mod source;
+pub mod stopping;
 pub mod store;
 pub mod wire;

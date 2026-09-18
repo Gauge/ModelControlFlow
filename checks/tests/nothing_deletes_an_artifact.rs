@@ -104,6 +104,21 @@ const DECLARED: &[Deletes] = &[
                not something anybody's model is in (A27, B-030)",
     },
     Deletes {
+        file: "crates/mcf-serve/src/transfers.rs",
+        calls: 2,
+        what: "the partial files of a transfer the operator gave up on, in \
+               `sweep_what_arrived` for one that was running and \
+               `sweep_what_is_not_running` for one that was paused when it was given up. \
+               What goes is bytes that never became an artifact: a \
+               `.partial` MCF was writing itself, for a file the person asking has just said \
+               they do not want. It is swept rather than kept because a partial nobody will \
+               finish is disk held for nothing, and because leaving it would have the next \
+               ask for that file quietly resume the transfer that was given up. Nothing on \
+               the shelf is touched — a transfer only ever writes its `.partial`, and the \
+               finished name is taken by a rename after the digest has been checked \
+               (B-021, B-027, A27, §3.11)",
+    },
+    Deletes {
         file: "crates/mcf-record/src/overhead.rs",
         calls: 1,
         what: "the file the overhead measurement itself wrote, removed by the measurement \

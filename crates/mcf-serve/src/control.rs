@@ -76,6 +76,30 @@ pub enum Request {
         file: String,
         from: Option<String>,
     },
+    /// Ask for a file and answer at once, rather than holding the connection open until
+    /// it arrives. What is asked for here joins the daemon's queue, so it keeps arriving
+    /// after whoever asked has gone.
+    Queue {
+        reference: String,
+        file: String,
+        from: Option<String>,
+    },
+    /// What is in the queue and how far each of it has got.
+    Transfers,
+    /// Stop one where it stands. What arrived stays on disk.
+    PauseTransfer {
+        id: u64,
+    },
+    /// Start a stopped one again, from wherever it got to.
+    ResumeTransfer {
+        id: u64,
+    },
+    /// Give one up, and sweep what had arrived.
+    GiveUpTransfer {
+        id: u64,
+    },
+    /// Drop from the queue everything that has nothing more to do.
+    ForgetTransfers,
     Settings {
         model: String,
     },
@@ -104,6 +128,20 @@ pub enum Request {
 
 fn maybe(held: Option<&str>) -> Value {
     held.map_or(Value::Null, Value::text)
+}
+
+fn as_id(id: u64) -> Value {
+    Value::Integer(i64::try_from(id).unwrap_or(i64::MAX))
+}
+
+/// Which transfer a request is about. A request that names none is refused rather than
+/// answered about an arbitrary one.
+fn id_in(value: &Value, line: &str) -> Result<u64> {
+    value
+        .get("id")
+        .and_then(Value::as_integer)
+        .and_then(|held| u64::try_from(held).ok())
+        .ok_or_else(|| refused("a request naming no transfer", line))
 }
 
 #[allow(
@@ -277,6 +315,27 @@ impl Request {
                 ("file", Value::text(file.clone())),
                 ("from", maybe(from.as_deref())),
             ]),
+            Self::Queue {
+                reference,
+                file,
+                from,
+            } => Value::map([
+                ("ask", Value::text("queue")),
+                ("reference", Value::text(reference.clone())),
+                ("file", Value::text(file.clone())),
+                ("from", maybe(from.as_deref())),
+            ]),
+            Self::Transfers => Value::map([("ask", Value::text("transfers"))]),
+            Self::PauseTransfer { id } => {
+                Value::map([("ask", Value::text("pause_transfer")), ("id", as_id(*id))])
+            }
+            Self::ResumeTransfer { id } => {
+                Value::map([("ask", Value::text("resume_transfer")), ("id", as_id(*id))])
+            }
+            Self::GiveUpTransfer { id } => {
+                Value::map([("ask", Value::text("give_up_transfer")), ("id", as_id(*id))])
+            }
+            Self::ForgetTransfers => Value::map([("ask", Value::text("forget_transfers"))]),
             Self::Settings { model } => Value::map([
                 ("ask", Value::text("settings")),
                 ("model", Value::text(model.clone())),
@@ -405,6 +464,30 @@ impl Request {
                     .to_owned(),
                 purge: matches!(value.get("purge"), Some(Value::Bool(true))),
             }),
+            Some("queue") => Ok(Self::Queue {
+                reference: value
+                    .get("reference")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a transfer naming no reference", line))?
+                    .to_owned(),
+                file: value
+                    .get("file")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a transfer naming no file", line))?
+                    .to_owned(),
+                from: optional("from"),
+            }),
+            Some("transfers") => Ok(Self::Transfers),
+            Some("pause_transfer") => Ok(Self::PauseTransfer {
+                id: id_in(&value, line)?,
+            }),
+            Some("resume_transfer") => Ok(Self::ResumeTransfer {
+                id: id_in(&value, line)?,
+            }),
+            Some("give_up_transfer") => Ok(Self::GiveUpTransfer {
+                id: id_in(&value, line)?,
+            }),
+            Some("forget_transfers") => Ok(Self::ForgetTransfers),
             Some("hosted") => Ok(Self::Hosted),
             Some("unhost") => Ok(Self::Unhost),
             Some("settings") => Ok(Self::Settings {

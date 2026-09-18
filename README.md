@@ -35,7 +35,8 @@ control over how it runs, plus an honest account of what that costs.
 
 MCF hosts one model at a time and gives you complete control over how it runs:
 
-- **One model at a time.** Hosting a second releases the first.
+- **One model at a time.** Hosting a second releases the first. Bringing files
+  here is not hosting: several arrive at once, alongside whatever is held.
 - **The engine is MCF's problem, not yours.** The engine a model needs is
   fetched, built and installed on demand.
 - **Every setting is exposed.** Context length, layer offload, thread count,
@@ -75,6 +76,18 @@ Bring a model here, then hold it:
 mcf pull unsloth/Qwen3-4B-GGUF:Qwen3-4B-Q4_K_M.gguf
 mcf host Qwen3-4B-Q4_K_M
 ```
+
+`mcf pull` waits for the file. To ask for several without waiting, queue them:
+
+```
+mcf downloads add unsloth/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf
+mcf downloads
+```
+
+The queue lives in the daemon, so transfers keep arriving with nothing watching,
+they run alongside whatever is held, and `mcf downloads pause|resume|cancel <id>`
+stops and restarts one where it stands — what has arrived stays on the disk. The
+window shows the same queue on its Downloads page.
 
 `mcf host` prints the settings it chose and what they cost. If the engine that
 model needs is not built yet, MCF builds it first and says so.

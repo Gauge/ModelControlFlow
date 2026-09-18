@@ -23,7 +23,13 @@ pub struct Done {
     pub recorded: Result<PathBuf, Failure>,
 }
 
-pub fn one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Result<Done, Failure> {
+pub fn one(
+    hub: &Hub,
+    listing: &Listing,
+    entry: &Entry,
+    root: &Path,
+    stopping: &crate::stopping::Stopping,
+) -> Result<Done, Failure> {
     let into = destination(root, &listing.reference, &entry.path);
     if let Some(parent) = into.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
@@ -38,7 +44,7 @@ pub fn one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Result<D
             .with_context("said", error.to_string())
         })?;
     }
-    let acquired = acquire(hub, &listing.reference, entry, &into)?;
+    let acquired = acquire(hub, &listing.reference, entry, &into, stopping)?;
     let at = Timestamp::now();
     let provenance = provenance_of(listing, &acquired, at);
     let sidecar = store::record_provenance(&into, &provenance)?;

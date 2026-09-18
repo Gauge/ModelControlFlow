@@ -43,24 +43,49 @@ mod gap {
 
 pub const UNKNOWN: &str = "Unknown";
 
+/// What stands in for a figure the machine did not offer. A dash, because a figure MCF
+/// was not given is not a figure of nought.
+const UNKNOWN_FIGURE: &str = "—";
+
 pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     let (width, height) = paint.size();
     paint.begin();
     let side = desk.splits.side;
     let mut act = side_bar(paint, desk, mouse, height, side);
 
+    // Every page gives up the foot of the window to the strip, so that what MCF is
+    // saying is in one place whatever is being looked at.
+    let opened = desk.notices_open && !desk.notices.is_empty();
+    let listed = if opened {
+        RECENT_TALL.min((height - 220.0).max(80.0))
+    } else {
+        0.0
+    };
+    let said = STRIP + listed;
     let main = Box::new(
         side + PAD,
         PAD,
         (width - side - PAD * 2.0).max(10.0),
-        (height - PAD * 2.0).max(10.0),
+        (height - PAD * 2.0 - said).max(10.0),
     );
     let went = match desk.page {
         Page::Host | Page::Models => host(paint, desk, mouse, main),
         Page::Adding => adding(paint, desk, mouse, main),
-        Page::Hosting => hosting(paint, desk, mouse, main),
+        // The server page is handed the whole page as well as the padded box inside it:
+        // its rail runs to the window's own edges, top, bottom and right. A rail inset by
+        // the page's padding floats, and reads as a card that happens to be tall.
+        Page::Hosting => {
+            let whole = Box::new(
+                side + 1.0,
+                0.0,
+                (width - side - 1.0).max(10.0),
+                (height - said).max(10.0),
+            );
+            hosting(paint, desk, mouse, main, whole)
+        }
         Page::Anatomy => anatomy(paint, desk, mouse, main),
         Page::Vocabulary => vocabulary(paint, desk, mouse, main),
+        Page::Downloads => downloads(paint, desk, mouse, main),
         Page::Exit => leaving(paint, mouse, main),
     };
     act = match (went, act) {
@@ -76,7 +101,286 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     ) {
         act = Some(Act::Split(Splitter::Side, whole(to)));
     }
+
+    // Drawn last, and over everything, because it is the one thing always in view.
+    let strip = Box::new(side, height - STRIP, (width - side).max(10.0), STRIP);
+    if opened {
+        let list = Box::new(side, strip.y - listed, strip.w, listed);
+        if let Some(pressed) = notice_list(paint, desk, mouse, list) {
+            act = Some(pressed);
+        }
+    }
+    if let Some(pressed) = notice_strip(paint, desk, mouse, strip) {
+        act = Some(pressed);
+    }
     paint.end();
+    act
+}
+
+/// How tall the strip along the foot of the window is.
+const STRIP: f32 = 34.0;
+
+/// How tall the list opens to, at most.
+const RECENT_TALL: f32 = 292.0;
+
+/// The ink a tone is said in.
+fn tone_ink(tone: crate::notice::Tone, ink: &crate::paint::Ink) -> Rgb {
+    match tone {
+        crate::notice::Tone::Working => ink.accent,
+        crate::notice::Tone::Refused => ink.bad,
+        crate::notice::Tone::Warning => ink.warn,
+        crate::notice::Tone::Done => ink.good,
+    }
+}
+
+/// The mark beside a notice, so its kind is never colour alone.
+fn tone_mark(paint: &mut Painter, tone: crate::notice::Tone, x: f32, y: f32) {
+    let ink = paint.ink;
+    let colour = tone_ink(tone, &ink);
+    let middle = (x + 6.0, y + 6.0);
+    match tone {
+        // An arc with a gap: a ring that is plainly unfinished.
+        crate::notice::Tone::Working => {
+            for at in 0..10 {
+                #[expect(clippy::cast_precision_loss, reason = "ten steps around a circle")]
+                let turn = at as f32 / 12.0 * std::f32::consts::TAU;
+                let (dx, dy) = (turn.cos() * 5.0, turn.sin() * 5.0);
+                paint.rect(
+                    Box::new(middle.0 + dx - 1.0, middle.1 + dy - 1.0, 2.0, 2.0),
+                    colour,
+                );
+            }
+        }
+        crate::notice::Tone::Done => {
+            for at in 0..4 {
+                #[expect(clippy::cast_precision_loss, reason = "four steps of a tick")]
+                let step = at as f32;
+                paint.rect(
+                    Box::new(middle.0 - 4.0 + step, middle.1 + step - 1.0, 2.0, 2.0),
+                    colour,
+                );
+            }
+            for at in 0..6 {
+                #[expect(clippy::cast_precision_loss, reason = "six steps of a tick")]
+                let step = at as f32;
+                paint.rect(
+                    Box::new(middle.0 - 1.0 + step, middle.1 + 2.0 - step, 2.0, 2.0),
+                    colour,
+                );
+            }
+        }
+        crate::notice::Tone::Refused => {
+            for at in 0..9 {
+                #[expect(clippy::cast_precision_loss, reason = "nine steps of a cross")]
+                let step = at as f32 - 4.0;
+                paint.rect(
+                    Box::new(middle.0 + step - 1.0, middle.1 + step - 1.0, 2.0, 2.0),
+                    colour,
+                );
+                paint.rect(
+                    Box::new(middle.0 + step - 1.0, middle.1 - step - 1.0, 2.0, 2.0),
+                    colour,
+                );
+            }
+        }
+        // A bar and a dot: an exclamation, which is what a warning is.
+        crate::notice::Tone::Warning => {
+            paint.rect(Box::new(middle.0 - 1.0, middle.1 - 5.0, 2.0, 7.0), colour);
+            paint.rect(Box::new(middle.0 - 1.0, middle.1 + 4.0, 2.0, 2.0), colour);
+        }
+    }
+}
+
+/// The strip along the foot: what is happening, and what has just been said.
+///
+/// One place, always the same place, for everything that used to be said in eleven
+/// different ones. What it shows is [`Notices::foremost`]: work first, because work is now.
+fn notice_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    paint.rect(at, ink.card);
+    paint.rule((at.x, at.y), (at.right(), at.y), ink.line, 255);
+
+    let refusals = desk.notices.refusals();
+    let all = desk.notices.len();
+    let mut right = at.right() - 16.0;
+
+    // The way in and out of the list, at the end of the strip where it stays put.
+    if all > 0 {
+        let said = match (all, desk.notices_open) {
+            (_, true) => "Close".to_owned(),
+            (1, false) => "1 recent".to_owned(),
+            (all, false) => format!("{all} recent"),
+        };
+        let wide = paint.measure(&said, Weight::Regular, size::SMALL) + 24.0;
+        let hit = Box::new(right - wide, at.y + 4.0, wide, at.h - 8.0);
+        let over = mouse.over(hit);
+        if over {
+            paint.panel(hit, 6.0, ink.sunk, 255);
+        }
+        paint.say_right(
+            right - 16.0,
+            at.y + 10.0,
+            &said,
+            Weight::Regular,
+            size::SMALL,
+            if over { ink.ink } else { ink.quiet },
+        );
+        let arrow = if desk.notices_open { "▾" } else { "▴" };
+        paint.say_right(
+            right - 4.0,
+            at.y + 9.0,
+            arrow,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        if mouse.clicked(hit) {
+            act = Some(Act::OpenNotices);
+        }
+        right -= wide + 6.0;
+    }
+
+    // How many want answering, said outright rather than left to be found in the list.
+    if refusals > 0 && !desk.notices_open {
+        let said = if refusals == 1 {
+            "1 refused".to_owned()
+        } else {
+            format!("{refusals} refused")
+        };
+        paint.say_right(
+            right,
+            at.y + 10.0,
+            &said,
+            Weight::Bold,
+            size::SMALL,
+            ink.bad,
+        );
+        right -= paint.measure(&said, Weight::Bold, size::SMALL) + 16.0;
+    }
+
+    let Some(foremost) = desk.notices.foremost() else {
+        paint.say_at(
+            at.x + 22.0,
+            at.y + 10.0,
+            "Nothing to report",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return act;
+    };
+
+    tone_mark(paint, foremost.tone, at.x + 22.0, at.y + 11.0);
+    let mut x = at.x + 40.0;
+    let room = (right - x - 12.0).max(80.0);
+    let shown = paint.elide(&foremost.what, Weight::Regular, size::BODY, room);
+    paint.say_at(x, at.y + 9.0, &shown, Weight::Regular, size::BODY, ink.ink);
+    x += paint.measure(&shown, Weight::Regular, size::BODY) + 14.0;
+
+    // The share, where it is known. Where it is not, nothing is drawn rather than a bar
+    // at nought, which would say the work had not started.
+    if let Some(share) = foremost.share
+        && x + 150.0 < right
+    {
+        let bar = Box::new(x, at.y + 15.0, 120.0, 4.0);
+        ui::progress(paint, bar, Some(share));
+        x = bar.right() + 12.0;
+    }
+    if let Some(detail) = &foremost.detail
+        && x + 60.0 < right
+    {
+        let shown = paint.elide(detail, Weight::Regular, size::SMALL, right - x - 8.0);
+        paint.say_at(
+            x,
+            at.y + 10.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    act
+}
+
+/// The strip, opened out: what MCF has said, newest first.
+fn notice_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    paint.rect(at, ink.card);
+    paint.rule((at.x, at.y), (at.right(), at.y), ink.line, 255);
+    let inside = Box::new(at.x + 22.0, at.y + 15.0, (at.w - 44.0).max(120.0), at.h);
+
+    spaced(
+        paint,
+        inside.x,
+        inside.y,
+        "recent · what MCF has said",
+        ink.faint,
+    );
+    let clear = "Dismiss the settled";
+    let wide = paint.measure(clear, Weight::Regular, size::SMALL) + 20.0;
+    let hit = Box::new(inside.right() - wide, inside.y - 6.0, wide, 22.0);
+    let over = mouse.over(hit);
+    paint.say_right(
+        inside.right() - 10.0,
+        inside.y - 2.0,
+        clear,
+        Weight::Regular,
+        size::SMALL,
+        if over { ink.ink } else { ink.faint },
+    );
+    if mouse.clicked(hit) {
+        act = Some(Act::DismissNotices);
+    }
+    paint.say_right(
+        inside.right() - wide - 14.0,
+        inside.y - 2.0,
+        "refusals are in the record too — mcf failures",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+
+    let mut y = inside.y + 22.0;
+    for held in desk.notices.recent() {
+        if y + 34.0 > at.bottom() {
+            break;
+        }
+        paint.say_at(
+            inside.x,
+            y + 2.0,
+            &held.clock_said(),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        tone_mark(paint, held.tone, inside.x + 52.0, y + 3.0);
+        let room = inside.w - 78.0;
+        let shown = paint.elide(&held.what, Weight::Regular, size::BODY, room);
+        paint.say_at(
+            inside.x + 70.0,
+            y,
+            &shown,
+            Weight::Regular,
+            size::BODY,
+            ink.ink,
+        );
+        y += 19.0;
+        if let Some(detail) = &held.detail {
+            let shown = paint.elide(detail, Weight::Regular, size::SMALL, room);
+            paint.say_at(
+                inside.x + 70.0,
+                y,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.quiet,
+            );
+            y += 17.0;
+        }
+        y += 5.0;
+    }
     act
 }
 
@@ -144,29 +448,21 @@ fn side_bar(
             continue;
         }
         let area = menu_box(*page, height, side);
-        if ui::nav(paint, mouse, area, label, desk.page.section() == *page) {
+        // The count rides on the label, because a person who has started a download and
+        // walked to another page has no other way to know it is still going.
+        let under_way = desk.transfers_under_way();
+        let label = if *page == Page::Downloads && under_way > 0 {
+            format!("{label} ({under_way})")
+        } else {
+            (*label).to_owned()
+        };
+        if ui::nav(paint, mouse, area, &label, desk.page.section() == *page) {
             act = Some(Act::Go(*page));
         }
     }
-    let said = desk.state_word();
-    let lines = paint.wrap(&said, Weight::Regular, size::SMALL, side - 28.0);
-    #[allow(clippy::cast_precision_loss, reason = "at most three lines")]
-    let mut at = height - 92.0 - 16.0 * lines.len().min(3) as f32;
-    for line in lines.iter().take(3) {
-        paint.say_at(
-            14.0,
-            at,
-            line,
-            Weight::Regular,
-            size::SMALL,
-            if desk.doing.busy() {
-                ink.accent
-            } else {
-                ink.faint
-            },
-        );
-        at += 16.0;
-    }
+    // What MCF is doing was said here too, in its own words and its own colour. The strip
+    // along the foot says it now, for every page at once, so saying it again in the corner
+    // of the side bar was the same thing twice and often not the same thing.
     let exit = menu_box(Page::Exit, height, side);
     if ui::nav(paint, mouse, exit, "Exit", desk.page == Page::Exit) {
         act = Some(Act::Go(Page::Exit));
@@ -331,210 +627,6 @@ fn takes_line(hosting: &crate::Hosted) -> String {
             )
         },
     )
-}
-
-fn processors_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
-    let reading = &desk.reading;
-    let dash = || "—".to_owned();
-    let processors = [
-        Column {
-            head: "load",
-            at: 270.0,
-            right: true,
-        },
-        Column {
-            head: "temp",
-            at: 360.0,
-            right: true,
-        },
-        Column {
-            head: "power",
-            at: 450.0,
-            right: true,
-        },
-        Column {
-            head: "clock",
-            at: 560.0,
-            right: true,
-        },
-        Column {
-            head: "cores",
-            at: 650.0,
-            right: true,
-        },
-    ];
-    let mut y = heads(paint, table, "processor", &processors);
-    let cpu = &reading.processor;
-    row(
-        paint,
-        table,
-        y,
-        "CPU",
-        &[
-            (
-                &processors[0],
-                cpu.load
-                    .map_or_else(dash, |load| format!("{} %", load.whole())),
-            ),
-            (
-                &processors[1],
-                cpu.temperature
-                    .map_or_else(dash, |held| format!("{held} °C")),
-            ),
-            (&processors[2], dash()),
-            (
-                &processors[3],
-                cpu.clock
-                    .map_or_else(dash, |mhz| format!("{:.2} GHz", f64::from(mhz) / 1000.0)),
-            ),
-            (
-                &processors[4],
-                cpu.cores.map_or_else(dash, |held| held.to_string()),
-            ),
-        ],
-    );
-    y += 23.0;
-    for card in &reading.cards {
-        row(
-            paint,
-            table,
-            y,
-            &format!("GPU  {}", card.name),
-            &[
-                (
-                    &processors[0],
-                    card.load
-                        .map_or_else(dash, |load| format!("{} %", load.whole())),
-                ),
-                (
-                    &processors[1],
-                    card.temperature
-                        .map_or_else(dash, |held| format!("{held} °C")),
-                ),
-                (
-                    &processors[2],
-                    card.power.map_or_else(dash, |watts| format!("{watts} W")),
-                ),
-                (&processors[3], dash()),
-                (&processors[4], dash()),
-            ],
-        );
-        y += 23.0;
-    }
-    y
-}
-
-fn memory_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
-    let reading = &desk.reading;
-    let dash = || "—".to_owned();
-    let memory = [
-        Column {
-            head: "used",
-            at: 270.0,
-            right: true,
-        },
-        Column {
-            head: "total",
-            at: 375.0,
-            right: true,
-        },
-        Column {
-            head: "free",
-            at: 480.0,
-            right: true,
-        },
-    ];
-    let mut y = heads(paint, table, "memory", &memory);
-    let gigabytes =
-        |bytes: Option<u64>| bytes.map_or_else(dash, |held| format!("{:.2} GB", held as f64 / 1e9));
-    let system = &reading.memory;
-    row(
-        paint,
-        table,
-        y,
-        "System",
-        &[
-            (
-                &memory[0],
-                gigabytes(match (system.total, system.available) {
-                    (Some(total), Some(free)) => Some(total.saturating_sub(free)),
-                    _ => None,
-                }),
-            ),
-            (&memory[1], gigabytes(system.total)),
-            (&memory[2], gigabytes(system.available)),
-        ],
-    );
-    y += 23.0;
-    for card in &reading.cards {
-        row(
-            paint,
-            table,
-            y,
-            "Graphics",
-            &[
-                (&memory[0], gigabytes(card.used)),
-                (&memory[1], gigabytes(card.total)),
-                (
-                    &memory[2],
-                    gigabytes(match (card.total, card.used) {
-                        (Some(total), Some(used)) => Some(total.saturating_sub(used)),
-                        _ => None,
-                    }),
-                ),
-            ],
-        );
-        y += 23.0;
-    }
-    y
-}
-
-fn storage_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
-    let reading = &desk.reading;
-    let dash = || "—".to_owned();
-    let storage = [
-        Column {
-            head: "read",
-            at: 270.0,
-            right: true,
-        },
-        Column {
-            head: "write",
-            at: 375.0,
-            right: true,
-        },
-        Column {
-            head: "temp",
-            at: 480.0,
-            right: true,
-        },
-    ];
-    let mut y = heads(paint, table, "storage", &storage);
-    let rate = |bytes: Option<u64>| {
-        bytes.map_or_else(dash, |held| format!("{:.1} MB/s", held as f64 / 1e6))
-    };
-    for disk in &reading.disks {
-        row(
-            paint,
-            table,
-            y,
-            &disk.name,
-            &[
-                (&storage[0], rate(disk.read)),
-                (&storage[1], rate(disk.written)),
-                (
-                    &storage[2],
-                    disk.temperature
-                        .map_or_else(dash, |held| format!("{held} °C")),
-                ),
-            ],
-        );
-        y += 23.0;
-        if y > table.bottom() {
-            break;
-        }
-    }
-    y
 }
 
 fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
@@ -716,6 +808,25 @@ fn removal_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
 
     y = what_would_go(paint, removing, area, y);
 
+    // What is not going. A repository's quantizations are separate files, and somebody
+    // about to remove one is owed the plain statement that the others stay.
+    // Only where this is about one model. Removing several at once is a disk being
+    // cleared, and what is left of each repository is not the question then.
+    if let Some((others, repository)) = removing
+        .only()
+        .and_then(|model| desk.others_of_the_repository(model))
+    {
+        let said = match others {
+            1 => format!("The other quantization of {repository} stays where it is."),
+            many => format!("The other {many} quantizations of {repository} stay where they are."),
+        };
+        for line in paint.wrap(&said, Weight::Regular, size::SMALL, wide) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.quiet);
+            y += 16.0;
+        }
+        y += 12.0;
+    }
+
     paint.say_at(area.x, y, "Why", Weight::Regular, size::BODY, ink.quiet);
     y += 22.0;
     let touched = ui::field(
@@ -852,6 +963,693 @@ fn pending_page(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act
 }
 
+/// The downloads page: what the disk holds, what is arriving, and what can go.
+///
+/// It was the transfer queue and nothing else, which meant the one page about files on a
+/// disk said nothing about the disk. What is on the shelf outlives what is arriving by a
+/// long way — four hundred and fifty gigabytes of it here — so the shelf is the page and
+/// the queue is a band across the top of it when there is one.
+fn downloads(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    spaced(paint, area.x, area.y, "downloads", ink.faint);
+    let weights = desk.weights.bytes;
+    paint.say_at(
+        area.x,
+        area.y + 22.0,
+        &words::size_in_words(Some(weights)).unwrap_or_else(|| words::UNMEASURED.to_owned()),
+        Weight::Bold,
+        26.0,
+        ink.ink,
+    );
+    let after = paint.measure(
+        &words::size_in_words(Some(weights)).unwrap_or_default(),
+        Weight::Bold,
+        26.0,
+    );
+    paint.say_at(
+        area.x + after + 11.0,
+        area.y + 30.0,
+        "of model weights on this disk",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+
+    let mut y = area.y + 68.0;
+    y = storage_block(paint, desk, Box::new(area.x, y, area.w, 0.0));
+    if let Some(pressed) = orphan_block(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0)) {
+        act = Some(pressed);
+    }
+    if !desk.weights.orphans.is_empty() {
+        y += 46.0;
+    }
+    if desk.transfers_under_way() > 0 || !desk.transfers.is_empty() {
+        let (pressed, below) = arriving_block(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0));
+        act = act.or(pressed);
+        y = below;
+    }
+    let (pressed, below) = shelf_head(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0));
+    act = act.or(pressed);
+    y = below;
+    let list = Box::new(area.x, y, area.w, (area.bottom() - y).max(80.0));
+    ui::card(paint, list, false);
+    let inside = Box::new(list.x, list.y, list.w, list.h);
+    let rolled = scrolled(
+        paint,
+        mouse,
+        desk,
+        Region::Downloads,
+        inside,
+        |paint, mouse, inner| shelf_rows(paint, desk, mouse, inner),
+    );
+    act.or(rolled)
+}
+
+/// What the disk holds: the weights, everything else, and what is free.
+fn storage_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
+    let ink = paint.ink;
+    let card = Box::new(at.x, at.y, at.w, 74.0);
+    ui::card(paint, card, false);
+    let inside = Box::new(card.x + 18.0, card.y + 15.0, card.w - 36.0, card.h);
+    let Some(volume) = desk.disk else {
+        paint.say_at(
+            inside.x,
+            inside.y + 4.0,
+            "MCF could not read what this filesystem holds.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return card.bottom() + 16.0;
+    };
+    let weights = desk.weights.bytes.min(volume.used());
+    let other = volume.used().saturating_sub(weights);
+    let bar = Box::new(inside.x, inside.y, inside.w, 10.0);
+    paint.panel(bar, 5.0, ink.sunk, 255);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "byte counts of a filesystem, drawn to the nearest pixel"
+    )]
+    let share = |held: u64| (held as f32 / volume.total.max(1) as f32) * bar.w;
+    let wide = share(weights);
+    if wide >= 1.0 {
+        paint.panel(Box::new(bar.x, bar.y, wide, bar.h), 5.0, ink.accent, 255);
+    }
+    let rest = share(other);
+    if rest >= 1.0 {
+        paint.rect(Box::new(bar.x + wide, bar.y, rest, bar.h), ink.line);
+    }
+
+    let mut x = inside.x;
+    for (colour, label, held) in [
+        (ink.accent, "Model weights", Some(weights)),
+        (ink.line, "Everything else", Some(other)),
+        (ink.sunk, "Free", Some(volume.free)),
+    ] {
+        paint.panel(Box::new(x, inside.y + 28.0, 8.0, 8.0), 2.0, colour, 255);
+        paint.say_at(
+            x + 14.0,
+            inside.y + 25.0,
+            label,
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        let after = x + 14.0 + paint.measure(label, Weight::Regular, size::SMALL) + 8.0;
+        let said = held
+            .and_then(|held| words::size_in_words(Some(held)))
+            .unwrap_or_else(|| words::UNMEASURED.to_owned());
+        paint.say_at(
+            after,
+            inside.y + 25.0,
+            &said,
+            Weight::Bold,
+            size::SMALL,
+            ink.ink,
+        );
+        x = after + paint.measure(&said, Weight::Bold, size::SMALL) + 24.0;
+    }
+    // Both shares, because they answer different questions: whether the models are what
+    // is filling the disk, and whether the disk is full.
+    if let (Some(of_used), Some(of_disk)) = (
+        volume.share_of_what_is_used(weights),
+        volume.share_of_the_disk(weights),
+    ) {
+        paint.say_right(
+            inside.right(),
+            inside.y + 25.0,
+            &format!("{of_used}% of what is used · {of_disk}% of the disk"),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    card.bottom() + 16.0
+}
+
+/// Projectors with no model beside them, and how much they would give back.
+fn orphan_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Option<Act> {
+    let ink = paint.ink;
+    if desk.weights.orphans.is_empty() {
+        return None;
+    }
+    let card = Box::new(at.x, at.y, at.w, 38.0);
+    paint.edge(card, 10.0, ink.warn_soft, ink.warn_soft);
+    let count = desk.weights.orphans.len();
+    let said = match count {
+        1 => "1 multimodal projector with no model beside it".to_owned(),
+        many => format!("{many} multimodal projectors with no model beside them"),
+    };
+    paint.say_at(
+        card.x + 16.0,
+        card.y + 11.0,
+        &said,
+        Weight::Regular,
+        size::SMALL,
+        ink.warn,
+    );
+    let after = card.x + 16.0 + paint.measure(&said, Weight::Regular, size::SMALL) + 12.0;
+    if let Some(back) = words::size_in_words(Some(desk.weights.reclaimable())) {
+        paint.say_at(
+            after,
+            card.y + 11.0,
+            &format!("{back} reclaimable"),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    let (pressed, _drawn) = ui::fitted(
+        paint,
+        mouse,
+        (card.right() - 122.0, card.y + 4.0),
+        "Tick them all",
+        Kind::Quiet,
+    );
+    pressed.then_some(Act::PickTheOrphans)
+}
+
+/// The queue, as a band above the shelf.
+fn arriving_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let mut act = None;
+    let under_way = desk.transfers_under_way();
+    let said = match under_way {
+        0 => "Arriving".to_owned(),
+        1 => "1 file arriving".to_owned(),
+        many => format!("{many} files arriving"),
+    };
+    spaced(paint, at.x, at.y, &said, ink.faint);
+    let settled = desk.transfers.iter().filter(|held| held.settled()).count();
+    if settled > 0 {
+        let (pressed, _drawn) = ui::fitted(
+            paint,
+            mouse,
+            (at.right() - 140.0, at.y - 8.0),
+            "Clear finished",
+            Kind::Quiet,
+        );
+        if pressed {
+            act = Some(Act::ForgetTransfers);
+        }
+    }
+    let mut y = at.y + 20.0;
+    for transfer in desk.transfers.iter().take(3) {
+        let (below, pressed) = transfer_row(
+            paint,
+            mouse,
+            Box::new(at.x, y, at.w, TRANSFER_ROW),
+            y,
+            transfer,
+        );
+        act = act.or(pressed);
+        y = below;
+    }
+    if desk.transfers.len() > 3 {
+        paint.say_at(
+            at.x,
+            y,
+            &format!("and {} more", desk.transfers.len() - 3),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 18.0;
+    }
+    (act, y + 10.0)
+}
+
+/// The heading over the shelf, and what is to be done with what is ticked.
+fn shelf_head(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let mut act = None;
+    spaced(paint, at.x, at.y, "on this disk · largest first", ink.faint);
+    if desk.picked.is_empty() {
+        paint.say_right(
+            at.right(),
+            at.y - 2.0,
+            "tick a variant to remove it",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return (act, at.y + 22.0);
+    }
+    let (remove, drawn) = ui::fitted(
+        paint,
+        mouse,
+        (at.right() - 104.0, at.y - 9.0),
+        "Remove…",
+        Kind::Ordinary,
+    );
+    if remove {
+        act = Some(Act::RemovePicked);
+    }
+    let (cleared, _drawn) = ui::fitted(
+        paint,
+        mouse,
+        (drawn.x - 74.0, at.y - 9.0),
+        "Clear",
+        Kind::Quiet,
+    );
+    if cleared {
+        act = Some(Act::ClearPicked);
+    }
+    let said = format!(
+        "{} chosen · {}",
+        desk.picked.len(),
+        words::size_in_words(Some(desk.picked_bytes())).unwrap_or_else(|| "—".to_owned())
+    );
+    paint.say_right(
+        drawn.x - 84.0,
+        at.y - 2.0,
+        &said,
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    // Said before it is pressed, not after it is refused: the hold is the one thing on
+    // this page that cannot simply go.
+    if let Some(name) = desk.picked_the_served() {
+        let after = at.x + spaced_width(paint, "on this disk · largest first") + 16.0;
+        paint.say_at(
+            after,
+            at.y - 2.0,
+            &format!("{name} is being served — stop the server first"),
+            Weight::Regular,
+            size::SMALL,
+            ink.warn,
+        );
+    }
+    (act, at.y + 22.0)
+}
+
+/// How tall one transfer's row is. Fixed, so that a row does not jump as its words change
+/// length while it is being read.
+const TRANSFER_ROW: f32 = 92.0;
+
+/// The shelf: one row a repository, largest first, opening out into its variants.
+///
+/// Largest first because the page is for getting room back, and the row that answers that
+/// is the biggest one. A repository of a hundred and fifty gigabytes sorted alphabetically
+/// under G is a row nobody finds.
+fn shelf_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let mut groups = desk.library();
+    if groups.is_empty() && desk.weights.orphans.is_empty() {
+        paint.say_at(
+            area.x + 16.0,
+            area.y + 16.0,
+            "Nothing on this disk yet. Models — look one up — Download.",
+            Weight::Regular,
+            size::BODY,
+            ink.faint,
+        );
+        return None;
+    }
+    let bytes_of = |group: &crate::Group| {
+        group
+            .members
+            .iter()
+            .filter_map(|at| desk.models.get(*at))
+            .filter_map(|held| held.bytes)
+            .fold(0, u64::saturating_add)
+    };
+    // Largest first: the page is for getting room back, so the row that answers that
+    // comes first. Reversed rather than negated, because a byte count has no negative.
+    groups.sort_by_key(&bytes_of);
+    groups.reverse();
+    let widest = groups.iter().map(bytes_of).max().unwrap_or(0);
+
+    let mut y = area.y + 4.0;
+    for group in &groups {
+        let (below, pressed) = shelf_group(
+            paint,
+            desk,
+            mouse,
+            group,
+            (bytes_of(group), widest),
+            Box::new(area.x + 14.0, y, area.w - 28.0, 0.0),
+        );
+        act = act.or(pressed);
+        y = below;
+    }
+    if !desk.weights.orphans.is_empty() {
+        let (_below, pressed) = orphan_rows(
+            paint,
+            desk,
+            mouse,
+            Box::new(area.x + 14.0, y, area.w - 28.0, 0.0),
+        );
+        act = act.or(pressed);
+    }
+    act
+}
+
+/// One repository, and its variants where it is opened out.
+fn shelf_group(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    group: &crate::Group,
+    (bytes, widest): (u64, u64),
+    at: Box,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    let mut y = at.y;
+    paint.rule(
+        (at.x - 14.0, y - 5.0),
+        (at.right() + 14.0, y - 5.0),
+        ink.line,
+        120,
+    );
+
+    let opened = desk.is_opened_out(group.repository.as_deref()) || group.members.len() == 1;
+    let name = group.name(&desk.models);
+    let arrow = if group.members.len() > 1 {
+        if opened { "▾" } else { "▸" }
+    } else {
+        " "
+    };
+    paint.say_at(
+        at.x,
+        y + 2.0,
+        arrow,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let shown = paint.elide(&name, Weight::Bold, size::BODY, at.w * 0.4);
+    paint.say_at(at.x + 16.0, y, &shown, Weight::Bold, size::BODY, ink.ink);
+    let after = at.x + 16.0 + paint.measure(&shown, Weight::Bold, size::BODY) + 12.0;
+    let variants = match group.members.len() {
+        1 => "1 variant".to_owned(),
+        many => format!("{many} variants"),
+    };
+    paint.say_at(
+        after,
+        y + 1.0,
+        &variants,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+
+    // A bar against the largest repository, so the row that is worth removing looks it.
+    let bar = Box::new(at.right() - 176.0, y + 6.0, 90.0, 5.0);
+    paint.panel(bar, 2.5, ink.sunk, 255);
+    if widest > 0 {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "byte counts of a shelf, drawn to the nearest pixel"
+        )]
+        let wide = (bytes as f32 / widest as f32) * bar.w;
+        if wide >= 1.0 {
+            paint.panel(Box::new(bar.x, bar.y, wide, bar.h), 2.5, ink.accent, 255);
+        }
+    }
+    paint.say_right(
+        at.right(),
+        y,
+        &words::size_in_words(Some(bytes)).unwrap_or_else(|| words::UNMEASURED.to_owned()),
+        Weight::Bold,
+        size::BODY,
+        ink.ink,
+    );
+    let row = Box::new(at.x - 8.0, y - 4.0, at.w - 190.0, 24.0);
+    if group.members.len() > 1
+        && mouse.clicked(row)
+        && let Some(repository) = group.repository.as_ref()
+    {
+        act = Some(Act::OpenOut(repository.clone()));
+    }
+    y += 26.0;
+
+    if !opened {
+        return (y + 4.0, act);
+    }
+    for member in &group.members {
+        let Some(held) = desk.models.get(*member) else {
+            continue;
+        };
+        let (below, pressed) = variant_row(
+            paint,
+            desk,
+            mouse,
+            held,
+            Box::new(at.x + 18.0, y, at.w - 18.0, 0.0),
+        );
+        act = act.or(pressed);
+        y = below;
+    }
+    (y + 6.0, act)
+}
+
+/// One variant, with the tick box that chooses it.
+fn variant_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    held: &Model,
+    at: Box,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    let ticked = desk.picked.contains(&held.path);
+    let row = Box::new(at.x - 6.0, at.y - 3.0, at.w + 6.0, 22.0);
+    if ticked {
+        paint.panel(row, 6.0, ink.accent_soft, 255);
+    } else if mouse.over(row) {
+        paint.panel(row, 6.0, ink.line, 90);
+    }
+    let square = Box::new(at.x, at.y + 3.0, 13.0, 13.0);
+    if ui::check(paint, mouse, square, ticked) {
+        act = Some(Act::PickOnDisk(held.path.clone()));
+    }
+    let said = match held.parts {
+        Some(parts) if parts > 1 => without_the_part(&quantization_said(held)),
+        _ => quantization_said(held),
+    };
+    let shown = paint.elide(&said, Weight::Regular, size::SMALL, at.w * 0.45);
+    paint.say_at(
+        at.x + 24.0,
+        at.y,
+        &shown,
+        Weight::Regular,
+        size::SMALL,
+        ink.ink,
+    );
+    let mut after = at.x + 24.0 + paint.measure(&shown, Weight::Regular, size::SMALL) + 12.0;
+    // Split files are one variant in several pieces, and saying so keeps somebody from
+    // reading three parts as three models.
+    if let Some(parts) = held.parts.filter(|parts| *parts > 1) {
+        let said = format!("{parts} parts");
+        paint.say_at(after, at.y, &said, Weight::Regular, size::SMALL, ink.faint);
+        after += paint.measure(&said, Weight::Regular, size::SMALL) + 12.0;
+    }
+    if desk
+        .hosted
+        .as_ref()
+        .is_some_and(|hosting| hosting.model == held.path)
+    {
+        paint.say_at(
+            after,
+            at.y,
+            "serving",
+            Weight::Bold,
+            size::SMALL,
+            ink.accent,
+        );
+    }
+    paint.say_right(
+        at.right() - 14.0,
+        at.y,
+        &held
+            .bytes
+            .and_then(|bytes| words::size_in_words(Some(bytes)))
+            .unwrap_or_else(|| words::UNMEASURED.to_owned()),
+        Weight::Regular,
+        size::SMALL,
+        ink.ink,
+    );
+    (at.y + 21.0, act)
+}
+
+/// The projectors nothing uses, as their own group at the foot of the shelf.
+fn orphan_rows(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    let mut y = at.y;
+    paint.rule(
+        (at.x - 14.0, y - 5.0),
+        (at.right() + 14.0, y - 5.0),
+        ink.line,
+        120,
+    );
+    paint.say_at(
+        at.x + 16.0,
+        y,
+        "Projectors with no model",
+        Weight::Bold,
+        size::BODY,
+        ink.warn,
+    );
+    paint.say_right(
+        at.right(),
+        y,
+        &words::size_in_words(Some(desk.weights.reclaimable()))
+            .unwrap_or_else(|| words::UNMEASURED.to_owned()),
+        Weight::Bold,
+        size::BODY,
+        ink.ink,
+    );
+    y += 26.0;
+    for orphan in &desk.weights.orphans {
+        let ticked = desk.picked.contains(&orphan.path);
+        let row = Box::new(at.x + 12.0, y - 3.0, at.w - 12.0, 22.0);
+        if ticked {
+            paint.panel(row, 6.0, ink.accent_soft, 255);
+        } else if mouse.over(row) {
+            paint.panel(row, 6.0, ink.line, 90);
+        }
+        let square = Box::new(at.x + 18.0, y + 3.0, 13.0, 13.0);
+        if ui::check(paint, mouse, square, ticked) {
+            act = Some(Act::PickOnDisk(orphan.path.clone()));
+        }
+        let shown = paint.elide(&orphan.name(), Weight::Regular, size::SMALL, at.w * 0.4);
+        paint.say_at(
+            at.x + 42.0,
+            y,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.ink,
+        );
+        let after = at.x + 42.0 + paint.measure(&shown, Weight::Regular, size::SMALL) + 12.0;
+        let beside = orphan.beside();
+        let shown = paint.elide(&beside, Weight::Regular, size::SMALL, at.w * 0.3);
+        paint.say_at(after, y, &shown, Weight::Regular, size::SMALL, ink.faint);
+        paint.say_right(
+            at.right() - 14.0,
+            y,
+            &words::size_in_words(Some(orphan.bytes))
+                .unwrap_or_else(|| words::UNMEASURED.to_owned()),
+            Weight::Regular,
+            size::SMALL,
+            ink.ink,
+        );
+        y += 21.0;
+    }
+    (y + 6.0, act)
+}
+
+fn transfer_row(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    area: Box,
+    y: f32,
+    transfer: &crate::Transfer,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut act = None;
+    let buttons = 240.0_f32.min(area.w * 0.5);
+    let room = (area.w - buttons - 16.0).max(80.0);
+    let name = paint.elide(&transfer.name(), Weight::Bold, size::BODY, room);
+    paint.say_at(area.x, y, &name, Weight::Bold, size::BODY, ink.ink);
+    let whose = paint.elide(&transfer.reference, Weight::Regular, size::SMALL, room);
+    paint.say_at(
+        area.x,
+        y + 20.0,
+        &whose,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    ui::progress(
+        paint,
+        Box::new(area.x, y + 42.0, room, 8.0),
+        transfer.fraction(),
+    );
+    let said = paint.elide(&transfer.said(), Weight::Regular, size::SMALL, room);
+    let colour = match transfer.state.as_str() {
+        "failed" => ink.warn,
+        "done" => ink.accent,
+        _ => ink.quiet,
+    };
+    paint.say_at(
+        area.x,
+        y + 58.0,
+        &said,
+        Weight::Regular,
+        size::SMALL,
+        colour,
+    );
+    if let Some(arrived) = words::size_in_words(Some(transfer.arrived)) {
+        let of = words::size_in_words(Some(transfer.whole))
+            .map_or_else(|| arrived.clone(), |whole| format!("{arrived} of {whole}"));
+        paint.say_at(
+            area.x,
+            y + 74.0,
+            &of,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+
+    // Only what this state can actually be asked.
+    let mut x = area.right() - buttons;
+    if transfer.under_way() {
+        let (pressed, drawn) = ui::fitted(paint, mouse, (x, y + 10.0), "Pause", Kind::Ordinary);
+        if pressed {
+            act = Some(Act::PauseTransfer(transfer.id));
+        }
+        x = drawn.right() + 8.0;
+    } else if !matches!(transfer.state.as_str(), "done") {
+        let (pressed, drawn) = ui::fitted(paint, mouse, (x, y + 10.0), "Carry on", Kind::Primary);
+        if pressed {
+            act = Some(Act::ResumeTransfer(transfer.id));
+        }
+        x = drawn.right() + 8.0;
+    }
+    if !transfer.settled() {
+        let (pressed, _drawn) = ui::fitted(paint, mouse, (x, y + 10.0), "Give up", Kind::Quiet);
+        if pressed {
+            act = Some(Act::GiveUpTransfer(transfer.id));
+        }
+    }
+    paint.rule(
+        (area.x, y + TRANSFER_ROW - 10.0),
+        (area.right(), y + TRANSFER_ROW - 10.0),
+        ink.line,
+        120,
+    );
+    (y + TRANSFER_ROW, act)
+}
+
 fn pending_actions(
     paint: &mut Painter,
     desk: &Desk,
@@ -862,21 +1660,43 @@ fn pending_actions(
     let ink = paint.ink;
     let y = area.y;
     let mut act = None;
-    if let Doing::Downloading(job) = &desk.doing {
-        paint.say_at(area.x, y, &job.what, Weight::Bold, size::BODY, ink.ink);
+    // While this file is in the queue, this shows the queue's own account of it rather
+    // than a second one: there is one transfer, and the downloads page shows the same.
+    if let Some(transfer) = desk
+        .transfer_of_the_pending()
+        .filter(|held| !held.settled())
+    {
+        paint.say_at(
+            area.x,
+            y,
+            &format!("Getting {}", transfer.name()),
+            Weight::Bold,
+            size::BODY,
+            ink.ink,
+        );
         ui::progress(
             paint,
             Box::new(area.x, y + 24.0, area.w, 8.0),
-            crate::job::fraction(job),
+            transfer.fraction(),
         );
         paint.say_at(
             area.x,
             y + 46.0,
-            &downloading_line(job),
+            &transfer.said(),
             Weight::Regular,
             size::SMALL,
             ink.quiet,
         );
+        let (seen, _drawn) = ui::fitted(
+            paint,
+            mouse,
+            (area.x, y + 68.0),
+            "See all downloads",
+            Kind::Quiet,
+        );
+        if seen {
+            act = Some(Act::Go(Page::Downloads));
+        }
     } else {
         let (start, drawn) = ui::fitted(
             paint,
@@ -885,7 +1705,7 @@ fn pending_actions(
             "Download and start server",
             Kind::Primary,
         );
-        if start && !desk.doing.busy() {
+        if start {
             act = Some(Act::DownloadThen(std::boxed::Box::new(Act::HostIt)));
         }
         let (get, _) = ui::fitted(
@@ -895,7 +1715,9 @@ fn pending_actions(
             "Download",
             Kind::Ordinary,
         );
-        if get && !desk.doing.busy() {
+        // Nothing asks whether the window is busy. A transfer is queued in the daemon, so
+        // there is nothing for it to be busy with.
+        if get {
             act = Some(Act::Download {
                 reference: pending.repository.clone(),
                 file: pending.file.clone(),
@@ -1042,7 +1864,7 @@ fn model_page(
             crate::Tab::Configure => configure_tab(paint, desk, mouse, inner, held),
             crate::Tab::Optimize => optimize_tab(paint, desk, mouse, inner),
             crate::Tab::Statistics => {
-                statistics_tab(paint, inner, held);
+                statistics_tab(paint, desk, inner, held);
                 None
             }
             crate::Tab::Contents => contents_tab(paint, desk, mouse, inner),
@@ -1533,9 +2355,29 @@ fn run_row(
     } else {
         Kind::Primary
     };
-    let (pressed, button) = ui::fitted(paint, mouse, (area.x, y), label, kind);
+    let (pressed, mut button) = ui::fitted(paint, mouse, (area.x, y), label, kind);
     if pressed {
         act = Some(Act::Sweep);
+    }
+    // Pausing sits beside stopping, not instead of it. A long sweep is worth stepping away
+    // from without giving up the place it had got to.
+    if let Some(run) = desk.optimizing.run.as_ref() {
+        let waiting = run.asked_to_wait();
+        let (pressed, paused) = ui::fitted(
+            paint,
+            mouse,
+            (button.right() + 8.0, y),
+            if waiting { "Carry on" } else { "Pause" },
+            if waiting {
+                Kind::Primary
+            } else {
+                Kind::Ordinary
+            },
+        );
+        if pressed {
+            act = Some(Act::PauseSweep);
+        }
+        button = paused;
     }
     if !desk.optimizing.running && desk.optimizing.known > 0 {
         let (pressed, _box) = ui::fitted(
@@ -1917,7 +2759,22 @@ fn optimize_tab(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
     act.or(sweep_report(paint, desk, mouse, area, y))
 }
 
-fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
+/// The live figures for this model, if this model is the one being run. A model that is
+/// not held has nothing live to show, and saying so is the honest thing; a model that is
+/// held has the same figures the server page shows, because they are the same figures.
+fn live_for<'a>(desk: &'a Desk, held: &Model) -> Option<&'a crate::Use> {
+    if let Some(hosting) = desk.hosted.as_ref()
+        && hosting.model == held.path
+    {
+        return hosting.in_use.as_ref();
+    }
+    desk.under_test
+        .as_ref()
+        .filter(|under| under.model == held.path)
+        .map(|under| &under.in_use)
+}
+
+fn statistics_tab(paint: &mut Painter, desk: &Desk, area: Box, held: &Model) {
     let ink = paint.ink;
     let stacked = area.w < 700.0;
     let left = Box::new(
@@ -1957,17 +2814,30 @@ fn statistics_tab(paint: &mut Painter, area: Box, held: &Model) {
         }
         *y += 10.0;
     };
-    section(
+    let Some(in_use) = live_for(desk, held) else {
+        section(
+            paint,
+            &mut y,
+            "Use",
+            &[
+                "Nothing running for this model.".to_owned(),
+                "MCF records what a hold actually did — the settings, this machine, and \
+                 the rates that followed — as it holds it. Host this one and the figures \
+                 appear here as they are measured."
+                    .to_owned(),
+            ],
+            ink.faint,
+        );
+        return;
+    };
+    spaced(paint, right.x, y, "use", ink.faint);
+    y += 20.0;
+    let y = use_tiles(paint, in_use, Box::new(right.x, y, right.w, 0.0));
+    let y = machine_and_run_tiles(paint, desk, Box::new(right.x, y + 8.0, right.w, 0.0));
+    let _below = token_rates(
         paint,
-        &mut y,
-        "Use",
-        &[
-            "Nothing recorded for this model yet.".to_owned(),
-            "MCF records what a hold actually did — the settings, this machine, and \
-             the rates that followed — as it holds it."
-                .to_owned(),
-        ],
-        ink.faint,
+        &desk.tallies,
+        Box::new(right.x, y + 8.0, right.w, 74.0),
     );
 }
 
@@ -3406,6 +4276,23 @@ fn library_rows(
             act = Some(pressed);
         }
         y += 40.0;
+        // Opened out, each quantization of the repository gets a row of its own, because
+        // each of them is a separate file to choose, hold and remove.
+        if group.members.len() > 1 && desk.is_opened_out(group.repository.as_deref()) {
+            for member in &group.members {
+                if let Some(pressed) = quant_row(
+                    paint,
+                    desk,
+                    mouse,
+                    *member,
+                    Box::new(inner.x + 6.0, y, list, QUANT_ROW),
+                ) {
+                    act = Some(pressed);
+                }
+                y += QUANT_ROW;
+            }
+            y += 6.0;
+        }
     }
     if let Some(pressed) = hub_rows(paint, desk, mouse, Box::new(inner.x + 6.0, y, list, 4000.0)) {
         act = Some(pressed);
@@ -3684,9 +4571,11 @@ fn group_row(
         size::SMALL,
         ink.faint,
     );
+    let many = group.members.len() > 1;
+    let opened = desk.is_opened_out(group.repository.as_deref());
     let mut figures = chooses_by(held);
-    if group.members.len() > 1 {
-        figures = format!("{} quantizations · {figures}", group.members.len());
+    if many {
+        figures = format!("{} variants here · {figures}", group.members.len());
     }
     let figures = paint.elide(&figures, Weight::Regular, size::SMALL, at.w - 14.0);
     paint.say_at(
@@ -3697,7 +4586,128 @@ fn group_row(
         size::SMALL,
         ink.faint,
     );
+    // A repository holding more than one quantization opens out into them. Without
+    // something to press, only the first of them could ever be chosen — and so only the
+    // first of them could ever be held or removed.
+    if many {
+        let word = if opened {
+            "▾ each variant"
+        } else {
+            "▸ each variant"
+        };
+        let hit = Box::new(at.x + at.w - 96.0, at.y + 14.0, 90.0, 18.0);
+        paint.say_right(
+            at.x + at.w - 14.0,
+            at.y + 18.0,
+            word,
+            Weight::Regular,
+            size::SMALL,
+            if mouse.over(hit) {
+                ink.accent
+            } else {
+                ink.quiet
+            },
+        );
+        if mouse.clicked(hit) {
+            return group
+                .repository
+                .as_ref()
+                .map(|held| Act::OpenOut(held.clone()));
+        }
+    }
     mouse.clicked(where_).then_some(Act::Choose(member))
+}
+
+/// How tall one quantization's row is, opened out under its repository.
+const QUANT_ROW: f32 = 30.0;
+
+/// One quantization of a repository, opened out under it.
+///
+/// It is the thing chosen, so it is the thing the actions beside the page act on: holding
+/// it holds this file, and removing it removes this file and no other.
+fn quant_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    member: usize,
+    at: Box,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let held = desk.models.get(member)?;
+    let where_ = Box::new(at.x + 12.0, at.y - 4.0, at.w - 12.0, at.h);
+    let chosen = desk.chosen == Some(member) && desk.hub_chosen.is_none() && desk.pending.is_none();
+    if chosen {
+        paint.panel(where_, 6.0, ink.accent_soft, 255);
+    } else if mouse.over(where_) {
+        paint.panel(where_, 6.0, ink.line, 90);
+    }
+    // The quantization is what the part of the name after the repository says, so that is
+    // what is shown: the repository's own name is on the row above.
+    let said = quantization_said(held);
+    let name = paint.elide(&said, Weight::Regular, size::SMALL, at.w - 90.0);
+    paint.say_at(
+        at.x + 22.0,
+        at.y + 3.0,
+        &name,
+        if chosen {
+            Weight::Bold
+        } else {
+            Weight::Regular
+        },
+        size::SMALL,
+        if chosen { ink.accent } else { ink.ink },
+    );
+    paint.say_right(
+        at.x + at.w - 14.0,
+        at.y + 3.0,
+        &held.bytes.map_or_else(|| UNKNOWN.to_owned(), gigabytes),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    mouse.clicked(where_).then_some(Act::Choose(member))
+}
+
+/// The `-00001-of-00003` a split variant's first file carries.
+///
+/// Trimmed off where the row says how many parts there are beside it: the same fact twice
+/// on one row pushes the part that differs off the end.
+fn without_the_part(said: &str) -> String {
+    let Some((before, of)) = said.rsplit_once("-of-") else {
+        return said.to_owned();
+    };
+    let Some((prefix, at)) = before.rsplit_once('-') else {
+        return said.to_owned();
+    };
+    if at.is_empty()
+        || of.is_empty()
+        || !at.chars().all(|held| held.is_ascii_digit())
+        || !of.chars().all(|held| held.is_ascii_digit())
+    {
+        return said.to_owned();
+    }
+    prefix.to_owned()
+}
+
+/// What distinguishes this file from the others in its repository. The repository's name is
+/// on the row above, so repeating it here would push the part that differs off the end.
+pub(crate) fn quantization_said(held: &Model) -> String {
+    let file = held.file.trim_end_matches(".gguf");
+    let repository = held
+        .repository
+        .as_deref()
+        .and_then(|held| held.rsplit('/').next())
+        .unwrap_or_default();
+    let shortened = repository
+        .strip_suffix("-GGUF")
+        .or(Some(repository))
+        .filter(|held| !held.is_empty())
+        .and_then(|held| {
+            file.strip_prefix(held)
+                .map(|rest| rest.trim_start_matches(['-', '.', '_']))
+        })
+        .filter(|rest| !rest.is_empty());
+    shortened.unwrap_or(file).to_owned()
 }
 
 fn chooses_by(held: &Model) -> String {
@@ -4270,20 +5280,6 @@ fn ask_box(
     (act, at.y + 42.0)
 }
 
-fn in_use_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
-    let Some(in_use) = desk
-        .hosted
-        .as_ref()
-        .and_then(|hosting| hosting.in_use.as_ref())
-    else {
-        return at.y;
-    };
-    let y = use_tiles(paint, in_use, Box::new(at.x, at.y, at.w, 0.0));
-    let y = machine_and_run_tiles(paint, desk, Box::new(at.x, y + 8.0, at.w, 0.0));
-    let y = rate_line(paint, &desk.rates, Box::new(at.x, y + 8.0, at.w, 48.0));
-    y + 16.0
-}
-
 fn under_test_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let Some(under) = desk.under_test.as_ref() else {
         return at.y;
@@ -4310,22 +5306,14 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
     let rate = |held: Option<f32>| held.map(|rate| format!("{rate:.1}"));
     let count = |held: Option<u64>| held.map(words::grouped);
     let bytes = |held: Option<u64>| held.map(gigabytes);
-    let tiles: Vec<(&str, Option<String>)> = vec![
-        ("Gen tok/s", rate(in_use.generated_per_second)),
-        ("Prompt tok/s", rate(in_use.prompted_per_second)),
+    let mut tiles: Vec<(&str, Option<String>)> = vec![
+        ("Generation tok/s", rate(in_use.generating_per_second())),
+        ("Prefill tok/s", rate(in_use.prompting_per_second())),
         (
-            "Tokens out",
+            "Generated tokens",
             count(in_use.generated_live.or(in_use.generated)),
         ),
-        ("Tokens in", count(in_use.prompted)),
-        (
-            "KV cache",
-            in_use
-                .cache_used
-                .map(|ratio| format!("{:.0}%", (ratio * 100.0).clamp(0.0, 100.0))),
-        ),
-        ("KV tokens", count(in_use.cache_tokens)),
-        ("Decodes", count(in_use.decodes)),
+        ("Prefill tokens", count(in_use.prompted)),
         (
             if in_use.power_named.as_deref() == Some("package") {
                 "Package watts"
@@ -4366,7 +5354,206 @@ fn use_tiles(paint: &mut Painter, in_use: &crate::Use, at: Box) -> f32 {
         ("VRAM", bytes(in_use.card)),
         ("Uptime", in_use.uptime_seconds.map(crate::ago_said)),
     ];
+    // Only the cache figures the engine in front of us actually publishes. An engine that
+    // reports how full its cache is gets that tile; one that reports the deepest sequence
+    // it has seen gets that instead. A tile that can never fill is worse than no tile:
+    // it reads as a measurement that failed.
+    let mut cache: Vec<(&str, Option<String>)> = Vec::new();
+    if let Some(ratio) = in_use.cache_used {
+        cache.push((
+            "KV cache",
+            Some(format!("{:.0}%", (ratio * 100.0).clamp(0.0, 100.0))),
+        ));
+    }
+    if in_use.cache_tokens.is_some() {
+        cache.push(("KV tokens", count(in_use.cache_tokens)));
+    }
+    if in_use.deepest.is_some() {
+        cache.push(("Peak sequence", count(in_use.deepest)));
+    }
+    if in_use.prompt_reused.is_some() {
+        cache.push(("Cached tokens", count(in_use.prompt_reused)));
+    }
+    // Only where a draft head has actually proposed something. A model held without one
+    // has not failed at drafting, and a tile reading 0% would say that it had.
+    if let Some(share) = in_use.draft_taken_share() {
+        cache.push((
+            "Draft acceptance",
+            Some(format!("{:.0}%", (share * 100.0).clamp(0.0, 100.0))),
+        ));
+    }
+    let at_four = tiles.len().min(4);
+    let rest = tiles.split_off(at_four);
+    tiles.extend(cache);
+    tiles.extend(rest);
     tiles_of(paint, &tiles, at)
+}
+
+/// One of the three counts a hold keeps: what it is called, and how to read it off a
+/// reading.
+type Series = (&'static str, fn(&crate::Tally) -> u64);
+
+/// How wide one reading's column is. Wide enough to see, narrow enough that an hour of
+/// them fits across a plot.
+const SLOT: f32 = 2.0;
+
+/// Tokens through the hold over time: what came in, what the model read, what it wrote.
+///
+/// Rates, not totals. A total only ever climbs, so its shape is the same whether the work
+/// came in one burst or trickled all afternoon — an hour idle after a busy morning leaves
+/// a graph full to the top saying nothing about either. A rate falls back to nothing when
+/// nothing is happening, which is the thing worth seeing.
+///
+/// Three plots rather than three lines on one: reading a prompt runs an order of magnitude
+/// faster than writing an answer, and on a shared scale the writing is a line along the
+/// floor.
+fn token_rates(
+    paint: &mut Painter,
+    tallies: &std::collections::VecDeque<crate::Tally>,
+    at: Box,
+) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, at.x, at.y, "throughput · tokens a second", ink.faint);
+    let plot = Box::new(at.x, at.y + 16.0, at.w, (at.h - 16.0).max(30.0));
+    let span = tallies
+        .front()
+        .zip(tallies.back())
+        .map(|(first, last)| last.at.saturating_duration_since(first.at).as_secs());
+    match span {
+        Some(seconds) if seconds > 0 => {
+            paint.say_right(
+                at.right(),
+                at.y - 2.0,
+                &format!("over the last {}", crate::ago_said(seconds)),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+        }
+        _ => {
+            paint.edge(plot, 6.0, ink.line, ink.card);
+            paint.say_at(
+                plot.x + 12.0,
+                plot.y + 8.0,
+                "waiting for a second reading — a rate is a difference between two",
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            return plot.bottom();
+        }
+    }
+    // The heading already gives the unit, so each plot names its phase and nothing else.
+    let of: [Series; 3] = [
+        ("Prompt", |tally| tally.asked),
+        ("Prefill", |tally| tally.processed),
+        ("Generation", |tally| tally.written),
+    ];
+    let across = (plot.w - 20.0) / 3.0;
+    for (index, (label, reading)) in of.into_iter().enumerate() {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "three plots: the index cannot lose one"
+        )]
+        let column = index as f32;
+        let cell = Box::new(plot.x + (across + 10.0) * column, plot.y, across, plot.h);
+        one_rate(paint, tallies, reading, label, cell);
+    }
+    plot.bottom()
+}
+
+/// The rate of one count, column by column.
+///
+/// Where more readings fall in a column than there are pixels for, the column takes the
+/// largest of them: a burst that lasted ten seconds of a minute is the thing worth seeing,
+/// and averaging it away would hide exactly what the graph is for.
+fn one_rate(
+    paint: &mut Painter,
+    tallies: &std::collections::VecDeque<crate::Tally>,
+    reading: fn(&crate::Tally) -> u64,
+    label: &str,
+    at: Box,
+) {
+    let ink = paint.ink;
+    paint.edge(at, 6.0, ink.line, ink.card);
+    let plot = Box::new(at.x + 10.0, at.y + 26.0, at.w - 20.0, at.h - 34.0);
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a count of columns across a plot, far inside usize"
+    )]
+    let columns = ((plot.w / SLOT).floor() as usize).max(1);
+    let mut bars = vec![0.0_f32; columns];
+    let readings = tallies.len().saturating_sub(1);
+    for (at_reading, pair) in tallies.iter().zip(tallies.iter().skip(1)).enumerate() {
+        let Some(rate) = crate::Tally::per_second(*pair.0, *pair.1, reading) else {
+            continue;
+        };
+        // Oldest on the left, newest on the right, whatever the window holds.
+        let column = at_reading
+            .saturating_mul(columns)
+            .checked_div(readings.max(1))
+            .unwrap_or(0)
+            .min(columns.saturating_sub(1));
+        if let Some(held) = bars.get_mut(column) {
+            *held = held.max(rate);
+        }
+    }
+    let peak = bars.iter().copied().fold(0.0_f32, f32::max);
+    let now = bars.last().copied().unwrap_or(0.0);
+
+    spaced(paint, at.x + 12.0, at.y + 9.0, label, ink.faint);
+    // Beside the label, not over on the right: the figure for now is right-aligned there,
+    // and the two ran into one another.
+    if peak > 0.0 {
+        let after = at.x + 12.0 + spaced_width(paint, label) + 10.0;
+        let peak_said = format!("peak {peak:.0}");
+        let room = at.right() - 60.0 - after;
+        if paint.measure(&peak_said, Weight::Regular, size::SMALL) <= room {
+            paint.say_at(
+                after,
+                at.y + 8.0,
+                &peak_said,
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+        }
+    }
+    let said = if peak > 0.0 {
+        format!("{now:.1}")
+    } else {
+        words::UNMEASURED.to_owned()
+    };
+    let shown = paint.elide(&said, Weight::Bold, size::BODY, at.w - 24.0);
+    paint.say_right(
+        at.right() - 12.0,
+        at.y + 7.0,
+        &shown,
+        Weight::Bold,
+        size::BODY,
+        if peak > 0.0 { ink.ink } else { ink.faint },
+    );
+
+    if peak <= 0.0 {
+        paint.rect(Box::new(plot.x, plot.bottom() - 1.0, plot.w, 1.0), ink.line);
+        return;
+    }
+    // Drawn from nothing, because a rate of nothing is a real reading: it is the hold
+    // sitting idle, and that is half of what this graph has to say.
+    for (column, rate) in bars.iter().enumerate() {
+        if *rate <= 0.0 {
+            continue;
+        }
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a column index across a plot, far inside f32"
+        )]
+        let x = plot.x + column as f32 * SLOT;
+        let tall = ((rate / peak) * plot.h).clamp(1.0, plot.h);
+        paint.rect(Box::new(x, plot.bottom() - tall, SLOT, tall), ink.accent);
+    }
 }
 
 fn machine_and_run_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
@@ -4401,6 +5588,11 @@ fn machine_and_run_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
 }
 
 fn tiles_of(paint: &mut Painter, tiles: &[(&str, Option<String>)], at: Box) -> f32 {
+    // No tiles takes no room. A row's worth of height was being reserved for an empty
+    // set, which opened a band of nothing wherever a block had nothing to say.
+    if tiles.is_empty() {
+        return at.y;
+    }
     let ink = paint.ink;
     let across = (at.w - 4.0 * 10.0) / 5.0;
     let mut y = at.y;
@@ -4449,58 +5641,15 @@ pub fn saying(paint: &mut Painter, said: &str) {
     paint.end();
 }
 
-fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: Box) -> f32 {
-    let ink = paint.ink;
-    let peak = rates.iter().copied().fold(0.0_f32, f32::max);
-    spaced(paint, at.x, at.y, "gen tok/s · last 2 min", ink.faint);
-    let plot = Box::new(at.x, at.y + 16.0, at.w, at.h - 16.0);
-    paint.edge(plot, 6.0, ink.line, ink.card);
-    if peak <= 0.0 {
-        let said = if rates.is_empty() {
-            "waiting for a reading"
-        } else {
-            "nothing generated while this page has been open"
-        };
-        paint.say_at(
-            plot.x + 12.0,
-            plot.y + 8.0,
-            said,
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        return plot.bottom();
-    }
-    let slot = (plot.w - 8.0) / 120.0;
-    let mut x = plot.right() - 4.0;
-    for rate in rates.iter().rev() {
-        let tall = ((rate / peak) * (plot.h - 8.0)).max(1.0);
-        paint.rect(
-            Box::new(
-                x - slot + 1.0,
-                plot.bottom() - 4.0 - tall,
-                (slot - 2.0).max(1.0),
-                tall,
-            ),
-            ink.accent,
-        );
-        x -= slot;
-        if x < plot.x + 4.0 {
-            break;
-        }
-    }
-    paint.say_right(
-        at.right(),
-        at.y - 2.0,
-        &format!("peak {peak:.1}"),
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    plot.bottom()
-}
-
-fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Option<Act>, f32) {
+/// The token counts over the life of the hold: what came in, what the model read, and
+/// what it wrote.
+///
+/// Whatever the hold has to say about itself that is not a figure: that it is loading,
+/// that it was refused, that it was let go, or that this model has no server at all.
+///
+/// Where the hold is answering it says nothing — the addresses and what it takes to reach
+/// them are in the rail, and saying them twice on one page was how they came to disagree.
+fn hold_status(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let ink = paint.ink;
     let mut y = at.y;
     let this_one = desk
@@ -4509,8 +5658,8 @@ fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Opti
         .zip(desk.chosen.and_then(|held| desk.models.get(held)))
         .filter(|(hosting, held)| hosting.model == held.path)
         .map(|(hosting, _)| hosting);
-    if let Some(hosting) = this_one {
-        return where_it_answers(paint, mouse, hosting, desk.hosted_model(), at);
+    if this_one.is_some() {
+        return y;
     }
     let said: (String, Rgb) = if let Some(loading) = desk.loading_line() {
         (loading, ink.quiet)
@@ -4518,11 +5667,7 @@ fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Opti
         && !job.finished
     {
         building(paint, job, at.x, y, at.w);
-        return (None, y + 96.0);
-    } else if let Some(why) = &desk.host_refused {
-        (why.clone(), ink.bad)
-    } else if let Some(freed) = &desk.freed {
-        (freed.clone(), ink.quiet)
+        return y + 96.0;
     } else {
         (
             "No server for this model: messages here run through MCF's own engine, loaded per \
@@ -4539,173 +5684,807 @@ fn held_block(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (Opti
         paint.say_at(at.x, y, line, Weight::Regular, size::BODY, said.1);
         y += 20.0;
     }
-    (None, y + 8.0)
+    y + 8.0
 }
 
-fn where_it_answers(
+/// How wide the rail down the right of the server page is.
+///
+/// The page is about two things — the model and the machine it runs on — and they used to
+/// be stacked, so three tables of machine readings took the top third of the page and
+/// pushed the model's own figures and the message box below the fold. Side by side, each
+/// gets the shape it wants: the model a column that grows, the machine a list that does
+/// not.
+const RAIL: f32 = 296.0;
+
+/// Between the rail and the column beside it.
+const RAIL_GUTTER: f32 = 28.0;
+
+/// Below this the page stacks instead. A rail that has taken a third of the width is not
+/// a rail, and the column beside it stops being able to hold a line of prose.
+const RAIL_STACKS_UNDER: f32 = 920.0;
+
+/// One line of the rail: what it is on the left, what it says on the right.
+///
+/// A second figure goes after the first rather than in a column of its own — the rail is
+/// too narrow to keep columns aligned, and the quiet figure is the one that gives way.
+fn rail_row(
+    paint: &mut Painter,
+    at: Box,
+    y: f32,
+    label: &str,
+    loud: &str,
+    quiet: Option<&str>,
+) -> f32 {
+    let ink = paint.ink;
+    let named = paint.measure(label, Weight::Regular, size::SMALL);
+    paint.say_at(at.x, y, label, Weight::Regular, size::SMALL, ink.quiet);
+    let mut right = at.right();
+    if let Some(quiet) = quiet {
+        paint.say_right(right, y, quiet, Weight::Regular, size::SMALL, ink.faint);
+        right -= paint.measure(quiet, Weight::Regular, size::SMALL) + 8.0;
+    }
+    let room = (right - at.x - named - 10.0).max(24.0);
+    let shown = paint.elide(loud, Weight::Bold, size::SMALL, room);
+    paint.say_right(right, y, &shown, Weight::Bold, size::SMALL, ink.ink);
+    y + 19.0
+}
+
+/// A heading in the rail, with a rule above it wherever it is not the first.
+fn rail_section(paint: &mut Painter, at: Box, y: f32, title: &str) -> f32 {
+    let ink = paint.ink;
+    if y > at.y + 1.0 {
+        paint.rule((at.x, y - 10.0), (at.right(), y - 10.0), ink.line, 150);
+    }
+    spaced(paint, at.x, y, title, ink.faint);
+    y + 19.0
+}
+
+/// The machine, the memory and the disks, as the rail says them.
+///
+/// Every figure the three stacked tables used to carry is here — load, temperature, clock,
+/// cores, watts, used and total and free memory, read and write and temperature per
+/// disk — in a quarter of the room, because a name beside a figure needs no column.
+fn machine_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
+    let reading = &desk.reading;
+    let dash = || UNKNOWN_FIGURE.to_owned();
+    y = rail_section(paint, at, y, "machine");
+
+    let cpu = &reading.processor;
+    let load = cpu
+        .load
+        .map_or_else(dash, |load| format!("{} %", load.whole()));
+    let beside = [
+        cpu.temperature.map(|held| format!("{held} °C")),
+        cpu.clock
+            .map(|mhz| format!("{:.2} GHz", f64::from(mhz) / 1000.0)),
+        cpu.cores.map(|held| format!("{held} cores")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<String>>()
+    .join(" · ");
+    y = rail_row(
+        paint,
+        at,
+        y,
+        "CPU",
+        &load,
+        (!beside.is_empty()).then_some(&beside),
+    );
+
+    for card in &reading.cards {
+        let load = card
+            .load
+            .map_or_else(dash, |load| format!("{} %", load.whole()));
+        let beside = [
+            card.temperature.map(|held| format!("{held} °C")),
+            card.power.map(|watts| format!("{watts} W")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<String>>()
+        .join(" · ");
+        y = rail_row(
+            paint,
+            at,
+            y,
+            &format!("GPU {}", card.name),
+            &load,
+            (!beside.is_empty()).then_some(&beside),
+        );
+    }
+    memory_and_disk_rows(paint, desk, at, y)
+}
+
+/// What the memory and the disks read, under the same heading as the processors: they are
+/// all the machine, and each is a name beside a figure.
+fn memory_and_disk_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
+    let reading = &desk.reading;
+    let dash = || UNKNOWN_FIGURE.to_owned();
+    let system = &reading.memory;
+    let used = match (system.total, system.available) {
+        (Some(total), Some(free)) => Some(total.saturating_sub(free)),
+        _ => None,
+    };
+    y = rail_row(
+        paint,
+        at,
+        y,
+        "System memory",
+        &used.map_or_else(dash, gigabytes),
+        system
+            .total
+            .map(|total| format!("of {}", gigabytes(total)))
+            .as_deref(),
+    );
+    if let Some(free) = system.available {
+        y = rail_row(paint, at, y, "Free", &gigabytes(free), None);
+    }
+    for card in &reading.cards {
+        let free = match (card.total, card.used) {
+            (Some(total), Some(used)) => Some(total.saturating_sub(used)),
+            _ => None,
+        };
+        y = rail_row(
+            paint,
+            at,
+            y,
+            "Graphics memory",
+            &card.used.map_or_else(dash, gigabytes),
+            card.total
+                .map(|total| format!("of {}", gigabytes(total)))
+                .as_deref(),
+        );
+        if let Some(free) = free {
+            y = rail_row(paint, at, y, "Free", &gigabytes(free), None);
+        }
+    }
+    for disk in &reading.disks {
+        let rate = |bytes: Option<u64>| {
+            bytes.map_or_else(dash, |held| format!("{:.1} MB/s", held as f64 / 1e6))
+        };
+        let beside = [
+            Some(format!("write {}", rate(disk.written))),
+            disk.temperature.map(|held| format!("{held} °C")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<String>>()
+        .join(" · ");
+        y = rail_row(
+            paint,
+            at,
+            y,
+            &disk.name,
+            &rate(disk.read),
+            (!beside.is_empty()).then_some(&beside),
+        );
+    }
+    y + 10.0
+}
+
+/// What the hold is taking, and what it has drawn.
+fn held_and_energy_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
+    let Some(in_use) = desk
+        .hosted
+        .as_ref()
+        .and_then(|hosting| hosting.in_use.as_ref())
+    else {
+        return y;
+    };
+    let dash = || UNKNOWN_FIGURE.to_owned();
+    y = rail_section(paint, at, y, "held");
+    y = rail_row(
+        paint,
+        at,
+        y,
+        "VRAM",
+        &in_use.card.map_or_else(dash, gigabytes),
+        None,
+    );
+    y = rail_row(
+        paint,
+        at,
+        y,
+        "RAM",
+        &in_use.resident.map_or_else(dash, gigabytes),
+        None,
+    );
+    if let Some(window) = desk.hosted.as_ref().and_then(|hosting| hosting.context) {
+        y = rail_row(
+            paint,
+            at,
+            y,
+            "Context length",
+            &words::grouped(window),
+            Some("tokens"),
+        );
+    }
+    if let Some(deepest) = in_use.deepest {
+        y = rail_row(
+            paint,
+            at,
+            y,
+            "Peak sequence",
+            &words::grouped(deepest),
+            None,
+        );
+    }
+    if let Some((cache, whole)) = desk
+        .hosted
+        .as_ref()
+        .zip(desk.hosted_model())
+        .and_then(|(hosting, model)| reserve_of(model, hosting.context?, hosting.cache))
+    {
+        y = rail_row(
+            paint,
+            at,
+            y,
+            "KV cache",
+            &gigabytes(cache),
+            whole
+                .map(|whole| format!("{} with weights", gigabytes(whole)))
+                .as_deref(),
+        );
+    }
+    y = rail_row(
+        paint,
+        at,
+        y,
+        "Uptime",
+        &in_use.uptime_seconds.map_or_else(dash, crate::ago_said),
+        None,
+    );
+    energy_rows(paint, in_use, at, y + 10.0)
+}
+
+/// What the hold has drawn, and what that costs where a price is set.
+fn energy_rows(paint: &mut Painter, in_use: &crate::Use, at: Box, mut y: f32) -> f32 {
+    let dash = || UNKNOWN_FIGURE.to_owned();
+    y = rail_section(paint, at, y, "energy");
+    y = rail_row(
+        paint,
+        at,
+        y,
+        if in_use.power_named.as_deref() == Some("package") {
+            "Package now"
+        } else {
+            "Card now"
+        },
+        &in_use
+            .card_power_watts
+            .map_or_else(dash, |watts| format!("{watts:.1} W")),
+        None,
+    );
+    if let Some(joules) = in_use.card_energy_joules {
+        let drawn = if joules >= 1_000.0 {
+            format!("{:.1} kJ", joules / 1_000.0)
+        } else {
+            format!("{joules:.0} J")
+        };
+        y = rail_row(paint, at, y, "Drawn", &drawn, None);
+    }
+    if let Some(seconds) = in_use.card_energy_over_seconds {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a span in seconds, shown as a clock"
+        )]
+        let whole = seconds.max(0.0) as u64;
+        y = rail_row(paint, at, y, "Over", &clock(whole), None);
+    }
+    y = rail_row(
+        paint,
+        at,
+        y,
+        "Cost",
+        &in_use.card_energy_cost_millionths.map_or_else(
+            || "no price set".to_owned(),
+            |millionths| mcf_core::price::Cost { millionths }.to_string(),
+        ),
+        None,
+    );
+    y + 10.0
+}
+
+/// The rail: everything about the machine and the endpoint, out of the model's way.
+fn server_rail(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Option<Act> {
+    let ink = paint.ink;
+    paint.rect(at, ink.card);
+    paint.rule((at.x, at.y), (at.x, at.bottom()), ink.line, 255);
+    let inside = Box::new(at.x + 22.0, at.y + PAD, (at.w - 42.0).max(80.0), at.h);
+    let mut act = None;
+    let mut y = inside.y;
+
+    if let Some(hosting) = desk.hosted.as_ref() {
+        y = rail_section(paint, inside, y, "endpoint");
+        let (pressed, after) = rail_endpoint(paint, mouse, hosting, inside, y);
+        act = pressed.or(act);
+        y = after + 10.0;
+    }
+    y = held_and_energy_rows(paint, desk, inside, y);
+    let _after = machine_rows(paint, desk, inside, y);
+
+    if desk.hosted.is_some() {
+        let button = Box::new(inside.x, at.bottom() - 46.0, inside.w, ui::BUTTON);
+        if ui::button(paint, mouse, button, "Stop server", Kind::Quiet) {
+            act = Some(Act::StopHosting);
+        }
+    }
+    act
+}
+
+/// The addresses the hold answers on, and what it takes to reach them.
+fn rail_endpoint(
     paint: &mut Painter,
     mouse: &Mouse,
     hosting: &crate::Hosted,
-    model: Option<&Model>,
     at: Box,
+    mut y: f32,
 ) -> (Option<Act>, f32) {
     let ink = paint.ink;
-    let mut y = at.y;
     let mut act = None;
-    paint.say_at(at.x, y, "Endpoint", Weight::Regular, size::SMALL, ink.quiet);
-    let after = paint.measure("Endpoint", Weight::Regular, size::SMALL);
-    paint.say_at(
-        at.x + after + 8.0,
-        y - 1.0,
-        &hosting.address,
-        Weight::Bold,
-        size::BODY,
-        ink.accent,
-    );
-    let address_wide = paint.measure(&hosting.address, Weight::Bold, size::BODY);
-    let (copied, _) = ui::fitted(
-        paint,
-        mouse,
-        (at.x + after + address_wide + 22.0, y - 8.0),
-        "Copy",
-        Kind::Quiet,
-    );
-    if copied {
-        act = Some(Act::Copy(hosting.address.clone()));
-    }
-    y += 24.0;
-    if let Some(network) = &hosting.network_address {
-        paint.say_at(
-            at.x,
-            y,
-            "On the network",
-            Weight::Regular,
-            size::SMALL,
-            ink.quiet,
-        );
-        let after = paint.measure("On the network", Weight::Regular, size::SMALL);
-        paint.say_at(
-            at.x + after + 8.0,
-            y - 1.0,
-            network,
-            Weight::Bold,
-            size::BODY,
-            ink.accent,
-        );
-        let wide = paint.measure(network, Weight::Bold, size::BODY);
+    for (label, address) in [
+        ("This computer", Some(&hosting.address)),
+        ("On the network", hosting.network_address.as_ref()),
+    ] {
+        let Some(address) = address else { continue };
+        paint.say_at(at.x, y, label, Weight::Regular, size::SMALL, ink.quiet);
+        y += 16.0;
+        let shown = paint.elide(address, Weight::Bold, size::SMALL, at.w - 46.0);
+        paint.say_at(at.x, y, &shown, Weight::Bold, size::SMALL, ink.accent);
         let (copied, _) = ui::fitted(
             paint,
             mouse,
-            (at.x + after + wide + 22.0, y - 8.0),
+            (at.right() - 44.0, y - 8.0),
             "Copy",
             Kind::Quiet,
         );
         if copied {
-            act = Some(Act::Copy(network.clone()));
+            act = Some(Act::Copy(address.clone()));
         }
         y += 24.0;
     }
-    for line in [
-        "OpenAI-compatible API · use as base URL".to_owned(),
-        if hosting.api_key && hosting.network_address.is_some() {
-            "API key: set · required, since the hold answers the network".to_owned()
-        } else if hosting.api_key {
-            "API key: set".to_owned()
-        } else {
-            "API key: none (localhost only)".to_owned()
-        },
-        format!(
-            "Context {}   ·   Started {}",
-            hosting.context.map_or_else(
-                || UNKNOWN.to_owned(),
-                |context| format!("{} tokens", words::grouped(context))
-            ),
-            hosting.since
+    let (said, colour) = match (hosting.api_key, hosting.open) {
+        (true, true) => (
+            "API key set · required, since the hold answers the network".to_owned(),
+            ink.quiet,
         ),
-        model
-            .zip(hosting.context)
-            .and_then(|(model, context)| reserve_line(model, context, hosting.cache))
-            .unwrap_or_default(),
+        (true, false) => ("API key set".to_owned(), ink.quiet),
+        // Said plainly, and in the colour of a warning, because a hold that answers the
+        // network without a key is reachable by anything that can route to this machine.
+        (false, true) => (
+            "No API key, and the hold answers the network: anything that can reach this \
+             machine can use it"
+                .to_owned(),
+            ink.warn,
+        ),
+        (false, false) => ("No API key · this computer only".to_owned(), ink.faint),
+    };
+    for line in paint.wrap(&said, Weight::Regular, size::SMALL, at.w) {
+        paint.say_at(at.x, y, &line, Weight::Regular, size::SMALL, colour);
+        y += 16.0;
+    }
+    for line in [
+        "OpenAI-compatible · use as base URL".to_owned(),
+        format!("Started {}", hosting.since),
         takes_line(hosting),
     ] {
-        if line.is_empty() {
-            continue;
+        for line in paint.wrap(&line, Weight::Regular, size::SMALL, at.w) {
+            paint.say_at(
+                at.x,
+                y + 3.0,
+                &line,
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            y += 16.0;
         }
-        let shown = paint.elide(&line, Weight::Regular, size::SMALL, at.w);
-        paint.say_at(at.x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
-        y += 17.0;
     }
-    (act, y + 12.0)
+    (act, y + 8.0)
 }
 
-fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
-    scrolled(
+/// The pill beside the model's name that says how long it has been held.
+///
+/// It sits next to the name because every figure on this page is a figure for this hold
+/// and no other: an engine's counters start at nought when it starts. A page of noughts
+/// beside "held 3 s" is a hold that has just started; the same page with no such mark was
+/// read as a page of broken figures.
+fn held_chip(paint: &mut Painter, desk: &Desk, x: f32, y: f32) -> f32 {
+    let ink = paint.ink;
+    let Some(seconds) = desk
+        .hosted
+        .as_ref()
+        .and_then(|hosting| hosting.in_use.as_ref())
+        .and_then(|in_use| in_use.uptime_seconds)
+    else {
+        return x;
+    };
+    let said = format!("held {}", crate::ago_said(seconds));
+    let wide = paint.measure(&said, Weight::Bold, size::SMALL) + 28.0;
+    let pill = Box::new(x, y, wide, 21.0);
+    paint.panel(pill, 10.5, ink.accent_soft, 255);
+    paint.panel(Box::new(x + 10.0, y + 7.5, 6.0, 6.0), 3.0, ink.accent, 255);
+    paint.say_at(
+        x + 20.0,
+        y + 4.0,
+        &said,
+        Weight::Bold,
+        size::SMALL,
+        ink.accent,
+    );
+    pill.right()
+}
+
+/// What to put beside a rate: the engine's own average over the whole hold, where that is
+/// not simply the figure already shown. With no reading of its own yet MCF shows the
+/// engine's average as the rate, and printing the same number twice says nothing.
+fn beside_the_rate(shown: Option<f32>, average: Option<f32>) -> Option<String> {
+    let average = average?;
+    if shown.is_some_and(|shown| (shown - average).abs() < 0.05) {
+        return Some("average over the hold".to_owned());
+    }
+    Some(format!("hold average {average:.1}"))
+}
+
+/// The two rates, and how busy the engine is, as three cards across the top of the column.
+fn rate_cards(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
+    let ink = paint.ink;
+    let Some(in_use) = desk
+        .hosted
+        .as_ref()
+        .and_then(|hosting| hosting.in_use.as_ref())
+    else {
+        return at.y;
+    };
+    let across = (at.w - 20.0) / 3.0;
+    let cards: [(&str, Option<String>, Option<String>, bool); 3] = [
+        (
+            "Generation tok/s",
+            in_use
+                .generating_per_second()
+                .map(|rate| format!("{rate:.1}")),
+            beside_the_rate(
+                in_use.generating_per_second(),
+                in_use.engine_generated_per_second,
+            ),
+            true,
+        ),
+        (
+            "Prefill tok/s",
+            in_use
+                .prompting_per_second()
+                .map(|rate| format!("{rate:.1}")),
+            beside_the_rate(
+                in_use.prompting_per_second(),
+                in_use.engine_prompted_per_second,
+            ),
+            false,
+        ),
+        (
+            "Active requests",
+            in_use.processing.map(words::grouped),
+            in_use
+                .queued
+                .map(|queued| format!("{} waiting", words::grouped(queued))),
+            false,
+        ),
+    ];
+    for (index, (label, figure, beside, loud)) in cards.into_iter().enumerate() {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "three cards: the index cannot lose one"
+        )]
+        let column = index as f32;
+        let card = Box::new(at.x + (across + 10.0) * column, at.y, across, 64.0);
+        ui::card(paint, card, false);
+        spaced(paint, card.x + 14.0, card.y + 12.0, label, ink.faint);
+        // A figure MCF was not given is said small. At the figure's own size the words
+        // standing in for it filled the card and read as though they were the figure.
+        let (said, colour, tall) = match figure {
+            Some(said) => (said, if loud { ink.accent } else { ink.ink }, 26.0),
+            None => (words::UNMEASURED.to_owned(), ink.faint, size::BODY),
+        };
+        let shown = paint.elide(&said, Weight::Bold, tall, card.w - 28.0);
+        paint.say_at(
+            card.x + 14.0,
+            card.y + 26.0 + (26.0 - tall) * 0.55,
+            &shown,
+            Weight::Bold,
+            tall,
+            colour,
+        );
+        // Only where it fits beside the label rather than on top of it. On a narrow
+        // window these two ran into one another and both became unreadable.
+        if let Some(beside) = beside {
+            let named = spaced_width(paint, label);
+            let room = card.w - 28.0 - named - 12.0;
+            if paint.measure(&beside, Weight::Regular, size::SMALL) <= room {
+                paint.say_right(
+                    card.right() - 14.0,
+                    card.y + 12.0,
+                    &beside,
+                    Weight::Regular,
+                    size::SMALL,
+                    ink.faint,
+                );
+            }
+        }
+    }
+    at.y + 74.0
+}
+
+/// What the hold has done, in rows rather than in boxes.
+///
+/// Figures the size of a headline, seventeen of them, said nothing about which mattered.
+/// These are the counters: worth reading, not worth watching, so they are quiet.
+fn work_rows(paint: &mut Painter, desk: &Desk, at: Box, mut y: f32) -> f32 {
+    let ink = paint.ink;
+    let Some(in_use) = desk
+        .hosted
+        .as_ref()
+        .and_then(|hosting| hosting.in_use.as_ref())
+    else {
+        return y;
+    };
+    spaced(paint, at.x, y, "since this hold started", ink.faint);
+    y += 21.0;
+    let mut rows: Vec<(&str, String, Option<String>)> = Vec::new();
+    if let Some(out) = in_use.generated_live.or(in_use.generated) {
+        rows.push(("Generated tokens", words::grouped(out), None));
+    }
+    if let Some(read) = in_use.prompted {
+        rows.push(("Prefill tokens", words::grouped(read), None));
+    }
+    if let Some(decodes) = in_use.decodes {
+        rows.push(("Decode calls", words::grouped(decodes), None));
+    }
+    // Stated against everything that was asked for, not against what was read: reuse is a
+    // share of the whole prompt, and a share shown beside the wrong total invites the
+    // reader to check arithmetic that will not come out.
+    if let Some(reused) = in_use.prompt_reused {
+        let asked = reused.saturating_add(in_use.prompted.unwrap_or(0));
+        let share = reused
+            .saturating_mul(100)
+            .checked_div(asked)
+            .map(|share| format!("{share}% of {} asked", words::grouped(asked)));
+        rows.push(("Cached tokens", words::grouped(reused), share));
+    }
+    if let Some(share) = in_use.draft_taken_share() {
+        rows.push((
+            "Draft acceptance",
+            format!("{:.0}%", (share * 100.0).clamp(0.0, 100.0)),
+            in_use
+                .drafted
+                .map(|drafted| format!("of {} proposed", words::grouped(drafted))),
+        ));
+    }
+    if let Some(ratio) = in_use.cache_used {
+        rows.push((
+            "KV cache",
+            format!("{:.0}%", (ratio * 100.0).clamp(0.0, 100.0)),
+            None,
+        ));
+    }
+    if rows.is_empty() {
+        paint.say_at(
+            at.x,
+            y,
+            "Nothing measured yet — the engine's counters start at nought with the hold.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return y + 22.0;
+    }
+    let across = (at.w - 26.0) / 2.0;
+    for (index, (label, figure, beside)) in rows.iter().enumerate() {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a handful of rows: the index cannot lose one"
+        )]
+        let column = (index % 2) as f32;
+        let row = Box::new(at.x + (across + 26.0) * column, y, across, 19.0);
+        paint.say_at(row.x, row.y, label, Weight::Regular, size::SMALL, ink.quiet);
+        let mut right = row.right();
+        if let Some(beside) = beside {
+            let shown = paint.elide(beside, Weight::Regular, size::SMALL, across * 0.62);
+            paint.say_right(
+                right,
+                row.y,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            right -= paint.measure(&shown, Weight::Regular, size::SMALL) + 8.0;
+        }
+        paint.say_right(right, row.y, figure, Weight::Bold, size::SMALL, ink.ink);
+        if column > 0.0 || index + 1 == rows.len() {
+            y += 20.0;
+        }
+    }
+    y + 8.0
+}
+
+/// The server page: the model down the left, the machine down the right.
+///
+/// `area` is the padded box every page is drawn in; `whole` is the page right of the
+/// sidebar, edge to edge, which is what the rail is drawn against.
+fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, whole: Box) -> Option<Act> {
+    if desk.hosted.is_none() && desk.chosen.is_none() && desk.hosted_model().is_none() {
+        return nothing_is_held(paint, desk, mouse, area, whole);
+    }
+    // Narrow enough and the rail would leave the column too thin to hold a line of prose,
+    // so the page stacks: the model first, the machine under it.
+    if whole.w < RAIL_STACKS_UNDER {
+        return scrolled(
+            paint,
+            mouse,
+            desk,
+            Region::Server,
+            area,
+            |paint, mouse, inner| {
+                let mut act = None;
+                let mut y = server_column_body(paint, desk, inner);
+                // Stacked, the message box rides the flow with the model it belongs to
+                // rather than being pinned: there is no column for it to sit at the foot
+                // of. Leaving it out of this branch left a narrow window unable to ask
+                // the model anything at all.
+                if let Some(held) = desk
+                    .hosted_model()
+                    .or_else(|| desk.chosen.and_then(|at| desk.models.get(at)))
+                {
+                    let (asked, after) = ask_box(
+                        paint,
+                        desk,
+                        mouse,
+                        Box::new(inner.x, y + 8.0, inner.w, 0.0),
+                        held,
+                    );
+                    act = asked;
+                    y = after;
+                }
+                let below = Box::new(inner.x, y + 14.0, inner.w, inner.h);
+                let mut y = held_and_energy_rows(paint, desk, below, below.y);
+                y = machine_rows(paint, desk, below, y);
+                if let Some(hosting) = desk.hosted.as_ref() {
+                    y = rail_section(paint, below, y, "endpoint");
+                    let (pressed, _after) = rail_endpoint(paint, mouse, hosting, below, y);
+                    act = act.or(pressed);
+                }
+                act
+            },
+        );
+    }
+
+    let rail = Box::new(whole.right() - RAIL, whole.y, RAIL, whole.h);
+    let column = Box::new(
+        area.x,
+        area.y,
+        (rail.x - RAIL_GUTTER - area.x).max(300.0),
+        area.h,
+    );
+    let mut act = server_rail(paint, desk, mouse, rail);
+    if let Some(pressed) = server_column(paint, desk, mouse, column) {
+        act = Some(pressed);
+    }
+    act
+}
+
+fn nothing_is_held(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    whole: Box,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let rail = Box::new(whole.right() - RAIL, whole.y, RAIL, whole.h);
+    let wide = whole.w >= RAIL_STACKS_UNDER;
+    let act = if wide {
+        server_rail(paint, desk, mouse, rail)
+    } else {
+        None
+    };
+    spaced(paint, area.x, area.y, "server", ink.faint);
+    paint.say_at(
+        area.x,
+        area.y + 28.0,
+        "Nothing is held. Models — choose one — Configure — Host.",
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    act
+}
+
+/// The column: the model, what it is doing, and what was last asked of it. The message box
+/// is pinned to the foot rather than riding the scroll, so it is where it was left.
+fn server_column(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let held = desk
+        .hosted_model()
+        .or_else(|| desk.chosen.and_then(|at| desk.models.get(at)));
+    let composer = if held.is_some() { 48.0 } else { 0.0 };
+    let body = Box::new(area.x, area.y, area.w, (area.h - composer).max(90.0));
+    let mut act = scrolled(
         paint,
         mouse,
         desk,
         Region::Server,
-        area,
-        |paint, mouse, inner| hosting_body(paint, desk, mouse, inner),
-    )
+        body,
+        |paint, _mouse, inner| {
+            let _after = server_column_body(paint, desk, inner);
+            None
+        },
+    );
+    if let Some(held) = held {
+        let (asked, _after) = ask_box(
+            paint,
+            desk,
+            mouse,
+            Box::new(area.x, area.bottom() - composer + 8.0, area.w, 0.0),
+            held,
+        );
+        act = asked.or(act);
+    }
+    act
 }
 
-fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+fn server_column_body(paint: &mut Painter, desk: &Desk, area: Box) -> f32 {
     let ink = paint.ink;
-    let top = system_block(paint, desk, Box::new(area.x, area.y, area.w, 0.0));
-    let top = under_test_block(paint, desk, Box::new(area.x, top, area.w, 0.0));
-    let area = Box::new(area.x, top, area.w, (area.bottom() - top).max(0.0));
+    let top = under_test_block(paint, desk, Box::new(area.x, area.y, area.w, 0.0));
     let held = desk
         .hosted_model()
         .or_else(|| desk.chosen.and_then(|at| desk.models.get(at)));
     let name = match (held, desk.hosted.as_ref()) {
         (Some(held), _) => held.name.clone(),
         (None, Some(hosting)) => hosting.name(),
-        (None, None) => {
-            spaced(paint, area.x, area.y, "server", ink.faint);
-            paint.say_at(
-                area.x,
-                area.y + 28.0,
-                "Nothing is held. Models — choose one — Configure — Host.",
-                Weight::Regular,
-                size::BODY,
-                ink.quiet,
-            );
-            return None;
-        }
+        (None, None) => return top,
     };
-    spaced(paint, area.x, area.y, "server", ink.faint);
-    let name = paint.elide(&name, Weight::Bold, size::HEAD, area.w);
+    spaced(paint, area.x, top, "server", ink.faint);
+    let shown = paint.elide(&name, Weight::Bold, size::HEAD, area.w - 130.0);
     paint.say_at(
         area.x,
-        area.y + 24.0,
-        &name,
+        top + 22.0,
+        &shown,
         Weight::Bold,
         size::HEAD,
         ink.ink,
     );
-    let mut y = in_use_block(paint, desk, Box::new(area.x, area.y + 62.0, area.w, 0.0));
+    let after = paint.measure(&shown, Weight::Bold, size::HEAD);
+    let _ended = held_chip(paint, desk, area.x + after + 14.0, top + 24.0);
 
-    let mut act = None;
-    let Some(held) = held else {
-        if let Some(hosting) = desk.hosted.as_ref() {
-            let (pressed, _) = where_it_answers(
-                paint,
-                mouse,
-                hosting,
-                None,
-                Box::new(area.x, y, area.w, 0.0),
-            );
-            act = pressed;
-        }
-        return act;
-    };
-    let (held_act, after) = held_block(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0));
-    act = held_act.or(act);
-    y = after;
-    let (asked, after) = ask_box(paint, desk, mouse, Box::new(area.x, y, area.w, 0.0), held);
-    act = asked.or(act);
-    y = after;
+    let mut y = rate_cards(paint, desk, Box::new(area.x, top + 56.0, area.w, 0.0));
+    y = token_rates(
+        paint,
+        &desk.tallies,
+        Box::new(area.x, y + 6.0, area.w, 74.0),
+    );
+    y = work_rows(
+        paint,
+        desk,
+        Box::new(area.x, y + 10.0, area.w, 0.0),
+        y + 10.0,
+    );
+    y = machine_and_run_tiles(paint, desk, Box::new(area.x, y + 4.0, area.w, 0.0));
 
+    y = hold_status(paint, desk, Box::new(area.x, y, area.w, 0.0));
+    what_was_asked(
+        paint,
+        desk,
+        Box::new(area.x, y, area.w, (area.bottom() - y).max(90.0)),
+    )
+}
+
+/// The last thing asked and what came back.
+///
+/// MCF keeps one exchange, not a history, so this says exactly that rather than pretending
+/// to a transcript it does not have.
+fn what_was_asked(paint: &mut Painter, desk: &Desk, area: Box) -> f32 {
+    let ink = paint.ink;
+    let mut y = area.y;
     if let Doing::Answering(job) = &desk.doing
         && let Some(why) = &job.refused
     {
@@ -4717,7 +6496,53 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
             paint.say_at(area.x, y, line, Weight::Regular, size::BODY, ink.bad);
             y += 20.0;
         }
-        return act;
+        return y;
+    }
+    if desk.asked.is_empty() && desk.said.is_empty() {
+        if desk.doing.busy() {
+            paint.say_at(
+                area.x,
+                y,
+                "thinking",
+                Weight::Regular,
+                size::BODY,
+                ink.quiet,
+            );
+            return y + 22.0;
+        }
+        // Said, rather than left blank. The room below belongs to the exchange, and an
+        // empty half-page above a message box reads as a page that failed to draw.
+        paint.say_at(
+            area.x,
+            y,
+            "Ask the model something — what you asked and what it answered show here.",
+            Weight::Regular,
+            size::BODY,
+            ink.faint,
+        );
+        return y + 22.0;
+    }
+    spaced(paint, area.x, y, "last exchange", ink.faint);
+    y += 22.0;
+    if !desk.asked.is_empty() {
+        let room = (area.w * 0.74).max(160.0);
+        let lines = paint.wrap(&desk.asked, Weight::Regular, size::BODY, room - 30.0);
+        let tall = 20.0 * lines.len().min(4) as f32 + 18.0;
+        let bubble = Box::new(area.right() - room, y, room, tall);
+        paint.panel(bubble, 10.0, ink.accent_soft, 255);
+        let mut at = bubble.y + 9.0;
+        for line in lines.iter().take(4) {
+            paint.say_at(
+                bubble.x + 15.0,
+                at,
+                line,
+                Weight::Regular,
+                size::BODY,
+                ink.ink,
+            );
+            at += 20.0;
+        }
+        y = bubble.bottom() + 10.0;
     }
     if desk.said.is_empty() {
         if desk.doing.busy() {
@@ -4729,32 +6554,17 @@ fn hosting_body(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> O
                 size::BODY,
                 ink.quiet,
             );
+            y += 22.0;
         }
-        return act;
+        return y;
     }
-    what_it_said(paint, desk, Box::new(area.x, y, area.w, area.bottom() - y));
-    act
-}
-
-fn system_block(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
-    let ink = paint.ink;
-    spaced(paint, at.x, at.y, "system", ink.faint);
-    let mut y = at.y + 20.0;
-    y = processors_table(paint, Box::new(at.x, y, at.w, 0.0), desk);
-    y = memory_table(paint, Box::new(at.x, y + 14.0, at.w, 0.0), desk);
-    y = storage_table(paint, Box::new(at.x, y + 14.0, at.w, 130.0), desk);
-    y + 26.0
-}
-
-fn what_it_said(paint: &mut Painter, desk: &Desk, area: Box) {
-    let ink = paint.ink;
-    let mut y = area.y;
     for said in what_it_ran_under(desk) {
         let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w);
-        paint.say_at(area.x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
+        paint.say_at(area.x, y, &shown, Weight::Regular, size::SMALL, ink.faint);
         y += 16.0;
     }
-    let panel = Box::new(area.x, y, area.w, (area.bottom() - y).max(60.0));
+    let room = (area.w * 0.88).max(200.0);
+    let panel = Box::new(area.x, y, room, (area.bottom() - y).max(64.0));
     ui::card(paint, panel, false);
     let lines = paint.wrap(&desk.said, Weight::Regular, size::BODY, panel.w - 32.0);
     let mut at = panel.y + 14.0;
@@ -4772,6 +6582,7 @@ fn what_it_said(paint: &mut Painter, desk: &Desk, area: Box) {
             break;
         }
     }
+    panel.bottom()
 }
 
 fn what_it_ran_under(desk: &Desk) -> Vec<String> {

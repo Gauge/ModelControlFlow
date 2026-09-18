@@ -417,6 +417,7 @@ fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
         }),
         recorded: std::boxed::Box::new(|| "now".to_owned()),
         asked_to_stop: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        asked_to_wait: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     let trial = Asked {
         switch: false,
@@ -589,4 +590,87 @@ fn a_trial_says_how_far_it_has_got_often_enough_to_look_alive() {
         "at eighty tokens a second, saying so every {told} is about once a second; saying so \
          on every token would make the saying the work"
     );
+}
+
+/// Pause and carry on, tested where a pause can be seen without an engine: a sweep paused
+/// before its first trial gets no further, and nothing is written down, until it is told to
+/// carry on. What a sweep measures needs an engine; that it stops when asked does not.
+#[test]
+fn a_sweep_paused_before_it_starts_takes_nothing_until_it_is_told_to_carry_on() {
+    let scratch = Scratch::new("paused-before-starting");
+    let mut running = begun(&scratch, &[256], &[1]);
+    running.pause();
+    assert!(running.asked_to_wait());
+
+    for _ in 0..60 {
+        let _moved = running.hear();
+        if running.waiting {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(
+        running.waiting,
+        "a sweep asked to pause must actually stop, not merely be marked as asked"
+    );
+    assert!(
+        !running.finished,
+        "a paused sweep has not finished: there is more of it to take"
+    );
+
+    running.resume();
+    assert!(!running.asked_to_wait());
+    settled(&mut running);
+    assert!(
+        running.finished,
+        "a sweep told to carry on carries on to the end"
+    );
+}
+
+#[test]
+fn stopping_a_paused_sweep_does_not_leave_it_asleep() {
+    let scratch = Scratch::new("stopped-while-paused");
+    let mut running = begun(&scratch, &[256], &[1]);
+    running.pause();
+    for _ in 0..60 {
+        let _moved = running.hear();
+        if running.waiting {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(running.waiting);
+
+    running.stop();
+    settled(&mut running);
+    assert!(
+        running.finished,
+        "a sweep stopped while paused must end, not wait for a carry-on nobody will give"
+    );
+}
+
+#[test]
+fn the_clock_beside_a_paused_sweep_counts_work_rather_than_waiting() {
+    let scratch = Scratch::new("clock-while-paused");
+    let mut running = begun(&scratch, &[256], &[1]);
+    running.pause();
+    for _ in 0..60 {
+        let _moved = running.hear();
+        if running.waiting {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(running.waiting);
+
+    let before = running.running_for();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let after = running.running_for();
+    assert!(
+        after.saturating_sub(before) < std::time::Duration::from_millis(250),
+        "a clock that counts a pause reads as though the sweep were slower than it is: \
+         {before:?} then {after:?}"
+    );
+    running.stop();
+    settled(&mut running);
 }

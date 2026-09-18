@@ -235,13 +235,27 @@ fn counters(metrics: &str) -> Vec<(&'static str, Value)> {
         let Some((name, value)) = line.split_once(' ') else {
             continue;
         };
+        // Both spellings of the cache figures, because which of them an engine emits
+        // depends on when it was built: the two `kv_cache_*` gauges were dropped when
+        // llama.cpp unified its cache, and an engine built since then reports the deepest
+        // sequence it has seen and how much of a prompt it reused instead. Reading only
+        // the old names left both cache tiles reading "not measured yet" for the life of
+        // every hold on a current engine.
         let key = match name.trim_start_matches("llamacpp:") {
             "prompt_tokens_total" => "prompted_tokens",
+            "prompt_tokens_cached_total" => "prompt_tokens_reused",
             "tokens_predicted_total" => "generated_tokens",
+            "prompt_seconds_total" => "engine_prompt_seconds",
+            "tokens_predicted_seconds_total" => "engine_generating_seconds",
             "prompt_tokens_seconds" => "engine_said_prompt_tokens_per_second",
             "predicted_tokens_seconds" => "engine_said_tokens_per_second",
             "kv_cache_usage_ratio" => "cache_used_ratio",
             "kv_cache_tokens" => "cache_tokens",
+            "n_tokens_max" => "deepest_tokens",
+            "n_busy_slots_per_decode" => "busy_slots_per_decode",
+            "spec_decode_num_draft_tokens_total" => "drafted_tokens",
+            "spec_decode_num_accepted_tokens_total" => "drafted_tokens_taken",
+            "spec_decode_num_drafts_total" => "drafts",
             "requests_processing" => "requests_processing",
             "requests_deferred" => "requests_queued",
             "n_decode_total" => "decodes",
@@ -252,6 +266,8 @@ fn counters(metrics: &str) -> Vec<(&'static str, Value)> {
     fields
 }
 
+/// One reading of the engine's own counters, kept so that a rate can be worked out
+/// against a reading far enough back to mean something.
 struct Counted {
     at: Instant<Monotonic>,
     generated: u64,
@@ -265,16 +281,31 @@ fn where_it_answers(reach: &crate::served::Reach) -> String {
     }
 }
 
-static COUNTED: std::sync::Mutex<std::collections::BTreeMap<String, Counted>> =
+/// The readings taken of each engine, newest last. A rate is a difference between two
+/// readings, and one reading kept per engine makes that difference whatever gap happened
+/// to fall between two callers — so a short history is kept and the reading to measure
+/// against is chosen from it, rather than being whichever one arrived last.
+static COUNTED: std::sync::Mutex<std::collections::BTreeMap<String, Vec<Counted>>> =
     std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 const RATE_OVER_AT_MOST_NS: u64 = 30 * 1_000_000_000;
+
+/// The shortest span a rate is stated over. Tokens arrive in whole numbers, so a
+/// difference taken over a few milliseconds is almost always zero — a figure that reads
+/// as "the model is doing nothing" when the model is working. Below this, MCF states no
+/// rate at all rather than stating that one.
+const RATE_OVER_AT_LEAST_NS: u64 = 400_000_000;
+
+/// How many readings of one engine are kept. At a reading a second this covers the whole
+/// window above, and a caller asking far more often than that only shortens it.
+const READINGS_KEPT: usize = 64;
 
 fn energy_of(reach: &crate::served::Reach) -> Option<(u64, u64)> {
     let _forgotten = COUNTED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&where_it_answers(reach));
+
     let spent = energy_since_start(reach)?;
     (spent.covered_ns > 0).then_some((spent.microjoules, spent.covered_ns))
 }
@@ -285,6 +316,54 @@ fn energy_since_start(reach: &crate::served::Reach) -> Option<crate::power::Spen
         .find(|live| live.reach == *reach)?
         .spent_at_start;
     Some(crate::power::spent().since(started))
+}
+
+/// Write down what the engine's counters say now, and hand back the reading to measure
+/// against along with how long ago it was taken. The reading chosen is the newest one at
+/// least `RATE_OVER_AT_LEAST_NS` old, so that the span a rate is stated over is a property
+/// of this function rather than of how often somebody happens to be asking. When no such
+/// reading has been taken yet, nothing is handed back and no rate is stated.
+fn readings_for(
+    reach: &crate::served::Reach,
+    now: Instant<Monotonic>,
+    generated: Option<u64>,
+    prompted: Option<u64>,
+) -> (Option<Counted>, u64) {
+    let mut counted = COUNTED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let held = counted.entry(where_it_answers(reach)).or_default();
+    held.retain(|reading| {
+        now.saturating_duration_since(reading.at).as_nanos() <= RATE_OVER_AT_MOST_NS
+    });
+    let against = held
+        .iter()
+        .rev()
+        .map(|reading| {
+            (
+                now.saturating_duration_since(reading.at).as_nanos(),
+                Counted {
+                    at: reading.at,
+                    generated: reading.generated,
+                    prompted: reading.prompted,
+                },
+            )
+        })
+        .find(|(over, _)| *over >= RATE_OVER_AT_LEAST_NS);
+    held.push(Counted {
+        at: now,
+        generated: generated.unwrap_or(0),
+        prompted: prompted.unwrap_or(0),
+    });
+    while held.len() > READINGS_KEPT {
+        let _dropped = held.remove(0);
+    }
+    counted.retain(|_, held| !held.is_empty());
+    drop(counted);
+    match against {
+        Some((over, reading)) => (Some(reading), over),
+        None => (None, 0),
+    }
 }
 
 fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
@@ -323,27 +402,8 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
         fields.push(("generated_tokens_live", as_whole(generated)));
     }
     let now = SystemClock.now();
-    let mut counted = COUNTED
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let key = where_it_answers(reach);
-    let before = counted.get(&key);
-    let over = before.map_or(0, |before| {
-        now.saturating_duration_since(before.at).as_nanos()
-    });
-    let usable = over > 0 && over <= RATE_OVER_AT_MOST_NS;
     let spent = energy_since_start(reach).unwrap_or_default();
-    let before = counted.insert(
-        key,
-        Counted {
-            at: now,
-            generated: generated.unwrap_or(0),
-            prompted: prompted.unwrap_or(0),
-        },
-    );
-    counted
-        .retain(|_, held| now.saturating_duration_since(held.at).as_nanos() < RATE_OVER_AT_MOST_NS);
-    drop(counted);
+    let (before, over) = readings_for(reach, now, generated, prompted);
     if spent.covered_ns > 0 {
         fields.push((
             "card_energy_joules",
@@ -372,9 +432,6 @@ fn use_figures(reach: &crate::served::Reach) -> Vec<(&'static str, Value)> {
     let Some(before) = before else {
         return fields;
     };
-    if !usable {
-        return fields;
-    }
     let rate = |now: u64, then: u64| {
         let tokens = now.saturating_sub(then);
         thousandths_of(tokens.saturating_mul(1_000_000_000_000), over)
@@ -787,6 +844,14 @@ fn said_of(verdict: &mcf_hub::fitment::Verdict) -> String {
     }
 }
 
+/// What the operator asked about one transfer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Told {
+    Pause,
+    Resume,
+    GiveUp,
+}
+
 struct DoesNotFit {
     why: String,
     on_a_card: bool,
@@ -821,6 +886,9 @@ pub struct Daemon {
     running: std::sync::Mutex<std::collections::BTreeMap<u64, std::sync::Arc<Running>>>,
     arrivals: std::sync::atomic::AtomicU64,
     refusals: std::sync::Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
+    /// The files MCF has been asked to bring here. Not subject to the one-model rule:
+    /// fetching writes bytes to a disk and has nothing to do with what is running.
+    transfers: std::sync::Arc<crate::transfers::Queue>,
 }
 
 #[derive(Debug)]
@@ -930,6 +998,7 @@ impl Daemon {
             running: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             arrivals: std::sync::atomic::AtomicU64::new(0),
             refusals: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            transfers: std::sync::Arc::new(crate::transfers::Queue::new()),
         };
         daemon.note(
             EntryKind::DaemonStarted,
@@ -1412,10 +1481,33 @@ impl Daemon {
                     }
                     return None;
                 }
-                Ok(request) => {
+                Ok(request) if matches!(request, Request::Stop { .. }) => {
                     let (answer, stop) = self.respond(&request);
                     self.tell(&asked_in(&line), writer, &answer);
                     return stop;
+                }
+                Ok(request) => {
+                    // Answered on its own thread, not on the thread that accepts.
+                    // Saying what a hold is doing costs a round trip into the engine,
+                    // and an engine that is busy answers slowly; answering here left the
+                    // socket unable to accept anybody at all for as long as that took,
+                    // which is exactly when there is most to report.
+                    match connection.try_clone() {
+                        Ok(connection) => {
+                            let asked = asked_in(&line);
+                            let _answering = scope.spawn(move || {
+                                let (answer, _stop) = self.respond(&request);
+                                self.tell(&asked, &connection, &answer);
+                            });
+                        }
+                        Err(error) => {
+                            let failure =
+                                unusable("the client's connection", &self.places.socket, &error);
+                            let _written =
+                                writeln!(writer, "{}", Answer::refused(&failure).to_line());
+                        }
+                    }
+                    return None;
                 }
                 Err(failure) => Answer::refused(&failure),
             },
@@ -1425,12 +1517,16 @@ impl Daemon {
     }
 
     fn tell(&self, asked: &str, writer: &UnixStream, answer: &Answer) {
-        let mut writer = writer;
-        let _written = writeln!(writer, "{}", answer.to_line());
-        let _flushed = writer.flush();
+        // Recorded before it is reported, not after. Requests are answered on threads of
+        // their own, so a client that had its refusal first could ask the record about it
+        // before the record had it — and be told, truthfully and uselessly, that nothing
+        // had gone wrong.
         if !answer.served {
             self.record_refusal(asked, &answer.body);
         }
+        let mut writer = writer;
+        let _written = writeln!(writer, "{}", answer.to_line());
+        let _flushed = writer.flush();
     }
 
     fn record_refusal(&self, asked: &str, body: &Value) {
@@ -1480,6 +1576,12 @@ impl Daemon {
             | Request::Removal { .. }
             | Request::Remove { .. }
             | Request::Remember { .. }
+            | Request::Queue { .. }
+            | Request::Transfers
+            | Request::PauseTransfer { .. }
+            | Request::ResumeTransfer { .. }
+            | Request::GiveUpTransfer { .. }
+            | Request::ForgetTransfers
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => None,
@@ -1540,7 +1642,18 @@ impl Daemon {
         self.carrying_on(request, waiting, writer);
     }
 
+    /// Work that fetches bytes to a disk. One model runs at a time because a machine has
+    /// one lot of memory to run it in; a transfer uses none of that, so it is neither held
+    /// up by what is running nor a reason to hold anything up.
+    const FETCHING: &'static str = "acquisition";
+
     fn one_model_rule(&self, what: &str, named: &str) -> Option<Failure> {
+        // A transfer is not a hold, and the one-model rule is about holds. Bringing a file
+        // here while a model is held, or while another file is still arriving, takes
+        // nothing from either: it writes bytes to a disk.
+        if what == Self::FETCHING {
+            return None;
+        }
         let noun = kind_noun;
         let path = crate::generation::resolved(&self.places.models, named);
         let refuse = |detail: String| {
@@ -1563,6 +1676,7 @@ impl Daemon {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .values()
+            .filter(|running| running.what != Self::FETCHING)
             .filter(|running| running.what != what || running.model != named)
             .map(|running| {
                 (
@@ -1680,6 +1794,12 @@ impl Daemon {
             | Request::Removal { .. }
             | Request::Remove { .. }
             | Request::Remember { .. }
+            | Request::Queue { .. }
+            | Request::Transfers
+            | Request::PauseTransfer { .. }
+            | Request::ResumeTransfer { .. }
+            | Request::GiveUpTransfer { .. }
+            | Request::ForgetTransfers
             | Request::Hosted
             | Request::Unhost
             | Request::Stop { .. } => {}
@@ -1828,6 +1948,25 @@ impl Daemon {
                 reason,
                 purge,
             } => (self.remove(model, reason, *purge), None),
+            Request::Queue {
+                reference,
+                file,
+                from,
+            } => (
+                self.queue_a_transfer(reference, file, from.as_deref()),
+                None,
+            ),
+            Request::Transfers => (self.the_queue_and(&[]), None),
+            Request::PauseTransfer { id } => (self.about_a_transfer(*id, Told::Pause), None),
+            Request::ResumeTransfer { id } => (self.about_a_transfer(*id, Told::Resume), None),
+            Request::GiveUpTransfer { id } => (self.about_a_transfer(*id, Told::GiveUp), None),
+            Request::ForgetTransfers => {
+                let forgotten = self.transfers.forget_the_settled();
+                (
+                    self.the_queue_and(&[("forgotten", as_whole(forgotten))]),
+                    None,
+                )
+            }
             Request::Hosted => (Answer::served(self.hosted()), None),
             Request::Unhost => (Answer::served(self.unhost()), None),
             Request::Generate { .. }
@@ -2058,6 +2197,98 @@ impl Daemon {
         say(writer, &answer);
     }
 
+    /// Put a file in the queue and answer at once. What the operator gets back is the
+    /// transfer's number and the queue as it now stands: nothing is waited for on this
+    /// connection, so a window that is closed a second later loses nothing.
+    fn queue_a_transfer(&self, reference: &str, file: &str, from: Option<&str>) -> Answer {
+        if let Err(failure) = mcf_hub::reference::parse(reference) {
+            return Answer::refused(&failure);
+        }
+        if file.trim().is_empty() {
+            return Answer::refused(&crate::control::refused(
+                "a transfer naming which file to bring",
+                file,
+            ));
+        }
+        let id = self.transfers.ask_for(reference, file, from);
+        self.start_what_can_start();
+        self.the_queue_and(&[("id", as_whole(id))])
+    }
+
+    /// Pause, resume or give up one transfer, then let the queue start whatever the change
+    /// made room for.
+    fn about_a_transfer(&self, id: u64, told: Told) -> Answer {
+        let known = match told {
+            Told::Pause => self.transfers.pause(id),
+            Told::Resume => self.transfers.resume(id),
+            Told::GiveUp => match self.transfers.give_up(id) {
+                Some(given) => {
+                    if given.sweep_it_here {
+                        crate::transfers::sweep_what_is_not_running(
+                            &self.places.models,
+                            &given.reference,
+                            &given.file,
+                        );
+                    }
+                    true
+                }
+                None => false,
+            },
+        };
+        if !known {
+            return Answer::refused(
+                &crate::control::refused(
+                    "a transfer MCF has in its queue, in a state this can be asked of",
+                    &id.to_string(),
+                )
+                .with_context(
+                    "what_to_do",
+                    "ask for the queue to see what is in it and what state each one is in",
+                ),
+            );
+        }
+        self.start_what_can_start();
+        self.the_queue_and(&[("id", as_whole(id))])
+    }
+
+    /// The queue, and whatever else this particular answer has to say, in one shape.
+    ///
+    /// One shape, because every answer about the queue is read by the same code in every
+    /// client: two shapes meant one of them was read as an empty queue, and an empty queue
+    /// shown while files are arriving is worse than no queue at all.
+    fn the_queue_and(&self, also: &[(&'static str, Value)]) -> Answer {
+        let Value::Map(mut fields) = self.transfers.to_value() else {
+            return Answer::served(self.transfers.to_value());
+        };
+        for (name, value) in also {
+            let _put = fields.insert((*name).to_owned(), value.clone());
+        }
+        Answer::served(Value::Map(fields))
+    }
+
+    /// Start whatever the queue says can start now, each on its own thread.
+    ///
+    /// The queue decides; this only obeys. A transfer's thread is not scoped to the accept
+    /// loop the way carried work is, because a transfer outlives the connection that asked
+    /// for it — that is the point of queuing it.
+    fn start_what_can_start(&self) {
+        for start in self.transfers.what_can_start() {
+            let queue = std::sync::Arc::clone(&self.transfers);
+            let root = self.places.models.clone();
+            let journal = self.places.journal.clone();
+            let id = start.id;
+            let spawned = std::thread::Builder::new()
+                .name(format!("mcf-transfer-{id}"))
+                .spawn(move || {
+                    crate::transfers::work_a_place(&queue, &root, &journal, start);
+                });
+            if let Err(error) = spawned {
+                let failure = unusable("a thread for the transfer", &self.places.models, &error);
+                self.transfers.stopped(id, &failure);
+            }
+        }
+    }
+
     fn acquiring(&self, reference: &str, file: &str, from: Option<&str>, writer: &mut &UnixStream) {
         let say = |writer: &mut &UnixStream, answer: &Answer| self.tell("acquire", writer, answer);
 
@@ -2169,7 +2400,13 @@ impl Daemon {
         let handle = std::thread::spawn(move || {
             let wire = mcf_hub::wire::for_url(&where_from)?;
             let hub = mcf_hub::client::Hub::at(where_from, wire);
-            mcf_hub::acquisition::one(&hub, &listing_for_thread, &entry_for_thread, &root)
+            mcf_hub::acquisition::one(
+                &hub,
+                &listing_for_thread,
+                &entry_for_thread,
+                &root,
+                &mcf_hub::stopping::Stopping::never(),
+            )
         });
 
         let mut furthest = 0_u64;
@@ -2812,7 +3049,18 @@ impl Daemon {
                             "network_address",
                             settings.network_address().map_or(Value::Null, Value::text),
                         ),
-                        ("reachable_from", Value::text("this computer only")),
+                        // What it is actually reachable from, not what a hold is usually
+                        // reachable from. This was written as "this computer only" for
+                        // every hold, so the record — the thing MCF says it is — misstated
+                        // the exposure of every hold that answered the network.
+                        (
+                            "reachable_from",
+                            Value::text(if settings.open {
+                                "anything that can reach this machine on the network"
+                            } else {
+                                "this computer only"
+                            }),
+                        ),
                         (
                             "engine_log",
                             crate::served::engine_log_for(&path)

@@ -1,3 +1,4 @@
+pub mod downloads;
 pub mod host;
 pub mod monitor;
 
@@ -7,19 +8,27 @@ use crate::screen::{Ink, Screen};
 pub enum Where {
     Monitor,
     Models,
+    Downloads,
     Components,
     Settings,
     Exit,
 }
 
 impl Where {
-    pub const ALL: [Self; 4] = [Self::Monitor, Self::Models, Self::Components, Self::Exit];
+    pub const ALL: [Self; 5] = [
+        Self::Monitor,
+        Self::Models,
+        Self::Downloads,
+        Self::Components,
+        Self::Exit,
+    ];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::Monitor => "System",
             Self::Models => "Models",
+            Self::Downloads => "Downloads",
             Self::Components => "Engines",
             Self::Settings => "Settings",
             Self::Exit => "Exit",
@@ -31,6 +40,7 @@ impl Where {
         match self {
             Self::Monitor => "This system",
             Self::Models => "Models",
+            Self::Downloads => "Downloads: what MCF is bringing here",
             Self::Components => "Engines: what MCF has built and can build",
             Self::Settings => "Settings",
             Self::Exit => "Exit",

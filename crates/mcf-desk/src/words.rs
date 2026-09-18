@@ -112,7 +112,11 @@ fn round_to_two(value: f64) -> u64 {
 pub fn size_in_words(bytes: Option<u64>) -> Option<String> {
     let bytes = bytes?;
     let giga = bytes as f64 / 1_000_000_000.0;
-    Some(if giga >= 10.0 {
+    // Terabytes above a thousand gigabytes. A disk said to hold "1900 GB" is a disk
+    // nobody reads at a glance, and the page about a disk is where that figure lands.
+    Some(if giga >= 1_000.0 {
+        format!("{:.1} TB", giga / 1_000.0)
+    } else if giga >= 10.0 {
         format!("{giga:.0} GB")
     } else if giga >= 1.0 {
         format!("{giga:.1} GB")

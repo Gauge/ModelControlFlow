@@ -1,6 +1,7 @@
 pub mod chart;
 pub mod font;
 pub mod job;
+pub mod notice;
 pub mod paint;
 pub mod paper;
 pub mod sdl;
@@ -88,8 +89,82 @@ pub struct Hosted {
     pub projector: Option<String>,
     pub takes: Option<mcf_serve::takes::Takes>,
     pub api_key: bool,
+    /// Whether the hold answers anything other than this computer.
+    pub open: bool,
     pub network_address: Option<String>,
     pub in_use: Option<Use>,
+}
+
+/// How many readings of the token counts are kept.
+///
+/// At one a second this is the last hour of a hold. A graph of what was used when is only
+/// worth having if it reaches back past the last few minutes — an hour of readings is
+/// about a hundred and forty kilobytes, which is nothing against a model.
+pub const TALLIES_KEPT: usize = 3_600;
+
+/// One reading of what a hold has put through the model.
+///
+/// Three counts, not one rate: what came in, what of it the model actually had to read,
+/// and what it wrote. The difference between the first two is what the prompt cache
+/// saved, and on a conversation that keeps its prefix that is most of the work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tally {
+    /// Prompt tokens asked for, those served from the cache included.
+    pub asked: u64,
+    /// Prompt tokens the model actually read, cache hits excluded.
+    pub processed: u64,
+    /// Tokens written.
+    pub written: u64,
+    /// When it was read.
+    ///
+    /// A rate is a difference over a span, and the span is only a second because that is
+    /// how often MCF asks — a daemon that answers slowly makes it longer. Timing each
+    /// reading means the rate is what happened rather than what the poll assumed.
+    pub at: std::time::Instant,
+}
+
+impl Tally {
+    /// What a reading of the hold says, where it says enough to be worth drawing.
+    ///
+    /// One count is enough. Engines differ in what they publish, and refusing a reading
+    /// because one of three counts was missing drew an empty graph beside figures that
+    /// were plainly there.
+    #[must_use]
+    pub fn of(in_use: &Use) -> Option<Self> {
+        let processed = in_use.prompted;
+        let written = in_use.generated_live.or(in_use.generated);
+        let reused = in_use.prompt_reused;
+        if processed.is_none() && written.is_none() && reused.is_none() {
+            return None;
+        }
+        let processed = processed.unwrap_or(0);
+        Some(Self {
+            asked: processed.saturating_add(reused.unwrap_or(0)),
+            processed,
+            written: written.unwrap_or(0),
+            at: std::time::Instant::now(),
+        })
+    }
+
+    /// How fast a count was climbing between one reading and the next, per second.
+    ///
+    /// Nothing where the two readings are the same reading, or where a count went
+    /// backwards — an engine restarted under the hold starts its counters again, and a
+    /// negative rate is not a rate.
+    #[must_use]
+    pub fn per_second(then: Self, now: Self, of: fn(&Self) -> u64) -> Option<f32> {
+        let over = now.at.saturating_duration_since(then.at).as_secs_f32();
+        if over <= 0.0 {
+            return None;
+        }
+        let gained = of(&now).checked_sub(of(&then))?;
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a token count over a span of seconds, shown to one decimal"
+        )]
+        let gained = gained as f32;
+        Some(gained / over)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -114,14 +189,36 @@ pub struct Use {
     pub uptime_seconds: Option<u64>,
     pub cache_tokens: Option<u64>,
     pub decodes: Option<u64>,
+    /// What the engine itself says its average throughput has been. MCF works a rate out
+    /// between one reading and the next, which is the livelier figure but needs two
+    /// readings; this one is there from the first, so a hold a second old says something
+    /// true rather than nothing.
+    pub engine_generated_per_second: Option<f32>,
+    pub engine_prompted_per_second: Option<f32>,
+    /// Prompt tokens the engine reused from its cache rather than reading again. On a
+    /// conversation that keeps its prefix this is most of the prompt, and it is the
+    /// difference between a fast second message and a slow one.
+    pub prompt_reused: Option<u64>,
+    /// The deepest sequence the engine has seen, prompt and generation together. What
+    /// replaces the cache-occupancy gauge on an engine that no longer publishes one.
+    pub deepest: Option<u64>,
+    /// Tokens the draft head proposed, and how many the model took. MCF has a setting for
+    /// the draft head and a sweep that searches it, and until now nothing that said
+    /// whether the head was earning its keep while a model was actually being used.
+    pub drafted: Option<u64>,
+    pub drafted_taken: Option<u64>,
 }
 
 impl Use {
     #[must_use]
     pub fn from_value(value: &Value) -> Self {
+        // Read as a double, not a single. An engine writes its counters as floats, and a
+        // single holds whole numbers exactly only up to about sixteen million — past
+        // which a token count would quietly start rounding, on exactly the long session
+        // where the count is worth reading.
         let count = |key: &str| match value.get(key) {
             Some(Value::Integer(held)) => u64::try_from(*held).ok(),
-            Some(Value::Text(text)) => text.trim().parse::<f32>().ok().map(|held| {
+            Some(Value::Text(text)) => text.trim().parse::<f64>().ok().map(|held| {
                 #[expect(
                     clippy::cast_possible_truncation,
                     clippy::cast_sign_loss,
@@ -168,7 +265,46 @@ impl Use {
             uptime_seconds: count("uptime_seconds"),
             cache_tokens: count("cache_tokens"),
             decodes: count("decodes"),
+            engine_generated_per_second: rate("engine_said_tokens_per_second"),
+            engine_prompted_per_second: rate("engine_said_prompt_tokens_per_second"),
+            prompt_reused: count("prompt_tokens_reused"),
+            deepest: count("deepest_tokens"),
+            drafted: count("drafted_tokens"),
+            drafted_taken: count("drafted_tokens_taken"),
         }
+    }
+
+    /// How much of what the draft head proposed the model actually took, as a share. Only
+    /// where a draft head has proposed something: a share of nothing proposed is not a
+    /// figure, and a draft head that is switched off has not failed at anything.
+    #[must_use]
+    pub fn draft_taken_share(&self) -> Option<f32> {
+        let drafted = self.drafted.filter(|held| *held > 0)?;
+        let taken = self.drafted_taken?;
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "token counts, shown as a whole percentage"
+        )]
+        let share = taken as f32 / drafted as f32;
+        Some(share.clamp(0.0, 1.0))
+    }
+
+    /// What to show for generation throughput: MCF's own reading between two samples where
+    /// there is one, and the engine's own average where there is not. A hold that has just
+    /// started has no two samples yet, and showing nothing there reads as a model doing
+    /// nothing.
+    #[must_use]
+    pub fn generating_per_second(&self) -> Option<f32> {
+        self.generated_per_second
+            .filter(|rate| *rate > 0.0)
+            .or(self.engine_generated_per_second)
+    }
+
+    #[must_use]
+    pub fn prompting_per_second(&self) -> Option<f32> {
+        self.prompted_per_second
+            .filter(|rate| *rate > 0.0)
+            .or(self.engine_prompted_per_second)
     }
 }
 
@@ -914,12 +1050,17 @@ pub enum Page {
     Hosting,
     Anatomy,
     Vocabulary,
+    /// Everything MCF is bringing here, and what can be done about each of it. Its own
+    /// page because a transfer is not a step in choosing a model: it runs for an hour, it
+    /// runs while other things run, and there can be several of them at once.
+    Downloads,
 }
 
 impl Page {
     pub const MENU: &'static [(Self, &'static str)] = &[
         (Self::Hosting, "Server"),
         (Self::Models, "Models"),
+        (Self::Downloads, "Downloads"),
         (Self::Exit, "Exit"),
     ];
 
@@ -930,7 +1071,198 @@ impl Page {
                 Self::Models
             }
             Self::Hosting => Self::Hosting,
+            Self::Downloads => Self::Downloads,
             Self::Exit => Self::Exit,
+        }
+    }
+}
+
+/// What the disk the models live on holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Storage {
+    pub total: u64,
+    pub free: u64,
+}
+
+impl Storage {
+    /// What is used, which is what the filesystem holds less what it has free.
+    #[must_use]
+    pub const fn used(self) -> u64 {
+        self.total.saturating_sub(self.free)
+    }
+
+    /// A share of the whole, in hundredths, or nothing where there is no whole to be a
+    /// share of.
+    #[must_use]
+    pub fn share_of_the_disk(self, bytes: u64) -> Option<u64> {
+        bytes.saturating_mul(100).checked_div(self.total)
+    }
+
+    /// A share of what is used rather than of the whole disk.
+    #[must_use]
+    pub fn share_of_what_is_used(self, bytes: u64) -> Option<u64> {
+        bytes.saturating_mul(100).checked_div(self.used())
+    }
+}
+
+/// What the weights on the shelf come to.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Weights {
+    pub bytes: u64,
+    pub files: usize,
+    /// Multimodal projectors with no model beside them.
+    ///
+    /// A projector is the half of a vision model that turns a picture into something the
+    /// language half can read; on its own it runs nothing. They are left behind when the
+    /// model they belonged to is removed, and they are not small.
+    pub orphans: Vec<Orphan>,
+}
+
+impl Weights {
+    /// What the orphaned projectors come to, which is what removing them would give back.
+    #[must_use]
+    pub fn reclaimable(&self) -> u64 {
+        self.orphans
+            .iter()
+            .map(|held| held.bytes)
+            .fold(0, u64::saturating_add)
+    }
+}
+
+/// One file on the shelf that is a projector with no model beside it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Orphan {
+    pub path: String,
+    pub bytes: u64,
+}
+
+impl Orphan {
+    #[must_use]
+    pub fn name(&self) -> String {
+        std::path::Path::new(&self.path).file_stem().map_or_else(
+            || self.path.clone(),
+            |stem| stem.to_string_lossy().into_owned(),
+        )
+    }
+
+    /// The repository it was left behind by, as far as the path says.
+    #[must_use]
+    pub fn beside(&self) -> String {
+        let held = std::path::Path::new(&self.path);
+        held.parent()
+            .and_then(|parent| parent.file_name())
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
+    }
+}
+
+/// One transfer, as the window reads it off the daemon's queue.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Transfer {
+    pub id: u64,
+    pub reference: String,
+    pub file: String,
+    pub part: u64,
+    pub parts: u64,
+    pub arrived: u64,
+    pub whole: u64,
+    pub state: String,
+    pub why: Option<String>,
+    pub path: Option<String>,
+}
+
+impl Transfer {
+    #[must_use]
+    pub fn from_value(value: &Value) -> Self {
+        let text = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
+        let count = |key: &str| {
+            value
+                .get(key)
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+                .unwrap_or(0)
+        };
+        Self {
+            id: count("id"),
+            reference: text("reference").unwrap_or_default(),
+            file: text("file").unwrap_or_default(),
+            part: count("part"),
+            parts: count("parts"),
+            arrived: count("arrived_bytes"),
+            whole: count("whole_bytes"),
+            state: text("state").unwrap_or_default(),
+            // One line of it. A row in a list has room for what went wrong, not for every
+            // scrap of context the refusal carries; the whole of it is in the record.
+            why: value
+                .get("why")
+                .filter(|held| !matches!(held, Value::Null))
+                .map(refused_because)
+                .and_then(|why| why.lines().next().map(str::to_owned)),
+            path: text("path"),
+        }
+    }
+
+    /// The short name of the file, which is what a person recognises it by.
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.file
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.file)
+            .trim_end_matches(".gguf")
+            .to_owned()
+    }
+
+    #[must_use]
+    pub fn under_way(&self) -> bool {
+        matches!(self.state.as_str(), "queued" | "fetching" | "checking")
+    }
+
+    #[must_use]
+    pub fn settled(&self) -> bool {
+        matches!(self.state.as_str(), "done" | "failed" | "cancelled")
+    }
+
+    /// How far along, as a share of the whole, or nothing while the whole is unknown. A
+    /// bar drawn against a total nobody has stated is a bar that means nothing.
+    #[must_use]
+    pub fn fraction(&self) -> Option<f32> {
+        if self.whole == 0 {
+            return None;
+        }
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "byte counts of a file, far inside f32 at these magnitudes"
+        )]
+        let share = self.arrived as f32 / self.whole as f32;
+        Some(share.clamp(0.0, 1.0))
+    }
+
+    /// What this transfer is doing, in words rather than in a state name.
+    #[must_use]
+    pub fn said(&self) -> String {
+        match self.state.as_str() {
+            "queued" => "waiting its turn".to_owned(),
+            "fetching" => match (self.parts > 1, words::size_in_words(Some(self.whole))) {
+                (true, Some(whole)) => {
+                    format!(
+                        "part {} of {} — {whole} in all",
+                        self.part.max(1),
+                        self.parts
+                    )
+                }
+                (true, None) => format!("part {} of {}", self.part.max(1), self.parts),
+                (false, Some(whole)) => format!("arriving — {whole} in all"),
+                (false, None) => "arriving".to_owned(),
+            },
+            "checking" => "reading it back against its digest".to_owned(),
+            "paused" => "stopped where it stood — carry on to finish it".to_owned(),
+            "done" => "here, and checked".to_owned(),
+            "failed" => self
+                .why
+                .clone()
+                .unwrap_or_else(|| "it did not arrive".to_owned()),
+            "cancelled" => "given up, and what had arrived swept".to_owned(),
+            other => other.to_owned(),
         }
     }
 }
@@ -948,6 +1280,9 @@ pub struct Model {
     pub name: String,
     pub path: String,
     pub bytes: Option<u64>,
+    /// How many files this one variant is published in. A model split across three files
+    /// is one variant, and saying so keeps three parts from reading as three models.
+    pub parts: Option<u32>,
     pub architecture: Option<String>,
     pub trained: Option<u64>,
     pub context: Option<u64>,
@@ -1011,6 +1346,53 @@ impl Model {
     }
 }
 
+/// What the shelf comes to, and what on it is a projector nothing uses.
+fn weighed(listed: &[Value]) -> Weights {
+    let bytes_of = |held: &Value| {
+        held.get("bytes")
+            .and_then(Value::as_integer)
+            .and_then(|number| u64::try_from(number).ok())
+            .unwrap_or(0)
+    };
+    let path_of = |held: &Value| {
+        held.get("path")
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let is_companion = |held: &Value| matches!(held.get("companion"), Some(Value::Bool(true)));
+    let beside = |path: &str| {
+        std::path::Path::new(path)
+            .parent()
+            .map(|parent| parent.display().to_string())
+            .unwrap_or_default()
+    };
+    // Which directories hold something that is not a projector. A projector in a
+    // directory with a model is the model's; one on its own was left behind.
+    let kept: std::collections::BTreeSet<String> = listed
+        .iter()
+        .filter(|held| !is_companion(held))
+        .map(|held| beside(&path_of(held)))
+        .collect();
+    let mut weights = Weights {
+        bytes: 0,
+        files: listed.len(),
+        orphans: Vec::new(),
+    };
+    for held in listed {
+        let path = path_of(held);
+        let bytes = bytes_of(held);
+        weights.bytes = weights.bytes.saturating_add(bytes);
+        if is_companion(held) && !kept.contains(&beside(&path)) {
+            weights.orphans.push(Orphan { path, bytes });
+        }
+    }
+    weights
+        .orphans
+        .sort_by(|one, two| two.bytes.cmp(&one.bytes).then(one.path.cmp(&two.path)));
+    weights
+}
+
 fn repository_of(held: &Value) -> Option<String> {
     held.get("provenance")
         .and_then(|provenance| provenance.get("origin"))
@@ -1038,6 +1420,10 @@ fn model_from(held: &Value) -> Model {
         .get("bytes")
         .and_then(Value::as_integer)
         .and_then(|number| u64::try_from(number).ok());
+    let parts = held
+        .get("parts")
+        .and_then(Value::as_integer)
+        .and_then(|number| u32::try_from(number).ok());
 
     let runs = held.get("runs");
     let from_runs = |key: &str| {
@@ -1070,6 +1456,7 @@ fn model_from(held: &Value) -> Model {
         name,
         path,
         bytes,
+        parts,
         architecture: from_runs("architecture"),
         trained: number_from_runs("trained_context"),
         context: resolved
@@ -1238,7 +1625,65 @@ pub fn asked_until_done(
 
 const POLL: std::time::Duration = std::time::Duration::from_secs(5);
 
-const GLANCE: std::time::Duration = std::time::Duration::from_millis(250);
+/// How long to wait for an answer about the hold.
+///
+/// Answering it costs the daemon two requests into the engine — its counters and its
+/// slots — and the engine answers those on the same threads it decodes on, so an engine
+/// that is busy answers slowly. A quarter of a second used to be the whole allowance,
+/// which meant the figures stopped moving exactly when there was something to see. This
+/// is asked for on [`Watch`]'s thread, so waiting here costs the window no frames.
+const WATCH: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How often to ask what the hold is doing.
+const EVERY: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Asks the daemon what the hold is doing, on its own thread, and leaves the latest
+/// answer where the window can pick it up without waiting.
+///
+/// The figures a hold reports are live, and reading them costs the daemon a round trip
+/// into the engine. Doing that on the thread that draws would either hold up the window
+/// or have to give up so quickly that a working engine never answers in time.
+#[derive(Debug)]
+pub struct Watch {
+    heard: std::sync::mpsc::Receiver<Result<Answer, String>>,
+}
+
+impl Watch {
+    #[must_use]
+    pub fn over(socket: &Path) -> Self {
+        let (send, heard) = std::sync::mpsc::channel();
+        let socket = socket.to_path_buf();
+        let watching = std::thread::Builder::new()
+            .name("mcf-desk-watch".to_owned())
+            .spawn(move || {
+                loop {
+                    let began = std::time::Instant::now();
+                    if send
+                        .send(ask_within(&socket, &Request::Hosted, WATCH))
+                        .is_err()
+                    {
+                        return;
+                    }
+                    if let Some(rest) = EVERY.checked_sub(began.elapsed()) {
+                        std::thread::sleep(rest);
+                    }
+                }
+            });
+        let _started = watching;
+        Self { heard }
+    }
+
+    /// The newest answer, if one has arrived since this was last asked. Older answers are
+    /// dropped: a figure from three seconds ago is not worth drawing over one from now.
+    #[must_use]
+    pub fn latest(&self) -> Option<Result<Answer, String>> {
+        let mut newest = None;
+        while let Ok(answer) = self.heard.try_recv() {
+            newest = Some(answer);
+        }
+        newest
+    }
+}
 
 fn ask_within(
     socket: &Path,
@@ -1282,6 +1727,7 @@ pub enum Picker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Region {
     Library,
+    Downloads,
     Page,
     Template,
     Hub,
@@ -1560,7 +2006,35 @@ pub const RETRIES_DEFAULT: usize = 10;
 
 pub const SMALLEST_WINDOW: u64 = 4096;
 
+/// What a notice about the hold is filed under. One subject, so the hold saying it was
+/// refused replaces the hold saying it was saved rather than both standing.
+pub const ABOUT_HOLD: &str = "hold";
+/// What a notice about the queue of transfers is filed under.
+pub const ABOUT_TRANSFERS: &str = "transfers";
+/// What a notice about the daemon itself is filed under.
+pub const ABOUT_DAEMON: &str = "daemon";
+/// What a notice about the window's own job is filed under.
+pub const ABOUT_WORK: &str = "work";
+/// What a notice about what the queue is fetching is filed under.
+pub const ABOUT_TRANSFERS_WORK: &str = "transfers:work";
+
 pub const LANGUAGE_NAMES: [&str; 4] = ["python", "javascript", "rust", "go"];
+
+/// One file a removal would take, as the daemon's preview names it.
+fn gone_from(held: &Value) -> Gone {
+    Gone {
+        path: held
+            .get("path")
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned(),
+        bytes: held
+            .get("bytes")
+            .and_then(Value::as_integer)
+            .and_then(|number| u64::try_from(number).ok())
+            .unwrap_or(0),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Gone {
@@ -1570,7 +2044,10 @@ pub struct Gone {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removing {
-    pub model: String,
+    /// Every model this removal is about. One, chosen from a model's own page; or the
+    /// several ticked on the downloads page, which is where somebody clearing a disk
+    /// works.
+    pub models: Vec<String>,
     pub name: String,
     pub files: Vec<Gone>,
     pub bytes: Option<u64>,
@@ -1583,6 +2060,15 @@ pub struct Removing {
 }
 
 impl Removing {
+    /// The one model this is about, where it is about one.
+    #[must_use]
+    pub fn only(&self) -> Option<&String> {
+        match self.models.as_slice() {
+            [one] => Some(one),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn finished(&self) -> bool {
         self.done.is_some()
@@ -1669,6 +2155,18 @@ pub enum Act {
         reference: String,
         file: String,
     },
+    /// Tick or untick a model on the downloads page.
+    PickOnDisk(String),
+    /// Untick everything.
+    ClearPicked,
+    /// Ask about removing everything ticked.
+    RemovePicked,
+    /// Tick every projector with no model beside it.
+    PickTheOrphans,
+    PauseTransfer(u64),
+    ResumeTransfer(u64),
+    GiveUpTransfer(u64),
+    ForgetTransfers,
     SearchHub,
     Scroll(Region, i32),
     Split(Splitter, i32),
@@ -1703,6 +2201,10 @@ pub enum Act {
     TestSet(usize),
     Takes(usize),
     Sweep,
+    /// Stop a sweep where it stands, or tell a stopped one to carry on. Not the same as
+    /// stopping it: a paused sweep keeps its place, and the readings it has already taken
+    /// stay where they were written.
+    PauseSweep,
     Contents(Page),
     Edit(Field, crate::ui::Touched),
     AskToRemove,
@@ -1741,6 +2243,12 @@ pub enum Act {
         at: usize,
     },
     Choose(usize),
+    /// Open the strip out into what MCF has said, or fold it away again.
+    OpenNotices,
+    /// Put away everything that is not still happening.
+    DismissNotices,
+    /// Show a repository's quantizations one by one, or fold them away again.
+    OpenOut(String),
     Clear,
     Dismiss,
 }
@@ -1864,11 +2372,16 @@ pub struct Desk {
     pub caret: Caret,
     pub chosen: Option<usize>,
     pub doing: Doing,
+    /// What was last asked. Kept so the page can show the exchange rather than an answer
+    /// with nothing above it; MCF holds one exchange, not a history.
+    pub asked: String,
     pub said: String,
     pub queued: std::collections::VecDeque<Card>,
     pub queued_of: usize,
     pub daemon_build: Option<String>,
     pub home: Option<std::path::PathBuf>,
+    /// Where the models are kept, which is the disk the downloads page reports on.
+    pub models_root: Option<std::path::PathBuf>,
     pub settings: Option<mcf_serve::hosting::Hosting>,
     pub recommended: Option<mcf_serve::hosting::Hosting>,
     pub no_settings: Option<String>,
@@ -1886,25 +2399,44 @@ pub struct Desk {
     pub declared: Option<mcf_serve::declared::Declared>,
     host_after: Option<String>,
     pub building: Option<String>,
-    pub build_failed: Option<(String, String)>,
+
     pub hosted: Option<Hosted>,
     pub under_test: Option<UnderTest>,
     pub spent: Spent,
     pub last_hold: Option<LastHold>,
-    pub rates: std::collections::VecDeque<f32>,
-    pub host_refused: Option<String>,
-    pub freed: Option<String>,
+    /// The running token counts, one reading a second, for as long as this hold has been
+    /// held. What the graph on the server page is drawn from.
+    pub tallies: std::collections::VecDeque<Tally>,
+    /// Everything the window has to say in passing, in one place — see [`notice`].
+    pub notices: notice::Notices,
+    /// Whether the strip is opened out into the list of what has been said.
+    pub notices_open: bool,
     pub anatomy: Option<mcf_serve::anatomy::Said>,
     pub no_anatomy: Option<String>,
     pub window: u64,
     pub open: Option<Picker>,
+    /// Which repositories are shown opened out in the library, quant by quant. A
+    /// repository holding four quantizations is four models on this disk, and each of them
+    /// is chosen, held and removed on its own — so each of them has to be reachable.
+    pub opened_out: std::collections::BTreeSet<String>,
+    pub transfers: Vec<Transfer>,
+    /// What the disk the models live on holds and has free, read from the filesystem.
+    pub disk: Option<Storage>,
+    /// What the weights come to, every file on the shelf counted — companions included,
+    /// because they take the same disk.
+    pub weights: Weights,
+    /// Model paths ticked on the downloads page, for removal.
+    pub picked: std::collections::BTreeSet<String>,
+
     sampler: mcf_tui::machine::Sampler,
+    watch: Watch,
 }
 
 impl Desk {
     #[must_use]
     pub fn new(socket: std::path::PathBuf) -> Self {
         Self {
+            watch: Watch::over(&socket),
             socket,
             page: Page::Models,
             models: Vec::new(),
@@ -1929,11 +2461,13 @@ impl Desk {
             caret: Caret::Document,
             chosen: None,
             doing: Doing::Nothing,
+            asked: String::new(),
             said: String::new(),
             queued: std::collections::VecDeque::new(),
             queued_of: 0,
             daemon_build: None,
             home: None,
+            models_root: None,
             settings: None,
             recommended: None,
             no_settings: None,
@@ -1948,20 +2482,90 @@ impl Desk {
             needs_engine: None,
             host_after: None,
             building: None,
-            build_failed: None,
             hosted: None,
             under_test: None,
             spent: Spent::default(),
             last_hold: None,
-            rates: std::collections::VecDeque::new(),
-            host_refused: None,
-            freed: None,
+            tallies: std::collections::VecDeque::new(),
+            notices: notice::Notices::new(),
+            notices_open: false,
             anatomy: None,
             no_anatomy: None,
             window: 8192,
             open: None,
+            opened_out: std::collections::BTreeSet::new(),
+            transfers: Vec::new(),
+            disk: None,
+            weights: Weights::default(),
+            picked: std::collections::BTreeSet::new(),
             sampler: mcf_tui::machine::Sampler::new(),
         }
+    }
+
+    /// Put what is happening now into the one place that reports it.
+    ///
+    /// The window used to say this five ways: a word in the side bar, a sentence on the
+    /// page, another in the hold's own block, a bar on the downloads page, and the bare
+    /// word "thinking". One notice, carried by whatever is doing the work, means the strip
+    /// is the answer wherever you happen to be looking.
+    pub fn tell_what_is_happening(&mut self) {
+        match self.notices.about(ABOUT_DAEMON) {
+            _ if self.refusal.is_some() => {
+                // A daemon that is not answering is a condition, not an event: it stays
+                // said for as long as it is true, and goes the moment it stops being.
+                if self.notices.about(ABOUT_DAEMON).is_none() {
+                    self.notices.say(
+                        notice::Notice::new(
+                            notice::Tone::Refused,
+                            ABOUT_DAEMON,
+                            "MCF is not answering on this computer",
+                        )
+                        .saying("`mcf serve` starts it"),
+                    );
+                }
+            }
+            Some(_) => self.notices.forget(ABOUT_DAEMON),
+            None => {}
+        }
+
+        let Some(job) = self.doing.job() else {
+            self.notices.forget(ABOUT_WORK);
+            return;
+        };
+        if job.finished {
+            // What it came to is said by whoever asked for it; the work itself is over.
+            self.notices.forget(ABOUT_WORK);
+            return;
+        }
+        let share = job.progress().and_then(|(arrived, whole)| {
+            (whole > 0).then(|| {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "byte counts of a file, far inside f32 at these magnitudes"
+                )]
+                let share = arrived as f32 / whole as f32;
+                share
+            })
+        });
+        let what = job.what.clone();
+        let detail = self
+            .loading_line()
+            .or_else(|| Some(format!("{} s so far", job.ran())));
+        let mut notice = notice::Notice::new(notice::Tone::Working, ABOUT_WORK, what).so_far(share);
+        if let Some(detail) = detail {
+            notice = notice.saying(detail);
+        }
+        self.notices.say(notice);
+    }
+
+    /// Take whatever the watching thread has heard about the hold. Nothing to hear is not
+    /// a failure: it means a second has not gone by yet.
+    pub fn hear_the_hold(&mut self) -> bool {
+        let Some(answered) = self.watch.latest() else {
+            return false;
+        };
+        self.took_the_hosted(answered);
+        true
     }
 
     #[must_use]
@@ -2145,7 +2749,7 @@ impl Desk {
             && job.finished
         {
             if let Some(why) = &job.refused {
-                self.host_refused = Some(why.clone());
+                self.notices.refused(ABOUT_HOLD, why.clone());
             }
             self.read_hosted();
         }
@@ -2172,7 +2776,16 @@ impl Desk {
                 if wanted.is_some() {
                     self.no_settings = Some(format!("the engine could not be built: {why}"));
                 }
-                self.build_failed = built.map(|name| (name, why));
+                if let Some(name) = built {
+                    self.notices.say(
+                        notice::Notice::new(
+                            notice::Tone::Refused,
+                            format!("engine:{name}"),
+                            format!("Could not build {name}"),
+                        )
+                        .saying(why),
+                    );
+                }
             }
         }
         true
@@ -2192,11 +2805,34 @@ impl Desk {
         self.page = page;
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per thing a person can press, each a call; a table of them in \
+                  one place reads better than the same table split by an arbitrary line \
+                  count"
+    )]
     pub fn act(&mut self, act: Act) {
         match act {
             Act::Go(page) => self.go(page),
             Act::LookUp => self.look_up(),
             Act::Download { reference, file } => self.download(&reference, &file),
+            Act::PickOnDisk(ref path) => {
+                let held = path.clone();
+                if !self.picked.remove(&held) {
+                    let _ticked = self.picked.insert(held);
+                }
+            }
+            Act::ClearPicked => self.picked.clear(),
+            Act::RemovePicked => self.ask_to_remove_the_picked(),
+            Act::PickTheOrphans => {
+                for orphan in &self.weights.orphans.clone() {
+                    let _ticked = self.picked.insert(orphan.path.clone());
+                }
+            }
+            Act::PauseTransfer(_)
+            | Act::ResumeTransfer(_)
+            | Act::GiveUpTransfer(_)
+            | Act::ForgetTransfers => self.told_about_a_transfer(&act),
             Act::HostAgain => self.host_again(),
             Act::Pick(repository) => {
                 self.typed.set(repository);
@@ -2217,6 +2853,7 @@ impl Desk {
             | Act::TestSet(_)
             | Act::Takes(_)
             | Act::Sweep
+            | Act::PauseSweep
             | Act::Edit(..)
             | Act::Switch(_)
             | Act::Place(_)
@@ -2258,6 +2895,14 @@ impl Desk {
                 self.window = window;
                 self.open = None;
             }
+            Act::OpenNotices => self.notices_open = !self.notices_open,
+            Act::DismissNotices => {
+                self.notices.dismiss_the_settled();
+                if self.notices.is_empty() {
+                    self.notices_open = false;
+                }
+            }
+            Act::OpenOut(ref repository) => self.open_out(repository),
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
             Act::RememberSettings => self.remember_settings(),
@@ -2395,96 +3040,122 @@ impl Desk {
     }
 
     pub fn read_hosted(&mut self) {
-        let answered = ask_within(&self.socket, &Request::Hosted, GLANCE).ok();
-        if let Some(answer) = answered.as_ref().filter(|answer| answer.served) {
-            self.under_test = answer
+        let answered = ask_within(&self.socket, &Request::Hosted, WATCH);
+        self.took_the_hosted(answered);
+    }
+
+    /// Read one answer about the hold. Everything the hold is doing arrives in a single
+    /// answer — what is held, what is under test, and what the last hold was — so it is
+    /// asked for once and read through once.
+    ///
+    /// It used to be asked for twice, once for each half that was wanted. The daemon works
+    /// out a rate as the difference between the counters at one answer and the counters at
+    /// the next, so the second ask measured the milliseconds since the first one: no whole
+    /// token arrives in that time, and every rate read zero while the model was working.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one field a figure the answer carries, each named"
+    )]
+    pub fn took_the_hosted(&mut self, answered: Result<Answer, String>) {
+        let answer = match answered {
+            Ok(answer) if answer.served => answer,
+            _ => {
+                self.busy = true;
+                return;
+            }
+        };
+        self.under_test = answer
+            .body
+            .get("under_test")
+            .filter(|held| !matches!(held, Value::Null))
+            .map(UnderTest::from_value);
+        let read = {
+            answer
                 .body
-                .get("under_test")
-                .filter(|held| !matches!(held, Value::Null))
-                .map(UnderTest::from_value);
-        }
-        let read =
-            match ask_within(&self.socket, &Request::Hosted, GLANCE) {
-                Ok(answer) if answer.served => answer
-                    .body
-                    .get("hosting")
-                    .and_then(Value::as_text)
-                    .map(|model| Hosted {
-                        model: model.to_owned(),
-                        address: answer
-                            .body
-                            .get("address")
-                            .and_then(Value::as_text)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        since: answer
-                            .body
-                            .get("since")
-                            .and_then(Value::as_text)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        context: answer
-                            .body
-                            .get("settings")
-                            .and_then(|settings| settings.get("context"))
-                            .and_then(Value::as_integer)
-                            .and_then(|context| u64::try_from(context).ok()),
-                        cache: answer
-                            .body
-                            .get("settings")
-                            .and_then(|settings| settings.get("cache"))
-                            .and_then(Value::as_text)
-                            .and_then(mcf_core::configuration::CacheType::parse)
-                            .unwrap_or_default(),
-                        projector: answer
-                            .body
-                            .get("settings")
-                            .and_then(|settings| settings.get("projector"))
-                            .and_then(Value::as_text)
-                            .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned()),
-                        takes: answer
-                            .body
-                            .get("takes")
-                            .filter(|takes| !matches!(takes, Value::Null))
-                            .map(mcf_serve::takes::Takes::from_value),
-                        api_key: answer
-                            .body
-                            .get("settings")
-                            .and_then(|settings| settings.get("api_key"))
-                            .is_some_and(|key| !matches!(key, Value::Null)),
-                        network_address: answer
-                            .body
-                            .get("network_address")
-                            .and_then(Value::as_text)
-                            .map(str::to_owned),
-                        in_use: answer.body.get("use").map(Use::from_value),
-                    }),
-                Ok(answer) if answer.served => None,
-                _ => {
-                    self.busy = true;
-                    return;
-                }
-            };
+                .get("hosting")
+                .and_then(Value::as_text)
+                .map(|model| Hosted {
+                    model: model.to_owned(),
+                    address: answer
+                        .body
+                        .get("address")
+                        .and_then(Value::as_text)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    since: answer
+                        .body
+                        .get("since")
+                        .and_then(Value::as_text)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    context: answer
+                        .body
+                        .get("settings")
+                        .and_then(|settings| settings.get("context"))
+                        .and_then(Value::as_integer)
+                        .and_then(|context| u64::try_from(context).ok()),
+                    cache: answer
+                        .body
+                        .get("settings")
+                        .and_then(|settings| settings.get("cache"))
+                        .and_then(Value::as_text)
+                        .and_then(mcf_core::configuration::CacheType::parse)
+                        .unwrap_or_default(),
+                    projector: answer
+                        .body
+                        .get("settings")
+                        .and_then(|settings| settings.get("projector"))
+                        .and_then(Value::as_text)
+                        .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned()),
+                    takes: answer
+                        .body
+                        .get("takes")
+                        .filter(|takes| !matches!(takes, Value::Null))
+                        .map(mcf_serve::takes::Takes::from_value),
+                    // `api_key_set`, not `api_key`. The key itself is deliberately kept
+                    // off the wire, so reading the key field always found nothing — and
+                    // the page said "API key: none (localhost only)" about a hold that was
+                    // answering the network with a key set, directly above the network
+                    // address it was answering on.
+                    api_key: answer
+                        .body
+                        .get("settings")
+                        .and_then(|settings| settings.get("api_key_set"))
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    open: answer
+                        .body
+                        .get("settings")
+                        .and_then(|settings| settings.get("open"))
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    network_address: answer
+                        .body
+                        .get("network_address")
+                        .and_then(Value::as_text)
+                        .map(str::to_owned),
+                    in_use: answer.body.get("use").map(Use::from_value),
+                })
+        };
         self.busy = false;
         match (&self.hosted, &read) {
             (Some(was), Some(now)) if was.model == now.model => {}
-            _ => self.rates.clear(),
+            // An engine's counters start at nought when it starts, so a count from the
+            // hold before this one would draw a cliff that never happened.
+            _ => self.tallies.clear(),
         }
-        if let Some(rate) = read
+        if let Some(tally) = read
             .as_ref()
             .and_then(|hosting| hosting.in_use.as_ref())
-            .and_then(|in_use| in_use.generated_per_second)
+            .and_then(Tally::of)
         {
-            self.rates.push_back(rate);
-            while self.rates.len() > 120 {
-                self.rates.pop_front();
+            self.tallies.push_back(tally);
+            while self.tallies.len() > TALLIES_KEPT {
+                let _oldest = self.tallies.pop_front();
             }
         }
         self.hosted = read;
-        self.last_hold = answered
-            .as_ref()
-            .and_then(|answer| answer.body.get("last"))
-            .and_then(LastHold::from_value);
+        self.last_hold = answer.body.get("last").and_then(LastHold::from_value);
     }
 
     /// What to do with the value a finished sweep landed on. It is a decision either way:
@@ -2526,10 +3197,10 @@ impl Desk {
     pub fn remember_settings(&mut self) {
         self.apply_edit();
         if let Some(why) = &self.edit_refused {
-            self.host_refused = Some(why.clone());
+            self.notices.refused(ABOUT_HOLD, why.clone());
             return;
         }
-        self.host_refused = None;
+        self.notices.forget(ABOUT_HOLD);
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             return;
         };
@@ -2542,21 +3213,23 @@ impl Desk {
         };
         match ask(&self.socket, &asked) {
             Ok(answer) if answer.served => {
-                self.freed = Some(format!(
-                    "Saved for {} — these settings come back the next time it is chosen",
-                    held.name
-                ));
+                self.notices.done(
+                    ABOUT_HOLD,
+                    format!("Saved for {} — these settings come back", held.name),
+                );
                 self.read_settings();
             }
-            Ok(answer) => self.host_refused = Some(refused_because(&answer.body)),
-            Err(why) => self.host_refused = Some(why),
+            Ok(answer) => self
+                .notices
+                .refused(ABOUT_HOLD, refused_because(&answer.body)),
+            Err(why) => self.notices.refused(ABOUT_HOLD, why),
         }
     }
 
     pub fn host_it(&mut self) {
         self.apply_edit();
         if let Some(why) = &self.edit_refused {
-            self.host_refused = Some(why.clone());
+            self.notices.refused(ABOUT_HOLD, why.clone());
             return;
         }
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
@@ -2568,7 +3241,8 @@ impl Desk {
             .as_ref()
             .is_some_and(|settings| settings.open && settings.api_key.is_none())
         {
-            self.host_refused = Some(
+            self.notices.refused(
+                ABOUT_HOLD,
                 "Reachable from the network is on, so the hold needs an API key: type one in \
                  the API key field above, then Start server; or turn the switch off to keep \
                  the hold on this computer"
@@ -2576,8 +3250,7 @@ impl Desk {
             );
             return;
         }
-        self.host_refused = None;
-        self.freed = None;
+        self.notices.forget(ABOUT_HOLD);
         self.page = Page::Hosting;
         if self.settings.is_none()
             && let Some(engine) = self.needs_engine.clone()
@@ -2614,7 +3287,7 @@ impl Desk {
             return;
         }
         self.host_after = None;
-        self.build_failed = None;
+        self.notices.forget(&format!("engine:{name}"));
         self.building = Some(name.to_owned());
         self.doing = Doing::Provisioning(job::Job::start(
             &self.socket,
@@ -2646,16 +3319,121 @@ impl Desk {
         }
     }
 
+    /// What the ticked models come to.
+    #[must_use]
+    pub fn picked_bytes(&self) -> u64 {
+        self.picked
+            .iter()
+            .filter_map(|path| {
+                self.models
+                    .iter()
+                    .find(|held| &held.path == path)
+                    .and_then(|held| held.bytes)
+                    .or_else(|| {
+                        self.weights
+                            .orphans
+                            .iter()
+                            .find(|held| &held.path == path)
+                            .map(|held| held.bytes)
+                    })
+            })
+            .fold(0, u64::saturating_add)
+    }
+
+    /// Whether the hold would be taken out from under itself.
+    #[must_use]
+    pub fn picked_the_served(&self) -> Option<String> {
+        let hosting = self.hosted.as_ref()?;
+        self.picked
+            .iter()
+            .find(|path| **path == hosting.model)
+            .map(|_| hosting.name())
+    }
+
+    /// Ask about removing everything ticked on the downloads page.
+    ///
+    /// The preview is asked of the daemon for each, and what comes back is added up, so
+    /// the page says what would actually go rather than what was ticked.
+    pub fn ask_to_remove_the_picked(&mut self) {
+        let picked: Vec<String> = self.picked.iter().cloned().collect();
+        let Some(first) = picked.first().cloned() else {
+            return;
+        };
+        let name = match picked.len() {
+            1 => self
+                .models
+                .iter()
+                .find(|held| held.path == first)
+                .map_or_else(
+                    || {
+                        std::path::Path::new(&first).file_stem().map_or_else(
+                            || first.clone(),
+                            |stem| stem.to_string_lossy().into_owned(),
+                        )
+                    },
+                    |held| held.name.clone(),
+                ),
+            many => format!("{many} models"),
+        };
+        let mut files: Vec<Gone> = Vec::new();
+        let mut bytes = 0_u64;
+        let mut reversible = true;
+        let mut shelved_in = String::new();
+        let mut refused = None;
+        for model in &picked {
+            match ask(
+                &self.socket,
+                &Request::Removal {
+                    model: model.clone(),
+                },
+            ) {
+                Ok(answer) if answer.served => {
+                    if let Some(Value::List(listed)) = answer.body.get("files") {
+                        files.extend(listed.iter().map(gone_from));
+                    }
+                    bytes = bytes.saturating_add(
+                        answer
+                            .body
+                            .get("bytes")
+                            .and_then(Value::as_integer)
+                            .and_then(|held| u64::try_from(held).ok())
+                            .unwrap_or(0),
+                    );
+                    reversible &= matches!(answer.body.get("reversible"), Some(Value::Bool(true)));
+                    if shelved_in.is_empty()
+                        && let Some(said) = answer.body.get("shelf").and_then(Value::as_text)
+                    {
+                        shelved_in.push_str(said);
+                    }
+                }
+                Ok(answer) => refused = Some(refused_because(&answer.body)),
+                Err(why) => refused = Some(why),
+            }
+        }
+        self.removing = Some(Removing {
+            models: picked,
+            name,
+            files,
+            bytes: (bytes > 0).then_some(bytes),
+            reversible,
+            shelf: shelved_in,
+            reason: crate::typing::Typing::of(String::new()),
+            purge: false,
+            refused,
+            done: None,
+        });
+    }
+
     pub fn ask_to_remove(&mut self) {
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             return;
         };
-        let model = held.path.clone();
+        let models = vec![held.path.clone()];
         let name = held.name.clone();
         match ask(
             &self.socket,
             &Request::Removal {
-                model: model.clone(),
+                model: held.path.clone(),
             },
         ) {
             Ok(answer) if answer.served => {
@@ -2675,25 +3453,11 @@ impl Desk {
                         .to_owned()
                 };
                 let files = match answer.body.get("files") {
-                    Some(Value::List(listed)) => listed
-                        .iter()
-                        .map(|one| Gone {
-                            path: one
-                                .get("path")
-                                .and_then(Value::as_text)
-                                .unwrap_or_default()
-                                .to_owned(),
-                            bytes: one
-                                .get("bytes")
-                                .and_then(Value::as_integer)
-                                .and_then(|held| u64::try_from(held).ok())
-                                .unwrap_or(0),
-                        })
-                        .collect(),
+                    Some(Value::List(listed)) => listed.iter().map(gone_from).collect(),
                     _ => Vec::new(),
                 };
                 self.removing = Some(Removing {
-                    model,
+                    models,
                     name,
                     files,
                     bytes: whole("bytes"),
@@ -2707,7 +3471,7 @@ impl Desk {
             }
             Ok(answer) => {
                 self.removing = Some(Removing {
-                    model,
+                    models,
                     name,
                     files: Vec::new(),
                     bytes: None,
@@ -2721,7 +3485,7 @@ impl Desk {
             }
             Err(why) => {
                 self.removing = Some(Removing {
-                    model,
+                    models,
                     name,
                     files: Vec::new(),
                     bytes: None,
@@ -2748,6 +3512,65 @@ impl Desk {
         }
     }
 
+    /// Take each model, one at a time, and say what the lot of them came to.
+    ///
+    /// One at a time because a removal is authorized, recorded and answered for one model
+    /// at a time — the record has an entry per artifact, not one per gesture. What went is
+    /// reported whether or not the rest did: a removal that stopped part way through took
+    /// what it took, and saying otherwise would leave somebody hunting for files that are
+    /// already gone.
+    fn remove_each(&self, models: &[String], reason: &str, purge: bool) -> Result<Answer, String> {
+        let mut taken = 0_u64;
+        let mut purged = false;
+        let mut went = 0_usize;
+        let mut refused: Option<String> = None;
+        for model in models {
+            match ask(
+                &self.socket,
+                &Request::Remove {
+                    model: model.clone(),
+                    reason: reason.to_owned(),
+                    purge,
+                },
+            ) {
+                Ok(answer) if answer.served => {
+                    taken = taken.saturating_add(
+                        answer
+                            .body
+                            .get("bytes")
+                            .and_then(Value::as_integer)
+                            .and_then(|held| u64::try_from(held).ok())
+                            .unwrap_or(0),
+                    );
+                    purged |= answer.body.get("purged_bytes").is_some();
+                    went += 1;
+                }
+                Ok(answer) => {
+                    refused = Some(refused_because(&answer.body));
+                    break;
+                }
+                Err(why) => {
+                    refused = Some(why);
+                    break;
+                }
+            }
+        }
+        match refused {
+            Some(why) if went == 0 => Err(why),
+            Some(why) => Err(format!("{went} of {} removed, then: {why}", models.len())),
+            None => {
+                let figure = |held: u64| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+                Ok(Answer::served(Value::map([
+                    ("bytes", figure(taken)),
+                    (
+                        "purged_bytes",
+                        if purged { figure(taken) } else { Value::Null },
+                    ),
+                ])))
+            }
+        }
+    }
+
     pub fn do_remove(&mut self) {
         let Some(removing) = self.removing.as_ref() else {
             return;
@@ -2766,12 +3589,7 @@ impl Desk {
             }
             return;
         }
-        let asked = Request::Remove {
-            model: removing.model.clone(),
-            reason: reason.clone(),
-            purge: removing.purge,
-        };
-        let answered = ask(&self.socket, &asked);
+        let answered = self.remove_each(&removing.models.clone(), &reason, removing.purge);
         let Some(removing) = self.removing.as_mut() else {
             return;
         };
@@ -2825,7 +3643,7 @@ impl Desk {
     pub fn stop_hosting(&mut self) {
         let answered = ask(&self.socket, &Request::Unhost);
         let was = self.hosted.take();
-        self.freed = answered.ok().map(|answer| {
+        let said = answered.ok().map(|answer| {
             let figure = |key: &str| {
                 answer
                     .body
@@ -2846,6 +3664,9 @@ impl Desk {
                 (None, None) => format!("Server stopped: {name}"),
             }
         });
+        if let Some(said) = said {
+            self.notices.done(ABOUT_HOLD, said);
+        }
     }
 
     #[must_use]
@@ -2899,6 +3720,43 @@ impl Desk {
              again after, so that one copy of the model is resident throughout"
                 .to_owned(),
         )
+    }
+
+    /// Open a repository out into its quantizations, or fold it away again.
+    ///
+    /// A repository row stands for as many models as it has quantizations, and every one of
+    /// them is a file on this disk with its own size, its own settings and its own place in
+    /// the record. Folded up, only one of them could ever be chosen — and so only one of
+    /// them could ever be removed.
+    fn open_out(&mut self, repository: &str) {
+        if !self.opened_out.remove(repository) {
+            let _opened = self.opened_out.insert(repository.to_owned());
+        }
+    }
+
+    /// Whether this repository is opened out. One with a single quantization is always
+    /// opened out in effect: there is nothing to open.
+    #[must_use]
+    pub fn is_opened_out(&self, repository: Option<&str>) -> bool {
+        repository.is_some_and(|held| self.opened_out.contains(held))
+    }
+
+    /// The other quantizations of the same repository that are on this disk, and the
+    /// repository they belong to.
+    ///
+    /// Removing one file removes that file. Saying how many of its siblings stay put is
+    /// what tells somebody they are removing a quantization and not a model.
+    #[must_use]
+    pub fn others_of_the_repository(&self, path: &str) -> Option<(usize, String)> {
+        let held = self.models.iter().find(|held| held.path == path)?;
+        let repository = held.repository.clone()?;
+        let others = self
+            .models
+            .iter()
+            .filter(|beside| beside.path != path)
+            .filter(|beside| beside.repository.as_deref() == Some(repository.as_str()))
+            .count();
+        (others > 0).then_some((others, repository))
     }
 
     pub fn cycle(&mut self, at: usize) {
@@ -2983,16 +3841,148 @@ impl Desk {
         ));
     }
 
+    /// Ask for a file, and go straight back to whatever else was happening.
+    ///
+    /// The queue belongs to the daemon, so asking for one takes nothing away from the
+    /// window: several files can be on their way at once, another can be asked for while
+    /// they are, and closing the window does not stop any of them. It used to be carried
+    /// on the window's one job slot, which meant one at a time and only for as long as the
+    /// window stayed open.
     pub fn download(&mut self, reference: &str, file: &str) {
-        self.doing = Doing::Downloading(job::Job::start(
-            &self.socket,
-            Request::Acquire {
-                reference: reference.to_owned(),
-                file: file.to_owned(),
-                from: None,
-            },
-            format!("getting {file}"),
-        ));
+        let asked = Request::Queue {
+            reference: reference.to_owned(),
+            file: file.to_owned(),
+            from: None,
+        };
+        match ask(&self.socket, &asked) {
+            Ok(answer) if answer.served => {
+                self.notices.forget(ABOUT_TRANSFERS);
+                self.take_the_transfers(&answer.body);
+                self.settle_download();
+            }
+            Ok(answer) => self
+                .notices
+                .refused(ABOUT_TRANSFERS, refused_because(&answer.body)),
+            Err(why) => self.notices.refused(ABOUT_TRANSFERS, why),
+        }
+    }
+
+    /// One of the four things that can be asked of the queue, turned into the request that
+    /// asks it. Kept together so that the queue's four buttons read as one thing.
+    fn told_about_a_transfer(&mut self, act: &Act) {
+        let asked = match *act {
+            Act::PauseTransfer(id) => Request::PauseTransfer { id },
+            Act::ResumeTransfer(id) => Request::ResumeTransfer { id },
+            Act::GiveUpTransfer(id) => Request::GiveUpTransfer { id },
+            _ => Request::ForgetTransfers,
+        };
+        self.about_a_transfer(&asked);
+    }
+
+    fn about_a_transfer(&mut self, asked: &Request) {
+        match ask(&self.socket, asked) {
+            Ok(answer) if answer.served => {
+                self.notices.forget(ABOUT_TRANSFERS);
+                self.take_the_transfers(&answer.body);
+            }
+            Ok(answer) => self
+                .notices
+                .refused(ABOUT_TRANSFERS, refused_because(&answer.body)),
+            Err(why) => self.notices.refused(ABOUT_TRANSFERS, why),
+        }
+    }
+
+    fn take_the_transfers(&mut self, body: &Value) {
+        if let Some(rows) = body.get("transfers").and_then(Value::as_list) {
+            self.transfers = rows.iter().map(Transfer::from_value).collect();
+        }
+    }
+
+    /// Read the queue off the daemon. Cheap — the daemon answers it out of its own state
+    /// without reaching for anything — so it is read on the same tick as everything else.
+    pub fn read_transfers(&mut self) {
+        match ask_within(&self.socket, &Request::Transfers, POLL) {
+            Ok(answer) if answer.served => {
+                self.notices.forget(ABOUT_TRANSFERS);
+                self.take_the_transfers(&answer.body);
+            }
+            Ok(answer) => self
+                .notices
+                .refused(ABOUT_TRANSFERS, refused_because(&answer.body)),
+            Err(_) => {}
+        }
+    }
+
+    /// The transfer of the file this page is waiting on, if it is in the queue. What the
+    /// models page shows about a file being fetched comes from the same queue the downloads
+    /// page shows, so the two never disagree.
+    #[must_use]
+    pub fn transfer_of_the_pending(&self) -> Option<&Transfer> {
+        let pending = self.pending.as_ref()?;
+        self.transfers
+            .iter()
+            .find(|held| held.reference == pending.repository && held.file == pending.file)
+    }
+
+    /// What the queue is doing, said in the one place that says what is happening.
+    ///
+    /// One notice for the whole queue rather than one each: three files arriving is one
+    /// thing happening, and a strip that said it three times would be a strip nobody read.
+    pub fn tell_what_is_arriving(&mut self) {
+        let under_way: Vec<&Transfer> = self
+            .transfers
+            .iter()
+            .filter(|held| held.under_way())
+            .collect();
+        let Some(first) = under_way.first() else {
+            self.notices.forget(ABOUT_TRANSFERS_WORK);
+            return;
+        };
+        let (arrived, whole) = under_way
+            .iter()
+            .fold((0_u64, 0_u64), |(arrived, whole), held| {
+                (
+                    arrived.saturating_add(held.arrived),
+                    whole.saturating_add(held.whole),
+                )
+            });
+        let what = match under_way.len() {
+            1 => format!("Getting {}", first.name()),
+            many => format!("{many} files arriving"),
+        };
+        let share = (whole > 0).then(|| {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "byte counts of files, far inside f32 at these magnitudes"
+            )]
+            let share = arrived as f32 / whole as f32;
+            share
+        });
+        let waiting = self
+            .transfers
+            .iter()
+            .filter(|held| held.state == "queued")
+            .count();
+        let detail = match (words::size_in_words(Some(whole)), waiting) {
+            (Some(whole), 0) => format!("of {whole}"),
+            (Some(whole), 1) => format!("of {whole} · 1 more queued"),
+            (Some(whole), many) => format!("of {whole} · {many} more queued"),
+            (None, _) => first.said(),
+        };
+        self.notices.say(
+            notice::Notice::new(notice::Tone::Working, ABOUT_TRANSFERS_WORK, what)
+                .so_far(share)
+                .saying(detail),
+        );
+    }
+
+    /// Whether anything is still on its way, which is what the side bar shows a mark for.
+    #[must_use]
+    pub fn transfers_under_way(&self) -> usize {
+        self.transfers
+            .iter()
+            .filter(|transfer| transfer.under_way())
+            .count()
     }
 
     pub const EVERY_RUN: [Card; 7] = [
@@ -3212,9 +4202,9 @@ impl Desk {
         let Some(pending) = self.pending.clone() else {
             return;
         };
-        if self.doing.busy() {
-            return;
-        }
+        // Nothing is asked about what else is busy. A transfer is queued in the daemon and
+        // competes with nothing, so refusing one because the window was doing something
+        // else refused it for no reason.
         self.after_download = Some(then);
         self.download(&pending.repository, &pending.file);
     }
@@ -3599,6 +4589,19 @@ impl Desk {
         self.sweeping_over(None);
     }
 
+    /// Pause a running sweep, or tell a paused one to carry on. A pause takes effect after
+    /// the trial under way finishes, because a reading cut in half is not a reading.
+    fn pause_or_carry_on_sweeping(&mut self) {
+        let Some(run) = self.optimizing.run.as_ref() else {
+            return;
+        };
+        if run.asked_to_wait() {
+            run.resume();
+        } else {
+            run.pause();
+        }
+    }
+
     fn sweeping_over(&mut self, exactly: Option<&[mcf_optimize::ledger::At]>) {
         if let Some(run) = self.optimizing.run.as_ref() {
             run.stop();
@@ -3795,6 +4798,7 @@ impl Desk {
             Act::TestSet(number) => self.optimizing.toggle_set(number),
             Act::Takes(times) => self.optimizing.take_each(times),
             Act::Sweep => self.start_or_stop_sweeping(),
+            Act::PauseSweep => self.pause_or_carry_on_sweeping(),
             _ => return false,
         }
         true
@@ -4386,6 +5390,11 @@ impl Desk {
             return;
         }
         self.said.clear();
+        // Kept, and the box emptied. The question used to be left sitting in the box, so
+        // it had to be cleared by hand before the next one — and with the question now
+        // shown above the answer it would have been on the page twice.
+        self.asked.clone_from(&question);
+        self.typed = crate::typing::Typing::default();
         self.doing = Doing::Answering(job::Job::start(
             &self.socket,
             Request::Generate {
@@ -4411,21 +5420,27 @@ impl Desk {
             Ok(answer) if answer.served => {
                 self.refusal = None;
                 self.busy = false;
-                let mut read: Vec<Model> = answer
+                let listed = answer
                     .body
                     .get("models")
                     .and_then(Value::as_list)
-                    .map(|held| {
-                        held.iter()
-                            .filter(|entry| {
-                                !matches!(entry.get("companion"), Some(Value::Bool(true)))
-                            })
-                            .map(model_from)
-                            .collect()
-                    })
+                    .map(<[Value]>::to_vec)
                     .unwrap_or_default();
+                // Weighed before the companions are filtered out. A projector takes the
+                // same disk as anything else, and a figure for what the shelf comes to
+                // that left them out would be short by twelve gigabytes here.
+                self.weights = weighed(&listed);
+                let mut read: Vec<Model> = listed
+                    .iter()
+                    .filter(|entry| !matches!(entry.get("companion"), Some(Value::Bool(true))))
+                    .map(model_from)
+                    .collect();
                 read.sort_by(|one, two| one.name.cmp(&two.name));
                 self.models = read;
+                // Nothing stays ticked that is no longer there to remove.
+                let here: std::collections::BTreeSet<String> =
+                    self.models.iter().map(|held| held.path.clone()).collect();
+                self.picked.retain(|path| here.contains(path));
                 self.card_unused = answer.body.get("card_unused").and_then(|held| {
                     Some((
                         held.get("component").and_then(Value::as_text)?.to_owned(),
@@ -4466,6 +5481,24 @@ impl Desk {
         )
     }
 
+    /// Read what the disk the models live on holds.
+    ///
+    /// Asked of the filesystem rather than of the daemon: the window and the daemon share
+    /// a machine — the control socket is a Unix socket — so the figure is the same either
+    /// way, and this one needs no round trip.
+    pub fn read_the_disk(&mut self) {
+        let Some(root) = self.models_root.as_ref() else {
+            return;
+        };
+        self.disk = match mcf_core::hardware::space_on(root) {
+            mcf_core::attested::Attested::Known(space) => Some(Storage {
+                total: space.total.0,
+                free: space.available.0,
+            }),
+            mcf_core::attested::Attested::Unknown => None,
+        };
+    }
+
     pub fn read_build(&mut self) {
         if let Ok(answer) = ask_within(&self.socket, &Request::Status, POLL)
             && answer.served
@@ -4479,17 +5512,12 @@ impl Desk {
                 .get("home")
                 .and_then(Value::as_text)
                 .map(std::path::PathBuf::from);
-        }
-    }
-
-    #[must_use]
-    pub fn state_word(&self) -> String {
-        if self.refusal.is_some() {
-            "not answering".to_owned()
-        } else if let Some(said) = self.under_way() {
-            format!("working — {said}")
-        } else {
-            "MCF".to_owned()
+            self.models_root = answer
+                .body
+                .get("models")
+                .and_then(Value::as_text)
+                .map(std::path::PathBuf::from);
+            self.read_the_disk();
         }
     }
 
@@ -4800,17 +5828,37 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
             acted = true;
         }
 
+        // Said once a frame, so a notice's clock is the window's clock and a thing that
+        // has waited long enough goes without anybody having to touch it.
+        desk.notices.expire(std::time::Instant::now());
+        desk.tell_what_is_happening();
+
         if desk.hear_the_sweep() {
             acted = true;
         }
 
-        let a_run = desk.doing.busy() || desk.optimizing.run.is_some();
-        let due = (desk.page == Page::Hosting || a_run)
-            && last.elapsed() >= std::time::Duration::from_secs(1);
-        if due {
+        // What the hold is doing arrives on its own thread, so it is picked up whatever
+        // page is showing. It used to be asked for only while the server page was open,
+        // which left every other page — the statistics beside a model among them —
+        // showing figures from whenever that page was last left.
+        if desk.hear_the_hold() {
+            acted = true;
+        }
+
+        if last.elapsed() >= EVERY {
             desk.sample();
-            if !desk.busy_elsewhere() {
-                desk.read_hosted();
+            // The queue is read whatever page is showing: a transfer finishing is worth
+            // knowing about from the models page, where the model it brought now appears.
+            let was = desk.transfers.clone();
+            desk.read_transfers();
+            desk.tell_what_is_arriving();
+            if was != desk.transfers && desk.transfers.iter().any(Transfer::settled) {
+                desk.refresh();
+                // Whatever was asked to happen once the file arrived — hold it, most
+                // often — happens now. A queued transfer answers straight away, so the
+                // thing that was waiting on it has to be picked up when it lands rather
+                // than when it was asked for.
+                desk.settle_download();
             }
             last = std::time::Instant::now();
             acted = true;

@@ -149,7 +149,14 @@ fn a_whole_transfer_is_verified_and_named() {
     let source = StandIn::new(b"0123456789", Serves::Everything);
     let into = scratch.at("model.gguf");
 
-    let acquired = acquire(&source, &a_reference(), &source.entry(), &into).expect("it arrives");
+    let acquired = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect("it arrives");
     assert_eq!(acquired.bytes, 10);
     assert_eq!(acquired.attempts, 1);
     assert!(!acquired.resumed);
@@ -169,7 +176,14 @@ fn a_transfer_that_keeps_stopping_is_resumed_to_the_end() {
     let source = StandIn::new(b"0123456789", Serves::ThisMany(3));
     let into = scratch.at("model.gguf");
 
-    let acquired = acquire(&source, &a_reference(), &source.entry(), &into).expect("it arrives");
+    let acquired = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect("it arrives");
     assert_eq!(acquired.bytes, 10);
     assert!(acquired.resumed, "it continued rather than starting again");
     assert!(acquired.attempts > 1, "{} attempts", acquired.attempts);
@@ -189,7 +203,14 @@ fn a_transfer_interrupted_near_the_end_continues_from_there() {
 
     std::fs::write(partial_path(&into), &whole[..36]).expect("a partial transfer");
 
-    let acquired = acquire(&source, &a_reference(), &source.entry(), &into).expect("it finishes");
+    let acquired = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect("it finishes");
     assert!(acquired.resumed, "it started again instead of continuing");
     assert_eq!(acquired.attempts, 1, "one attempt was enough to finish it");
     assert_eq!(std::fs::read(&into).expect("it is there"), whole);
@@ -202,7 +223,14 @@ fn a_file_that_changed_under_the_transfer_is_refused_and_not_kept() {
     let source = StandIn::new(whole, Serves::SomethingElse);
     let into = scratch.at("model.gguf");
 
-    let failure = acquire(&source, &a_reference(), &source.entry(), &into).expect_err("it differs");
+    let failure = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect_err("it differs");
     assert_eq!(failure.category(), Category::ArtifactCorrupt);
     assert!(
         !into.exists(),
@@ -236,7 +264,14 @@ fn a_source_that_cannot_resume_is_restarted_rather_than_refused() {
     let into = scratch.at("model.gguf");
     std::fs::write(partial_path(&into), b"012").expect("a partial transfer");
 
-    let acquired = acquire(&source, &a_reference(), &source.entry(), &into).expect("it finishes");
+    let acquired = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect("it finishes");
     assert!(
         !acquired.resumed,
         "it claimed to resume against a source that cannot"
@@ -250,7 +285,14 @@ fn a_transfer_that_never_finishes_says_how_far_it_got() {
     let source = StandIn::new(b"0123456789", Serves::ThisMany(1));
     let into = scratch.at("model.gguf");
 
-    let failure = acquire(&source, &a_reference(), &source.entry(), &into).expect_err("too slow");
+    let failure = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect_err("too slow");
     assert_eq!(failure.category(), Category::ArtifactIncomplete);
     assert!(
         !into.exists(),
@@ -289,7 +331,14 @@ fn an_artifact_nobody_could_check_is_held_rather_than_verified() {
     let entry = Entry::new("model.gguf", 10);
     let into = scratch.at("model.gguf");
 
-    let acquired = acquire(&source, &a_reference(), &entry, &into).expect("it arrives");
+    let acquired = acquire(
+        &source,
+        &a_reference(),
+        &entry,
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect("it arrives");
     match acquired.verification {
         Verification::LengthOnly { digest } => {
             assert_eq!(
@@ -308,9 +357,23 @@ fn an_artifact_already_held_is_not_fetched_again() {
     let source = StandIn::new(b"0123456789", Serves::Everything);
     let into = scratch.at("model.gguf");
 
-    let first = acquire(&source, &a_reference(), &source.entry(), &into).expect("it arrives");
+    let first = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect("it arrives");
     assert_eq!(first.attempts, 1);
-    let again = acquire(&source, &a_reference(), &source.entry(), &into).expect("it is held");
+    let again = acquire(
+        &source,
+        &a_reference(),
+        &source.entry(),
+        &into,
+        &crate::stopping::Stopping::never(),
+    )
+    .expect("it is held");
     assert_eq!(again.attempts, 0, "it fetched something it already had");
     assert_eq!(*source.attempts.borrow(), 1, "the source was asked twice");
 }
@@ -339,6 +402,7 @@ fn a_file_larger_than_the_disk_is_refused_before_the_transfer() {
         &parse("owner/model").expect("a reference"),
         &enormous,
         &scratch.at("model.gguf"),
+        &crate::stopping::Stopping::never(),
     )
     .expect_err("there is not that much room anywhere");
 
@@ -365,6 +429,7 @@ fn a_file_that_fits_is_not_refused() {
         &parse("owner/model").expect("a reference"),
         &source.entry(),
         &scratch.at("model.gguf"),
+        &crate::stopping::Stopping::never(),
     )
     .expect("seven bytes fit");
 }

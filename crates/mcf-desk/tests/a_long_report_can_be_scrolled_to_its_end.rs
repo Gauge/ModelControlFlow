@@ -12,6 +12,7 @@ fn model() -> Model {
         name: "A-Model-Q4_K_M".to_owned(),
         path: "/m/A-Model-Q4_K_M.gguf".to_owned(),
         bytes: Some(16_000_000_000),
+        parts: None,
         architecture: Some("an-architecture".to_owned()),
         trained: Some(131_072),
         context: Some(131_072),
