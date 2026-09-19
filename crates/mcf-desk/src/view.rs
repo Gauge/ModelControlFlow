@@ -2286,18 +2286,41 @@ fn test_set(
         area,
         y,
         "Test set",
-        "sixty-four checked programming tasks in eight prompts of eight",
+        if desk.optimizing.measure.needs_the_answers_run() {
+            "a thousand questions with one right answer each, asked twenty-five at a time"
+        } else {
+            "sixty-four checked programming tasks in eight prompts of eight"
+        },
     );
-    let sets: Vec<(String, bool)> = mcf_optimize::corpus::Set::all()
-        .iter()
-        .map(|set| {
-            (
-                format!("Set {}", set.number),
-                desk.optimizing.sweep.sets.contains(&set.number),
-            )
-        })
-        .collect();
-    let (below, picked) = chips(paint, mouse, area, y, &sets);
+    // A marked sweep asks all of them: the thousand are the test, and a score taken
+    // against some of them would not be comparable with one taken against others. A timed
+    // sweep reads or writes against one set, and which one is not a judgement about the
+    // model, so neither offers a choice.
+    let (below, picked) = if desk.optimizing.measure.needs_the_answers_run() {
+        paint.say_at(
+            area.x,
+            y,
+            &format!(
+                "all {} prompts, every time — so two readings can be set beside each other",
+                desk.optimizing.sweep.sets.len()
+            ),
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        (y + 24.0, None)
+    } else {
+        let sets: Vec<(String, bool)> = mcf_optimize::corpus::Set::all()
+            .iter()
+            .map(|set| {
+                (
+                    format!("Set {}", set.number),
+                    desk.optimizing.sweep.sets.contains(&set.number),
+                )
+            })
+            .collect();
+        chips(paint, mouse, area, y, &sets)
+    };
     if let Some(at) = picked {
         act = Some(Act::TestSet(at.saturating_add(1)));
     }

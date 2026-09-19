@@ -813,7 +813,11 @@ fn choosing_a_setting_that_changes_answers_leaves_the_ranking_alone() {
         desk.optimizing.measure,
         mcf_optimize::reading::Measure::Correctness
     );
-    assert_eq!(desk.optimizing.sweep.sets.len(), 8);
+    assert_eq!(
+        desk.optimizing.sweep.sets.len(),
+        mcf_optimize::corpus::Set::short().len(),
+        "a marked sweep asks the short questions, all of them"
+    );
 }
 
 #[test]
@@ -836,8 +840,8 @@ fn moving_from_a_timed_setting_to_one_that_marks_answers_puts_the_sets_back() {
     desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingBudget)));
     assert_eq!(
         desk.optimizing.sweep.sets.len(),
-        8,
-        "the tasks come back when the setting being dialled can change an answer"
+        mcf_optimize::corpus::Set::short().len(),
+        "the questions come back when the setting being dialled can change an answer"
     );
 }
 
@@ -993,8 +997,8 @@ fn every_setting_is_ranked_by_correctness_to_begin_with_except_the_batches() {
         if wanted.needs_the_answers_run() {
             assert_eq!(
                 desk.optimizing.sweep.sets.len(),
-                8,
-                "{} marks answers, so it runs the sets",
+                mcf_optimize::corpus::Set::short().len(),
+                "{} marks answers, so it asks the questions",
                 dial.label()
             );
         } else {

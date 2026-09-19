@@ -112,6 +112,13 @@ impl Set {
             .collect()
     }
 
+    /// The code sets: sixty-four programs to write, marked by running them.
+    ///
+    /// Retired as the measure of correctness — the short questions are what a marked
+    /// sweep asks now — and kept, because they are a harder test than the short ones and
+    /// readings taken against them are in the record. A timed trial still reads and
+    /// writes against the first of them, where what is asked matters only in being the
+    /// same every time.
     #[must_use]
     pub fn all() -> Vec<Self> {
         SETS.iter()

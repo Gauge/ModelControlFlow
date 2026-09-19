@@ -867,7 +867,10 @@ impl Optimizing {
 
     fn lay_out_the_run(&mut self) {
         if self.measure.needs_the_answers_run() {
-            self.sweep.sets = mcf_optimize::corpus::Set::all()
+            // The short corpus: a thousand questions with one right answer apiece. A
+            // score off eight hard programs moves in lumps, and a setting that makes
+            // answers a little worse cannot be seen through a score like that.
+            self.sweep.sets = mcf_optimize::corpus::Set::short()
                 .iter()
                 .map(|set| set.number)
                 .collect();
