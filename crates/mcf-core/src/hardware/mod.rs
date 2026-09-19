@@ -4,7 +4,7 @@ pub mod headroom;
 mod load;
 mod nvml;
 mod processor;
-mod route_amdgpu;
+pub mod route_amdgpu;
 mod route_files;
 mod scheduling;
 mod space;

@@ -396,10 +396,18 @@ fn card_number(card: &str, leaf: &str) -> Option<u64> {
 
 fn card_memory(card: &str, driver: &str) -> (Option<u64>, Option<u64>) {
     match driver {
-        "amdgpu" | "radeon" => (
-            card_number(card, "mem_info_vram_used"),
-            card_number(card, "mem_info_vram_total"),
-        ),
+        // Asked of the pool the card actually draws on, which on a card that carves its
+        // memory out of system memory is not the dedicated one. Reading the carve-out had
+        // this machine's Strix Halo reported as having half a gigabyte of graphics memory,
+        // all of it spoken for, while ninety-five gigabytes of model sat in the pool
+        // nobody was asking about.
+        "amdgpu" | "radeon" => {
+            let device = std::path::Path::new("/sys/class/drm")
+                .join(card)
+                .join("device");
+            let (total, used) = mcf_core::hardware::route_amdgpu::memory_of(&device);
+            (used, total)
+        }
         "i915" | "xe" => {
             let total = card_number(card, "lmem_total_bytes");
             let available = card_number(card, "lmem_avail_bytes");

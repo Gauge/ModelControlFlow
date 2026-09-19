@@ -100,14 +100,26 @@ impl Route for Amdgpu {
     }
 }
 
-fn memory_of(device: &Path) -> (Option<u64>, Option<u64>) {
+/// How much memory an AMD card has, and how much of it is spoken for.
+///
+/// A card that carves its memory out of system memory is asked about the pool it actually
+/// draws on. On a Strix Halo the dedicated carve-out is half a gigabyte and the pool the
+/// engine fills is a hundred and eighteen — so reading the carve-out reports a machine
+/// with no room on it while ninety-five gigabytes of model sit in the other pool.
+#[must_use]
+pub fn memory_of(device: &Path) -> (Option<u64>, Option<u64>) {
     let figure = |name: &str| read_trimmed(&device.join(name)).and_then(|text| text.parse().ok());
-    let carves_out = std::fs::metadata(device.join("uma")).is_ok();
-    if carves_out {
+    if carves_out_of_system_memory(device) {
         (figure("mem_info_gtt_total"), figure("mem_info_gtt_used"))
     } else {
         (figure("mem_info_vram_total"), figure("mem_info_vram_used"))
     }
+}
+
+/// Whether this card's memory is system memory it has been lent.
+#[must_use]
+pub fn carves_out_of_system_memory(device: &Path) -> bool {
+    std::fs::metadata(device.join("uma")).is_ok()
 }
 
 fn temperature_of(device: &Path) -> Option<u32> {
