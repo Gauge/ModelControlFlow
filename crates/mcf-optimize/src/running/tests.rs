@@ -677,3 +677,142 @@ fn the_clock_beside_a_paused_sweep_counts_work_rather_than_waiting() {
     running.stop();
     settled(&mut running);
 }
+
+/// An engine that says it is healthy and then, once a trial arrives, says nothing at all —
+/// which is what a real one looks like for as long as it is working on a prompt.
+type SilentEngine = (
+    u16,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+    std::sync::mpsc::Receiver<()>,
+);
+
+fn a_silent_engine() -> SilentEngine {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a loopback port is free");
+    let port = listener.local_addr().expect("the port is known").port();
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let over = std::sync::Arc::clone(&done);
+    // Says when a trial has actually arrived, so the test stops the sweep while it is
+    // genuinely inside one rather than before it got there.
+    let (arrived, trial) = std::sync::mpsc::channel();
+    let _server = std::thread::spawn(move || {
+        for held in listener.incoming() {
+            if over.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+            let Ok(mut held) = held else { return };
+            let mut buffer = [0_u8; 2048];
+            let _read = held.read(&mut buffer);
+            let asked = String::from_utf8_lossy(&buffer).into_owned();
+            if asked.starts_with("GET /health") {
+                let body = b"{\"status\":\"ok\"}";
+                let _wrote = held.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+                let _wrote = held.write_all(body);
+                let _flushed = held.flush();
+                continue;
+            }
+            // A trial. Hold it open and say nothing, so the sweep is genuinely inside a
+            // trial when it is told to stop.
+            let _wrote =
+                held.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
+            let _flushed = held.flush();
+            let _told = arrived.send(());
+            while !over.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            return;
+        }
+    });
+    (port, done, trial)
+}
+
+#[test]
+fn a_sweep_stopped_inside_a_trial_writes_nothing_down_for_it() {
+    let scratch = Scratch::new("stopped-mid-trial");
+    let (port, done, trial) = a_silent_engine();
+    let held: Vec<Step> = vec![Step::Whole(256), Step::Whole(512)];
+    let course = Course::laid_out(
+        under(),
+        Way::ByHand,
+        Dial::MicroBatch,
+        &held,
+        &[1],
+        1,
+        Measure::Speed,
+    );
+    let mut running = Running::begun(
+        Orders {
+            switch: false,
+            endpoint: Endpoint {
+                port,
+                key: None,
+                // Long, so that a sweep which only noticed a stop between trials would
+                // sit here rather than finishing.
+                patience: std::time::Duration::from_secs(3600),
+            },
+            under: under(),
+            dial: Dial::MicroBatch,
+            ceiling: 64,
+            named: Vec::new(),
+            mark: false,
+            room: scratch.path.join("marking"),
+            ready_within: std::time::Duration::from_secs(5),
+        },
+        course,
+        Ledger::open(&scratch.at()).expect("opens"),
+        std::boxed::Box::new(move |_step, _along| Ok(port)),
+        || "now".to_owned(),
+    );
+
+    // Wait for the engine to say a trial has reached it. Without this the sweep might be
+    // stopped before it ever asked anything, and the test would pass whatever the code did.
+    let reached = trial.recv_timeout(std::time::Duration::from_secs(15));
+    let _moved = running.hear();
+    assert!(
+        reached.is_ok(),
+        "no trial ever reached the engine, so this proves nothing: {:?}",
+        running.refused
+    );
+    assert!(
+        running.refused.is_none(),
+        "the sweep failed before it could be stopped: {:?}",
+        running.refused
+    );
+
+    let began = std::time::Instant::now();
+    running.stop();
+    settled(&mut running);
+    let waited = began.elapsed();
+    done.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    assert!(
+        running.refused.is_none(),
+        "stopping a sweep is not a failure: {:?}",
+        running.refused
+    );
+    assert!(running.finished, "it took {waited:?} and never finished");
+    assert!(
+        waited < std::time::Duration::from_secs(8),
+        "it took {waited:?} to stop, inside a trial with an hour of patience left"
+    );
+    assert_eq!(
+        running.taken, 0,
+        "a trial cut off part way through is not a reading"
+    );
+    let ledger = Ledger::open(&scratch.at()).expect("opens");
+    assert!(
+        ledger.rows().is_empty(),
+        "an abandoned trial was written to the ledger: {:?}",
+        ledger.rows()
+    );
+    assert!(
+        running.report.by_step().is_empty(),
+        "an abandoned trial reached the report"
+    );
+}

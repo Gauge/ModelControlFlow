@@ -12,6 +12,12 @@ use crate::reading::{Ending, Reading};
 
 const LOOPBACK: &str = "127.0.0.1";
 const READ_AT_A_TIME: usize = 8192;
+
+/// How long a read waits before coming back empty-handed so the stop flag can be looked
+/// at. It is not how long a trial may take — `Endpoint::patience` is still the whole
+/// trial's deadline, timed here rather than left to the socket. A socket timeout of two
+/// hours meant a sweep asked to stop could sit in one `read` for two hours.
+const STOP_TICK: Duration = Duration::from_millis(200);
 const CHECKED_EVERY: usize = 200;
 
 /// How often a trial says how far it has got. Often enough to look alive, seldom enough
@@ -260,10 +266,20 @@ pub fn is_ready(port: u16) -> bool {
     said.contains("\"status\":\"ok\"")
 }
 
-pub fn ready_within(port: u16, patience: Duration, mut along: impl FnMut(u64)) -> bool {
+pub fn ready_within(
+    port: u16,
+    patience: Duration,
+    mut along: impl FnMut(u64),
+    stop: &dyn Fn() -> bool,
+) -> bool {
     let began = Instant::now();
     let mut told = 0;
     while began.elapsed() < patience {
+        // Waiting out a re-hold is the other place a stop used to go unheard: holding a
+        // large model again can take minutes.
+        if stop() {
+            return false;
+        }
         if is_ready(port) {
             return true;
         }
@@ -282,7 +298,7 @@ fn sent_to(endpoint: &Endpoint, asked: &Asked) -> Result<TcpStream, Failure> {
     let mut connection = TcpStream::connect((LOOPBACK, endpoint.port))
         .map_err(|error| unreachable(endpoint.port, &error.to_string()))?;
     connection
-        .set_read_timeout(Some(endpoint.patience))
+        .set_read_timeout(Some(STOP_TICK))
         .map_err(|error| unreachable(endpoint.port, &error.to_string()))?;
     let bearer = endpoint.key.as_ref().map_or_else(String::new, |key| {
         format!("Authorization: Bearer {key}\r\n")
@@ -299,11 +315,117 @@ fn sent_to(endpoint: &Endpoint, asked: &Asked) -> Result<TcpStream, Failure> {
     Ok(connection)
 }
 
+/// What a trial came to.
+///
+/// `Cut` is not a failure and not a reading: the sweep was asked to stop while this trial
+/// was still running, so there is nothing to write down. It is its own case precisely so
+/// that no caller can mistake a half-finished trial for a measurement.
+#[derive(Debug)]
+pub enum Outcome {
+    Said(Said),
+    Cut,
+}
+
+/// What one turn of the read loop got.
+enum Got {
+    Bytes(usize),
+    /// The tick ran out with nothing on the wire, which is what a model thinking looks
+    /// like. Read again.
+    Again,
+    /// Asked to stop, or out of patience.
+    Done(Option<String>),
+}
+
+/// One read, with the stop flag looked at whenever the wire goes quiet.
+///
+/// The socket's own timeout is a short tick rather than the trial's whole patience, so a
+/// sweep asked to stop is never more than that tick away from noticing.
+fn read_once(
+    connection: &mut TcpStream,
+    into: &mut [u8],
+    since: Instant,
+    patience: Duration,
+    give_up: &dyn Fn() -> bool,
+) -> Got {
+    if give_up() {
+        return Got::Done(None);
+    }
+    match connection.read(into) {
+        Ok(0) => Got::Done(None),
+        Ok(read) => Got::Bytes(read),
+        // A signal arriving in this process interrupts a blocking read. The window samples
+        // the machine once a second while a sweep runs, and sampling starts a child, so
+        // this happens often. It is not the end of anything: read again.
+        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => Got::Again,
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            if give_up() {
+                return Got::Done(None);
+            }
+            if since.elapsed() >= patience {
+                return Got::Done(Some(format!(
+                    "the engine said nothing for {} seconds",
+                    patience.as_secs()
+                )));
+            }
+            Got::Again
+        }
+        Err(error) => Got::Done(Some(error.to_string())),
+    }
+}
+
+/// Everything one read loop gathered, before it is turned into a reading.
+struct Gathered {
+    answer: String,
+    produced: u64,
+    thinking: usize,
+    counted: Option<u64>,
+    read_in: Option<u64>,
+    whole: String,
+    ending: Ending,
+    why: Option<String>,
+    cut_short: Option<String>,
+}
+
+/// What the trial came to, from what the loop gathered: which figure is the one being
+/// timed, and how it ended.
+fn said_of(asked: &Asked, held: Gathered) -> Said {
+    let counted_now = if asked.dial.times_reading_the_prompt() && asked.timing {
+        held.read_in.unwrap_or(0)
+    } else {
+        held.counted.unwrap_or(held.produced)
+    };
+    let (ending, why) = came_to(
+        asked,
+        Ended {
+            counted: counted_now,
+            produced: held.produced,
+            thinking: held.thinking,
+            answered: !held.answer.trim().is_empty(),
+        },
+        (held.ending, held.why, held.cut_short),
+        &held.whole,
+    );
+    Said {
+        answer: held.answer,
+        produced: held.produced,
+        ending,
+        why,
+        counted: held.counted,
+        read_in: held.read_in,
+    }
+}
+
 pub fn ask(
     endpoint: &Endpoint,
     asked: &Asked,
     along: &mut dyn FnMut(u64),
-) -> Result<Said, Failure> {
+    give_up: &dyn Fn() -> bool,
+) -> Result<Outcome, Failure> {
     let mut connection = sent_to(endpoint, asked)?;
     let started = Instant::now();
     let mut held = [0_u8; READ_AT_A_TIME];
@@ -318,15 +440,23 @@ pub fn ask(
     let mut read_in: Option<u64> = None;
     let mut cut_short = None;
     'reading: loop {
-        let read = match connection.read(&mut held) {
-            Ok(0) => break,
-            Ok(read) => read,
-            // A signal arriving in this process interrupts a blocking read. The window
-            // samples the machine once a second while a sweep runs, and sampling starts a
-            // child, so this happens often. It is not the end of anything: read again.
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(error) => {
-                cut_short = Some(error.to_string());
+        let read = match read_once(
+            &mut connection,
+            &mut held,
+            started,
+            endpoint.patience,
+            give_up,
+        ) {
+            Got::Bytes(read) => read,
+            Got::Again => continue,
+            Got::Done(why) => {
+                // Asked to stop part way through: close the connection so the engine is
+                // not left producing tokens nobody will read, and say nothing was measured.
+                if why.is_none() && give_up() {
+                    let _closed = connection.shutdown(std::net::Shutdown::Both);
+                    return Ok(Outcome::Cut);
+                }
+                cut_short = why;
                 break;
             }
         };
@@ -382,31 +512,21 @@ pub fn ask(
             }
         }
     }
-    let counted_now = if asked.dial.times_reading_the_prompt() && asked.timing {
-        read_in.unwrap_or(0)
-    } else {
-        counted.unwrap_or(produced)
-    };
-    (ending, why) = came_to(
+    let _elapsed = started.elapsed();
+    Ok(Outcome::Said(said_of(
         asked,
-        Ended {
-            counted: counted_now,
+        Gathered {
+            answer,
             produced,
             thinking,
-            answered: !answer.trim().is_empty(),
+            counted,
+            read_in,
+            whole,
+            ending,
+            why,
+            cut_short,
         },
-        (ending, why, cut_short),
-        &whole,
-    );
-    let _elapsed = started.elapsed();
-    Ok(Said {
-        answer,
-        produced,
-        ending,
-        why,
-        counted,
-        read_in,
-    })
+    )))
 }
 
 #[must_use]

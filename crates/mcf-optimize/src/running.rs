@@ -106,6 +106,8 @@ struct Doing {
 enum Stopped {
     Gone,
     Refused(String),
+    /// Asked to stop while this trial was still running. Nothing is written down for it.
+    Cut,
 }
 
 fn held_again(
@@ -113,6 +115,7 @@ fn held_again(
     host: &Hosting,
     step: Step,
     ready_within: Duration,
+    give_up: &dyn Fn() -> bool,
 ) -> Result<u16, Stopped> {
     let said = step.said();
     if send
@@ -128,11 +131,19 @@ fn held_again(
         )));
     };
     let port = host(step, &mut along).map_err(Stopped::Refused)?;
-    let ready = crate::trial::ready_within(port, ready_within, |seconds| {
-        along(format!("waiting for the engine to answer, {seconds}s"));
-    });
+    let ready = crate::trial::ready_within(
+        port,
+        ready_within,
+        |seconds| {
+            along(format!("waiting for the engine to answer, {seconds}s"));
+        },
+        give_up,
+    );
     if ready {
         return Ok(port);
+    }
+    if give_up() {
+        return Err(Stopped::Cut);
     }
     Err(Stopped::Refused(format!(
         "the engine was held on port {port} but never started answering — a sweep will not \
@@ -140,24 +151,36 @@ fn held_again(
     )))
 }
 
-fn answered(doing: &mut Doing, asked: &Asked, step: Step) -> Result<crate::trial::Said, Stopped> {
+fn answered(
+    doing: &mut Doing,
+    asked: &Asked,
+    step: Step,
+) -> Result<crate::trial::Outcome, Stopped> {
+    let flag = Arc::clone(&doing.asked_to_stop);
+    let give_up = move || flag.load(Ordering::Relaxed);
     let telling = doing.send.clone();
     let mut along = move |held: u64| {
         let _sent = telling.send(Heard::Producing(held));
     };
-    let first = match ask(&doing.endpoint, asked, &mut along) {
-        Ok(said) => return Ok(said),
+    let first = match ask(&doing.endpoint, asked, &mut along, &give_up) {
+        Ok(outcome) => return Ok(outcome),
         Err(failure) => failure.to_string(),
     };
+    // The engine dropped the connection. If that happened because the sweep was stopping,
+    // there is nothing to hold again for.
+    if give_up() {
+        return Err(Stopped::Cut);
+    }
     doing
         .send
         .send(Heard::Holding(
             "the engine stopped answering — holding it again".to_owned(),
         ))
         .map_err(|_gone| Stopped::Gone)?;
-    match held_again(&doing.send, &doing.host, step, doing.ready_within) {
+    match held_again(&doing.send, &doing.host, step, doing.ready_within, &give_up) {
         Ok(port) => doing.endpoint.port = port,
         Err(Stopped::Gone) => return Err(Stopped::Gone),
+        Err(Stopped::Cut) => return Err(Stopped::Cut),
         Err(Stopped::Refused(why)) => {
             return Err(Stopped::Refused(format!(
                 "{first}; holding it again did not work either: {why}"
@@ -168,7 +191,10 @@ fn answered(doing: &mut Doing, asked: &Asked, step: Step) -> Result<crate::trial
     let mut along = move |held: u64| {
         let _sent = telling.send(Heard::Producing(held));
     };
-    ask(&doing.endpoint, asked, &mut along).map_err(|again| {
+    ask(&doing.endpoint, asked, &mut along, &give_up).map_err(|again| {
+        if give_up() {
+            return Stopped::Cut;
+        }
         Stopped::Refused(format!("the engine stopped answering twice over: {again}"))
     })
 }
@@ -218,6 +244,32 @@ fn waited_out(doing: &Doing) -> bool {
     doing.send.send(Heard::Paused(false)).is_ok() && !doing.asked_to_stop.load(Ordering::Relaxed)
 }
 
+enum Held {
+    Ready,
+    /// The window has gone, so there is nobody left to report to.
+    Gone,
+    /// Stopped, or refused — either way this sweep is done.
+    Over,
+}
+
+/// Hold the model again at a value, for the dials that are launch flags.
+fn hold_for(doing: &mut Doing, step: Step) -> Held {
+    let flag = Arc::clone(&doing.asked_to_stop);
+    let give_up = move || flag.load(Ordering::Relaxed);
+    match held_again(&doing.send, &doing.host, step, doing.ready_within, &give_up) {
+        Ok(port) => {
+            doing.endpoint.port = port;
+            Held::Ready
+        }
+        Err(Stopped::Gone) => Held::Gone,
+        Err(Stopped::Cut) => Held::Over,
+        Err(Stopped::Refused(why)) => {
+            let _sent = doing.send.send(Heard::Refused(why));
+            Held::Over
+        }
+    }
+}
+
 fn sweeping(mut doing: Doing) {
     let mut held_at: Option<Step> = None;
     loop {
@@ -251,16 +303,10 @@ fn sweeping(mut doing: Doing) {
             return;
         }
         if needs_a_fresh_hold(doing.dial, held_at, spot.step) {
-            match held_again(&doing.send, &doing.host, spot.step, doing.ready_within) {
-                Ok(port) => {
-                    doing.endpoint.port = port;
-                    held_at = Some(spot.step);
-                }
-                Err(Stopped::Gone) => return,
-                Err(Stopped::Refused(why)) => {
-                    let _sent = doing.send.send(Heard::Refused(why));
-                    break;
-                }
+            match hold_for(&mut doing, spot.step) {
+                Held::Ready => held_at = Some(spot.step),
+                Held::Gone => return,
+                Held::Over => break,
             }
         }
         let timed = !doing.course.measure().needs_the_answers_run();
@@ -274,7 +320,10 @@ fn sweeping(mut doing: Doing) {
         let asked = trial_for(&doing, spot, set, timed);
         let began = Instant::now();
         let said = match answered(&mut doing, &asked, spot.step) {
-            Ok(said) => said,
+            Ok(crate::trial::Outcome::Said(said)) => said,
+            // Cut off part way through. Nothing below this line runs, so nothing about
+            // this trial reaches the ledger, the report or the window.
+            Ok(crate::trial::Outcome::Cut) | Err(Stopped::Cut) => break,
             Err(Stopped::Gone) => return,
             Err(Stopped::Refused(why)) => {
                 let _sent = doing.send.send(Heard::Refused(why));
@@ -283,6 +332,9 @@ fn sweeping(mut doing: Doing) {
         };
         held_at = Some(spot.step);
         let milliseconds = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
+        if doing.asked_to_stop.load(Ordering::Relaxed) {
+            break;
+        }
         let marking = doing.mark && !timed;
         let (judged, unmarked) = judged_by(
             marking,
@@ -427,6 +479,11 @@ impl Running {
         }
     }
 
+    /// Stop where it stands, inside the trial it is in.
+    ///
+    /// The trial under way is abandoned, not finished: its connection is closed and
+    /// nothing about it is written to the ledger, the report or the window. Trials that
+    /// had already finished are measurements and stay where they are.
     pub fn stop(&self) {
         // Cleared, so that a sweep paused and then stopped is not left asleep waiting for
         // a carry-on that is never coming.
@@ -439,9 +496,9 @@ impl Running {
         self.stop.load(Ordering::Relaxed)
     }
 
-    /// Ask the sweep to stop where it stands, after the trial it is in. What it has
-    /// measured is already in the ledger, so nothing is lost by waiting and nothing is
-    /// repeated by carrying on.
+    /// Ask the sweep to wait after the trial it is in. Unlike a stop, a pause lets the
+    /// trial under way finish, because a reading cut in half is not a reading and the
+    /// point of pausing is to come back to where you were.
     pub fn pause(&self) {
         self.wait.store(true, Ordering::Relaxed);
     }

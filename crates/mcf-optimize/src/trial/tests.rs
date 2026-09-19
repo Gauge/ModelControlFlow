@@ -154,7 +154,12 @@ fn nothing_is_ready_on_a_port_with_nothing_behind_it() {
 #[test]
 fn waiting_for_a_port_that_never_answers_gives_up_rather_than_waiting_forever() {
     let began = std::time::Instant::now();
-    let ready = super::ready_within(1, std::time::Duration::from_millis(600), |_seconds| {});
+    let ready = super::ready_within(
+        1,
+        std::time::Duration::from_millis(600),
+        |_seconds| {},
+        &|| false,
+    );
     assert!(!ready);
     assert!(
         began.elapsed() < std::time::Duration::from_secs(20),
@@ -540,5 +545,77 @@ fn turning_thinking_off_is_asked_for_the_way_each_model_answers_to() {
     assert!(
         asking.get("reasoning_budget_tokens").is_none(),
         "and nothing cuts it short"
+    );
+}
+
+/// A server that accepts a connection and then says nothing at all, which is what an
+/// engine looks like while it is thinking.
+fn a_silent_engine() -> (u16, std::sync::mpsc::Sender<()>) {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a loopback port is free");
+    let port = listener.local_addr().expect("the port is known").port();
+    let (close, closed) = std::sync::mpsc::channel();
+    let _server = std::thread::spawn(move || {
+        let Ok((held, _from)) = listener.accept() else {
+            return;
+        };
+        // Hold the connection open, saying nothing, until the test is done with it.
+        let _waited = closed.recv_timeout(std::time::Duration::from_secs(30));
+        drop(held);
+    });
+    (port, close)
+}
+
+#[test]
+fn a_trial_asked_to_stop_gives_up_where_it_stands_rather_than_running_to_the_end() {
+    let (port, close) = a_silent_engine();
+    let endpoint = super::Endpoint {
+        port,
+        key: None,
+        // The deadline a trial would otherwise wait out. Before stopping was looked at
+        // inside the read, a sweep asked to stop sat here for the whole of it.
+        patience: std::time::Duration::from_secs(7200),
+    };
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = std::sync::Arc::clone(&stop);
+    let _asked = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    let began = std::time::Instant::now();
+    let outcome = super::ask(
+        &endpoint,
+        &asked(Dial::MicroBatch, Step::Whole(512)),
+        &mut |_along| {},
+        &|| stop.load(std::sync::atomic::Ordering::Relaxed),
+    );
+    let waited = began.elapsed();
+    let _closed = close.send(());
+    match outcome {
+        Ok(super::Outcome::Cut) => {}
+        Ok(super::Outcome::Said(said)) => {
+            panic!("a trial cut off part way through came back as a reading: {said:?}")
+        }
+        Err(failure) => panic!("a stop is not a failure: {failure}"),
+    }
+    assert!(
+        waited < std::time::Duration::from_secs(5),
+        "it took {waited:?} to notice a stop, against a patience of two hours"
+    );
+}
+
+#[test]
+fn waiting_for_a_hold_gives_up_at_once_when_the_sweep_is_stopped() {
+    let began = std::time::Instant::now();
+    let ready = super::ready_within(
+        1,
+        std::time::Duration::from_secs(600),
+        |_seconds| {},
+        &|| true,
+    );
+    assert!(!ready, "a stopped sweep does not wait for an engine");
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(2),
+        "it waited {:?} for a hold it had been told to abandon",
+        began.elapsed()
     );
 }
