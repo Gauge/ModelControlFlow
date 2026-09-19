@@ -1890,6 +1890,9 @@ pub enum Region {
     Checks,
     Server,
     Prompt,
+    /// The optimize page's rail. Its own region because the rail scrolls apart from the
+    /// column of readings beside it.
+    Sweep,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4701,8 +4704,13 @@ impl Desk {
 
     fn sweeping_over(&mut self, exactly: Option<&[mcf_optimize::ledger::At]>) {
         if let Some(run) = self.optimizing.run.as_ref() {
-            run.stop();
-            self.optimizing.running = false;
+            // A second press while it is already stopping is not a request to start again:
+            // the worker is still winding down and `running` must stay true until it has,
+            // or the button offers to carry on a sweep that is in the act of being thrown
+            // away.
+            if !run.stopping() {
+                run.stop();
+            }
             return;
         }
         self.optimizing.refused = None;
