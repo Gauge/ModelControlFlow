@@ -30,6 +30,8 @@ impl Drop for Scratch {
 
 fn under() -> Under {
     Under {
+        experts: "with the model".to_owned(),
+        threads_for_a_prompt: 8,
         model: "/m/a-model-Q4_K_M.gguf".to_owned(),
         model_bytes: 16_000_000_000,
         engine: "llama.cpp-vulkan".to_owned(),

@@ -356,11 +356,24 @@ fn a_timed_run_that_stopped_early_is_not_offered_as_a_rate() {
 }
 
 #[test]
-fn only_the_batches_cannot_change_an_answer_and_the_rest_are_marked_by_default() {
-    // How many prompt tokens are handed over at a time, and how many go through the
-    // device in one pass. Neither changes which tokens come back, so neither is ranked by
-    // what the answer said.
-    for held in [Dial::MicroBatch, Dial::Batch] {
+fn only_the_speed_settings_are_ranked_by_speed_and_the_rest_are_marked() {
+    // How many prompt tokens are handed over at a time, how many go through the device in
+    // one pass, where the experts sit, whether flash attention is on, and how many
+    // threads read a prompt. None of them is
+    // a setting anybody moves to change an answer — what they move is where and how fast
+    // the same arithmetic happens — so none opens ranked by what the answer said.
+    //
+    // Not the same as a promise that the tokens are identical: work done in a different
+    // order or on a different device rounds differently, and a sampled token can move
+    // because of it. What is claimed here is what the setting is for, which is what
+    // decides how a sweep of it should be read.
+    for held in [
+        Dial::MicroBatch,
+        Dial::Batch,
+        Dial::Experts,
+        Dial::FlashAttention,
+        Dial::ThreadsForAPrompt,
+    ] {
         assert!(
             held.cannot_change_an_answer(),
             "{} only changes how fast the same tokens come back",
@@ -373,7 +386,7 @@ fn only_the_batches_cannot_change_an_answer_and_the_rest_are_marked_by_default()
         );
     }
     for dial in Dial::ALL {
-        if matches!(dial, Dial::MicroBatch | Dial::Batch) {
+        if dial.cannot_change_an_answer() {
             continue;
         }
         assert!(

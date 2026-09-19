@@ -41,6 +41,11 @@ pub struct Under {
     pub ubatch: u32,
     pub cache: String,
     pub flash_attention: bool,
+    /// Where this hold put the experts, and how many threads it read a prompt with. Both
+    /// are conditions a reading was taken under, so both are written down: a rate that
+    /// cannot say where the work was done is a rate nobody can repeat.
+    pub experts: String,
+    pub threads_for_a_prompt: u32,
     pub draft_head: bool,
     pub draft_depth: Option<u32>,
     pub thinking_budget: Option<u32>,
@@ -64,6 +69,10 @@ impl Under {
             Dial::TopK => held.top_k = None,
             Dial::MicroBatch => held.ubatch = 0,
             Dial::Batch => held.batch = 0,
+            Dial::CacheWidth => held.cache = String::new(),
+            Dial::Experts => held.experts = String::new(),
+            Dial::FlashAttention => held.flash_attention = false,
+            Dial::ThreadsForAPrompt => held.threads_for_a_prompt = 0,
             Dial::DraftDepth => held.draft_depth = None,
         }
         held
@@ -83,6 +92,11 @@ impl Under {
             ("ubatch", Value::Integer(self.ubatch.into())),
             ("cache", Value::text(self.cache.clone())),
             ("flash_attention", Value::Bool(self.flash_attention)),
+            ("experts", Value::text(self.experts.clone())),
+            (
+                "threads_for_a_prompt",
+                Value::Integer(self.threads_for_a_prompt.into()),
+            ),
             ("draft_head", Value::Bool(self.draft_head)),
             ("draft_depth", count(self.draft_depth)),
             ("thinking_budget", count(self.thinking_budget)),
@@ -133,6 +147,8 @@ impl Under {
             ubatch: small("ubatch").unwrap_or(0),
             cache: text("cache"),
             flash_attention: yes("flash_attention"),
+            experts: text("experts"),
+            threads_for_a_prompt: small("threads_for_a_prompt").unwrap_or(0),
             draft_head: yes("draft_head"),
             draft_depth: small("draft_depth"),
             thinking_budget: small("thinking_budget"),

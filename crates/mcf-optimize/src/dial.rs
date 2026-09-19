@@ -6,6 +6,10 @@ pub enum Dial {
     #[default]
     MicroBatch,
     Batch,
+    CacheWidth,
+    Experts,
+    FlashAttention,
+    ThreadsForAPrompt,
     ThinkingLevel,
     ThinkingBudget,
     Temperature,
@@ -15,9 +19,13 @@ pub enum Dial {
 }
 
 impl Dial {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 12] = [
         Self::MicroBatch,
         Self::Batch,
+        Self::CacheWidth,
+        Self::Experts,
+        Self::FlashAttention,
+        Self::ThreadsForAPrompt,
         Self::ThinkingLevel,
         Self::ThinkingBudget,
         Self::Temperature,
@@ -42,6 +50,10 @@ impl Dial {
             Self::TopK => "Top-k",
             Self::MicroBatch => "Micro-batch",
             Self::Batch => "Prompt batch",
+            Self::CacheWidth => "Cache width",
+            Self::Experts => "Experts",
+            Self::FlashAttention => "Flash attention",
+            Self::ThreadsForAPrompt => "Threads for reading a prompt",
             Self::DraftDepth => "Draft depth",
         }
     }
@@ -50,7 +62,14 @@ impl Dial {
     pub const fn reloads_the_engine(self) -> bool {
         matches!(
             self,
-            Self::ThinkingBudget | Self::MicroBatch | Self::Batch | Self::DraftDepth
+            Self::ThinkingBudget
+                | Self::MicroBatch
+                | Self::Batch
+                | Self::DraftDepth
+                | Self::CacheWidth
+                | Self::Experts
+                | Self::FlashAttention
+                | Self::ThreadsForAPrompt
         )
     }
 
@@ -60,8 +79,15 @@ impl Dial {
             Self::ThinkingBudget => "tokens",
             Self::MicroBatch => "tokens per pass",
             Self::Batch => "tokens a batch",
+            Self::ThreadsForAPrompt => "threads",
             Self::DraftDepth => "drafted tokens",
-            Self::ThinkingLevel | Self::Temperature | Self::TopP | Self::TopK => "",
+            Self::CacheWidth
+            | Self::Experts
+            | Self::FlashAttention
+            | Self::ThinkingLevel
+            | Self::Temperature
+            | Self::TopP
+            | Self::TopK => "",
         }
     }
 
@@ -73,6 +99,10 @@ impl Dial {
             | Self::MicroBatch
             | Self::Batch
             | Self::DraftDepth
+            | Self::CacheWidth
+            | Self::Experts
+            | Self::FlashAttention
+            | Self::ThreadsForAPrompt
             | Self::TopK => Scale::Whole,
             Self::Temperature | Self::TopP => Scale::Thousandths,
         }
@@ -87,7 +117,9 @@ impl Dial {
             Self::TopP => Span::new(500, 1000, 10),
             Self::TopK => Span::new(0, 200, 5),
             Self::MicroBatch | Self::Batch => Span::new(64, 32_768, 256),
-            Self::DraftDepth => Span::new(0, 8, 1),
+            Self::Experts | Self::FlashAttention => Span::new(0, 1, 1),
+            Self::ThreadsForAPrompt => Span::new(1, 256, 1),
+            Self::DraftDepth | Self::CacheWidth => Span::new(0, 8, 1),
         }
     }
 
@@ -99,12 +131,16 @@ impl Dial {
     pub const fn climbs_from(self) -> u32 {
         match self {
             Self::MicroBatch | Self::Batch => 256,
+            Self::ThreadsForAPrompt => 4,
             Self::ThinkingBudget
             | Self::ThinkingLevel
             | Self::Temperature
             | Self::TopP
             | Self::TopK
-            | Self::DraftDepth => self.span().floor,
+            | Self::DraftDepth
+            | Self::CacheWidth
+            | Self::Experts
+            | Self::FlashAttention => self.span().floor,
         }
     }
 
@@ -128,7 +164,10 @@ impl Dial {
             Self::Temperature => Climb::Evenly(200),
             Self::TopP => Climb::Evenly(100),
             Self::TopK => Climb::Evenly(40),
-            Self::ThinkingLevel => Climb::Evenly(1),
+            Self::ThinkingLevel | Self::CacheWidth | Self::Experts | Self::FlashAttention => {
+                Climb::Evenly(1)
+            }
+            Self::ThreadsForAPrompt => Climb::Doubling,
         }
     }
 
@@ -179,6 +218,11 @@ impl Dial {
                 .map(Step::Whole)
                 .collect(),
             Self::DraftDepth => [0, 2, 3, 5].into_iter().map(Step::Whole).collect(),
+            // Every width the engine takes, because which one costs what is the question
+            // and a shortlist would be MCF answering it in advance.
+            Self::CacheWidth => (0..9).map(Step::Whole).collect(),
+            Self::Experts | Self::FlashAttention => (0..2).map(Step::Whole).collect(),
+            Self::ThreadsForAPrompt => [2, 4, 8, 16, 32].into_iter().map(Step::Whole).collect(),
         }
     }
 
@@ -188,6 +232,10 @@ impl Dial {
             Self::ThinkingBudget => Some("--reasoning-budget"),
             Self::MicroBatch => Some("--ubatch-size"),
             Self::Batch => Some("--batch-size"),
+            Self::CacheWidth => Some("--cache-type-k/v"),
+            Self::Experts => Some("--cpu-moe"),
+            Self::FlashAttention => Some("--flash-attn"),
+            Self::ThreadsForAPrompt => Some("--threads-batch"),
             Self::DraftDepth => Some("--spec-draft-n-max"),
             Self::ThinkingLevel | Self::Temperature | Self::TopP | Self::TopK => None,
         }
@@ -200,7 +248,14 @@ impl Dial {
             Self::TopP => Some("top_p"),
             Self::TopK => Some("top_k"),
             Self::ThinkingLevel => Some("reasoning_effort"),
-            Self::ThinkingBudget | Self::MicroBatch | Self::Batch | Self::DraftDepth => None,
+            Self::ThinkingBudget
+            | Self::MicroBatch
+            | Self::Batch
+            | Self::DraftDepth
+            | Self::CacheWidth
+            | Self::Experts
+            | Self::FlashAttention
+            | Self::ThreadsForAPrompt => None,
         }
     }
 
@@ -215,7 +270,14 @@ impl Dial {
     /// legitimate answer and not necessarily the same one — which is a thing worth marking.
     #[must_use]
     pub const fn cannot_change_an_answer(self) -> bool {
-        matches!(self, Self::MicroBatch | Self::Batch)
+        matches!(
+            self,
+            Self::MicroBatch
+                | Self::Batch
+                | Self::Experts
+                | Self::FlashAttention
+                | Self::ThreadsForAPrompt
+        )
     }
 
     /// What a sweep of this setting is ranked by before anybody says otherwise. Marking the
@@ -237,7 +299,23 @@ impl Dial {
     /// other way round. Timing the wrong one reads the same number back at every value.
     #[must_use]
     pub const fn times_reading_the_prompt(self) -> bool {
-        matches!(self, Self::MicroBatch | Self::Batch)
+        matches!(
+            self,
+            Self::MicroBatch | Self::Batch | Self::FlashAttention | Self::ThreadsForAPrompt
+        )
+    }
+
+    /// Whether this setting's values are places in a list rather than points on a scale.
+    ///
+    /// A cache width is not a bigger or smaller version of the width beside it — f16 and
+    /// bf16 are the same size and different arithmetic — and where the experts sit is two
+    /// places, not a range. Nothing like that is climbed: a search doubles or steps
+    /// towards better, which needs the values to be ordered, and these are only listed.
+    /// They are swept across every value instead, which is what a list of nine or two is
+    /// short enough to allow.
+    #[must_use]
+    pub fn values_are_a_list(self) -> bool {
+        self.is_named_by_the_model() || !self.own_words().is_empty()
     }
 
     #[must_use]
@@ -252,6 +330,13 @@ impl Dial {
 
     #[must_use]
     pub fn said_among(self, step: Step, named: &[String]) -> String {
+        if let Some(word) = self.own_words().get(
+            step.whole()
+                .and_then(|at| usize::try_from(at).ok())
+                .unwrap_or(usize::MAX),
+        ) {
+            return (*word).to_owned();
+        }
         if !self.is_named_by_the_model() {
             return step.said();
         }
@@ -260,8 +345,35 @@ impl Dial {
             .map_or_else(|| step.said(), Clone::clone)
     }
 
+    /// The words this setting's values go by, where they are words and MCF's own rather
+    /// than the model's.
+    ///
+    /// A cache width, where the experts sit and whether flash attention is on are not
+    /// numbers, and showing a person "2" where the engine will read "bf16" would be
+    /// showing them the index of the answer instead of the answer. The order is the order
+    /// of the values, so a step is a place in this list.
+    #[must_use]
+    pub const fn own_words(self) -> &'static [&'static str] {
+        match self {
+            Self::CacheWidth => &[
+                "f32", "f16", "bf16", "q8_0", "q5_1", "q5_0", "q4_1", "q4_0", "iq4_nl",
+            ],
+            Self::Experts => &["with the model", "on the processor"],
+            Self::FlashAttention => &["off", "on"],
+            _ => &[],
+        }
+    }
+
     #[must_use]
     pub fn read_among(self, typed: &str, named: &[String]) -> Option<Step> {
+        if let Some(at) = self
+            .own_words()
+            .iter()
+            .position(|word| word.eq_ignore_ascii_case(typed.trim()))
+            .and_then(|at| u32::try_from(at).ok())
+        {
+            return Some(Step::Whole(at));
+        }
         if !self.is_named_by_the_model() {
             return None;
         }

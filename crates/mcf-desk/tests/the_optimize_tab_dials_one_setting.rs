@@ -880,25 +880,32 @@ fn every_setting_a_sweep_can_move_lands_somewhere_when_it_is_taken_up() {
         let before = desk.settings.clone();
         desk.optimizing.sweep = mcf_optimize::dial::Sweep::on(dial);
         desk.optimizing.named = vec!["low".to_owned(), "high".to_owned()];
-        let step = dial.step_of(match dial.scale() {
-            mcf_optimize::dial::Scale::Whole => 1,
-            mcf_optimize::dial::Scale::Thousandths => 500,
-        });
-        desk.optimizing.settled = Some(step);
-        desk.act(Act::AdoptBest);
+        // More than one value, because for some settings one of them is what the hold is
+        // already under — a cache already f16 does not move when f16 is taken up, and
+        // that is the setting working rather than failing. What has to be true is that
+        // some value it could settle on lands somewhere.
+        let mut moved = false;
+        for value in [0_u32, 1, 2] {
+            let step = dial.step_of(match dial.scale() {
+                mcf_optimize::dial::Scale::Whole => value,
+                mcf_optimize::dial::Scale::Thousandths => value.saturating_mul(250),
+            });
+            desk.optimizing.settled = Some(step);
+            desk.act(Act::AdoptBest);
+            assert!(
+                desk.optimizing.settled.is_none(),
+                "{} left the question standing after it was answered",
+                dial.label()
+            );
+            assert!(
+                desk.optimizing.adopted.is_some(),
+                "{} said nothing about what it did",
+                dial.label()
+            );
+            moved |= desk.settings != before;
+        }
         assert!(
-            desk.optimizing.settled.is_none(),
-            "{} left the question standing after it was answered",
-            dial.label()
-        );
-        assert!(
-            desk.optimizing.adopted.is_some(),
-            "{} said nothing about what it did",
-            dial.label()
-        );
-        assert_ne!(
-            desk.settings,
-            before,
+            moved,
             "{} was taken up and nothing in the settings moved, so the sweep's answer went \
              nowhere",
             dial.label()
@@ -977,13 +984,13 @@ fn a_setting_the_model_names_is_never_searched_over_a_span_of_numbers() {
 /// A setting is worth moving because of what it does to the answers, so marking them is the
 /// default nearly everywhere. The one exception is the setting that cannot touch an answer.
 #[test]
-fn every_setting_is_ranked_by_correctness_to_begin_with_except_the_batches() {
+fn every_setting_is_ranked_by_correctness_to_begin_with_except_the_speed_settings() {
     for dial in Dial::ALL {
         let mut desk = desk();
         desk.act(Act::Dial(dial_at(&desk, dial)));
-        // Neither batch can change which tokens come back, only how fast they do, so
-        // neither opens ranked by what the answer said.
-        let wanted = if matches!(dial, Dial::MicroBatch | Dial::Batch) {
+        // A setting nobody moves to change an answer opens ranked by speed; everything
+        // else opens ranked by what the answers said.
+        let wanted = if dial.cannot_change_an_answer() {
             mcf_optimize::reading::Measure::Speed
         } else {
             mcf_optimize::reading::Measure::Correctness
@@ -1110,5 +1117,119 @@ mod the_two_batches_hold_together {
             "a batch shows in how fast a prompt is read, not in how fast an answer is \
              written, and timing the wrong one reads the same number back at every value"
         );
+    }
+}
+
+/// The four settings that were set by hand and never measured.
+mod settings_that_can_now_be_measured {
+    use super::{Act, Dial, desk, dial_at};
+
+    fn a_desk_with_settings() -> mcf_desk::Desk {
+        let mut desk = desk();
+        desk.settings = Some(mcf_serve::hosting::Hosting::recommended(
+            "llama.cpp",
+            "a card",
+            true,
+            32_768,
+            Some(8),
+            true,
+            None,
+        ));
+        desk
+    }
+
+    fn after(dial: Dial, value: u32) -> Option<mcf_serve::hosting::Hosting> {
+        let mut desk = a_desk_with_settings();
+        desk.act(Act::Dial(dial_at(&desk, dial)));
+        desk.optimizing.settled = Some(mcf_optimize::dial::Step::Whole(value));
+        desk.act(Act::AdoptBest);
+        desk.settings
+    }
+
+    /// Nine widths, and the words are the engine's own so a person reads a width rather
+    /// than the number of one.
+    #[test]
+    fn a_cache_width_is_swept_over_every_width_the_engine_takes() {
+        assert_eq!(Dial::CacheWidth.own_words().len(), 9);
+        assert_eq!(
+            Dial::CacheWidth.said_among(mcf_optimize::dial::Step::Whole(2), &[]),
+            "bf16"
+        );
+        let Some(held) = after(Dial::CacheWidth, 8) else {
+            return;
+        };
+        assert_eq!(held.cache, mcf_core::configuration::CacheType::Iq4Nl);
+    }
+
+    /// It changes what comes back, so it is marked rather than timed.
+    #[test]
+    fn a_cache_width_is_judged_by_the_answers() {
+        assert!(!Dial::CacheWidth.cannot_change_an_answer());
+        assert_eq!(
+            Dial::CacheWidth.ranked_by(),
+            mcf_optimize::reading::Measure::Correctness,
+            "a narrower cache is cheaper arithmetic on the same attention, and cheaper \
+             arithmetic is a different answer"
+        );
+    }
+
+    #[test]
+    fn where_the_experts_sit_is_two_places_and_both_are_tried() {
+        assert_eq!(
+            Dial::Experts.own_words(),
+            &["with the model", "on the processor"]
+        );
+        let Some(held) = after(Dial::Experts, 1) else {
+            return;
+        };
+        assert_eq!(
+            held.spread.experts,
+            mcf_serve::hosting::Experts::OnTheProcessor
+        );
+        assert!(Dial::Experts.cannot_change_an_answer());
+        assert!(
+            !Dial::Experts.times_reading_the_prompt(),
+            "expert weights are read once a token as an answer is written, which is where \
+             moving them shows"
+        );
+    }
+
+    #[test]
+    fn flash_attention_is_timed_against_reading_a_prompt() {
+        let Some(off) = after(Dial::FlashAttention, 0) else {
+            return;
+        };
+        assert!(!off.flash_attention);
+        let Some(on) = after(Dial::FlashAttention, 1) else {
+            return;
+        };
+        assert!(on.flash_attention);
+        assert!(
+            Dial::FlashAttention.times_reading_the_prompt(),
+            "it changes both, and the attention arithmetic is heaviest while a prompt is \
+             being read"
+        );
+    }
+
+    #[test]
+    fn threads_for_a_prompt_land_on_the_setting_of_that_name() {
+        let Some(held) = after(Dial::ThreadsForAPrompt, 16) else {
+            return;
+        };
+        assert_eq!(held.threads_batch, 16);
+        assert!(Dial::ThreadsForAPrompt.times_reading_the_prompt());
+        assert!(Dial::ThreadsForAPrompt.cannot_change_an_answer());
+    }
+
+    /// A list of values is not a ladder: nothing climbs from `f32` towards `q4_0`, and a
+    /// search that tried would be asking for a width by the number of its place.
+    #[test]
+    fn a_setting_whose_values_are_a_list_is_not_climbed() {
+        for dial in [Dial::CacheWidth, Dial::Experts, Dial::FlashAttention] {
+            assert!(dial.values_are_a_list(), "{}", dial.label());
+        }
+        for dial in [Dial::ThreadsForAPrompt, Dial::Batch, Dial::MicroBatch] {
+            assert!(!dial.values_are_a_list(), "{}", dial.label());
+        }
     }
 }

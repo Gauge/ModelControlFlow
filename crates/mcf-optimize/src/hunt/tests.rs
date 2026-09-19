@@ -531,8 +531,9 @@ fn scoring_around(peak: u32, span: crate::dial::Span) -> impl Fn(u32) -> Option<
 #[test]
 fn a_climb_is_short_enough_that_its_first_rungs_are_worth_the_trials() {
     for dial in Dial::ALL {
-        if dial.is_named_by_the_model() {
-            // Its values are places in a list the model gave, and it is never climbed.
+        if dial.values_are_a_list() {
+            // Its values are places in a list rather than points on a scale, and nothing
+            // like that is climbed.
             continue;
         }
         let span = dial.span();

@@ -828,9 +828,9 @@ impl Optimizing {
     }
 
     pub fn pick_way(&mut self, at: usize) {
-        if self.sweep.dial.is_named_by_the_model() {
+        if self.sweep.dial.values_are_a_list() {
             self.refused = Some(format!(
-                "{} runs the levels this model names and nothing else, so there is no span to \
+                "{} runs every value it has and nothing else, so there is no span to \
                  search over",
                 self.sweep.dial.label().to_lowercase()
             ));
@@ -847,11 +847,14 @@ impl Optimizing {
     /// climbed past the end of the list would ask for a level the model never named and
     /// write the number down as if it were one.
     fn only_the_levels_the_model_names(&mut self) {
-        if !self.sweep.dial.is_named_by_the_model() {
+        if !self.sweep.dial.values_are_a_list() {
             return;
         }
         self.way = mcf_optimize::hunt::Way::ByHand;
-        self.sweep.steps = (0..self.named.len())
+        // A setting whose words are MCF's own knows how many it has; one whose words are
+        // the model's has as many as the model named.
+        let held = self.sweep.dial.own_words().len().max(self.named.len());
+        self.sweep.steps = (0..held)
             .filter_map(|at| u32::try_from(at).ok())
             .map(mcf_optimize::dial::Step::Whole)
             .collect();
@@ -1002,6 +1005,32 @@ fn put_the_dial(
             settings.batch = wanted;
             settings.ubatch = settings.ubatch.min(wanted);
         }
+        // Where the words for these live is the dial: a step is a place in its own list,
+        // so the list and the setting cannot drift apart.
+        Dial::CacheWidth => {
+            if let Some(width) = step
+                .whole()
+                .and_then(|at| usize::try_from(at).ok())
+                .and_then(|at| CACHE_CHOICES.get(at))
+            {
+                settings.cache = *width;
+            }
+        }
+        Dial::Experts => {
+            settings.spread.experts = match step.whole() {
+                Some(0) => mcf_serve::hosting::Experts::WithTheModel,
+                Some(_) => mcf_serve::hosting::Experts::OnTheProcessor,
+                None => settings.spread.experts,
+            };
+        }
+        Dial::FlashAttention => {
+            settings.flash_attention = step.whole().is_some_and(|held| held > 0);
+        }
+        Dial::ThreadsForAPrompt => {
+            if let Some(threads) = step.whole().filter(|held| *held > 0) {
+                settings.threads_batch = threads;
+            }
+        }
         Dial::ThinkingBudget => settings.started.thinking = step.whole(),
         Dial::DraftDepth => {
             let wanted = step.whole().unwrap_or(0);
@@ -1053,6 +1082,30 @@ fn hold_it_at(
             let wanted = step.whole().unwrap_or(held.batch);
             held.batch = wanted;
             held.ubatch = held.ubatch.min(wanted);
+        }
+        mcf_optimize::dial::Dial::CacheWidth => {
+            if let Some(width) = step
+                .whole()
+                .and_then(|at| usize::try_from(at).ok())
+                .and_then(|at| CACHE_CHOICES.get(at))
+            {
+                held.cache = *width;
+            }
+        }
+        mcf_optimize::dial::Dial::Experts => {
+            held.spread.experts = match step.whole() {
+                Some(0) => mcf_serve::hosting::Experts::WithTheModel,
+                Some(_) => mcf_serve::hosting::Experts::OnTheProcessor,
+                None => held.spread.experts,
+            };
+        }
+        mcf_optimize::dial::Dial::FlashAttention => {
+            held.flash_attention = step.whole().is_some_and(|value| value > 0);
+        }
+        mcf_optimize::dial::Dial::ThreadsForAPrompt => {
+            if let Some(threads) = step.whole().filter(|value| *value > 0) {
+                held.threads_batch = threads;
+            }
         }
         mcf_optimize::dial::Dial::ThinkingBudget => held.started.thinking = step.whole(),
         mcf_optimize::dial::Dial::DraftDepth => {
@@ -4483,6 +4536,8 @@ impl Desk {
             ubatch: settings.ubatch,
             cache: format!("{:?}", settings.cache),
             flash_attention: settings.flash_attention,
+            experts: settings.spread.experts.said(),
+            threads_for_a_prompt: settings.threads_batch,
             draft_head: settings.started.draft_head,
             draft_depth: settings.started.drafted,
             thinking_budget: settings.started.thinking,
