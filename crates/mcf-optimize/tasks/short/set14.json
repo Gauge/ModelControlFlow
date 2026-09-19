@@ -1,0 +1,127 @@
+[
+ {
+  "n": "code-0326",
+  "p": "What does f([12, 4, 11, 41, 7, 13]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "16"
+ },
+ {
+  "n": "order-0327",
+  "p": "Fenn is heavier than Emil. Emil is heavier than Cleo. Who is the heaviest?",
+  "a": "Fenn"
+ },
+ {
+  "n": "weeks-0328",
+  "p": "How many days are left over after taking whole weeks out of 156 days?",
+  "a": "2"
+ },
+ {
+  "n": "units-0329",
+  "p": "How many minutes are there in 270 hours?",
+  "a": "16200"
+ },
+ {
+  "n": "arith-0330",
+  "p": "Compute 5 + 4 * 11.",
+  "a": "49"
+ },
+ {
+  "n": "prec-0331",
+  "p": "Compute (66 - 4) * 3 + 20.",
+  "a": "206"
+ },
+ {
+  "n": "pct-0332",
+  "p": "What is 20% of 8375?",
+  "a": "1675"
+ },
+ {
+  "n": "gcd-0333",
+  "p": "What is the least common multiple of 64 and 100?",
+  "a": "1600"
+ },
+ {
+  "n": "prime-0334",
+  "p": "How many prime numbers are there from 1 to 222 inclusive?",
+  "a": "47"
+ },
+ {
+  "n": "mod-0335",
+  "p": "What is the remainder when 9108 is divided by 84?",
+  "a": "36"
+ },
+ {
+  "n": "powmod-0336",
+  "p": "What is 9^16 mod 95?",
+  "a": "61"
+ },
+ {
+  "n": "base-0337",
+  "p": "Write 908 in hexadecimal. Give only the digits, no prefix.",
+  "a": "38C"
+ },
+ {
+  "n": "frombase-0338",
+  "p": "The hexadecimal number 4FC is what in decimal?",
+  "a": "1276"
+ },
+ {
+  "n": "seqterm-0339",
+  "p": "An arithmetic sequence starts at 22 and increases by 11 each term. What is term number 11? (The first term is term number 1.)",
+  "a": "132"
+ },
+ {
+  "n": "seqsum-0340",
+  "p": "An arithmetic sequence starts at 7 and increases by 7 each term. What is the sum of its first 19 terms?",
+  "a": "1330"
+ },
+ {
+  "n": "solve-0341",
+  "p": "Solve for x: 15x + -46 = -16. Give x.",
+  "a": "2"
+ },
+ {
+  "n": "comb-0342",
+  "p": "In how many ways can 5 items be chosen from 5 distinct items, order not mattering?",
+  "a": "1"
+ },
+ {
+  "n": "rate-0343",
+  "p": "A vehicle travels at 101 km/h for 7 hours. How many kilometres does it cover?",
+  "a": "707"
+ },
+ {
+  "n": "digits-0344",
+  "p": "What is the sum of the digits of 977635?",
+  "a": "37"
+ },
+ {
+  "n": "revnum-0345",
+  "p": "Write the digits of 280323 in reverse order.",
+  "a": "323082"
+ },
+ {
+  "n": "bits-0346",
+  "p": "What is 67 OR 151 as a decimal number? (bitwise or)",
+  "a": "215"
+ },
+ {
+  "n": "geom-0347",
+  "p": "What is the area of a rectangle 26 by 40?",
+  "a": "1040"
+ },
+ {
+  "n": "sets-0348",
+  "p": "Set A is {7, 10, 12, 19, 26, 28, 30} and set B is {7, 13, 16, 22, 27, 29, 32}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0349",
+  "p": "What is letter number 3 of the word \"harbour\"? (The first letter is number 1.)",
+  "a": "r"
+ },
+ {
+  "n": "list-0350",
+  "p": "What is the largest number in this list: [24, 99, 37, 54, 71, 48, 45, 72]?",
+  "a": "99"
+ }
+]

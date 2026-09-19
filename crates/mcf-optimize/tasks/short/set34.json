@@ -1,0 +1,127 @@
+[
+ {
+  "n": "solve-0826",
+  "p": "Solve for x: 5x + 44 = 79. Give x.",
+  "a": "7"
+ },
+ {
+  "n": "rate-0827",
+  "p": "A vehicle travels at 87 km/h for 4 hours. How many kilometres does it cover?",
+  "a": "348"
+ },
+ {
+  "n": "digits-0828",
+  "p": "What is the sum of the digits of 969361?",
+  "a": "34"
+ },
+ {
+  "n": "revnum-0829",
+  "p": "Write the digits of 944718 in reverse order.",
+  "a": "817449"
+ },
+ {
+  "n": "bits-0830",
+  "p": "What is 188 OR 48 as a decimal number? (bitwise or)",
+  "a": "188"
+ },
+ {
+  "n": "geom-0831",
+  "p": "What is the area of a rectangle 18 by 4?",
+  "a": "72"
+ },
+ {
+  "n": "sets-0832",
+  "p": "Set A is {2, 3, 12, 17, 28, 29, 30, 34, 35} and set B is {1, 4, 5, 12, 28, 31, 34}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0833",
+  "p": "How many letters are in the word \"lantern\"?",
+  "a": "7"
+ },
+ {
+  "n": "list-0834",
+  "p": "What is the largest number in this list: [25, 66, 41, 47, 85, 44]?",
+  "a": "85"
+ },
+ {
+  "n": "code-0835",
+  "p": "What does f([48, 14, 4, 41, 40, 12]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "118"
+ },
+ {
+  "n": "order-0836",
+  "p": "Bram is faster than Hugo. Hugo is faster than Dara. Who is the slowest?",
+  "a": "Dara"
+ },
+ {
+  "n": "weeks-0837",
+  "p": "How many days are left over after taking whole weeks out of 37 days?",
+  "a": "2"
+ },
+ {
+  "n": "units-0838",
+  "p": "How many minutes are there in 436 hours?",
+  "a": "26160"
+ },
+ {
+  "n": "arith-0839",
+  "p": "Compute 3 + 10 * 16.",
+  "a": "163"
+ },
+ {
+  "n": "prec-0840",
+  "p": "Compute (38 - 8) * 9 + 10.",
+  "a": "280"
+ },
+ {
+  "n": "pct-0841",
+  "p": "What is 10% of 1275?",
+  "a": "127"
+ },
+ {
+  "n": "gcd-0842",
+  "p": "What is the greatest common divisor of 164 and 159?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0843",
+  "p": "How many prime numbers are there from 1 to 61 inclusive?",
+  "a": "18"
+ },
+ {
+  "n": "mod-0844",
+  "p": "What is the remainder when 4490 is divided by 62?",
+  "a": "26"
+ },
+ {
+  "n": "powmod-0845",
+  "p": "What is 8^20 mod 28?",
+  "a": "8"
+ },
+ {
+  "n": "base-0846",
+  "p": "Write 1622 in octal. Give only the digits, no prefix.",
+  "a": "3126"
+ },
+ {
+  "n": "frombase-0847",
+  "p": "The binary number 11100011111 is what in decimal?",
+  "a": "1823"
+ },
+ {
+  "n": "seqterm-0848",
+  "p": "An arithmetic sequence starts at 11 and increases by 10 each term. What is term number 11? (The first term is term number 1.)",
+  "a": "111"
+ },
+ {
+  "n": "seqsum-0849",
+  "p": "An arithmetic sequence starts at 7 and increases by 4 each term. What is the sum of its first 29 terms?",
+  "a": "1827"
+ },
+ {
+  "n": "solve-0850",
+  "p": "Solve for x: 4x + 36 = 220. Give x.",
+  "a": "46"
+ }
+]

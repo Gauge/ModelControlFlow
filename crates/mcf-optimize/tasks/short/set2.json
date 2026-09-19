@@ -1,0 +1,127 @@
+[
+ {
+  "n": "arith-0026",
+  "p": "Compute 33 + 5 * 8.",
+  "a": "73"
+ },
+ {
+  "n": "prec-0027",
+  "p": "Compute (20 - 7) * 3 + 8.",
+  "a": "47"
+ },
+ {
+  "n": "pct-0028",
+  "p": "What is 60% of 4025?",
+  "a": "2415"
+ },
+ {
+  "n": "gcd-0029",
+  "p": "What is the greatest common divisor of 90 and 189?",
+  "a": "9"
+ },
+ {
+  "n": "prime-0030",
+  "p": "How many prime numbers are there from 1 to 118 inclusive?",
+  "a": "30"
+ },
+ {
+  "n": "mod-0031",
+  "p": "What is the remainder when 4803 is divided by 88?",
+  "a": "51"
+ },
+ {
+  "n": "powmod-0032",
+  "p": "What is 8^15 mod 63?",
+  "a": "8"
+ },
+ {
+  "n": "base-0033",
+  "p": "Write 1101 in binary. Give only the digits, no prefix.",
+  "a": "10001001101"
+ },
+ {
+  "n": "frombase-0034",
+  "p": "The binary number 1100011001 is what in decimal?",
+  "a": "793"
+ },
+ {
+  "n": "seqterm-0035",
+  "p": "An arithmetic sequence starts at 20 and increases by 9 each term. What is term number 5? (The first term is term number 1.)",
+  "a": "56"
+ },
+ {
+  "n": "seqsum-0036",
+  "p": "An arithmetic sequence starts at 1 and increases by 9 each term. What is the sum of its first 18 terms?",
+  "a": "1395"
+ },
+ {
+  "n": "solve-0037",
+  "p": "Solve for x: 7x + -45 = 46. Give x.",
+  "a": "13"
+ },
+ {
+  "n": "comb-0038",
+  "p": "In how many ways can 4 items be chosen from 6 distinct items, order not mattering?",
+  "a": "15"
+ },
+ {
+  "n": "rate-0039",
+  "p": "A vehicle travels at 49 km/h for 2 hours. How many kilometres does it cover?",
+  "a": "98"
+ },
+ {
+  "n": "work-0040",
+  "p": "One pump fills a tank in 8 hours and another fills it in 24 hours. Working together, how many hours do they take?",
+  "a": "6"
+ },
+ {
+  "n": "digits-0041",
+  "p": "What is the sum of the digits of 193610?",
+  "a": "20"
+ },
+ {
+  "n": "revnum-0042",
+  "p": "Write the digits of 405467 in reverse order.",
+  "a": "764504"
+ },
+ {
+  "n": "bits-0043",
+  "p": "What is 206 XOR 61 as a decimal number? (bitwise xor)",
+  "a": "243"
+ },
+ {
+  "n": "geom-0044",
+  "p": "What is the area of a rectangle 12 by 19?",
+  "a": "228"
+ },
+ {
+  "n": "sets-0045",
+  "p": "Set A is {2, 7, 8, 10, 11, 14, 17, 20, 21, 25, 35} and set B is {5, 8, 12, 16, 26, 32, 36}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0046",
+  "p": "How many letters are in the word \"domain\"?",
+  "a": "6"
+ },
+ {
+  "n": "list-0047",
+  "p": "What is the largest number in this list: [6, 76, 21, 25, 92, 5, 30]?",
+  "a": "92"
+ },
+ {
+  "n": "code-0048",
+  "p": "What does f(21) return?\n\ndef f(n):\n    while n > 4:\n        n -= 20\n    return n",
+  "a": "1"
+ },
+ {
+  "n": "order-0049",
+  "p": "Hugo is older than Gita. Gita is older than Dara. Who is the oldest?",
+  "a": "Hugo"
+ },
+ {
+  "n": "weeks-0050",
+  "p": "How many whole weeks are there in 177 days?",
+  "a": "25"
+ }
+]

@@ -1,0 +1,127 @@
+[
+ {
+  "n": "order-0126",
+  "p": "Gita is taller than Ana. Ana is taller than Dara. Who is the shortest?",
+  "a": "Dara"
+ },
+ {
+  "n": "weeks-0127",
+  "p": "How many whole weeks are there in 388 days?",
+  "a": "55"
+ },
+ {
+  "n": "units-0128",
+  "p": "How many kibibytes are there in 353 mebibytes?",
+  "a": "361472"
+ },
+ {
+  "n": "arith-0129",
+  "p": "Compute 34 + 6 * 12.",
+  "a": "106"
+ },
+ {
+  "n": "prec-0130",
+  "p": "Compute (26 - 9) * 4 + 2.",
+  "a": "70"
+ },
+ {
+  "n": "pct-0131",
+  "p": "What is 8% of 1075?",
+  "a": "86"
+ },
+ {
+  "n": "gcd-0132",
+  "p": "What is the least common multiple of 145 and 168?",
+  "a": "24360"
+ },
+ {
+  "n": "prime-0133",
+  "p": "How many prime numbers are there from 1 to 158 inclusive?",
+  "a": "37"
+ },
+ {
+  "n": "mod-0134",
+  "p": "What is the remainder when 1518 is divided by 15?",
+  "a": "3"
+ },
+ {
+  "n": "powmod-0135",
+  "p": "What is 5^9 mod 64?",
+  "a": "37"
+ },
+ {
+  "n": "base-0136",
+  "p": "Write 3103 in octal. Give only the digits, no prefix.",
+  "a": "6037"
+ },
+ {
+  "n": "frombase-0137",
+  "p": "The binary number 10001100010 is what in decimal?",
+  "a": "1122"
+ },
+ {
+  "n": "seqterm-0138",
+  "p": "An arithmetic sequence starts at 23 and increases by 8 each term. What is term number 37? (The first term is term number 1.)",
+  "a": "311"
+ },
+ {
+  "n": "seqsum-0139",
+  "p": "An arithmetic sequence starts at 15 and increases by 6 each term. What is the sum of its first 9 terms?",
+  "a": "351"
+ },
+ {
+  "n": "solve-0140",
+  "p": "Solve for x: 12x + 41 = 713. Give x.",
+  "a": "56"
+ },
+ {
+  "n": "comb-0141",
+  "p": "In how many ways can 4 items be arranged from 12 distinct items, order mattering?",
+  "a": "11880"
+ },
+ {
+  "n": "rate-0142",
+  "p": "A vehicle travels at 22 km/h for 10 hours. How many kilometres does it cover?",
+  "a": "220"
+ },
+ {
+  "n": "work-0143",
+  "p": "One pump fills a tank in 5 hours and another fills it in 20 hours. Working together, how many hours do they take?",
+  "a": "4"
+ },
+ {
+  "n": "digits-0144",
+  "p": "What is the sum of the digits of 332869?",
+  "a": "31"
+ },
+ {
+  "n": "revnum-0145",
+  "p": "Write the digits of 935381 in reverse order.",
+  "a": "183539"
+ },
+ {
+  "n": "bits-0146",
+  "p": "What is 4 AND 33 as a decimal number? (bitwise and)",
+  "a": "0"
+ },
+ {
+  "n": "geom-0147",
+  "p": "What is the area of a rectangle 12 by 17?",
+  "a": "204"
+ },
+ {
+  "n": "sets-0148",
+  "p": "Set A is {9, 10, 14, 15, 18, 19, 21, 26, 29, 33, 35} and set B is {15, 16, 20, 21, 24, 25, 29, 31}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0149",
+  "p": "How many letters are in the word \"obsidian\"?",
+  "a": "8"
+ },
+ {
+  "n": "list-0150",
+  "p": "What is the largest number in this list: [95, 5, 25, 99, 84, 71, 81, 42, 68]?",
+  "a": "99"
+ }
+]

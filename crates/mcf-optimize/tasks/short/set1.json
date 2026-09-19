@@ -1,0 +1,127 @@
+[
+ {
+  "n": "prec-0001",
+  "p": "Compute (22 - 7) * 4 + 12.",
+  "a": "72"
+ },
+ {
+  "n": "pct-0002",
+  "p": "What is 64% of 5225?",
+  "a": "3344"
+ },
+ {
+  "n": "gcd-0003",
+  "p": "What is the least common multiple of 83 and 26?",
+  "a": "2158"
+ },
+ {
+  "n": "prime-0004",
+  "p": "How many prime numbers are there from 1 to 239 inclusive?",
+  "a": "52"
+ },
+ {
+  "n": "mod-0005",
+  "p": "What is the remainder when 1623 is divided by 71?",
+  "a": "61"
+ },
+ {
+  "n": "powmod-0006",
+  "p": "What is 2^13 mod 80?",
+  "a": "32"
+ },
+ {
+  "n": "base-0007",
+  "p": "Write 3926 in octal. Give only the digits, no prefix.",
+  "a": "7526"
+ },
+ {
+  "n": "frombase-0008",
+  "p": "The hexadecimal number 44 is what in decimal?",
+  "a": "68"
+ },
+ {
+  "n": "seqterm-0009",
+  "p": "An arithmetic sequence starts at 1 and increases by 2 each term. What is term number 36? (The first term is term number 1.)",
+  "a": "71"
+ },
+ {
+  "n": "seqsum-0010",
+  "p": "An arithmetic sequence starts at 20 and increases by 4 each term. What is the sum of its first 22 terms?",
+  "a": "1364"
+ },
+ {
+  "n": "solve-0011",
+  "p": "Solve for x: 6x + 20 = -142. Give x.",
+  "a": "-27"
+ },
+ {
+  "n": "comb-0012",
+  "p": "In how many ways can 3 items be arranged from 13 distinct items, order mattering?",
+  "a": "1716"
+ },
+ {
+  "n": "rate-0013",
+  "p": "A vehicle travels at 61 km/h for 9 hours. How many kilometres does it cover?",
+  "a": "549"
+ },
+ {
+  "n": "work-0014",
+  "p": "One pump fills a tank in 3 hours and another fills it in 6 hours. Working together, how many hours do they take?",
+  "a": "2"
+ },
+ {
+  "n": "digits-0015",
+  "p": "What is the sum of the digits of 832241?",
+  "a": "20"
+ },
+ {
+  "n": "revnum-0016",
+  "p": "Write the digits of 107377 in reverse order.",
+  "a": "773701"
+ },
+ {
+  "n": "bits-0017",
+  "p": "What is 22 AND 222 as a decimal number? (bitwise and)",
+  "a": "22"
+ },
+ {
+  "n": "geom-0018",
+  "p": "What is the area of a rectangle 19 by 12?",
+  "a": "228"
+ },
+ {
+  "n": "sets-0019",
+  "p": "Set A is {1, 3, 4, 6, 15, 17, 20, 24, 28, 30, 32, 34} and set B is {3, 6, 12, 15, 18, 27, 28, 29, 31, 33, 38, 39}. How many numbers are in both A and B?",
+  "a": "4"
+ },
+ {
+  "n": "text-0020",
+  "p": "What is letter number 5 of the word \"bridge\"? (The first letter is number 1.)",
+  "a": "g"
+ },
+ {
+  "n": "list-0021",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [40, 24, 57, 5, 77, 93, 26, 16, 11]?",
+  "a": "16"
+ },
+ {
+  "n": "code-0022",
+  "p": "What does f(121) return?\n\ndef f(n):\n    while n > 20:\n        n -= 13\n    return n",
+  "a": "17"
+ },
+ {
+  "n": "order-0023",
+  "p": "Fenn is heavier than Ana. Ana is heavier than Bram. Who is the heaviest?",
+  "a": "Fenn"
+ },
+ {
+  "n": "weeks-0024",
+  "p": "How many days are left over after taking whole weeks out of 163 days?",
+  "a": "2"
+ },
+ {
+  "n": "units-0025",
+  "p": "How many kibibytes are there in 387 mebibytes?",
+  "a": "396288"
+ }
+]

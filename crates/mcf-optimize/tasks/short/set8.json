@@ -1,0 +1,127 @@
+[
+ {
+  "n": "code-0176",
+  "p": "What does f(44) return?\n\ndef f(n):\n    while n > 20:\n        n -= 13\n    return n",
+  "a": "18"
+ },
+ {
+  "n": "order-0177",
+  "p": "Emil is faster than Cleo. Cleo is faster than Bram. Who is the slowest?",
+  "a": "Bram"
+ },
+ {
+  "n": "weeks-0178",
+  "p": "How many days are left over after taking whole weeks out of 214 days?",
+  "a": "4"
+ },
+ {
+  "n": "units-0179",
+  "p": "How many minutes are there in 426 hours?",
+  "a": "25560"
+ },
+ {
+  "n": "arith-0180",
+  "p": "Compute 31 + 8 * 28.",
+  "a": "255"
+ },
+ {
+  "n": "prec-0181",
+  "p": "Compute (28 - 2) * 6 + 14.",
+  "a": "170"
+ },
+ {
+  "n": "pct-0182",
+  "p": "What is 80% of 9250?",
+  "a": "7400"
+ },
+ {
+  "n": "gcd-0183",
+  "p": "What is the greatest common divisor of 191 and 121?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0184",
+  "p": "How many prime numbers are there from 1 to 76 inclusive?",
+  "a": "21"
+ },
+ {
+  "n": "mod-0185",
+  "p": "What is the remainder when 6869 is divided by 51?",
+  "a": "35"
+ },
+ {
+  "n": "powmod-0186",
+  "p": "What is 5^9 mod 6?",
+  "a": "5"
+ },
+ {
+  "n": "base-0187",
+  "p": "Write 244 in octal. Give only the digits, no prefix.",
+  "a": "364"
+ },
+ {
+  "n": "frombase-0188",
+  "p": "The binary number 101010000 is what in decimal?",
+  "a": "336"
+ },
+ {
+  "n": "seqterm-0189",
+  "p": "An arithmetic sequence starts at 6 and increases by 10 each term. What is term number 6? (The first term is term number 1.)",
+  "a": "56"
+ },
+ {
+  "n": "seqsum-0190",
+  "p": "An arithmetic sequence starts at 2 and increases by 3 each term. What is the sum of its first 18 terms?",
+  "a": "495"
+ },
+ {
+  "n": "solve-0191",
+  "p": "Solve for x: 11x + -8 = -195. Give x.",
+  "a": "-17"
+ },
+ {
+  "n": "comb-0192",
+  "p": "In how many ways can 2 items be arranged from 10 distinct items, order mattering?",
+  "a": "90"
+ },
+ {
+  "n": "rate-0193",
+  "p": "A vehicle travels at 100 km/h for 8 hours. How many kilometres does it cover?",
+  "a": "800"
+ },
+ {
+  "n": "digits-0194",
+  "p": "What is the sum of the digits of 971621?",
+  "a": "26"
+ },
+ {
+  "n": "revnum-0195",
+  "p": "Write the digits of 591566 in reverse order.",
+  "a": "665195"
+ },
+ {
+  "n": "bits-0196",
+  "p": "What is 150 XOR 243 as a decimal number? (bitwise xor)",
+  "a": "101"
+ },
+ {
+  "n": "geom-0197",
+  "p": "A right triangle has legs of 3 and 4. What is the length of its hypotenuse?",
+  "a": "5"
+ },
+ {
+  "n": "sets-0198",
+  "p": "Set A is {8, 16, 20, 28, 31, 33, 35, 37} and set B is {12, 14, 24, 26, 29, 32}. How many numbers are in both A and B?",
+  "a": "0"
+ },
+ {
+  "n": "text-0199",
+  "p": "Write the word \"bridge\" backwards.",
+  "a": "egdirb"
+ },
+ {
+  "n": "list-0200",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [46, 35, 84, 28, 68]?",
+  "a": "46"
+ }
+]

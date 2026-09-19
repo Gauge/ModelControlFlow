@@ -1,0 +1,127 @@
+[
+ {
+  "n": "weeks-0101",
+  "p": "How many whole weeks are there in 115 days?",
+  "a": "16"
+ },
+ {
+  "n": "units-0102",
+  "p": "How many kibibytes are there in 462 mebibytes?",
+  "a": "473088"
+ },
+ {
+  "n": "arith-0103",
+  "p": "Compute 4 + 8 * 5.",
+  "a": "44"
+ },
+ {
+  "n": "prec-0104",
+  "p": "Compute (38 - 9) * 2 + 2.",
+  "a": "60"
+ },
+ {
+  "n": "pct-0105",
+  "p": "What is 50% of 9675?",
+  "a": "4837"
+ },
+ {
+  "n": "gcd-0106",
+  "p": "What is the least common multiple of 101 and 126?",
+  "a": "12726"
+ },
+ {
+  "n": "prime-0107",
+  "p": "How many prime numbers are there from 1 to 137 inclusive?",
+  "a": "33"
+ },
+ {
+  "n": "mod-0108",
+  "p": "What is the remainder when 7174 is divided by 39?",
+  "a": "37"
+ },
+ {
+  "n": "powmod-0109",
+  "p": "What is 4^12 mod 34?",
+  "a": "18"
+ },
+ {
+  "n": "base-0110",
+  "p": "Write 3979 in hexadecimal. Give only the digits, no prefix.",
+  "a": "F8B"
+ },
+ {
+  "n": "frombase-0111",
+  "p": "The hexadecimal number 3D1 is what in decimal?",
+  "a": "977"
+ },
+ {
+  "n": "seqterm-0112",
+  "p": "An arithmetic sequence starts at 5 and increases by 8 each term. What is term number 25? (The first term is term number 1.)",
+  "a": "197"
+ },
+ {
+  "n": "seqsum-0113",
+  "p": "An arithmetic sequence starts at 16 and increases by 5 each term. What is the sum of its first 8 terms?",
+  "a": "268"
+ },
+ {
+  "n": "solve-0114",
+  "p": "Solve for x: 14x + 50 = 162. Give x.",
+  "a": "8"
+ },
+ {
+  "n": "comb-0115",
+  "p": "In how many ways can 2 items be arranged from 5 distinct items, order mattering?",
+  "a": "20"
+ },
+ {
+  "n": "rate-0116",
+  "p": "A vehicle travels at 88 km/h for 3 hours. How many kilometres does it cover?",
+  "a": "264"
+ },
+ {
+  "n": "work-0117",
+  "p": "One pump fills a tank in 6 hours and another fills it in 12 hours. Working together, how many hours do they take?",
+  "a": "4"
+ },
+ {
+  "n": "digits-0118",
+  "p": "What is the sum of the digits of 685017?",
+  "a": "27"
+ },
+ {
+  "n": "revnum-0119",
+  "p": "Write the digits of 729658 in reverse order.",
+  "a": "856927"
+ },
+ {
+  "n": "bits-0120",
+  "p": "What is 48 XOR 237 as a decimal number? (bitwise xor)",
+  "a": "221"
+ },
+ {
+  "n": "geom-0121",
+  "p": "What is the area of a rectangle 10 by 30?",
+  "a": "300"
+ },
+ {
+  "n": "sets-0122",
+  "p": "Set A is {7, 10, 16, 20, 23, 30, 31, 32, 33, 37, 38, 39} and set B is {3, 5, 10, 12, 15, 18, 20, 21, 26, 30, 34, 37}. How many numbers are in both A and B?",
+  "a": "4"
+ },
+ {
+  "n": "text-0123",
+  "p": "What is letter number 2 of the word \"garnet\"? (The first letter is number 1.)",
+  "a": "a"
+ },
+ {
+  "n": "list-0124",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [37, 72, 51, 1, 76, 88]?",
+  "a": "51"
+ },
+ {
+  "n": "code-0125",
+  "p": "What does f(31) return?\n\ndef f(n):\n    while n > 9:\n        n -= 13\n    return n",
+  "a": "5"
+ }
+]

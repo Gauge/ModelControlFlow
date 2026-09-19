@@ -1,0 +1,127 @@
+[
+ {
+  "n": "weeks-0501",
+  "p": "How many whole weeks are there in 30 days?",
+  "a": "4"
+ },
+ {
+  "n": "units-0502",
+  "p": "How many minutes are there in 400 hours?",
+  "a": "24000"
+ },
+ {
+  "n": "arith-0503",
+  "p": "Compute 17 + 7 * 29.",
+  "a": "220"
+ },
+ {
+  "n": "prec-0504",
+  "p": "Compute (18 - 8) * 3 + 18.",
+  "a": "48"
+ },
+ {
+  "n": "pct-0505",
+  "p": "What is 12% of 5625?",
+  "a": "675"
+ },
+ {
+  "n": "gcd-0506",
+  "p": "What is the greatest common divisor of 65 and 110?",
+  "a": "5"
+ },
+ {
+  "n": "prime-0507",
+  "p": "How many prime numbers are there from 1 to 254 inclusive?",
+  "a": "54"
+ },
+ {
+  "n": "mod-0508",
+  "p": "What is the remainder when 738 is divided by 61?",
+  "a": "6"
+ },
+ {
+  "n": "powmod-0509",
+  "p": "What is 4^4 mod 52?",
+  "a": "48"
+ },
+ {
+  "n": "base-0510",
+  "p": "Write 2440 in octal. Give only the digits, no prefix.",
+  "a": "4610"
+ },
+ {
+  "n": "frombase-0511",
+  "p": "The hexadecimal number 2DD is what in decimal?",
+  "a": "733"
+ },
+ {
+  "n": "seqterm-0512",
+  "p": "An arithmetic sequence starts at 3 and increases by 12 each term. What is term number 38? (The first term is term number 1.)",
+  "a": "447"
+ },
+ {
+  "n": "seqsum-0513",
+  "p": "An arithmetic sequence starts at 16 and increases by 2 each term. What is the sum of its first 27 terms?",
+  "a": "1134"
+ },
+ {
+  "n": "solve-0514",
+  "p": "Solve for x: 8x + -22 = 258. Give x.",
+  "a": "35"
+ },
+ {
+  "n": "comb-0515",
+  "p": "In how many ways can 4 items be arranged from 11 distinct items, order mattering?",
+  "a": "7920"
+ },
+ {
+  "n": "rate-0516",
+  "p": "A vehicle travels at 54 km/h for 11 hours. How many kilometres does it cover?",
+  "a": "594"
+ },
+ {
+  "n": "digits-0517",
+  "p": "What is the sum of the digits of 490838?",
+  "a": "32"
+ },
+ {
+  "n": "revnum-0518",
+  "p": "Write the digits of 67243 in reverse order.",
+  "a": "34276"
+ },
+ {
+  "n": "bits-0519",
+  "p": "What is 45 XOR 117 as a decimal number? (bitwise xor)",
+  "a": "88"
+ },
+ {
+  "n": "geom-0520",
+  "p": "What is the area of a rectangle 36 by 31?",
+  "a": "1116"
+ },
+ {
+  "n": "sets-0521",
+  "p": "Set A is {1, 5, 9, 15, 18, 21, 22, 28, 33} and set B is {2, 7, 11, 18, 23, 27, 32}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0522",
+  "p": "Write the word \"ivory\" backwards.",
+  "a": "yrovi"
+ },
+ {
+  "n": "list-0523",
+  "p": "What is the sum of this list: [91, 77, 16, 13, 39, 55, 2, 85]?",
+  "a": "378"
+ },
+ {
+  "n": "code-0524",
+  "p": "What does f(8) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 7\n    return total",
+  "a": "196"
+ },
+ {
+  "n": "order-0525",
+  "p": "Cleo is taller than Fenn. Fenn is taller than Dara. Who is the shortest?",
+  "a": "Dara"
+ }
+]

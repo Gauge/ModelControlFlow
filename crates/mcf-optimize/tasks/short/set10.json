@@ -1,0 +1,127 @@
+[
+ {
+  "n": "code-0226",
+  "p": "What does f([30, 33, 28, 2, 10, 3]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "70"
+ },
+ {
+  "n": "order-0227",
+  "p": "Bram is faster than Dara. Dara is faster than Emil. Who is the slowest?",
+  "a": "Emil"
+ },
+ {
+  "n": "weeks-0228",
+  "p": "How many days are left over after taking whole weeks out of 262 days?",
+  "a": "3"
+ },
+ {
+  "n": "units-0229",
+  "p": "How many minutes are there in 207 hours?",
+  "a": "12420"
+ },
+ {
+  "n": "arith-0230",
+  "p": "Compute 17 + 9 * 20.",
+  "a": "197"
+ },
+ {
+  "n": "prec-0231",
+  "p": "Compute (47 - 2) * 7 + 3.",
+  "a": "318"
+ },
+ {
+  "n": "pct-0232",
+  "p": "What is 50% of 8300?",
+  "a": "4150"
+ },
+ {
+  "n": "gcd-0233",
+  "p": "What is the greatest common divisor of 25 and 83?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0234",
+  "p": "How many prime numbers are there from 1 to 109 inclusive?",
+  "a": "29"
+ },
+ {
+  "n": "mod-0235",
+  "p": "What is the remainder when 7170 is divided by 32?",
+  "a": "2"
+ },
+ {
+  "n": "powmod-0236",
+  "p": "What is 2^19 mod 36?",
+  "a": "20"
+ },
+ {
+  "n": "base-0237",
+  "p": "Write 1976 in octal. Give only the digits, no prefix.",
+  "a": "3670"
+ },
+ {
+  "n": "frombase-0238",
+  "p": "The binary number 1010101110 is what in decimal?",
+  "a": "686"
+ },
+ {
+  "n": "seqterm-0239",
+  "p": "An arithmetic sequence starts at 13 and increases by 5 each term. What is term number 28? (The first term is term number 1.)",
+  "a": "148"
+ },
+ {
+  "n": "seqsum-0240",
+  "p": "An arithmetic sequence starts at 17 and increases by 8 each term. What is the sum of its first 28 terms?",
+  "a": "3500"
+ },
+ {
+  "n": "solve-0241",
+  "p": "Solve for x: 4x + -32 = -128. Give x.",
+  "a": "-24"
+ },
+ {
+  "n": "comb-0242",
+  "p": "In how many ways can 5 items be chosen from 7 distinct items, order not mattering?",
+  "a": "21"
+ },
+ {
+  "n": "rate-0243",
+  "p": "A vehicle travels at 89 km/h for 12 hours. How many kilometres does it cover?",
+  "a": "1068"
+ },
+ {
+  "n": "work-0244",
+  "p": "One pump fills a tank in 7 hours and another fills it in 42 hours. Working together, how many hours do they take?",
+  "a": "6"
+ },
+ {
+  "n": "digits-0245",
+  "p": "What is the sum of the digits of 358101?",
+  "a": "18"
+ },
+ {
+  "n": "revnum-0246",
+  "p": "Write the digits of 631351 in reverse order.",
+  "a": "153136"
+ },
+ {
+  "n": "bits-0247",
+  "p": "What is 204 XOR 6 as a decimal number? (bitwise xor)",
+  "a": "202"
+ },
+ {
+  "n": "sets-0248",
+  "p": "Set A is {2, 5, 10, 17, 30, 34, 37, 39} and set B is {5, 12, 16, 18, 32, 35}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0249",
+  "p": "How many letters are in the word \"marble\"?",
+  "a": "6"
+ },
+ {
+  "n": "list-0250",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [75, 51, 84, 46, 81, 12, 85, 13]?",
+  "a": "46"
+ }
+]

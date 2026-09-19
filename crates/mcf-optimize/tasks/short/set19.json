@@ -1,0 +1,127 @@
+[
+ {
+  "n": "units-0451",
+  "p": "How many metres are there in 28 kilometres?",
+  "a": "28000"
+ },
+ {
+  "n": "arith-0452",
+  "p": "Compute 5 + 11 * 11.",
+  "a": "126"
+ },
+ {
+  "n": "prec-0453",
+  "p": "Compute (18 - 9) * 4 + 13.",
+  "a": "49"
+ },
+ {
+  "n": "pct-0454",
+  "p": "What is 2% of 5675?",
+  "a": "113"
+ },
+ {
+  "n": "gcd-0455",
+  "p": "What is the greatest common divisor of 109 and 28?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0456",
+  "p": "How many prime numbers are there from 1 to 90 inclusive?",
+  "a": "24"
+ },
+ {
+  "n": "mod-0457",
+  "p": "What is the remainder when 1176 is divided by 48?",
+  "a": "24"
+ },
+ {
+  "n": "powmod-0458",
+  "p": "What is 12^20 mod 77?",
+  "a": "67"
+ },
+ {
+  "n": "base-0459",
+  "p": "Write 2340 in hexadecimal. Give only the digits, no prefix.",
+  "a": "924"
+ },
+ {
+  "n": "frombase-0460",
+  "p": "The binary number 110101101 is what in decimal?",
+  "a": "429"
+ },
+ {
+  "n": "seqterm-0461",
+  "p": "An arithmetic sequence starts at 29 and increases by 11 each term. What is term number 40? (The first term is term number 1.)",
+  "a": "458"
+ },
+ {
+  "n": "seqsum-0462",
+  "p": "An arithmetic sequence starts at 19 and increases by 5 each term. What is the sum of its first 10 terms?",
+  "a": "415"
+ },
+ {
+  "n": "solve-0463",
+  "p": "Solve for x: 4x + -7 = 181. Give x.",
+  "a": "47"
+ },
+ {
+  "n": "comb-0464",
+  "p": "In how many ways can 2 items be chosen from 12 distinct items, order not mattering?",
+  "a": "66"
+ },
+ {
+  "n": "rate-0465",
+  "p": "A vehicle travels at 82 km/h for 2 hours. How many kilometres does it cover?",
+  "a": "164"
+ },
+ {
+  "n": "work-0466",
+  "p": "One pump fills a tank in 15 hours and another fills it in 10 hours. Working together, how many hours do they take?",
+  "a": "6"
+ },
+ {
+  "n": "digits-0467",
+  "p": "What is the sum of the digits of 711158?",
+  "a": "23"
+ },
+ {
+  "n": "revnum-0468",
+  "p": "Write the digits of 972722 in reverse order.",
+  "a": "227279"
+ },
+ {
+  "n": "bits-0469",
+  "p": "What is 154 AND 59 as a decimal number? (bitwise and)",
+  "a": "26"
+ },
+ {
+  "n": "geom-0470",
+  "p": "A right triangle has legs of 20 and 21. What is the length of its hypotenuse?",
+  "a": "29"
+ },
+ {
+  "n": "sets-0471",
+  "p": "Set A is {5, 9, 10, 12, 17, 19, 25, 31, 38} and set B is {1, 2, 10, 16, 17, 18, 31, 32, 34, 36}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0472",
+  "p": "What is letter number 4 of the word \"bridge\"? (The first letter is number 1.)",
+  "a": "d"
+ },
+ {
+  "n": "list-0473",
+  "p": "What is the sum of this list: [5, 55, 51, 16, 14]?",
+  "a": "141"
+ },
+ {
+  "n": "code-0474",
+  "p": "What does f(50) return?\n\ndef f(n):\n    while n > 10:\n        n -= 5\n    return n",
+  "a": "10"
+ },
+ {
+  "n": "order-0475",
+  "p": "Cleo is faster than Dara. Dara is faster than Gita. Who is the slowest?",
+  "a": "Gita"
+ }
+]

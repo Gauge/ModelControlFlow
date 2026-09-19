@@ -1,0 +1,127 @@
+[
+ {
+  "n": "code-0351",
+  "p": "What does f([34, 47, 18, 33, 3, 48]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "100"
+ },
+ {
+  "n": "order-0352",
+  "p": "Ana is older than Hugo. Hugo is older than Gita. Who is the youngest?",
+  "a": "Gita"
+ },
+ {
+  "n": "weeks-0353",
+  "p": "How many whole weeks are there in 178 days?",
+  "a": "25"
+ },
+ {
+  "n": "units-0354",
+  "p": "How many minutes are there in 197 hours?",
+  "a": "11820"
+ },
+ {
+  "n": "arith-0355",
+  "p": "Compute 7 + 6 * 30.",
+  "a": "187"
+ },
+ {
+  "n": "prec-0356",
+  "p": "Compute (73 - 5) * 7 + 17.",
+  "a": "493"
+ },
+ {
+  "n": "pct-0357",
+  "p": "What is 15% of 2550?",
+  "a": "382"
+ },
+ {
+  "n": "gcd-0358",
+  "p": "What is the greatest common divisor of 180 and 120?",
+  "a": "60"
+ },
+ {
+  "n": "prime-0359",
+  "p": "How many prime numbers are there from 1 to 197 inclusive?",
+  "a": "45"
+ },
+ {
+  "n": "mod-0360",
+  "p": "What is the remainder when 464 is divided by 84?",
+  "a": "44"
+ },
+ {
+  "n": "powmod-0361",
+  "p": "What is 8^14 mod 47?",
+  "a": "3"
+ },
+ {
+  "n": "base-0362",
+  "p": "Write 3830 in binary. Give only the digits, no prefix.",
+  "a": "111011110110"
+ },
+ {
+  "n": "frombase-0363",
+  "p": "The hexadecimal number 272 is what in decimal?",
+  "a": "626"
+ },
+ {
+  "n": "seqterm-0364",
+  "p": "An arithmetic sequence starts at 17 and increases by 14 each term. What is term number 29? (The first term is term number 1.)",
+  "a": "409"
+ },
+ {
+  "n": "seqsum-0365",
+  "p": "An arithmetic sequence starts at 4 and increases by 3 each term. What is the sum of its first 26 terms?",
+  "a": "1079"
+ },
+ {
+  "n": "solve-0366",
+  "p": "Solve for x: 6x + -43 = -181. Give x.",
+  "a": "-23"
+ },
+ {
+  "n": "comb-0367",
+  "p": "In how many ways can 5 items be arranged from 9 distinct items, order mattering?",
+  "a": "15120"
+ },
+ {
+  "n": "rate-0368",
+  "p": "A vehicle travels at 74 km/h for 5 hours. How many kilometres does it cover?",
+  "a": "370"
+ },
+ {
+  "n": "work-0369",
+  "p": "One pump fills a tank in 6 hours and another fills it in 30 hours. Working together, how many hours do they take?",
+  "a": "5"
+ },
+ {
+  "n": "digits-0370",
+  "p": "What is the sum of the digits of 677566?",
+  "a": "37"
+ },
+ {
+  "n": "revnum-0371",
+  "p": "Write the digits of 173130 in reverse order.",
+  "a": "31371"
+ },
+ {
+  "n": "bits-0372",
+  "p": "What is 246 AND 135 as a decimal number? (bitwise and)",
+  "a": "134"
+ },
+ {
+  "n": "sets-0373",
+  "p": "Set A is {3, 11, 13, 15, 16, 17} and set B is {7, 8, 12, 16, 23, 28, 32, 35, 36}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0374",
+  "p": "What is letter number 6 of the word \"nectar\"? (The first letter is number 1.)",
+  "a": "r"
+ },
+ {
+  "n": "list-0375",
+  "p": "What is the sum of this list: [59, 11, 22, 60, 7, 15, 83, 14]?",
+  "a": "271"
+ }
+]

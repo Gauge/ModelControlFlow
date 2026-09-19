@@ -91,3 +91,67 @@ fn a_task_asks_for_everything_its_check_insists_on() {
         held.asked
     );
 }
+
+/// A thousand questions with one right answer apiece, against which a setting can be
+/// judged without waiting eleven thousand tokens for a model to stop thinking.
+mod short_answers {
+    use crate::corpus::{Kind, SHORT_FROM, Set};
+
+    #[test]
+    fn there_are_a_thousand_of_them_and_every_one_has_an_answer() {
+        let sets = Set::short();
+        assert_eq!(sets.len(), 40);
+        let tasks: usize = sets.iter().map(|set| set.tasks.len()).sum();
+        assert_eq!(tasks, 1_000);
+        for set in &sets {
+            assert_eq!(set.kind, Kind::ShortAnswer);
+            for task in &set.tasks {
+                assert!(!task.asked.trim().is_empty(), "{} asks nothing", task.name);
+                assert!(
+                    !task.checked.trim().is_empty(),
+                    "{} has no answer, so nothing could be marked against it",
+                    task.name
+                );
+            }
+        }
+    }
+
+    /// Numbered apart from the code sets, so a set number written down in a reading names
+    /// the same questions whichever corpus has grown since.
+    #[test]
+    fn a_set_number_names_one_corpus_and_not_the_other() {
+        assert_eq!(Set::numbered(1).map(|set| set.kind), Some(Kind::Code));
+        assert_eq!(
+            Set::numbered(SHORT_FROM).map(|set| set.kind),
+            Some(Kind::ShortAnswer)
+        );
+        assert!(Set::numbered(SHORT_FROM.saturating_sub(1)).is_none());
+        assert!(Set::numbered(SHORT_FROM.saturating_add(40)).is_none());
+    }
+
+    #[test]
+    fn the_question_asks_for_the_answer_alone() {
+        let set = Set::numbered(SHORT_FROM).expect("the first short set");
+        let asked = set.asked();
+        assert!(asked.contains("### QUESTION 1"));
+        assert!(asked.contains("### ANSWER n: value"));
+        assert!(
+            !asked.contains("python"),
+            "nothing here wants a program written: {asked:.120}"
+        );
+    }
+
+    /// Every name is its own, so a reading that says which task failed says which one.
+    #[test]
+    fn no_two_tasks_share_a_name() {
+        let mut names: Vec<String> = Set::short()
+            .into_iter()
+            .flat_map(|set| set.tasks)
+            .map(|task| task.name)
+            .collect();
+        let all = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), all);
+    }
+}

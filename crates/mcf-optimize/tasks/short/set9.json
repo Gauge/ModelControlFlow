@@ -1,0 +1,127 @@
+[
+ {
+  "n": "code-0201",
+  "p": "What does f(56) return?\n\ndef f(n):\n    while n > 15:\n        n -= 15\n    return n",
+  "a": "11"
+ },
+ {
+  "n": "order-0202",
+  "p": "Dara is older than Bram. Bram is older than Fenn. Who is the oldest?",
+  "a": "Dara"
+ },
+ {
+  "n": "weeks-0203",
+  "p": "How many whole weeks are there in 55 days?",
+  "a": "7"
+ },
+ {
+  "n": "units-0204",
+  "p": "How many kibibytes are there in 467 mebibytes?",
+  "a": "478208"
+ },
+ {
+  "n": "arith-0205",
+  "p": "Compute 38 + 10 * 15.",
+  "a": "188"
+ },
+ {
+  "n": "prec-0206",
+  "p": "Compute (30 - 2) * 7 + 7.",
+  "a": "203"
+ },
+ {
+  "n": "pct-0207",
+  "p": "What is 4% of 700?",
+  "a": "28"
+ },
+ {
+  "n": "gcd-0208",
+  "p": "What is the least common multiple of 49 and 155?",
+  "a": "7595"
+ },
+ {
+  "n": "prime-0209",
+  "p": "How many prime numbers are there from 1 to 89 inclusive?",
+  "a": "24"
+ },
+ {
+  "n": "mod-0210",
+  "p": "What is the remainder when 2104 is divided by 26?",
+  "a": "24"
+ },
+ {
+  "n": "powmod-0211",
+  "p": "What is 11^6 mod 95?",
+  "a": "1"
+ },
+ {
+  "n": "base-0212",
+  "p": "Write 3339 in octal. Give only the digits, no prefix.",
+  "a": "6413"
+ },
+ {
+  "n": "frombase-0213",
+  "p": "The binary number 11110010101 is what in decimal?",
+  "a": "1941"
+ },
+ {
+  "n": "seqterm-0214",
+  "p": "An arithmetic sequence starts at 27 and increases by 2 each term. What is term number 26? (The first term is term number 1.)",
+  "a": "77"
+ },
+ {
+  "n": "seqsum-0215",
+  "p": "An arithmetic sequence starts at 11 and increases by 9 each term. What is the sum of its first 24 terms?",
+  "a": "2748"
+ },
+ {
+  "n": "solve-0216",
+  "p": "Solve for x: 2x + -27 = 33. Give x.",
+  "a": "30"
+ },
+ {
+  "n": "comb-0217",
+  "p": "In how many ways can 4 items be arranged from 8 distinct items, order mattering?",
+  "a": "1680"
+ },
+ {
+  "n": "rate-0218",
+  "p": "A vehicle travels at 61 km/h for 8 hours. How many kilometres does it cover?",
+  "a": "488"
+ },
+ {
+  "n": "digits-0219",
+  "p": "What is the sum of the digits of 31614?",
+  "a": "15"
+ },
+ {
+  "n": "revnum-0220",
+  "p": "Write the digits of 912675 in reverse order.",
+  "a": "576219"
+ },
+ {
+  "n": "bits-0221",
+  "p": "What is 164 XOR 231 as a decimal number? (bitwise xor)",
+  "a": "67"
+ },
+ {
+  "n": "geom-0222",
+  "p": "What is the area of a rectangle 11 by 21?",
+  "a": "231"
+ },
+ {
+  "n": "sets-0223",
+  "p": "Set A is {1, 5, 9, 13, 15, 30, 35, 37, 39} and set B is {1, 5, 9, 10, 26, 31, 38, 39}. How many numbers are in both A and B?",
+  "a": "4"
+ },
+ {
+  "n": "text-0224",
+  "p": "Write the word \"apple\" backwards.",
+  "a": "elppa"
+ },
+ {
+  "n": "list-0225",
+  "p": "What is the largest number in this list: [95, 12, 3, 55, 96, 20]?",
+  "a": "96"
+ }
+]

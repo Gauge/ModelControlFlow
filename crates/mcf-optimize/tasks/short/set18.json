@@ -1,0 +1,127 @@
+[
+ {
+  "n": "order-0426",
+  "p": "Ana is taller than Cleo. Cleo is taller than Bram. Who is the tallest?",
+  "a": "Ana"
+ },
+ {
+  "n": "arith-0427",
+  "p": "Compute 28 + 11 * 4.",
+  "a": "72"
+ },
+ {
+  "n": "prec-0428",
+  "p": "Compute (57 - 4) * 5 + 19.",
+  "a": "284"
+ },
+ {
+  "n": "pct-0429",
+  "p": "What is 40% of 5950?",
+  "a": "2380"
+ },
+ {
+  "n": "gcd-0430",
+  "p": "What is the least common multiple of 150 and 53?",
+  "a": "7950"
+ },
+ {
+  "n": "prime-0431",
+  "p": "How many prime numbers are there from 1 to 39 inclusive?",
+  "a": "12"
+ },
+ {
+  "n": "mod-0432",
+  "p": "What is the remainder when 8669 is divided by 20?",
+  "a": "9"
+ },
+ {
+  "n": "powmod-0433",
+  "p": "What is 3^17 mod 41?",
+  "a": "3"
+ },
+ {
+  "n": "base-0434",
+  "p": "Write 158 in hexadecimal. Give only the digits, no prefix.",
+  "a": "9E"
+ },
+ {
+  "n": "frombase-0435",
+  "p": "The hexadecimal number 110 is what in decimal?",
+  "a": "272"
+ },
+ {
+  "n": "seqterm-0436",
+  "p": "An arithmetic sequence starts at 8 and increases by 7 each term. What is term number 9? (The first term is term number 1.)",
+  "a": "64"
+ },
+ {
+  "n": "seqsum-0437",
+  "p": "An arithmetic sequence starts at 15 and increases by 1 each term. What is the sum of its first 20 terms?",
+  "a": "490"
+ },
+ {
+  "n": "solve-0438",
+  "p": "Solve for x: 4x + -12 = -92. Give x.",
+  "a": "-20"
+ },
+ {
+  "n": "comb-0439",
+  "p": "In how many ways can 3 items be arranged from 11 distinct items, order mattering?",
+  "a": "990"
+ },
+ {
+  "n": "rate-0440",
+  "p": "A vehicle travels at 34 km/h for 3 hours. How many kilometres does it cover?",
+  "a": "102"
+ },
+ {
+  "n": "digits-0441",
+  "p": "What is the sum of the digits of 637387?",
+  "a": "34"
+ },
+ {
+  "n": "revnum-0442",
+  "p": "Write the digits of 985960 in reverse order.",
+  "a": "69589"
+ },
+ {
+  "n": "bits-0443",
+  "p": "What is 95 OR 126 as a decimal number? (bitwise or)",
+  "a": "127"
+ },
+ {
+  "n": "geom-0444",
+  "p": "What is the area of a rectangle 35 by 20?",
+  "a": "700"
+ },
+ {
+  "n": "sets-0445",
+  "p": "Set A is {6, 9, 11, 15, 20, 22, 25, 26, 33} and set B is {3, 7, 8, 12, 17, 20, 21, 31, 35}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0446",
+  "p": "How many letters are in the word \"candle\"?",
+  "a": "6"
+ },
+ {
+  "n": "list-0447",
+  "p": "What is the sum of this list: [20, 97, 46, 76, 57, 71, 13, 18, 4]?",
+  "a": "402"
+ },
+ {
+  "n": "code-0448",
+  "p": "What does f(16) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 8\n    return total",
+  "a": "960"
+ },
+ {
+  "n": "order-0449",
+  "p": "Dara is taller than Cleo. Cleo is taller than Hugo. Who is the shortest?",
+  "a": "Hugo"
+ },
+ {
+  "n": "weeks-0450",
+  "p": "How many days are left over after taking whole weeks out of 116 days?",
+  "a": "4"
+ }
+]

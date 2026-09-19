@@ -1,0 +1,127 @@
+[
+ {
+  "n": "seqterm-0776",
+  "p": "An arithmetic sequence starts at 14 and increases by 12 each term. What is term number 31? (The first term is term number 1.)",
+  "a": "374"
+ },
+ {
+  "n": "seqsum-0777",
+  "p": "An arithmetic sequence starts at 6 and increases by 6 each term. What is the sum of its first 21 terms?",
+  "a": "1386"
+ },
+ {
+  "n": "solve-0778",
+  "p": "Solve for x: 13x + -21 = -281. Give x.",
+  "a": "-20"
+ },
+ {
+  "n": "comb-0779",
+  "p": "In how many ways can 5 items be arranged from 5 distinct items, order mattering?",
+  "a": "120"
+ },
+ {
+  "n": "rate-0780",
+  "p": "A vehicle travels at 57 km/h for 4 hours. How many kilometres does it cover?",
+  "a": "228"
+ },
+ {
+  "n": "digits-0781",
+  "p": "What is the sum of the digits of 198438?",
+  "a": "33"
+ },
+ {
+  "n": "revnum-0782",
+  "p": "Write the digits of 617132 in reverse order.",
+  "a": "231716"
+ },
+ {
+  "n": "bits-0783",
+  "p": "What is 185 OR 141 as a decimal number? (bitwise or)",
+  "a": "189"
+ },
+ {
+  "n": "sets-0784",
+  "p": "Set A is {3, 17, 21, 24, 32, 36} and set B is {2, 8, 20, 21, 26, 29, 39}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0785",
+  "p": "Write the word \"nectar\" backwards.",
+  "a": "ratcen"
+ },
+ {
+  "n": "list-0786",
+  "p": "What is the sum of this list: [21, 53, 79, 57, 24, 60]?",
+  "a": "294"
+ },
+ {
+  "n": "code-0787",
+  "p": "What does f([48, 19, 3, 45, 39, 32]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "80"
+ },
+ {
+  "n": "order-0788",
+  "p": "Bram is faster than Ana. Ana is faster than Emil. Who is the fastest?",
+  "a": "Bram"
+ },
+ {
+  "n": "weeks-0789",
+  "p": "How many whole weeks are there in 143 days?",
+  "a": "20"
+ },
+ {
+  "n": "units-0790",
+  "p": "How many metres are there in 63 kilometres?",
+  "a": "63000"
+ },
+ {
+  "n": "arith-0791",
+  "p": "Compute 6 + 7 * 19.",
+  "a": "139"
+ },
+ {
+  "n": "prec-0792",
+  "p": "Compute (47 - 5) * 8 + 11.",
+  "a": "347"
+ },
+ {
+  "n": "pct-0793",
+  "p": "What is 40% of 9675?",
+  "a": "3870"
+ },
+ {
+  "n": "gcd-0794",
+  "p": "What is the greatest common divisor of 185 and 97?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0795",
+  "p": "How many prime numbers are there from 1 to 159 inclusive?",
+  "a": "37"
+ },
+ {
+  "n": "mod-0796",
+  "p": "What is the remainder when 1003 is divided by 61?",
+  "a": "27"
+ },
+ {
+  "n": "powmod-0797",
+  "p": "What is 4^3 mod 87?",
+  "a": "64"
+ },
+ {
+  "n": "base-0798",
+  "p": "Write 2021 in octal. Give only the digits, no prefix.",
+  "a": "3745"
+ },
+ {
+  "n": "frombase-0799",
+  "p": "The hexadecimal number 20A is what in decimal?",
+  "a": "522"
+ },
+ {
+  "n": "seqterm-0800",
+  "p": "An arithmetic sequence starts at 7 and increases by 15 each term. What is term number 37? (The first term is term number 1.)",
+  "a": "547"
+ }
+]

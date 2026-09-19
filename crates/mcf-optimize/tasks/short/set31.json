@@ -1,0 +1,127 @@
+[
+ {
+  "n": "frombase-0751",
+  "p": "The binary number 10111100001 is what in decimal?",
+  "a": "1505"
+ },
+ {
+  "n": "seqterm-0752",
+  "p": "An arithmetic sequence starts at 19 and increases by 8 each term. What is term number 26? (The first term is term number 1.)",
+  "a": "219"
+ },
+ {
+  "n": "seqsum-0753",
+  "p": "An arithmetic sequence starts at 10 and increases by 7 each term. What is the sum of its first 20 terms?",
+  "a": "1530"
+ },
+ {
+  "n": "solve-0754",
+  "p": "Solve for x: 3x + -36 = 24. Give x.",
+  "a": "20"
+ },
+ {
+  "n": "rate-0755",
+  "p": "A vehicle travels at 118 km/h for 10 hours. How many kilometres does it cover?",
+  "a": "1180"
+ },
+ {
+  "n": "digits-0756",
+  "p": "What is the sum of the digits of 645949?",
+  "a": "37"
+ },
+ {
+  "n": "revnum-0757",
+  "p": "Write the digits of 750769 in reverse order.",
+  "a": "967057"
+ },
+ {
+  "n": "bits-0758",
+  "p": "What is 202 AND 155 as a decimal number? (bitwise and)",
+  "a": "138"
+ },
+ {
+  "n": "geom-0759",
+  "p": "What is the area of a rectangle 21 by 10?",
+  "a": "210"
+ },
+ {
+  "n": "sets-0760",
+  "p": "Set A is {5, 7, 17, 20, 24, 34} and set B is {1, 8, 9, 17, 20, 22, 24, 25, 27, 28, 29, 34}. How many numbers are in both A and B?",
+  "a": "4"
+ },
+ {
+  "n": "text-0761",
+  "p": "What is letter number 4 of the word \"forest\"? (The first letter is number 1.)",
+  "a": "e"
+ },
+ {
+  "n": "list-0762",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [18, 28, 35, 81, 90]?",
+  "a": "35"
+ },
+ {
+  "n": "code-0763",
+  "p": "What does f([36, 35, 19, 47, 11, 5]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "36"
+ },
+ {
+  "n": "order-0764",
+  "p": "Fenn is older than Cleo. Cleo is older than Hugo. Who is the oldest?",
+  "a": "Fenn"
+ },
+ {
+  "n": "weeks-0765",
+  "p": "How many days are left over after taking whole weeks out of 149 days?",
+  "a": "2"
+ },
+ {
+  "n": "units-0766",
+  "p": "How many metres are there in 18 kilometres?",
+  "a": "18000"
+ },
+ {
+  "n": "arith-0767",
+  "p": "Compute 22 + 7 * 20.",
+  "a": "162"
+ },
+ {
+  "n": "prec-0768",
+  "p": "Compute (55 - 8) * 4 + 19.",
+  "a": "207"
+ },
+ {
+  "n": "pct-0769",
+  "p": "What is 12% of 9100?",
+  "a": "1092"
+ },
+ {
+  "n": "gcd-0770",
+  "p": "What is the least common multiple of 50 and 186?",
+  "a": "4650"
+ },
+ {
+  "n": "prime-0771",
+  "p": "How many prime numbers are there from 1 to 178 inclusive?",
+  "a": "40"
+ },
+ {
+  "n": "mod-0772",
+  "p": "What is the remainder when 6829 is divided by 97?",
+  "a": "39"
+ },
+ {
+  "n": "powmod-0773",
+  "p": "What is 5^6 mod 74?",
+  "a": "11"
+ },
+ {
+  "n": "base-0774",
+  "p": "Write 2120 in hexadecimal. Give only the digits, no prefix.",
+  "a": "848"
+ },
+ {
+  "n": "frombase-0775",
+  "p": "The hexadecimal number 63D is what in decimal?",
+  "a": "1597"
+ }
+]

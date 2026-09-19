@@ -1,0 +1,127 @@
+[
+ {
+  "n": "weeks-0476",
+  "p": "How many days are left over after taking whole weeks out of 301 days?",
+  "a": "0"
+ },
+ {
+  "n": "units-0477",
+  "p": "How many kibibytes are there in 290 mebibytes?",
+  "a": "296960"
+ },
+ {
+  "n": "arith-0478",
+  "p": "Compute 24 + 12 * 28.",
+  "a": "360"
+ },
+ {
+  "n": "prec-0479",
+  "p": "Compute (80 - 3) * 2 + 19.",
+  "a": "173"
+ },
+ {
+  "n": "pct-0480",
+  "p": "What is 25% of 8050?",
+  "a": "2012"
+ },
+ {
+  "n": "gcd-0481",
+  "p": "What is the greatest common divisor of 94 and 91?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0482",
+  "p": "How many prime numbers are there from 1 to 256 inclusive?",
+  "a": "54"
+ },
+ {
+  "n": "mod-0483",
+  "p": "What is the remainder when 7900 is divided by 68?",
+  "a": "12"
+ },
+ {
+  "n": "powmod-0484",
+  "p": "What is 5^9 mod 23?",
+  "a": "11"
+ },
+ {
+  "n": "base-0485",
+  "p": "Write 223 in octal. Give only the digits, no prefix.",
+  "a": "337"
+ },
+ {
+  "n": "frombase-0486",
+  "p": "The binary number 1001000011 is what in decimal?",
+  "a": "579"
+ },
+ {
+  "n": "seqterm-0487",
+  "p": "An arithmetic sequence starts at 14 and increases by 13 each term. What is term number 36? (The first term is term number 1.)",
+  "a": "469"
+ },
+ {
+  "n": "seqsum-0488",
+  "p": "An arithmetic sequence starts at 11 and increases by 9 each term. What is the sum of its first 30 terms?",
+  "a": "4245"
+ },
+ {
+  "n": "solve-0489",
+  "p": "Solve for x: 15x + 18 = 723. Give x.",
+  "a": "47"
+ },
+ {
+  "n": "comb-0490",
+  "p": "In how many ways can 4 items be arranged from 9 distinct items, order mattering?",
+  "a": "3024"
+ },
+ {
+  "n": "rate-0491",
+  "p": "A vehicle travels at 89 km/h for 8 hours. How many kilometres does it cover?",
+  "a": "712"
+ },
+ {
+  "n": "digits-0492",
+  "p": "What is the sum of the digits of 981768?",
+  "a": "39"
+ },
+ {
+  "n": "revnum-0493",
+  "p": "Write the digits of 446205 in reverse order.",
+  "a": "502644"
+ },
+ {
+  "n": "bits-0494",
+  "p": "What is 194 XOR 102 as a decimal number? (bitwise xor)",
+  "a": "164"
+ },
+ {
+  "n": "geom-0495",
+  "p": "What is the area of a rectangle 17 by 5?",
+  "a": "85"
+ },
+ {
+  "n": "sets-0496",
+  "p": "Set A is {1, 6, 8, 9, 15, 16, 20, 24, 32, 35, 36} and set B is {2, 5, 8, 9, 17, 26, 36}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0497",
+  "p": "How many letters are in the word \"pewter\"?",
+  "a": "6"
+ },
+ {
+  "n": "list-0498",
+  "p": "What is the largest number in this list: [20, 98, 30, 32, 80, 63, 90, 67, 91]?",
+  "a": "98"
+ },
+ {
+  "n": "code-0499",
+  "p": "What does f([38, 34, 32, 10, 17, 27]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "114"
+ },
+ {
+  "n": "order-0500",
+  "p": "Cleo is faster than Dara. Dara is faster than Emil. Who is the slowest?",
+  "a": "Emil"
+ }
+]

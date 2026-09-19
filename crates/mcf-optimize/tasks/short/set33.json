@@ -1,0 +1,127 @@
+[
+ {
+  "n": "seqsum-0801",
+  "p": "An arithmetic sequence starts at 10 and increases by 3 each term. What is the sum of its first 6 terms?",
+  "a": "105"
+ },
+ {
+  "n": "solve-0802",
+  "p": "Solve for x: 7x + -37 = -79. Give x.",
+  "a": "-6"
+ },
+ {
+  "n": "comb-0803",
+  "p": "In how many ways can 3 items be arranged from 9 distinct items, order mattering?",
+  "a": "504"
+ },
+ {
+  "n": "rate-0804",
+  "p": "A vehicle travels at 66 km/h for 7 hours. How many kilometres does it cover?",
+  "a": "462"
+ },
+ {
+  "n": "digits-0805",
+  "p": "What is the sum of the digits of 481563?",
+  "a": "27"
+ },
+ {
+  "n": "revnum-0806",
+  "p": "Write the digits of 515376 in reverse order.",
+  "a": "673515"
+ },
+ {
+  "n": "bits-0807",
+  "p": "What is 235 AND 14 as a decimal number? (bitwise and)",
+  "a": "10"
+ },
+ {
+  "n": "geom-0808",
+  "p": "What is the area of a rectangle 4 by 19?",
+  "a": "76"
+ },
+ {
+  "n": "sets-0809",
+  "p": "Set A is {2, 10, 19, 27, 28, 35} and set B is {7, 8, 22, 24, 26, 27, 37, 38}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "list-0810",
+  "p": "What is the largest number in this list: [3, 59, 79, 93, 51, 45, 2, 88]?",
+  "a": "93"
+ },
+ {
+  "n": "code-0811",
+  "p": "What does f([12, 4, 32, 49, 23, 33]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "48"
+ },
+ {
+  "n": "order-0812",
+  "p": "Emil is heavier than Cleo. Cleo is heavier than Gita. Who is the lightest?",
+  "a": "Gita"
+ },
+ {
+  "n": "weeks-0813",
+  "p": "How many days are left over after taking whole weeks out of 392 days?",
+  "a": "0"
+ },
+ {
+  "n": "units-0814",
+  "p": "How many metres are there in 80 kilometres?",
+  "a": "80000"
+ },
+ {
+  "n": "arith-0815",
+  "p": "Compute 39 + 6 * 15.",
+  "a": "129"
+ },
+ {
+  "n": "prec-0816",
+  "p": "Compute (12 - 3) * 6 + 17.",
+  "a": "71"
+ },
+ {
+  "n": "pct-0817",
+  "p": "What is 20% of 500?",
+  "a": "100"
+ },
+ {
+  "n": "gcd-0818",
+  "p": "What is the least common multiple of 187 and 69?",
+  "a": "12903"
+ },
+ {
+  "n": "prime-0819",
+  "p": "How many prime numbers are there from 1 to 286 inclusive?",
+  "a": "61"
+ },
+ {
+  "n": "mod-0820",
+  "p": "What is the remainder when 2536 is divided by 91?",
+  "a": "79"
+ },
+ {
+  "n": "powmod-0821",
+  "p": "What is 8^17 mod 54?",
+  "a": "44"
+ },
+ {
+  "n": "base-0822",
+  "p": "Write 453 in octal. Give only the digits, no prefix.",
+  "a": "705"
+ },
+ {
+  "n": "frombase-0823",
+  "p": "The hexadecimal number 308 is what in decimal?",
+  "a": "776"
+ },
+ {
+  "n": "seqterm-0824",
+  "p": "An arithmetic sequence starts at 1 and increases by 2 each term. What is term number 11? (The first term is term number 1.)",
+  "a": "21"
+ },
+ {
+  "n": "seqsum-0825",
+  "p": "An arithmetic sequence starts at 8 and increases by 9 each term. What is the sum of its first 30 terms?",
+  "a": "4155"
+ }
+]

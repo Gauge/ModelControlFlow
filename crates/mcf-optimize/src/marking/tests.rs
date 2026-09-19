@@ -282,3 +282,100 @@ fn a_solution_part_of_the_way_there_is_marked_part_of_the_way_there() {
     );
     assert!(!first.whole());
 }
+
+/// Marking a short answer is reading it. What a model writes around the answer is not
+/// held against it: a marker that called a bolded number wrong would be measuring
+/// formatting and reporting it as thinking.
+mod reading_the_answers {
+    use crate::corpus::Task;
+    use crate::marking::marked_by_reading;
+
+    fn asking(answers: &[&str]) -> Vec<Task> {
+        answers
+            .iter()
+            .enumerate()
+            .map(|(at, held)| Task {
+                name: format!("task-{}", at.saturating_add(1)),
+                asked: "a question".to_owned(),
+                checked: (*held).to_owned(),
+            })
+            .collect()
+    }
+
+    fn scored(answers: &[&str], said: &str) -> Vec<u32> {
+        marked_by_reading(&asking(answers), said)
+            .into_iter()
+            .map(|held| held.passed)
+            .collect()
+    }
+
+    #[test]
+    fn an_answer_on_its_line_is_read_off_it() {
+        assert_eq!(
+            scored(&["41", "16"], "### ANSWER 1: 41\n### ANSWER 2: 16"),
+            vec![1, 1]
+        );
+    }
+
+    #[test]
+    fn a_wrong_answer_is_wrong_and_a_missing_one_is_not_right() {
+        assert_eq!(
+            scored(&["41", "16"], "### ANSWER 1: 40"),
+            vec![0, 0],
+            "the second was never answered, and an unanswered question is not a pass"
+        );
+    }
+
+    #[test]
+    fn working_around_the_answer_does_not_make_it_wrong() {
+        let said = "Let me think about this.\n\
+                    ### ANSWER 1: **1,234**\n\
+                    Some commentary in between.\n\
+                    ### ANSWER 2: `apple`.\n\
+                    ### ANSWER 3: +7\n\
+                    ### ANSWER 4: 12.0\n";
+        assert_eq!(
+            scored(&["1234", "apple", "7", "12"], said),
+            vec![1, 1, 1, 1]
+        );
+    }
+
+    #[test]
+    fn a_word_is_read_whatever_case_it_is_written_in() {
+        assert_eq!(scored(&["apple"], "### ANSWER 1: Apple"), vec![1]);
+    }
+
+    /// A number that only looks like the answer is not the answer.
+    #[test]
+    fn a_number_near_the_answer_is_not_the_answer() {
+        assert_eq!(scored(&["12"], "### ANSWER 1: 12.5"), vec![0]);
+        assert_eq!(scored(&["7"], "### ANSWER 1: 70"), vec![0]);
+        assert_eq!(
+            scored(&["0"], "### ANSWER 1: -0"),
+            vec![1],
+            "nought is nought"
+        );
+    }
+
+    /// Answers out of order are still answers: the number on the line says which question
+    /// each one belongs to, and that is what it is for.
+    #[test]
+    fn an_answer_is_matched_by_its_number_and_not_by_its_place() {
+        assert_eq!(
+            scored(
+                &["1", "2", "3"],
+                "### ANSWER 3: 3\n### ANSWER 1: 1\n### ANSWER 2: 2"
+            ),
+            vec![1, 1, 1]
+        );
+    }
+
+    #[test]
+    fn an_answer_to_nothing_is_marked_as_nothing() {
+        assert_eq!(
+            scored(&["41"], "I would rather not say."),
+            vec![0],
+            "and it does not stop the rest of the set being marked"
+        );
+    }
+}

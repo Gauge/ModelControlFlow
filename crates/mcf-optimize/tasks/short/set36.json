@@ -1,0 +1,127 @@
+[
+ {
+  "n": "digits-0876",
+  "p": "What is the sum of the digits of 174828?",
+  "a": "30"
+ },
+ {
+  "n": "revnum-0877",
+  "p": "Write the digits of 328206 in reverse order.",
+  "a": "602823"
+ },
+ {
+  "n": "bits-0878",
+  "p": "What is 145 XOR 231 as a decimal number? (bitwise xor)",
+  "a": "118"
+ },
+ {
+  "n": "sets-0879",
+  "p": "Set A is {4, 6, 10, 13, 14, 22, 34, 35, 37, 38} and set B is {1, 4, 12, 15, 17, 20, 22, 26, 27, 29, 37}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0880",
+  "p": "What is letter number 1 of the word \"forest\"? (The first letter is number 1.)",
+  "a": "f"
+ },
+ {
+  "n": "list-0881",
+  "p": "What is the sum of this list: [11, 18, 14, 23, 16, 94, 8, 52, 34]?",
+  "a": "270"
+ },
+ {
+  "n": "code-0882",
+  "p": "What does f(38) return?\n\ndef f(n):\n    while n > 19:\n        n -= 2\n    return n",
+  "a": "18"
+ },
+ {
+  "n": "order-0883",
+  "p": "Fenn is older than Ana. Ana is older than Cleo. Who is the youngest?",
+  "a": "Cleo"
+ },
+ {
+  "n": "weeks-0884",
+  "p": "How many whole weeks are there in 12 days?",
+  "a": "1"
+ },
+ {
+  "n": "units-0885",
+  "p": "How many kibibytes are there in 140 mebibytes?",
+  "a": "143360"
+ },
+ {
+  "n": "arith-0886",
+  "p": "Compute 8 + 9 * 17.",
+  "a": "161"
+ },
+ {
+  "n": "prec-0887",
+  "p": "Compute (66 - 8) * 6 + 10.",
+  "a": "358"
+ },
+ {
+  "n": "pct-0888",
+  "p": "What is 80% of 2775?",
+  "a": "2220"
+ },
+ {
+  "n": "gcd-0889",
+  "p": "What is the least common multiple of 171 and 49?",
+  "a": "8379"
+ },
+ {
+  "n": "prime-0890",
+  "p": "How many prime numbers are there from 1 to 161 inclusive?",
+  "a": "37"
+ },
+ {
+  "n": "mod-0891",
+  "p": "What is the remainder when 2005 is divided by 90?",
+  "a": "25"
+ },
+ {
+  "n": "powmod-0892",
+  "p": "What is 10^6 mod 39?",
+  "a": "1"
+ },
+ {
+  "n": "base-0893",
+  "p": "Write 3899 in hexadecimal. Give only the digits, no prefix.",
+  "a": "F3B"
+ },
+ {
+  "n": "frombase-0894",
+  "p": "The hexadecimal number BA is what in decimal?",
+  "a": "186"
+ },
+ {
+  "n": "seqterm-0895",
+  "p": "An arithmetic sequence starts at 22 and increases by 4 each term. What is term number 25? (The first term is term number 1.)",
+  "a": "118"
+ },
+ {
+  "n": "seqsum-0896",
+  "p": "An arithmetic sequence starts at 2 and increases by 1 each term. What is the sum of its first 19 terms?",
+  "a": "209"
+ },
+ {
+  "n": "solve-0897",
+  "p": "Solve for x: 11x + -41 = -272. Give x.",
+  "a": "-21"
+ },
+ {
+  "n": "rate-0898",
+  "p": "A vehicle travels at 76 km/h for 12 hours. How many kilometres does it cover?",
+  "a": "912"
+ },
+ {
+  "n": "digits-0899",
+  "p": "What is the sum of the digits of 79619?",
+  "a": "32"
+ },
+ {
+  "n": "revnum-0900",
+  "p": "Write the digits of 358245 in reverse order.",
+  "a": "542853"
+ }
+]

@@ -1,0 +1,127 @@
+[
+ {
+  "n": "code-0276",
+  "p": "What does f(48) return?\n\ndef f(n):\n    while n > 14:\n        n -= 12\n    return n",
+  "a": "12"
+ },
+ {
+  "n": "order-0277",
+  "p": "Fenn is taller than Bram. Bram is taller than Ana. Who is the tallest?",
+  "a": "Fenn"
+ },
+ {
+  "n": "weeks-0278",
+  "p": "How many days are left over after taking whole weeks out of 306 days?",
+  "a": "5"
+ },
+ {
+  "n": "units-0279",
+  "p": "How many kibibytes are there in 468 mebibytes?",
+  "a": "479232"
+ },
+ {
+  "n": "arith-0280",
+  "p": "Compute 12 + 7 * 19.",
+  "a": "145"
+ },
+ {
+  "n": "prec-0281",
+  "p": "Compute (23 - 8) * 4 + 14.",
+  "a": "74"
+ },
+ {
+  "n": "pct-0282",
+  "p": "What is 30% of 6875?",
+  "a": "2062"
+ },
+ {
+  "n": "gcd-0283",
+  "p": "What is the greatest common divisor of 68 and 108?",
+  "a": "4"
+ },
+ {
+  "n": "prime-0284",
+  "p": "How many prime numbers are there from 1 to 279 inclusive?",
+  "a": "59"
+ },
+ {
+  "n": "mod-0285",
+  "p": "What is the remainder when 4055 is divided by 27?",
+  "a": "5"
+ },
+ {
+  "n": "powmod-0286",
+  "p": "What is 10^3 mod 60?",
+  "a": "40"
+ },
+ {
+  "n": "base-0287",
+  "p": "Write 532 in hexadecimal. Give only the digits, no prefix.",
+  "a": "214"
+ },
+ {
+  "n": "frombase-0288",
+  "p": "The hexadecimal number 154 is what in decimal?",
+  "a": "340"
+ },
+ {
+  "n": "seqterm-0289",
+  "p": "An arithmetic sequence starts at 18 and increases by 4 each term. What is term number 29? (The first term is term number 1.)",
+  "a": "130"
+ },
+ {
+  "n": "seqsum-0290",
+  "p": "An arithmetic sequence starts at 20 and increases by 6 each term. What is the sum of its first 17 terms?",
+  "a": "1156"
+ },
+ {
+  "n": "solve-0291",
+  "p": "Solve for x: 2x + -15 = 21. Give x.",
+  "a": "18"
+ },
+ {
+  "n": "comb-0292",
+  "p": "In how many ways can 2 items be chosen from 7 distinct items, order not mattering?",
+  "a": "21"
+ },
+ {
+  "n": "rate-0293",
+  "p": "A vehicle travels at 99 km/h for 3 hours. How many kilometres does it cover?",
+  "a": "297"
+ },
+ {
+  "n": "work-0294",
+  "p": "One pump fills a tank in 12 hours and another fills it in 24 hours. Working together, how many hours do they take?",
+  "a": "8"
+ },
+ {
+  "n": "digits-0295",
+  "p": "What is the sum of the digits of 155600?",
+  "a": "17"
+ },
+ {
+  "n": "revnum-0296",
+  "p": "Write the digits of 931566 in reverse order.",
+  "a": "665139"
+ },
+ {
+  "n": "bits-0297",
+  "p": "What is 74 AND 177 as a decimal number? (bitwise and)",
+  "a": "0"
+ },
+ {
+  "n": "geom-0298",
+  "p": "What is the area of a rectangle 11 by 39?",
+  "a": "429"
+ },
+ {
+  "n": "sets-0299",
+  "p": "Set A is {2, 4, 10, 11, 12, 16, 21, 22, 23, 24, 32, 37} and set B is {4, 5, 9, 11, 12, 18, 19, 24, 25, 28, 35}. How many numbers are in both A and B?",
+  "a": "4"
+ },
+ {
+  "n": "text-0300",
+  "p": "Write the word \"ember\" backwards.",
+  "a": "rebme"
+ }
+]

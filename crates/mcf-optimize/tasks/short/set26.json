@@ -1,0 +1,127 @@
+[
+ {
+  "n": "arith-0626",
+  "p": "Compute 23 + 12 * 27.",
+  "a": "347"
+ },
+ {
+  "n": "prec-0627",
+  "p": "Compute (11 - 5) * 9 + 18.",
+  "a": "72"
+ },
+ {
+  "n": "pct-0628",
+  "p": "What is 12% of 7500?",
+  "a": "900"
+ },
+ {
+  "n": "gcd-0629",
+  "p": "What is the least common multiple of 99 and 67?",
+  "a": "6633"
+ },
+ {
+  "n": "prime-0630",
+  "p": "How many prime numbers are there from 1 to 63 inclusive?",
+  "a": "18"
+ },
+ {
+  "n": "mod-0631",
+  "p": "What is the remainder when 7583 is divided by 35?",
+  "a": "23"
+ },
+ {
+  "n": "powmod-0632",
+  "p": "What is 10^12 mod 93?",
+  "a": "4"
+ },
+ {
+  "n": "base-0633",
+  "p": "Write 737 in octal. Give only the digits, no prefix.",
+  "a": "1341"
+ },
+ {
+  "n": "frombase-0634",
+  "p": "The hexadecimal number 62C is what in decimal?",
+  "a": "1580"
+ },
+ {
+  "n": "seqterm-0635",
+  "p": "An arithmetic sequence starts at 17 and increases by 11 each term. What is term number 38? (The first term is term number 1.)",
+  "a": "424"
+ },
+ {
+  "n": "seqsum-0636",
+  "p": "An arithmetic sequence starts at 8 and increases by 8 each term. What is the sum of its first 10 terms?",
+  "a": "440"
+ },
+ {
+  "n": "solve-0637",
+  "p": "Solve for x: 3x + 9 = 168. Give x.",
+  "a": "53"
+ },
+ {
+  "n": "comb-0638",
+  "p": "In how many ways can 5 items be chosen from 11 distinct items, order not mattering?",
+  "a": "462"
+ },
+ {
+  "n": "rate-0639",
+  "p": "A vehicle travels at 61 km/h for 6 hours. How many kilometres does it cover?",
+  "a": "366"
+ },
+ {
+  "n": "digits-0640",
+  "p": "What is the sum of the digits of 877520?",
+  "a": "29"
+ },
+ {
+  "n": "revnum-0641",
+  "p": "Write the digits of 262659 in reverse order.",
+  "a": "956262"
+ },
+ {
+  "n": "bits-0642",
+  "p": "What is 24 XOR 121 as a decimal number? (bitwise xor)",
+  "a": "97"
+ },
+ {
+  "n": "sets-0643",
+  "p": "Set A is {1, 2, 4, 6, 12, 17, 18, 33} and set B is {2, 4, 5, 9, 10, 13, 15, 23, 30, 38, 39}. How many numbers are in both A and B?",
+  "a": "2"
+ },
+ {
+  "n": "list-0644",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [9, 85, 2, 12, 62, 1, 23, 88]?",
+  "a": "9"
+ },
+ {
+  "n": "code-0645",
+  "p": "What does f(32) return?\n\ndef f(n):\n    while n > 16:\n        n -= 18\n    return n",
+  "a": "14"
+ },
+ {
+  "n": "order-0646",
+  "p": "Fenn is older than Ana. Ana is older than Hugo. Who is the oldest?",
+  "a": "Fenn"
+ },
+ {
+  "n": "weeks-0647",
+  "p": "How many days are left over after taking whole weeks out of 15 days?",
+  "a": "1"
+ },
+ {
+  "n": "units-0648",
+  "p": "How many minutes are there in 58 hours?",
+  "a": "3480"
+ },
+ {
+  "n": "arith-0649",
+  "p": "Compute 15 + 6 * 30.",
+  "a": "195"
+ },
+ {
+  "n": "prec-0650",
+  "p": "Compute (24 - 4) * 6 + 15.",
+  "a": "135"
+ }
+]

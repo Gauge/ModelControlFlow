@@ -1,0 +1,127 @@
+[
+ {
+  "n": "pct-0651",
+  "p": "What is 64% of 6175?",
+  "a": "3952"
+ },
+ {
+  "n": "gcd-0652",
+  "p": "What is the least common multiple of 189 and 95?",
+  "a": "17955"
+ },
+ {
+  "n": "prime-0653",
+  "p": "How many prime numbers are there from 1 to 184 inclusive?",
+  "a": "42"
+ },
+ {
+  "n": "mod-0654",
+  "p": "What is the remainder when 8832 is divided by 50?",
+  "a": "32"
+ },
+ {
+  "n": "powmod-0655",
+  "p": "What is 4^8 mod 77?",
+  "a": "9"
+ },
+ {
+  "n": "base-0656",
+  "p": "Write 1116 in octal. Give only the digits, no prefix.",
+  "a": "2134"
+ },
+ {
+  "n": "frombase-0657",
+  "p": "The binary number 10011111010 is what in decimal?",
+  "a": "1274"
+ },
+ {
+  "n": "seqterm-0658",
+  "p": "An arithmetic sequence starts at 25 and increases by 9 each term. What is term number 6? (The first term is term number 1.)",
+  "a": "70"
+ },
+ {
+  "n": "seqsum-0659",
+  "p": "An arithmetic sequence starts at 7 and increases by 3 each term. What is the sum of its first 17 terms?",
+  "a": "527"
+ },
+ {
+  "n": "solve-0660",
+  "p": "Solve for x: 9x + -41 = 76. Give x.",
+  "a": "13"
+ },
+ {
+  "n": "rate-0661",
+  "p": "A vehicle travels at 39 km/h for 11 hours. How many kilometres does it cover?",
+  "a": "429"
+ },
+ {
+  "n": "digits-0662",
+  "p": "What is the sum of the digits of 649919?",
+  "a": "38"
+ },
+ {
+  "n": "revnum-0663",
+  "p": "Write the digits of 18752 in reverse order.",
+  "a": "25781"
+ },
+ {
+  "n": "bits-0664",
+  "p": "What is 34 AND 3 as a decimal number? (bitwise and)",
+  "a": "2"
+ },
+ {
+  "n": "sets-0665",
+  "p": "Set A is {7, 15, 17, 24, 32, 38} and set B is {2, 12, 14, 22, 35, 36}. How many numbers are in both A and B?",
+  "a": "0"
+ },
+ {
+  "n": "list-0666",
+  "p": "What is the largest number in this list: [7, 61, 72, 96, 99]?",
+  "a": "99"
+ },
+ {
+  "n": "code-0667",
+  "p": "What does f(56) return?\n\ndef f(n):\n    while n > 14:\n        n -= 7\n    return n",
+  "a": "14"
+ },
+ {
+  "n": "order-0668",
+  "p": "Ana is faster than Gita. Gita is faster than Bram. Who is the slowest?",
+  "a": "Bram"
+ },
+ {
+  "n": "weeks-0669",
+  "p": "How many whole weeks are there in 42 days?",
+  "a": "6"
+ },
+ {
+  "n": "units-0670",
+  "p": "How many minutes are there in 112 hours?",
+  "a": "6720"
+ },
+ {
+  "n": "arith-0671",
+  "p": "Compute 19 + 8 * 23.",
+  "a": "203"
+ },
+ {
+  "n": "prec-0672",
+  "p": "Compute (78 - 3) * 9 + 14.",
+  "a": "689"
+ },
+ {
+  "n": "pct-0673",
+  "p": "What is 12% of 4350?",
+  "a": "522"
+ },
+ {
+  "n": "gcd-0674",
+  "p": "What is the least common multiple of 170 and 180?",
+  "a": "3060"
+ },
+ {
+  "n": "prime-0675",
+  "p": "How many prime numbers are there from 1 to 36 inclusive?",
+  "a": "11"
+ }
+]

@@ -1,0 +1,127 @@
+[
+ {
+  "n": "code-0151",
+  "p": "What does f([46, 35, 23, 14, 38, 4]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "102"
+ },
+ {
+  "n": "order-0152",
+  "p": "Cleo is heavier than Dara. Dara is heavier than Ana. Who is the lightest?",
+  "a": "Ana"
+ },
+ {
+  "n": "weeks-0153",
+  "p": "How many whole weeks are there in 247 days?",
+  "a": "35"
+ },
+ {
+  "n": "units-0154",
+  "p": "How many metres are there in 23 kilometres?",
+  "a": "23000"
+ },
+ {
+  "n": "arith-0155",
+  "p": "Compute 11 + 5 * 5.",
+  "a": "36"
+ },
+ {
+  "n": "prec-0156",
+  "p": "Compute (55 - 2) * 4 + 3.",
+  "a": "215"
+ },
+ {
+  "n": "pct-0157",
+  "p": "What is 25% of 2825?",
+  "a": "706"
+ },
+ {
+  "n": "gcd-0158",
+  "p": "What is the greatest common divisor of 147 and 193?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0159",
+  "p": "How many prime numbers are there from 1 to 168 inclusive?",
+  "a": "39"
+ },
+ {
+  "n": "mod-0160",
+  "p": "What is the remainder when 3323 is divided by 47?",
+  "a": "33"
+ },
+ {
+  "n": "powmod-0161",
+  "p": "What is 7^10 mod 28?",
+  "a": "21"
+ },
+ {
+  "n": "base-0162",
+  "p": "Write 3390 in binary. Give only the digits, no prefix.",
+  "a": "110100111110"
+ },
+ {
+  "n": "frombase-0163",
+  "p": "The binary number 10000001010 is what in decimal?",
+  "a": "1034"
+ },
+ {
+  "n": "seqterm-0164",
+  "p": "An arithmetic sequence starts at 3 and increases by 11 each term. What is term number 23? (The first term is term number 1.)",
+  "a": "245"
+ },
+ {
+  "n": "seqsum-0165",
+  "p": "An arithmetic sequence starts at 9 and increases by 4 each term. What is the sum of its first 17 terms?",
+  "a": "697"
+ },
+ {
+  "n": "solve-0166",
+  "p": "Solve for x: 9x + 31 = 436. Give x.",
+  "a": "45"
+ },
+ {
+  "n": "comb-0167",
+  "p": "In how many ways can 4 items be arranged from 5 distinct items, order mattering?",
+  "a": "120"
+ },
+ {
+  "n": "rate-0168",
+  "p": "A vehicle travels at 77 km/h for 9 hours. How many kilometres does it cover?",
+  "a": "693"
+ },
+ {
+  "n": "digits-0169",
+  "p": "What is the sum of the digits of 986664?",
+  "a": "39"
+ },
+ {
+  "n": "revnum-0170",
+  "p": "Write the digits of 985391 in reverse order.",
+  "a": "193589"
+ },
+ {
+  "n": "bits-0171",
+  "p": "What is 75 AND 92 as a decimal number? (bitwise and)",
+  "a": "72"
+ },
+ {
+  "n": "geom-0172",
+  "p": "A right triangle has legs of 8 and 15. What is the length of its hypotenuse?",
+  "a": "17"
+ },
+ {
+  "n": "sets-0173",
+  "p": "Set A is {3, 16, 17, 19, 20, 22, 24, 29} and set B is {8, 14, 18, 21, 25, 27, 28, 32, 35, 36, 37, 39}. How many numbers are in both A and B?",
+  "a": "0"
+ },
+ {
+  "n": "text-0174",
+  "p": "Write the word \"marble\" backwards.",
+  "a": "elbram"
+ },
+ {
+  "n": "list-0175",
+  "p": "What is the sum of this list: [5, 46, 76, 43, 42, 37, 47]?",
+  "a": "296"
+ }
+]

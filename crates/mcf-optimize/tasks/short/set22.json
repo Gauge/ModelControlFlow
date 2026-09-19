@@ -1,0 +1,127 @@
+[
+ {
+  "n": "weeks-0526",
+  "p": "How many whole weeks are there in 253 days?",
+  "a": "36"
+ },
+ {
+  "n": "units-0527",
+  "p": "How many kibibytes are there in 133 mebibytes?",
+  "a": "136192"
+ },
+ {
+  "n": "arith-0528",
+  "p": "Compute 29 + 9 * 20.",
+  "a": "209"
+ },
+ {
+  "n": "prec-0529",
+  "p": "Compute (63 - 8) * 2 + 16.",
+  "a": "126"
+ },
+ {
+  "n": "pct-0530",
+  "p": "What is 75% of 5200?",
+  "a": "3900"
+ },
+ {
+  "n": "gcd-0531",
+  "p": "What is the least common multiple of 60 and 99?",
+  "a": "1980"
+ },
+ {
+  "n": "prime-0532",
+  "p": "How many prime numbers are there from 1 to 165 inclusive?",
+  "a": "38"
+ },
+ {
+  "n": "mod-0533",
+  "p": "What is the remainder when 1159 is divided by 25?",
+  "a": "9"
+ },
+ {
+  "n": "powmod-0534",
+  "p": "What is 8^6 mod 14?",
+  "a": "8"
+ },
+ {
+  "n": "base-0535",
+  "p": "Write 2454 in hexadecimal. Give only the digits, no prefix.",
+  "a": "996"
+ },
+ {
+  "n": "frombase-0536",
+  "p": "The binary number 11011000010 is what in decimal?",
+  "a": "1730"
+ },
+ {
+  "n": "seqterm-0537",
+  "p": "An arithmetic sequence starts at 16 and increases by 10 each term. What is term number 32? (The first term is term number 1.)",
+  "a": "326"
+ },
+ {
+  "n": "seqsum-0538",
+  "p": "An arithmetic sequence starts at 13 and increases by 3 each term. What is the sum of its first 30 terms?",
+  "a": "1695"
+ },
+ {
+  "n": "solve-0539",
+  "p": "Solve for x: 4x + -45 = -121. Give x.",
+  "a": "-19"
+ },
+ {
+  "n": "rate-0540",
+  "p": "A vehicle travels at 45 km/h for 7 hours. How many kilometres does it cover?",
+  "a": "315"
+ },
+ {
+  "n": "digits-0541",
+  "p": "What is the sum of the digits of 841633?",
+  "a": "25"
+ },
+ {
+  "n": "revnum-0542",
+  "p": "Write the digits of 196983 in reverse order.",
+  "a": "389691"
+ },
+ {
+  "n": "bits-0543",
+  "p": "What is 27 AND 230 as a decimal number? (bitwise and)",
+  "a": "2"
+ },
+ {
+  "n": "geom-0544",
+  "p": "What is the area of a rectangle 30 by 19?",
+  "a": "570"
+ },
+ {
+  "n": "sets-0545",
+  "p": "Set A is {11, 29, 31, 33, 34, 36} and set B is {12, 13, 18, 26, 30, 31, 37}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0546",
+  "p": "Write the word \"candle\" backwards.",
+  "a": "eldnac"
+ },
+ {
+  "n": "list-0547",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [74, 1, 26, 24, 56]?",
+  "a": "26"
+ },
+ {
+  "n": "code-0548",
+  "p": "What does f(7) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 6\n    return total",
+  "a": "126"
+ },
+ {
+  "n": "order-0549",
+  "p": "Ana is heavier than Dara. Dara is heavier than Bram. Who is the heaviest?",
+  "a": "Ana"
+ },
+ {
+  "n": "weeks-0550",
+  "p": "How many days are left over after taking whole weeks out of 319 days?",
+  "a": "4"
+ }
+]

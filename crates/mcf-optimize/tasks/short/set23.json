@@ -1,0 +1,127 @@
+[
+ {
+  "n": "units-0551",
+  "p": "How many metres are there in 22 kilometres?",
+  "a": "22000"
+ },
+ {
+  "n": "arith-0552",
+  "p": "Compute 10 + 7 * 2.",
+  "a": "24"
+ },
+ {
+  "n": "prec-0553",
+  "p": "Compute (59 - 4) * 4 + 7.",
+  "a": "227"
+ },
+ {
+  "n": "pct-0554",
+  "p": "What is 75% of 5850?",
+  "a": "4387"
+ },
+ {
+  "n": "gcd-0555",
+  "p": "What is the greatest common divisor of 98 and 39?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0556",
+  "p": "How many prime numbers are there from 1 to 201 inclusive?",
+  "a": "46"
+ },
+ {
+  "n": "mod-0557",
+  "p": "What is the remainder when 5199 is divided by 61?",
+  "a": "14"
+ },
+ {
+  "n": "powmod-0558",
+  "p": "What is 6^12 mod 86?",
+  "a": "44"
+ },
+ {
+  "n": "base-0559",
+  "p": "Write 316 in binary. Give only the digits, no prefix.",
+  "a": "100111100"
+ },
+ {
+  "n": "frombase-0560",
+  "p": "The hexadecimal number 356 is what in decimal?",
+  "a": "854"
+ },
+ {
+  "n": "seqterm-0561",
+  "p": "An arithmetic sequence starts at 12 and increases by 15 each term. What is term number 29? (The first term is term number 1.)",
+  "a": "432"
+ },
+ {
+  "n": "seqsum-0562",
+  "p": "An arithmetic sequence starts at 4 and increases by 9 each term. What is the sum of its first 17 terms?",
+  "a": "1292"
+ },
+ {
+  "n": "solve-0563",
+  "p": "Solve for x: 11x + -4 = 557. Give x.",
+  "a": "51"
+ },
+ {
+  "n": "comb-0564",
+  "p": "In how many ways can 5 items be chosen from 14 distinct items, order not mattering?",
+  "a": "2002"
+ },
+ {
+  "n": "rate-0565",
+  "p": "A vehicle travels at 88 km/h for 6 hours. How many kilometres does it cover?",
+  "a": "528"
+ },
+ {
+  "n": "digits-0566",
+  "p": "What is the sum of the digits of 330789?",
+  "a": "30"
+ },
+ {
+  "n": "revnum-0567",
+  "p": "Write the digits of 959858 in reverse order.",
+  "a": "858959"
+ },
+ {
+  "n": "bits-0568",
+  "p": "What is 67 AND 88 as a decimal number? (bitwise and)",
+  "a": "64"
+ },
+ {
+  "n": "sets-0569",
+  "p": "Set A is {1, 3, 8, 16, 18, 22, 23, 27, 39} and set B is {5, 7, 11, 13, 16, 18, 21, 22, 24, 30, 35}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0570",
+  "p": "What is letter number 2 of the word \"bridge\"? (The first letter is number 1.)",
+  "a": "r"
+ },
+ {
+  "n": "list-0571",
+  "p": "What is the largest number in this list: [98, 2, 18, 72, 51, 1]?",
+  "a": "98"
+ },
+ {
+  "n": "code-0572",
+  "p": "What does f(14) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 6\n    return total",
+  "a": "546"
+ },
+ {
+  "n": "order-0573",
+  "p": "Bram is faster than Hugo. Hugo is faster than Fenn. Who is the slowest?",
+  "a": "Fenn"
+ },
+ {
+  "n": "weeks-0574",
+  "p": "How many whole weeks are there in 212 days?",
+  "a": "30"
+ },
+ {
+  "n": "units-0575",
+  "p": "How many metres are there in 62 kilometres?",
+  "a": "62000"
+ }
+]

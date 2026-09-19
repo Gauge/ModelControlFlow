@@ -299,6 +299,7 @@ fn a_sweep_that_is_not_marking_calls_nothing_right_and_starts_no_container() {
         false,
         &room,
         spot(),
+        crate::corpus::Kind::Code,
         &one_task(),
         &said_with("```python\ndef add(a,b): return a+b\n```"),
     );
@@ -322,6 +323,7 @@ fn a_marked_sweep_actually_runs_the_code_and_says_whether_it_passed() {
         true,
         &room,
         spot(),
+        crate::corpus::Kind::Code,
         &one_task(),
         &said_with("### SOLUTION 1\n```python\ndef add(a, b):\n    return a + b\n```"),
     );
@@ -351,6 +353,7 @@ fn a_marked_sweep_fails_code_that_does_not_satisfy_the_check() {
         true,
         &room,
         spot(),
+        crate::corpus::Kind::Code,
         &one_task(),
         &said_with("### SOLUTION 1\n```python\ndef add(a, b):\n    return a * b\n```"),
     );

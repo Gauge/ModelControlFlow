@@ -64,6 +64,103 @@ pub fn where_podman_is() -> Option<PathBuf> {
 
 /// Every claim a set of tasks makes, with none of them held. What a set scores when the
 /// model wrote nothing worth running.
+/// Mark a set of short answers by reading them.
+///
+/// Nothing is run: each of these questions has one right answer, short enough to write on
+/// a line, so marking is comparing what was written with what was asked for. That makes a
+/// graded trial cost a line of output a question instead of a program, and it needs no
+/// container — a correctness sweep can be run on a machine with no podman on it at all.
+///
+/// What a model writes around the answer is not held against it. Models bold things, add
+/// units, put a full stop at the end, and write a thousand with a comma in it; none of
+/// that is a wrong answer, and a marker that called it one would be measuring formatting.
+#[must_use]
+pub fn marked_by_reading(tasks: &[Task], answer: &str) -> Vec<Checked> {
+    let said = answers_in(answer);
+    tasks
+        .iter()
+        .enumerate()
+        .map(|(at, task)| {
+            let number = at.saturating_add(1);
+            let given = said.iter().find(|(held, _)| *held == number);
+            let right = given.is_some_and(|(_, given)| the_same(given, &task.checked));
+            Checked {
+                name: task.name.clone(),
+                passed: u32::from(right),
+                of: 1,
+            }
+        })
+        .collect()
+}
+
+/// The answer lines a model wrote, by the number each one answers.
+fn answers_in(said: &str) -> Vec<(usize, String)> {
+    let mut held = Vec::new();
+    for line in said.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("### ANSWER") else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        let Ok(number) = digits.parse::<usize>() else {
+            continue;
+        };
+        let after = rest.get(digits.len()..).unwrap_or_default();
+        let after = after.trim_start().trim_start_matches([':', '-', '.']);
+        held.push((number, after.trim().to_owned()));
+    }
+    held
+}
+
+/// Whether what was written is the answer that was wanted.
+fn the_same(given: &str, wanted: &str) -> bool {
+    let given = bare(given);
+    let wanted = bare(wanted);
+    if given == wanted {
+        return true;
+    }
+    // A number written with separators, a sign, or a decimal tail of nothing is the same
+    // number. Compared as digits rather than parsed, so a count too large for any integer
+    // MCF holds is still compared exactly.
+    as_a_number(&given)
+        .is_some_and(|given| as_a_number(&wanted).is_some_and(|wanted| given == wanted))
+}
+
+/// What is left of an answer once the decoration is taken off.
+fn bare(held: &str) -> String {
+    held.trim()
+        .trim_matches(|ch: char| {
+            ch.is_whitespace() || matches!(ch, '*' | '`' | '"' | '\'' | '.' | ',' | ';' | ':')
+        })
+        .to_ascii_lowercase()
+}
+
+/// A number's digits, where what is written is one: no separators, no leading sign, no
+/// trailing nothings after a point.
+fn as_a_number(held: &str) -> Option<String> {
+    let held: String = held.chars().filter(|ch| *ch != ',' && *ch != '_').collect();
+    let (sign, digits) = match held.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", held.strip_prefix('+').unwrap_or(&held)),
+    };
+    let digits = match digits.split_once('.') {
+        Some((whole, after)) if after.chars().all(|ch| ch == '0') => whole,
+        Some(_) => return None,
+        None => digits,
+    };
+    if digits.is_empty() || !digits.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let trimmed = digits.trim_start_matches('0');
+    let digits = if trimmed.is_empty() { "0" } else { trimmed };
+    Some(if digits == "0" {
+        digits.to_owned()
+    } else {
+        format!("{sign}{digits}")
+    })
+}
+
 #[must_use]
 pub fn nothing_held(tasks: &[Task]) -> Vec<Checked> {
     tasks

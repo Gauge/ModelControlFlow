@@ -1,0 +1,127 @@
+[
+ {
+  "n": "units-0051",
+  "p": "How many kibibytes are there in 302 mebibytes?",
+  "a": "309248"
+ },
+ {
+  "n": "arith-0052",
+  "p": "Compute 32 + 9 * 30.",
+  "a": "302"
+ },
+ {
+  "n": "prec-0053",
+  "p": "Compute (72 - 4) * 6 + 3.",
+  "a": "411"
+ },
+ {
+  "n": "pct-0054",
+  "p": "What is 35% of 375?",
+  "a": "131"
+ },
+ {
+  "n": "gcd-0055",
+  "p": "What is the least common multiple of 20 and 42?",
+  "a": "420"
+ },
+ {
+  "n": "prime-0056",
+  "p": "How many prime numbers are there from 1 to 22 inclusive?",
+  "a": "8"
+ },
+ {
+  "n": "mod-0057",
+  "p": "What is the remainder when 6009 is divided by 40?",
+  "a": "9"
+ },
+ {
+  "n": "powmod-0058",
+  "p": "What is 7^10 mod 86?",
+  "a": "79"
+ },
+ {
+  "n": "base-0059",
+  "p": "Write 3956 in binary. Give only the digits, no prefix.",
+  "a": "111101110100"
+ },
+ {
+  "n": "frombase-0060",
+  "p": "The hexadecimal number 2AD is what in decimal?",
+  "a": "685"
+ },
+ {
+  "n": "seqterm-0061",
+  "p": "An arithmetic sequence starts at 21 and increases by 6 each term. What is term number 10? (The first term is term number 1.)",
+  "a": "75"
+ },
+ {
+  "n": "seqsum-0062",
+  "p": "An arithmetic sequence starts at 12 and increases by 7 each term. What is the sum of its first 7 terms?",
+  "a": "231"
+ },
+ {
+  "n": "solve-0063",
+  "p": "Solve for x: 7x + 18 = -122. Give x.",
+  "a": "-20"
+ },
+ {
+  "n": "comb-0064",
+  "p": "In how many ways can 2 items be chosen from 14 distinct items, order not mattering?",
+  "a": "91"
+ },
+ {
+  "n": "rate-0065",
+  "p": "A vehicle travels at 110 km/h for 9 hours. How many kilometres does it cover?",
+  "a": "990"
+ },
+ {
+  "n": "work-0066",
+  "p": "One pump fills a tank in 14 hours and another fills it in 35 hours. Working together, how many hours do they take?",
+  "a": "10"
+ },
+ {
+  "n": "digits-0067",
+  "p": "What is the sum of the digits of 196317?",
+  "a": "27"
+ },
+ {
+  "n": "revnum-0068",
+  "p": "Write the digits of 250780 in reverse order.",
+  "a": "87052"
+ },
+ {
+  "n": "bits-0069",
+  "p": "What is 249 AND 232 as a decimal number? (bitwise and)",
+  "a": "232"
+ },
+ {
+  "n": "geom-0070",
+  "p": "A right triangle has legs of 7 and 24. What is the length of its hypotenuse?",
+  "a": "25"
+ },
+ {
+  "n": "sets-0071",
+  "p": "Set A is {2, 8, 9, 13, 23, 29, 31, 39} and set B is {6, 15, 17, 22, 23, 29, 30, 31, 34}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "list-0072",
+  "p": "What is the sum of this list: [84, 69, 36, 87, 15, 29]?",
+  "a": "320"
+ },
+ {
+  "n": "code-0073",
+  "p": "What does f(26) return?\n\ndef f(n):\n    while n > 4:\n        n -= 17\n    return n",
+  "a": "-8"
+ },
+ {
+  "n": "order-0074",
+  "p": "Cleo is taller than Bram. Bram is taller than Ana. Who is the shortest?",
+  "a": "Ana"
+ },
+ {
+  "n": "weeks-0075",
+  "p": "How many whole weeks are there in 162 days?",
+  "a": "23"
+ }
+]

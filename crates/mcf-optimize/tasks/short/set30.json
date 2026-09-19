@@ -1,0 +1,127 @@
+[
+ {
+  "n": "base-0726",
+  "p": "Write 2423 in octal. Give only the digits, no prefix.",
+  "a": "4567"
+ },
+ {
+  "n": "frombase-0727",
+  "p": "The binary number 111110101 is what in decimal?",
+  "a": "501"
+ },
+ {
+  "n": "seqterm-0728",
+  "p": "An arithmetic sequence starts at 3 and increases by 6 each term. What is term number 24? (The first term is term number 1.)",
+  "a": "141"
+ },
+ {
+  "n": "seqsum-0729",
+  "p": "An arithmetic sequence starts at 10 and increases by 7 each term. What is the sum of its first 28 terms?",
+  "a": "2926"
+ },
+ {
+  "n": "solve-0730",
+  "p": "Solve for x: 7x + 12 = 404. Give x.",
+  "a": "56"
+ },
+ {
+  "n": "comb-0731",
+  "p": "In how many ways can 3 items be chosen from 11 distinct items, order not mattering?",
+  "a": "165"
+ },
+ {
+  "n": "rate-0732",
+  "p": "A vehicle travels at 73 km/h for 6 hours. How many kilometres does it cover?",
+  "a": "438"
+ },
+ {
+  "n": "digits-0733",
+  "p": "What is the sum of the digits of 262579?",
+  "a": "31"
+ },
+ {
+  "n": "revnum-0734",
+  "p": "Write the digits of 472702 in reverse order.",
+  "a": "207274"
+ },
+ {
+  "n": "bits-0735",
+  "p": "What is 82 XOR 126 as a decimal number? (bitwise xor)",
+  "a": "44"
+ },
+ {
+  "n": "sets-0736",
+  "p": "Set A is {4, 10, 11, 15, 19, 21, 24} and set B is {3, 4, 5, 10, 16, 17, 21, 23, 24, 35}. How many numbers are in both A and B?",
+  "a": "4"
+ },
+ {
+  "n": "text-0737",
+  "p": "How many letters are in the word \"jasmine\"?",
+  "a": "7"
+ },
+ {
+  "n": "list-0738",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [49, 45, 52, 80, 91]?",
+  "a": "52"
+ },
+ {
+  "n": "code-0739",
+  "p": "What does f(28) return?\n\ndef f(n):\n    while n > 5:\n        n -= 18\n    return n",
+  "a": "-8"
+ },
+ {
+  "n": "order-0740",
+  "p": "Cleo is heavier than Bram. Bram is heavier than Dara. Who is the heaviest?",
+  "a": "Cleo"
+ },
+ {
+  "n": "weeks-0741",
+  "p": "How many whole weeks are there in 391 days?",
+  "a": "55"
+ },
+ {
+  "n": "units-0742",
+  "p": "How many minutes are there in 421 hours?",
+  "a": "25260"
+ },
+ {
+  "n": "arith-0743",
+  "p": "Compute 12 + 9 * 17.",
+  "a": "165"
+ },
+ {
+  "n": "prec-0744",
+  "p": "Compute (54 - 9) * 4 + 19.",
+  "a": "199"
+ },
+ {
+  "n": "pct-0745",
+  "p": "What is 45% of 7425?",
+  "a": "3341"
+ },
+ {
+  "n": "gcd-0746",
+  "p": "What is the greatest common divisor of 95 and 159?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0747",
+  "p": "How many prime numbers are there from 1 to 31 inclusive?",
+  "a": "11"
+ },
+ {
+  "n": "mod-0748",
+  "p": "What is the remainder when 1987 is divided by 79?",
+  "a": "12"
+ },
+ {
+  "n": "powmod-0749",
+  "p": "What is 2^3 mod 79?",
+  "a": "8"
+ },
+ {
+  "n": "base-0750",
+  "p": "Write 2501 in binary. Give only the digits, no prefix.",
+  "a": "100111000101"
+ }
+]

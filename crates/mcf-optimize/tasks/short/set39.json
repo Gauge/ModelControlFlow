@@ -1,0 +1,127 @@
+[
+ {
+  "n": "order-0951",
+  "p": "Emil is faster than Bram. Bram is faster than Fenn. Who is the fastest?",
+  "a": "Emil"
+ },
+ {
+  "n": "units-0952",
+  "p": "How many metres are there in 21 kilometres?",
+  "a": "21000"
+ },
+ {
+  "n": "arith-0953",
+  "p": "Compute 22 + 10 * 8.",
+  "a": "102"
+ },
+ {
+  "n": "prec-0954",
+  "p": "Compute (47 - 3) * 2 + 15.",
+  "a": "103"
+ },
+ {
+  "n": "pct-0955",
+  "p": "What is 8% of 7825?",
+  "a": "626"
+ },
+ {
+  "n": "gcd-0956",
+  "p": "What is the greatest common divisor of 27 and 191?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0957",
+  "p": "How many prime numbers are there from 1 to 166 inclusive?",
+  "a": "38"
+ },
+ {
+  "n": "mod-0958",
+  "p": "What is the remainder when 7182 is divided by 40?",
+  "a": "22"
+ },
+ {
+  "n": "powmod-0959",
+  "p": "What is 11^15 mod 61?",
+  "a": "50"
+ },
+ {
+  "n": "base-0960",
+  "p": "Write 1523 in hexadecimal. Give only the digits, no prefix.",
+  "a": "5F3"
+ },
+ {
+  "n": "frombase-0961",
+  "p": "The hexadecimal number 146 is what in decimal?",
+  "a": "326"
+ },
+ {
+  "n": "seqterm-0962",
+  "p": "An arithmetic sequence starts at 4 and increases by 7 each term. What is term number 19? (The first term is term number 1.)",
+  "a": "130"
+ },
+ {
+  "n": "seqsum-0963",
+  "p": "An arithmetic sequence starts at 10 and increases by 9 each term. What is the sum of its first 7 terms?",
+  "a": "259"
+ },
+ {
+  "n": "solve-0964",
+  "p": "Solve for x: 15x + 39 = 504. Give x.",
+  "a": "31"
+ },
+ {
+  "n": "comb-0965",
+  "p": "In how many ways can 4 items be chosen from 8 distinct items, order not mattering?",
+  "a": "70"
+ },
+ {
+  "n": "rate-0966",
+  "p": "A vehicle travels at 23 km/h for 6 hours. How many kilometres does it cover?",
+  "a": "138"
+ },
+ {
+  "n": "digits-0967",
+  "p": "What is the sum of the digits of 633254?",
+  "a": "23"
+ },
+ {
+  "n": "revnum-0968",
+  "p": "Write the digits of 742588 in reverse order.",
+  "a": "885247"
+ },
+ {
+  "n": "bits-0969",
+  "p": "What is 130 XOR 109 as a decimal number? (bitwise xor)",
+  "a": "239"
+ },
+ {
+  "n": "sets-0970",
+  "p": "Set A is {14, 19, 20, 22, 27, 28, 34, 38} and set B is {3, 5, 8, 15, 22, 26, 33, 36, 37}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0971",
+  "p": "How many letters are in the word \"ivory\"?",
+  "a": "5"
+ },
+ {
+  "n": "list-0972",
+  "p": "What is the largest number in this list: [41, 4, 67, 31, 19, 54]?",
+  "a": "67"
+ },
+ {
+  "n": "code-0973",
+  "p": "What does f(10) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 7\n    return total",
+  "a": "315"
+ },
+ {
+  "n": "order-0974",
+  "p": "Cleo is faster than Dara. Dara is faster than Gita. Who is the fastest?",
+  "a": "Cleo"
+ },
+ {
+  "n": "weeks-0975",
+  "p": "How many days are left over after taking whole weeks out of 323 days?",
+  "a": "1"
+ }
+]

@@ -1,0 +1,127 @@
+[
+ {
+  "n": "arith-0601",
+  "p": "Compute 6 + 6 * 2.",
+  "a": "18"
+ },
+ {
+  "n": "prec-0602",
+  "p": "Compute (52 - 5) * 5 + 11.",
+  "a": "246"
+ },
+ {
+  "n": "pct-0603",
+  "p": "What is 10% of 7375?",
+  "a": "737"
+ },
+ {
+  "n": "gcd-0604",
+  "p": "What is the greatest common divisor of 45 and 124?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0605",
+  "p": "How many prime numbers are there from 1 to 27 inclusive?",
+  "a": "9"
+ },
+ {
+  "n": "mod-0606",
+  "p": "What is the remainder when 3840 is divided by 31?",
+  "a": "27"
+ },
+ {
+  "n": "powmod-0607",
+  "p": "What is 4^14 mod 38?",
+  "a": "36"
+ },
+ {
+  "n": "base-0608",
+  "p": "Write 3923 in binary. Give only the digits, no prefix.",
+  "a": "111101010011"
+ },
+ {
+  "n": "frombase-0609",
+  "p": "The hexadecimal number 16F is what in decimal?",
+  "a": "367"
+ },
+ {
+  "n": "seqterm-0610",
+  "p": "An arithmetic sequence starts at 29 and increases by 10 each term. What is term number 35? (The first term is term number 1.)",
+  "a": "369"
+ },
+ {
+  "n": "seqsum-0611",
+  "p": "An arithmetic sequence starts at 11 and increases by 1 each term. What is the sum of its first 21 terms?",
+  "a": "441"
+ },
+ {
+  "n": "solve-0612",
+  "p": "Solve for x: 6x + 33 = 183. Give x.",
+  "a": "25"
+ },
+ {
+  "n": "comb-0613",
+  "p": "In how many ways can 4 items be arranged from 10 distinct items, order mattering?",
+  "a": "5040"
+ },
+ {
+  "n": "rate-0614",
+  "p": "A vehicle travels at 45 km/h for 12 hours. How many kilometres does it cover?",
+  "a": "540"
+ },
+ {
+  "n": "digits-0615",
+  "p": "What is the sum of the digits of 3565?",
+  "a": "19"
+ },
+ {
+  "n": "revnum-0616",
+  "p": "Write the digits of 899174 in reverse order.",
+  "a": "471998"
+ },
+ {
+  "n": "bits-0617",
+  "p": "What is 237 OR 119 as a decimal number? (bitwise or)",
+  "a": "255"
+ },
+ {
+  "n": "geom-0618",
+  "p": "What is the area of a rectangle 33 by 30?",
+  "a": "990"
+ },
+ {
+  "n": "sets-0619",
+  "p": "Set A is {1, 8, 9, 10, 12, 14, 18, 20, 22, 23, 24, 30} and set B is {2, 3, 6, 7, 10, 32, 34, 35, 36, 38, 39}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "text-0620",
+  "p": "What is letter number 6 of the word \"marble\"? (The first letter is number 1.)",
+  "a": "e"
+ },
+ {
+  "n": "list-0621",
+  "p": "What is the largest number in this list: [32, 64, 4, 12, 25]?",
+  "a": "64"
+ },
+ {
+  "n": "code-0622",
+  "p": "What does f(12) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 12\n    return total",
+  "a": "792"
+ },
+ {
+  "n": "order-0623",
+  "p": "Cleo is heavier than Emil. Emil is heavier than Hugo. Who is the heaviest?",
+  "a": "Cleo"
+ },
+ {
+  "n": "weeks-0624",
+  "p": "How many whole weeks are there in 81 days?",
+  "a": "11"
+ },
+ {
+  "n": "units-0625",
+  "p": "How many metres are there in 68 kilometres?",
+  "a": "68000"
+ }
+]

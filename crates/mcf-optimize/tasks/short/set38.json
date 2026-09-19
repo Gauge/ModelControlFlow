@@ -1,0 +1,127 @@
+[
+ {
+  "n": "text-0926",
+  "p": "How many letters are in the word \"nectar\"?",
+  "a": "6"
+ },
+ {
+  "n": "list-0927",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [41, 26, 78, 98, 47, 92, 24, 15, 63]?",
+  "a": "26"
+ },
+ {
+  "n": "code-0928",
+  "p": "What does f([18, 42, 1, 10, 29, 12]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "82"
+ },
+ {
+  "n": "weeks-0929",
+  "p": "How many whole weeks are there in 376 days?",
+  "a": "53"
+ },
+ {
+  "n": "units-0930",
+  "p": "How many kibibytes are there in 370 mebibytes?",
+  "a": "378880"
+ },
+ {
+  "n": "arith-0931",
+  "p": "Compute 31 + 10 * 3.",
+  "a": "61"
+ },
+ {
+  "n": "prec-0932",
+  "p": "Compute (26 - 5) * 7 + 10.",
+  "a": "157"
+ },
+ {
+  "n": "pct-0933",
+  "p": "What is 24% of 7550?",
+  "a": "1812"
+ },
+ {
+  "n": "gcd-0934",
+  "p": "What is the least common multiple of 199 and 48?",
+  "a": "9552"
+ },
+ {
+  "n": "mod-0935",
+  "p": "What is the remainder when 3048 is divided by 15?",
+  "a": "3"
+ },
+ {
+  "n": "powmod-0936",
+  "p": "What is 7^20 mod 40?",
+  "a": "1"
+ },
+ {
+  "n": "base-0937",
+  "p": "Write 253 in binary. Give only the digits, no prefix.",
+  "a": "11111101"
+ },
+ {
+  "n": "frombase-0938",
+  "p": "The hexadecimal number 6E3 is what in decimal?",
+  "a": "1763"
+ },
+ {
+  "n": "seqterm-0939",
+  "p": "An arithmetic sequence starts at 5 and increases by 14 each term. What is term number 29? (The first term is term number 1.)",
+  "a": "397"
+ },
+ {
+  "n": "seqsum-0940",
+  "p": "An arithmetic sequence starts at 10 and increases by 4 each term. What is the sum of its first 18 terms?",
+  "a": "792"
+ },
+ {
+  "n": "solve-0941",
+  "p": "Solve for x: 11x + 6 = 116. Give x.",
+  "a": "10"
+ },
+ {
+  "n": "comb-0942",
+  "p": "In how many ways can 3 items be arranged from 14 distinct items, order mattering?",
+  "a": "2184"
+ },
+ {
+  "n": "rate-0943",
+  "p": "A vehicle travels at 36 km/h for 2 hours. How many kilometres does it cover?",
+  "a": "72"
+ },
+ {
+  "n": "digits-0944",
+  "p": "What is the sum of the digits of 115580?",
+  "a": "20"
+ },
+ {
+  "n": "revnum-0945",
+  "p": "Write the digits of 58197 in reverse order.",
+  "a": "79185"
+ },
+ {
+  "n": "bits-0946",
+  "p": "What is 250 OR 78 as a decimal number? (bitwise or)",
+  "a": "254"
+ },
+ {
+  "n": "sets-0947",
+  "p": "Set A is {1, 4, 7, 16, 18, 20, 24, 25, 36} and set B is {2, 3, 4, 10, 13, 21, 24, 25, 26, 30, 35}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0948",
+  "p": "Write the word \"domain\" backwards.",
+  "a": "niamod"
+ },
+ {
+  "n": "list-0949",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [19, 45, 39, 8, 58]?",
+  "a": "39"
+ },
+ {
+  "n": "code-0950",
+  "p": "What does f([34, 3, 5, 11, 37, 42]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "76"
+ }
+]

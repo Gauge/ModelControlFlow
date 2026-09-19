@@ -1,0 +1,127 @@
+[
+ {
+  "n": "rate-0851",
+  "p": "A vehicle travels at 70 km/h for 9 hours. How many kilometres does it cover?",
+  "a": "630"
+ },
+ {
+  "n": "digits-0852",
+  "p": "What is the sum of the digits of 871562?",
+  "a": "29"
+ },
+ {
+  "n": "revnum-0853",
+  "p": "Write the digits of 175917 in reverse order.",
+  "a": "719571"
+ },
+ {
+  "n": "bits-0854",
+  "p": "What is 200 AND 232 as a decimal number? (bitwise and)",
+  "a": "200"
+ },
+ {
+  "n": "sets-0855",
+  "p": "Set A is {5, 7, 11, 14, 23, 28, 30} and set B is {5, 14, 17, 20, 23, 25, 32, 37, 38}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0856",
+  "p": "What is letter number 1 of the word \"ember\"? (The first letter is number 1.)",
+  "a": "e"
+ },
+ {
+  "n": "list-0857",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [16, 69, 90, 44, 18, 65, 42]?",
+  "a": "42"
+ },
+ {
+  "n": "code-0858",
+  "p": "What does f(3) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 2\n    return total",
+  "a": "6"
+ },
+ {
+  "n": "order-0859",
+  "p": "Fenn is older than Dara. Dara is older than Gita. Who is the oldest?",
+  "a": "Fenn"
+ },
+ {
+  "n": "weeks-0860",
+  "p": "How many whole weeks are there in 132 days?",
+  "a": "18"
+ },
+ {
+  "n": "units-0861",
+  "p": "How many kibibytes are there in 188 mebibytes?",
+  "a": "192512"
+ },
+ {
+  "n": "arith-0862",
+  "p": "Compute 36 + 6 * 7.",
+  "a": "78"
+ },
+ {
+  "n": "prec-0863",
+  "p": "Compute (47 - 4) * 9 + 3.",
+  "a": "390"
+ },
+ {
+  "n": "pct-0864",
+  "p": "What is 30% of 5300?",
+  "a": "1590"
+ },
+ {
+  "n": "gcd-0865",
+  "p": "What is the greatest common divisor of 78 and 66?",
+  "a": "6"
+ },
+ {
+  "n": "prime-0866",
+  "p": "How many prime numbers are there from 1 to 294 inclusive?",
+  "a": "62"
+ },
+ {
+  "n": "mod-0867",
+  "p": "What is the remainder when 1573 is divided by 70?",
+  "a": "33"
+ },
+ {
+  "n": "powmod-0868",
+  "p": "What is 9^7 mod 75?",
+  "a": "69"
+ },
+ {
+  "n": "base-0869",
+  "p": "Write 3506 in hexadecimal. Give only the digits, no prefix.",
+  "a": "DB2"
+ },
+ {
+  "n": "frombase-0870",
+  "p": "The binary number 101110 is what in decimal?",
+  "a": "46"
+ },
+ {
+  "n": "seqterm-0871",
+  "p": "An arithmetic sequence starts at 11 and increases by 8 each term. What is term number 14? (The first term is term number 1.)",
+  "a": "115"
+ },
+ {
+  "n": "seqsum-0872",
+  "p": "An arithmetic sequence starts at 5 and increases by 5 each term. What is the sum of its first 9 terms?",
+  "a": "225"
+ },
+ {
+  "n": "solve-0873",
+  "p": "Solve for x: 9x + -3 = 213. Give x.",
+  "a": "24"
+ },
+ {
+  "n": "comb-0874",
+  "p": "In how many ways can 2 items be arranged from 12 distinct items, order mattering?",
+  "a": "132"
+ },
+ {
+  "n": "rate-0875",
+  "p": "A vehicle travels at 60 km/h for 6 hours. How many kilometres does it cover?",
+  "a": "360"
+ }
+]

@@ -1,0 +1,127 @@
+[
+ {
+  "n": "units-0076",
+  "p": "How many minutes are there in 71 hours?",
+  "a": "4260"
+ },
+ {
+  "n": "arith-0077",
+  "p": "Compute 26 + 2 * 25.",
+  "a": "76"
+ },
+ {
+  "n": "prec-0078",
+  "p": "Compute (85 - 8) * 4 + 6.",
+  "a": "314"
+ },
+ {
+  "n": "pct-0079",
+  "p": "What is 15% of 1050?",
+  "a": "157"
+ },
+ {
+  "n": "gcd-0080",
+  "p": "What is the greatest common divisor of 22 and 33?",
+  "a": "11"
+ },
+ {
+  "n": "prime-0081",
+  "p": "How many prime numbers are there from 1 to 132 inclusive?",
+  "a": "32"
+ },
+ {
+  "n": "mod-0082",
+  "p": "What is the remainder when 5976 is divided by 80?",
+  "a": "56"
+ },
+ {
+  "n": "powmod-0083",
+  "p": "What is 9^7 mod 27?",
+  "a": "0"
+ },
+ {
+  "n": "base-0084",
+  "p": "Write 964 in binary. Give only the digits, no prefix.",
+  "a": "1111000100"
+ },
+ {
+  "n": "frombase-0085",
+  "p": "The hexadecimal number 698 is what in decimal?",
+  "a": "1688"
+ },
+ {
+  "n": "seqterm-0086",
+  "p": "An arithmetic sequence starts at 13 and increases by 15 each term. What is term number 27? (The first term is term number 1.)",
+  "a": "403"
+ },
+ {
+  "n": "seqsum-0087",
+  "p": "An arithmetic sequence starts at 17 and increases by 1 each term. What is the sum of its first 11 terms?",
+  "a": "242"
+ },
+ {
+  "n": "solve-0088",
+  "p": "Solve for x: 11x + 28 = 490. Give x.",
+  "a": "42"
+ },
+ {
+  "n": "comb-0089",
+  "p": "In how many ways can 5 items be arranged from 14 distinct items, order mattering?",
+  "a": "240240"
+ },
+ {
+  "n": "rate-0090",
+  "p": "A vehicle travels at 53 km/h for 9 hours. How many kilometres does it cover?",
+  "a": "477"
+ },
+ {
+  "n": "work-0091",
+  "p": "One pump fills a tank in 10 hours and another fills it in 40 hours. Working together, how many hours do they take?",
+  "a": "8"
+ },
+ {
+  "n": "digits-0092",
+  "p": "What is the sum of the digits of 757827?",
+  "a": "36"
+ },
+ {
+  "n": "revnum-0093",
+  "p": "Write the digits of 636963 in reverse order.",
+  "a": "369636"
+ },
+ {
+  "n": "bits-0094",
+  "p": "What is 188 XOR 64 as a decimal number? (bitwise xor)",
+  "a": "252"
+ },
+ {
+  "n": "geom-0095",
+  "p": "What is the area of a rectangle 12 by 35?",
+  "a": "420"
+ },
+ {
+  "n": "sets-0096",
+  "p": "Set A is {2, 4, 9, 11, 25, 33, 34, 36, 38, 39} and set B is {5, 12, 15, 16, 18, 32, 34, 35, 36}. How many numbers are in both A and B?",
+  "a": "2"
+ },
+ {
+  "n": "text-0097",
+  "p": "What is letter number 3 of the word \"nectar\"? (The first letter is number 1.)",
+  "a": "c"
+ },
+ {
+  "n": "list-0098",
+  "p": "What is the largest number in this list: [14, 44, 25, 13, 16, 76, 2, 72, 37]?",
+  "a": "76"
+ },
+ {
+  "n": "code-0099",
+  "p": "What does f([47, 43, 7, 19, 40, 4]) return?\n\ndef f(xs):\n    return sum(x for x in xs if x % 2 == 0)",
+  "a": "44"
+ },
+ {
+  "n": "order-0100",
+  "p": "Emil is heavier than Bram. Bram is heavier than Ana. Who is the heaviest?",
+  "a": "Emil"
+ }
+]

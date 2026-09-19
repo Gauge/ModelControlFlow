@@ -29,11 +29,17 @@ fn judged_by(
     mark: bool,
     room: &std::path::Path,
     spot: At,
+    set_kind: crate::corpus::Kind,
     tasks: &[crate::corpus::Task],
     said: &crate::trial::Said,
 ) -> (Vec<crate::marking::Checked>, Option<String>) {
     if !mark {
         return (crate::marking::nothing_held(tasks), None);
+    }
+    // A set whose answers are read needs no container, and nothing is written to disk to
+    // mark it: the questions each have one right answer and the model wrote them on lines.
+    if set_kind == crate::corpus::Kind::ShortAnswer {
+        return (crate::marking::marked_by_reading(tasks, &said.answer), None);
     }
     let here = room.join(format!(
         "set-{}-{}-{}",
@@ -278,7 +284,14 @@ fn sweeping(mut doing: Doing) {
         held_at = Some(spot.step);
         let milliseconds = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
         let marking = doing.mark && !timed;
-        let (judged, unmarked) = judged_by(marking, &doing.room, spot, &asked.set.tasks, &said);
+        let (judged, unmarked) = judged_by(
+            marking,
+            &doing.room,
+            spot,
+            asked.set.kind,
+            &asked.set.tasks,
+            &said,
+        );
         if let Some(why) = unmarked
             && doing.send.send(Heard::Stopped(why)).is_err()
         {

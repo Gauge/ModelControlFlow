@@ -1,0 +1,127 @@
+[
+ {
+  "n": "arith-0576",
+  "p": "Compute 29 + 10 * 27.",
+  "a": "299"
+ },
+ {
+  "n": "prec-0577",
+  "p": "Compute (83 - 8) * 9 + 14.",
+  "a": "689"
+ },
+ {
+  "n": "pct-0578",
+  "p": "What is 5% of 8050?",
+  "a": "402"
+ },
+ {
+  "n": "gcd-0579",
+  "p": "What is the least common multiple of 101 and 136?",
+  "a": "13736"
+ },
+ {
+  "n": "prime-0580",
+  "p": "How many prime numbers are there from 1 to 144 inclusive?",
+  "a": "34"
+ },
+ {
+  "n": "mod-0581",
+  "p": "What is the remainder when 4077 is divided by 81?",
+  "a": "27"
+ },
+ {
+  "n": "powmod-0582",
+  "p": "What is 10^10 mod 69?",
+  "a": "16"
+ },
+ {
+  "n": "base-0583",
+  "p": "Write 640 in hexadecimal. Give only the digits, no prefix.",
+  "a": "280"
+ },
+ {
+  "n": "frombase-0584",
+  "p": "The hexadecimal number 52B is what in decimal?",
+  "a": "1323"
+ },
+ {
+  "n": "seqterm-0585",
+  "p": "An arithmetic sequence starts at 13 and increases by 2 each term. What is term number 26? (The first term is term number 1.)",
+  "a": "63"
+ },
+ {
+  "n": "seqsum-0586",
+  "p": "An arithmetic sequence starts at 1 and increases by 6 each term. What is the sum of its first 7 terms?",
+  "a": "133"
+ },
+ {
+  "n": "solve-0587",
+  "p": "Solve for x: 7x + -30 = 236. Give x.",
+  "a": "38"
+ },
+ {
+  "n": "comb-0588",
+  "p": "In how many ways can 3 items be chosen from 5 distinct items, order not mattering?",
+  "a": "10"
+ },
+ {
+  "n": "rate-0589",
+  "p": "A vehicle travels at 57 km/h for 8 hours. How many kilometres does it cover?",
+  "a": "456"
+ },
+ {
+  "n": "digits-0590",
+  "p": "What is the sum of the digits of 18143?",
+  "a": "17"
+ },
+ {
+  "n": "revnum-0591",
+  "p": "Write the digits of 160360 in reverse order.",
+  "a": "63061"
+ },
+ {
+  "n": "bits-0592",
+  "p": "What is 250 OR 71 as a decimal number? (bitwise or)",
+  "a": "255"
+ },
+ {
+  "n": "geom-0593",
+  "p": "A right triangle has legs of 9 and 40. What is the length of its hypotenuse?",
+  "a": "41"
+ },
+ {
+  "n": "sets-0594",
+  "p": "Set A is {1, 4, 5, 7, 9, 10, 14, 20, 21, 27, 30, 37} and set B is {1, 3, 5, 10, 12, 13, 20, 22, 29, 31, 34}. How many numbers are in both A and B?",
+  "a": "4"
+ },
+ {
+  "n": "text-0595",
+  "p": "What is letter number 4 of the word \"kettle\"? (The first letter is number 1.)",
+  "a": "t"
+ },
+ {
+  "n": "list-0596",
+  "p": "What is the largest number in this list: [41, 26, 9, 42, 2]?",
+  "a": "42"
+ },
+ {
+  "n": "code-0597",
+  "p": "What does f(20) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 16\n    return total",
+  "a": "3040"
+ },
+ {
+  "n": "order-0598",
+  "p": "Bram is older than Ana. Ana is older than Emil. Who is the youngest?",
+  "a": "Emil"
+ },
+ {
+  "n": "weeks-0599",
+  "p": "How many whole weeks are there in 258 days?",
+  "a": "36"
+ },
+ {
+  "n": "units-0600",
+  "p": "How many minutes are there in 456 hours?",
+  "a": "27360"
+ }
+]

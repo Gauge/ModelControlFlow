@@ -1,0 +1,127 @@
+[
+ {
+  "n": "powmod-0701",
+  "p": "What is 11^12 mod 52?",
+  "a": "1"
+ },
+ {
+  "n": "base-0702",
+  "p": "Write 66 in octal. Give only the digits, no prefix.",
+  "a": "102"
+ },
+ {
+  "n": "frombase-0703",
+  "p": "The binary number 1011100111 is what in decimal?",
+  "a": "743"
+ },
+ {
+  "n": "seqterm-0704",
+  "p": "An arithmetic sequence starts at 27 and increases by 6 each term. What is term number 25? (The first term is term number 1.)",
+  "a": "171"
+ },
+ {
+  "n": "solve-0705",
+  "p": "Solve for x: 10x + 41 = 191. Give x.",
+  "a": "15"
+ },
+ {
+  "n": "rate-0706",
+  "p": "A vehicle travels at 24 km/h for 6 hours. How many kilometres does it cover?",
+  "a": "144"
+ },
+ {
+  "n": "work-0707",
+  "p": "One pump fills a tank in 10 hours and another fills it in 15 hours. Working together, how many hours do they take?",
+  "a": "6"
+ },
+ {
+  "n": "digits-0708",
+  "p": "What is the sum of the digits of 353224?",
+  "a": "19"
+ },
+ {
+  "n": "revnum-0709",
+  "p": "Write the digits of 370088 in reverse order.",
+  "a": "880073"
+ },
+ {
+  "n": "bits-0710",
+  "p": "What is 86 OR 35 as a decimal number? (bitwise or)",
+  "a": "119"
+ },
+ {
+  "n": "geom-0711",
+  "p": "What is the area of a rectangle 18 by 38?",
+  "a": "684"
+ },
+ {
+  "n": "sets-0712",
+  "p": "Set A is {1, 5, 9, 18, 21, 25, 28, 29} and set B is {1, 3, 5, 7, 10, 14, 17, 29, 36}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0713",
+  "p": "Write the word \"kettle\" backwards.",
+  "a": "elttek"
+ },
+ {
+  "n": "list-0714",
+  "p": "What is the sum of this list: [58, 99, 23, 72, 13, 90, 30]?",
+  "a": "385"
+ },
+ {
+  "n": "code-0715",
+  "p": "What does f(21) return?\n\ndef f(n):\n    while n > 4:\n        n -= 9\n    return n",
+  "a": "3"
+ },
+ {
+  "n": "order-0716",
+  "p": "Emil is heavier than Cleo. Cleo is heavier than Dara. Who is the lightest?",
+  "a": "Dara"
+ },
+ {
+  "n": "weeks-0717",
+  "p": "How many whole weeks are there in 314 days?",
+  "a": "44"
+ },
+ {
+  "n": "units-0718",
+  "p": "How many kibibytes are there in 93 mebibytes?",
+  "a": "95232"
+ },
+ {
+  "n": "arith-0719",
+  "p": "Compute 16 + 6 * 22.",
+  "a": "148"
+ },
+ {
+  "n": "prec-0720",
+  "p": "Compute (80 - 3) * 8 + 12.",
+  "a": "628"
+ },
+ {
+  "n": "pct-0721",
+  "p": "What is 8% of 9025?",
+  "a": "722"
+ },
+ {
+  "n": "gcd-0722",
+  "p": "What is the greatest common divisor of 195 and 83?",
+  "a": "1"
+ },
+ {
+  "n": "prime-0723",
+  "p": "How many prime numbers are there from 1 to 74 inclusive?",
+  "a": "21"
+ },
+ {
+  "n": "mod-0724",
+  "p": "What is the remainder when 8056 is divided by 59?",
+  "a": "32"
+ },
+ {
+  "n": "powmod-0725",
+  "p": "What is 10^13 mod 66?",
+  "a": "10"
+ }
+]

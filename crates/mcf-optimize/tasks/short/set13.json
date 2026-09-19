@@ -1,0 +1,127 @@
+[
+ {
+  "n": "list-0301",
+  "p": "What is the largest number in this list: [84, 88, 97, 87, 82, 68, 1, 89, 18]?",
+  "a": "97"
+ },
+ {
+  "n": "code-0302",
+  "p": "What does f(69) return?\n\ndef f(n):\n    while n > 17:\n        n -= 4\n    return n",
+  "a": "17"
+ },
+ {
+  "n": "order-0303",
+  "p": "Emil is heavier than Bram. Bram is heavier than Gita. Who is the heaviest?",
+  "a": "Emil"
+ },
+ {
+  "n": "weeks-0304",
+  "p": "How many whole weeks are there in 318 days?",
+  "a": "45"
+ },
+ {
+  "n": "units-0305",
+  "p": "How many kibibytes are there in 84 mebibytes?",
+  "a": "86016"
+ },
+ {
+  "n": "arith-0306",
+  "p": "Compute 29 + 6 * 21.",
+  "a": "155"
+ },
+ {
+  "n": "prec-0307",
+  "p": "Compute (83 - 7) * 9 + 12.",
+  "a": "696"
+ },
+ {
+  "n": "pct-0308",
+  "p": "What is 2% of 200?",
+  "a": "4"
+ },
+ {
+  "n": "gcd-0309",
+  "p": "What is the greatest common divisor of 164 and 108?",
+  "a": "4"
+ },
+ {
+  "n": "prime-0310",
+  "p": "How many prime numbers are there from 1 to 170 inclusive?",
+  "a": "39"
+ },
+ {
+  "n": "mod-0311",
+  "p": "What is the remainder when 9162 is divided by 52?",
+  "a": "10"
+ },
+ {
+  "n": "powmod-0312",
+  "p": "What is 4^10 mod 69?",
+  "a": "52"
+ },
+ {
+  "n": "base-0313",
+  "p": "Write 3406 in hexadecimal. Give only the digits, no prefix.",
+  "a": "D4E"
+ },
+ {
+  "n": "frombase-0314",
+  "p": "The binary number 1010011010 is what in decimal?",
+  "a": "666"
+ },
+ {
+  "n": "seqterm-0315",
+  "p": "An arithmetic sequence starts at 29 and increases by 4 each term. What is term number 27? (The first term is term number 1.)",
+  "a": "133"
+ },
+ {
+  "n": "seqsum-0316",
+  "p": "An arithmetic sequence starts at 7 and increases by 4 each term. What is the sum of its first 22 terms?",
+  "a": "1078"
+ },
+ {
+  "n": "solve-0317",
+  "p": "Solve for x: 5x + -23 = 27. Give x.",
+  "a": "10"
+ },
+ {
+  "n": "comb-0318",
+  "p": "In how many ways can 2 items be chosen from 6 distinct items, order not mattering?",
+  "a": "15"
+ },
+ {
+  "n": "rate-0319",
+  "p": "A vehicle travels at 50 km/h for 3 hours. How many kilometres does it cover?",
+  "a": "150"
+ },
+ {
+  "n": "digits-0320",
+  "p": "What is the sum of the digits of 830443?",
+  "a": "22"
+ },
+ {
+  "n": "revnum-0321",
+  "p": "Write the digits of 415322 in reverse order.",
+  "a": "223514"
+ },
+ {
+  "n": "bits-0322",
+  "p": "What is 182 AND 134 as a decimal number? (bitwise and)",
+  "a": "134"
+ },
+ {
+  "n": "sets-0323",
+  "p": "Set A is {2, 3, 10, 17, 22, 23, 26, 27, 29, 32, 33, 38} and set B is {1, 2, 4, 6, 7, 9, 11, 13, 19, 27, 38}. How many numbers are in both A and B?",
+  "a": "3"
+ },
+ {
+  "n": "text-0324",
+  "p": "What is letter number 3 of the word \"bridge\"? (The first letter is number 1.)",
+  "a": "i"
+ },
+ {
+  "n": "list-0325",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [20, 34, 76, 36, 69, 23]?",
+  "a": "34"
+ }
+]

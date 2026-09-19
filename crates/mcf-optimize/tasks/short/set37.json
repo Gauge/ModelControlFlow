@@ -1,0 +1,127 @@
+[
+ {
+  "n": "bits-0901",
+  "p": "What is 165 OR 252 as a decimal number? (bitwise or)",
+  "a": "253"
+ },
+ {
+  "n": "sets-0902",
+  "p": "Set A is {2, 7, 12, 16, 19, 31, 32, 34, 36, 39} and set B is {6, 9, 14, 20, 27, 30, 35, 38, 39}. How many numbers are in both A and B?",
+  "a": "1"
+ },
+ {
+  "n": "list-0903",
+  "p": "Sorted from smallest to largest, what is the third number in this list: [84, 29, 16, 47, 52, 91, 72, 19]?",
+  "a": "29"
+ },
+ {
+  "n": "code-0904",
+  "p": "What does f(9) return?\n\ndef f(x):\n    total = 0\n    for i in range(x):\n        total += i * 2\n    return total",
+  "a": "72"
+ },
+ {
+  "n": "weeks-0905",
+  "p": "How many days are left over after taking whole weeks out of 267 days?",
+  "a": "1"
+ },
+ {
+  "n": "units-0906",
+  "p": "How many metres are there in 64 kilometres?",
+  "a": "64000"
+ },
+ {
+  "n": "arith-0907",
+  "p": "Compute 24 + 2 * 25.",
+  "a": "74"
+ },
+ {
+  "n": "prec-0908",
+  "p": "Compute (38 - 7) * 3 + 3.",
+  "a": "96"
+ },
+ {
+  "n": "pct-0909",
+  "p": "What is 30% of 5875?",
+  "a": "1762"
+ },
+ {
+  "n": "gcd-0910",
+  "p": "What is the greatest common divisor of 42 and 96?",
+  "a": "6"
+ },
+ {
+  "n": "prime-0911",
+  "p": "How many prime numbers are there from 1 to 30 inclusive?",
+  "a": "10"
+ },
+ {
+  "n": "mod-0912",
+  "p": "What is the remainder when 9675 is divided by 23?",
+  "a": "15"
+ },
+ {
+  "n": "powmod-0913",
+  "p": "What is 6^16 mod 66?",
+  "a": "60"
+ },
+ {
+  "n": "base-0914",
+  "p": "Write 1144 in octal. Give only the digits, no prefix.",
+  "a": "2170"
+ },
+ {
+  "n": "frombase-0915",
+  "p": "The hexadecimal number D3 is what in decimal?",
+  "a": "211"
+ },
+ {
+  "n": "seqterm-0916",
+  "p": "An arithmetic sequence starts at 9 and increases by 12 each term. What is term number 35? (The first term is term number 1.)",
+  "a": "417"
+ },
+ {
+  "n": "seqsum-0917",
+  "p": "An arithmetic sequence starts at 18 and increases by 1 each term. What is the sum of its first 19 terms?",
+  "a": "513"
+ },
+ {
+  "n": "solve-0918",
+  "p": "Solve for x: 2x + 7 = 83. Give x.",
+  "a": "38"
+ },
+ {
+  "n": "comb-0919",
+  "p": "In how many ways can 5 items be chosen from 12 distinct items, order not mattering?",
+  "a": "792"
+ },
+ {
+  "n": "rate-0920",
+  "p": "A vehicle travels at 55 km/h for 10 hours. How many kilometres does it cover?",
+  "a": "550"
+ },
+ {
+  "n": "digits-0921",
+  "p": "What is the sum of the digits of 950403?",
+  "a": "21"
+ },
+ {
+  "n": "revnum-0922",
+  "p": "Write the digits of 500728 in reverse order.",
+  "a": "827005"
+ },
+ {
+  "n": "bits-0923",
+  "p": "What is 101 AND 94 as a decimal number? (bitwise and)",
+  "a": "68"
+ },
+ {
+  "n": "geom-0924",
+  "p": "What is the area of a rectangle 21 by 4?",
+  "a": "84"
+ },
+ {
+  "n": "sets-0925",
+  "p": "Set A is {1, 3, 13, 22, 25, 30, 33, 34, 35} and set B is {4, 12, 26, 27, 28, 33}. How many numbers are in both A and B?",
+  "a": "1"
+ }
+]
