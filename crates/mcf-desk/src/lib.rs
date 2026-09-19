@@ -4386,7 +4386,12 @@ impl Desk {
             .filter(|held| held.as_str() != "none" && held.as_str() != named)
             .cloned()
             .collect();
-        if thinking.section && !levels.is_empty() {
+        // Off wherever thinking can actually be stopped, which is wherever the template
+        // marks a section the engine can cut short or reads a switch the engine can set.
+        // It used to be offered only alongside a named level, so a model whose template
+        // says nothing about effort — most of them — was reported as having no thinking
+        // to control at all, though it could be switched off perfectly well.
+        if thinking.section || thinking.switch {
             levels.insert(0, named.to_owned());
         }
         levels
@@ -4402,11 +4407,15 @@ impl Desk {
     pub fn why_the_dial_does_nothing(&self, dial: mcf_optimize::dial::Dial) -> Option<String> {
         let thinking = self.declared.as_ref().map(|held| &held.thinking)?;
         match dial {
-            mcf_optimize::dial::Dial::ThinkingLevel if thinking.levels.is_empty() => Some(
-                "this model's chat template reads no thinking level, so asking for one would \
-                 put a word in front of a model that never looks at it"
-                    .to_owned(),
-            ),
+            mcf_optimize::dial::Dial::ThinkingLevel
+                if thinking.levels.is_empty() && !thinking.section && !thinking.switch =>
+            {
+                Some(
+                    "this model's chat template neither names a thinking level nor marks a \
+                     thinking section, so there is nothing here to ask for or to cut short"
+                        .to_owned(),
+                )
+            }
             mcf_optimize::dial::Dial::ThinkingBudget if !thinking.section => Some(
                 "this model's chat template marks no thinking section, so the engine has \
                  nothing to count and nothing to cut off — a budget would be written down and \

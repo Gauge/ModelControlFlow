@@ -10,14 +10,59 @@ pub const OFF: &str = "off";
 
 const RANKED: [&str; 5] = ["none", "low", "medium", "high", "xhigh"];
 
-const TAGS: [&str; 6] = [
-    "<think>",
-    "<thinking>",
-    "<seed:think>",
-    "◁think▷",
-    "<|channel|>analysis",
-    "<reasoning>",
-];
+/// Tags that open a thinking section but do not say so in their own name, so no pattern
+/// would find them. Everything else is recognised by [`marks_a_section`].
+const NAMED_TAGS: [&str; 3] = ["◁think▷", "<|channel|>analysis", "<|channel>thought"];
+
+/// What a tag has to speak of for MCF to read it as opening a thinking section.
+const ABOUT_THINKING: [&str; 3] = ["think", "reason", "analysis"];
+
+/// The longest a tag can be and still be a tag. A run of angle brackets far apart is prose
+/// about tags, or markup that has nothing to do with thinking.
+const TAG_CEILING: usize = 40;
+
+/// Names a template reads to be told whether to think at all.
+///
+/// `enable_thinking` is what llama.cpp writes when it is asked for `--reasoning on` or
+/// `off`, and what every family MCF has read uses. The others are here because a template
+/// that spells it differently still has a switch, and MCF would otherwise report a model
+/// that can stop thinking as one that cannot.
+const SWITCHES: [&str; 3] = ["enable_thinking", "enable_reasoning", "thinking_enabled"];
+
+/// Whether a template marks its thinking off from its answer.
+///
+/// A fixed list of tags could only ever cover the families somebody had already read: this
+/// machine holds a Gemma whose tag is `<|think|>`, which no list of MCF's had, and the
+/// model was reported as unable to think at all. A thinking model has to delimit its
+/// thinking somehow — an engine cannot strip what is not marked — so what MCF looks for is
+/// a tag that says what it is for, whatever it is spelled like.
+#[must_use]
+pub fn marks_a_section(template: &str) -> bool {
+    if NAMED_TAGS.iter().any(|tag| template.contains(tag)) {
+        return true;
+    }
+    let held: Vec<char> = template.chars().collect();
+    for (at, ch) in held.iter().enumerate() {
+        if *ch != '<' {
+            continue;
+        }
+        let mut name = String::new();
+        for next in held.iter().skip(at.saturating_add(1)).take(TAG_CEILING) {
+            if *next == '>' {
+                let name = name.to_ascii_lowercase();
+                if ABOUT_THINKING.iter().any(|about| name.contains(about)) {
+                    return true;
+                }
+                break;
+            }
+            if *next == '<' {
+                break;
+            }
+            name.push(*next);
+        }
+    }
+    false
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Thinking {
@@ -39,8 +84,8 @@ impl Thinking {
 
     #[must_use]
     pub fn in_template(template: &str) -> Self {
-        let section = TAGS.iter().any(|tag| template.contains(tag));
-        let switch = template.contains("enable_thinking");
+        let section = marks_a_section(template);
+        let switch = SWITCHES.iter().any(|named| template.contains(named));
         let variable = if template.contains("reasoning_effort") {
             Some("reasoning_effort".to_owned())
         } else if template.contains("reasoning_strength") {
@@ -141,9 +186,15 @@ impl Thinking {
     #[must_use]
     pub fn said(&self) -> String {
         match &self.variable {
-            None => "this model's template reads no thinking level, so setting one changes \
-                     nothing"
+            // Naming no level is not the same as not thinking, and saying so as though it
+            // were had most of the families on a real machine reported as unable to think.
+            None if self.switch => "this model's template names no thinking level, but reads \
+                                    a switch, so thinking can be turned off"
                 .to_owned(),
+            None if self.section => "this model's template names no thinking level, but marks \
+                                     a thinking section the engine can cut short"
+                .to_owned(),
+            None => "this model's template says nothing about thinking".to_owned(),
             Some(named) => format!(
                 "the template reads {named} and {} — {}",
                 if self.closed {

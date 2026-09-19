@@ -286,6 +286,67 @@ fn a_thinking_budget_of_zero_is_a_setting_not_an_absence() {
     assert!(cut.said().contains("cut off at once"), "{}", cut.said());
 }
 
+/// Thinking off is said to the engine both ways it can be said, because which of them
+/// lands is a property of the template and the arguments are built without one in hand.
+/// Measured on this machine: a template reading a thinking switch stopped opening its
+/// section under `--reasoning off`, and gpt-oss — which reads no switch — ignored the flag
+/// and went on asking for medium reasoning, so the budget is what stops that one.
+#[test]
+fn thinking_off_is_said_the_two_ways_a_template_might_hear_it() {
+    let off = Started {
+        effort: Some(crate::thinking::OFF.to_owned()),
+        ..Started::default()
+    };
+    assert_eq!(
+        off.arguments(),
+        vec![
+            "--reasoning".to_owned(),
+            "off".to_owned(),
+            "--reasoning-budget".to_owned(),
+            "1".to_owned(),
+        ],
+    );
+    assert!(
+        !off.arguments()
+            .iter()
+            .any(|held| held == "--reasoning-effort"),
+        "off is MCF's word and no template knows it, so it is never handed over as a level"
+    );
+}
+
+/// A budget the person asked for is the budget they get: MCF's own way of saying off does
+/// not overrule it.
+#[test]
+fn a_budget_that_was_asked_for_is_not_replaced_by_the_one_that_means_off() {
+    let off = Started {
+        effort: Some(crate::thinking::OFF.to_owned()),
+        thinking: Some(64),
+        ..Started::default()
+    };
+    let said = off.arguments();
+    assert_eq!(
+        said.iter()
+            .filter(|held| *held == "--reasoning-budget")
+            .count(),
+        1,
+        "one budget, not two: {said:?}"
+    );
+    assert!(said.contains(&"64".to_owned()), "{said:?}");
+}
+
+/// A named level still reaches the engine as a level.
+#[test]
+fn a_level_is_handed_over_as_a_level() {
+    let asked = Started {
+        effort: Some("high".to_owned()),
+        ..Started::default()
+    };
+    assert_eq!(
+        asked.arguments(),
+        vec!["--reasoning-effort".to_owned(), "high".to_owned()]
+    );
+}
+
 #[test]
 fn every_new_switch_survives_the_wire() {
     let asked = Started {

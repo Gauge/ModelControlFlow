@@ -290,7 +290,24 @@ impl Started {
         }
         // Off is MCF's word for no thinking at all, and no template knows it: one that checks
         // its own vocabulary raises on it and refuses the whole request, and one that does not
-        // quietly falls back to its default. What turns thinking off is the budget above.
+        // quietly falls back to its default. So it is said to the engine twice, because which
+        // of the two lands depends on the template and the arguments are built without one in
+        // hand. A template that reads a thinking switch is turned off by `--reasoning off`,
+        // which is what the engine writes into it — measured on this machine against two such
+        // templates, both of which stopped opening a thinking section. A template that reads
+        // no switch ignores that flag entirely — measured on gpt-oss, which went on asking for
+        // medium reasoning — and is cut short by the budget instead, at one token rather than
+        // nought because the engine reads nought as no budget at all. Neither spoils the
+        // other: the flag is a no-op where there is no switch, and a budget of one is what
+        // off means where there is.
+        if self.effort.as_deref() == Some(crate::thinking::OFF) {
+            out.push("--reasoning".to_owned());
+            out.push("off".to_owned());
+            if self.thinking.is_none() {
+                out.push("--reasoning-budget".to_owned());
+                out.push("1".to_owned());
+            }
+        }
         if let Some(effort) = self
             .effort
             .as_deref()

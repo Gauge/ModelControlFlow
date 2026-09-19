@@ -6,9 +6,25 @@ fn a_template_that_reads_no_level_offers_none() {
     assert!(!held.reads_a_level());
     assert!(held.levels.is_empty());
     assert!(
-        held.said().contains("changes nothing"),
+        held.said().contains("says nothing about thinking"),
         "and says so rather than offering a setting that does nothing: {}",
         held.said()
+    );
+}
+
+/// Naming no level is not the same as not thinking, and what MCF says has to tell the two
+/// apart: most families name no level and can still be told not to think.
+#[test]
+fn a_template_with_no_level_but_a_switch_says_that_thinking_can_still_be_turned_off() {
+    let held = Thinking::in_template("{%- if enable_thinking %}<think>{% endif %}");
+    assert!(held.levels.is_empty());
+    assert!(held.said().contains("can be turned off"), "{}", held.said());
+
+    let cut = Thinking::in_template("{{- '<think>' }} and no switch");
+    assert!(
+        cut.said().contains("cut short"),
+        "a section with no switch is stopped by the engine instead: {}",
+        cut.said()
     );
 }
 
@@ -112,4 +128,82 @@ fn an_unknown_word_in_a_set_is_kept_and_sorted_after_the_ones_we_know() {
         ],
         "a word MCF does not rank still belongs to the model that named it"
     );
+}
+
+/// The shapes the families on a real machine actually use.
+///
+/// Read off the templates of the models held here, one case a family, because MCF was
+/// reading four of the seven as unable to think at all: it only recognised a template that
+/// named an effort variable, and most name none. What a template has to say about thinking
+/// is three separate things — whether it marks a section, whether it reads a switch, and
+/// whether it names levels — and a family may have any combination of them.
+mod the_shapes_families_use {
+    use super::Thinking;
+
+    /// Qwen3, Nemotron-3, Laguna: a switch and a section, and no named level.
+    #[test]
+    fn a_switch_and_a_section_without_levels_is_still_a_model_that_can_stop_thinking() {
+        let held = Thinking::in_template(
+            "{%- set enable_thinking = enable_thinking if enable_thinking is defined else True %}\
+             {%- if enable_thinking %}{{- '<think>\\n' }}{%- else %}{{- '<think></think>' }}\
+             {%- endif %}",
+        );
+        assert!(held.section, "the template opens a thinking section");
+        assert!(
+            held.switch,
+            "and reads a switch that decides whether it does"
+        );
+        assert_eq!(held.variable, None, "but it names no effort variable");
+    }
+
+    /// Gemma: a switch, and a tag no list of MCF's had ever named.
+    #[test]
+    fn a_section_is_found_by_what_the_tag_says_rather_than_by_a_list_of_tags() {
+        let held = Thinking::in_template(
+            "{%- set enable_thinking = enable_thinking | default(false) -%}\
+             {%- if enable_thinking -%}{{- '<|think|>\\n' -}}{%- endif -%}",
+        );
+        assert!(
+            held.section,
+            "a tag that says it is for thinking opens a thinking section, whoever wrote it"
+        );
+        assert!(held.switch);
+    }
+
+    /// gpt-oss: levels and a section, and no switch — the engine cuts it short instead.
+    #[test]
+    fn levels_without_a_switch_are_read_as_levels_without_a_switch() {
+        let held = Thinking::in_template(
+            "{%- if reasoning_effort is not defined %}{%- set reasoning_effort = \"medium\" %}\
+             {%- endif %}{{- \"Reasoning: \" + reasoning_effort }}\
+             {{- \"<|channel|>analysis\" }}",
+        );
+        assert!(held.section);
+        assert!(!held.switch);
+        assert_eq!(held.variable.as_deref(), Some("reasoning_effort"));
+    }
+
+    /// A coder model that does not think: nothing to report, and nothing invented.
+    #[test]
+    fn a_template_that_says_nothing_about_thinking_is_not_given_a_thinking_section() {
+        let held = Thinking::in_template(
+            "{%- for message in messages %}{{- '<|im_start|>' + message.role }}\
+             {{- '<tool_call>' }}{%- endfor %}",
+        );
+        assert!(
+            !held.section,
+            "tags that are not about thinking do not open a thinking section"
+        );
+        assert!(!held.switch);
+        assert!(held.levels.is_empty());
+    }
+
+    /// Prose about thinking is not a thinking section: a macro named for stripping thought
+    /// out of a message says nothing about whether this model produces any.
+    #[test]
+    fn a_name_that_is_not_a_tag_is_not_a_tag() {
+        let held =
+            Thinking::in_template("{%- macro strip_thinking(text) -%}{{- text -}}{%- endmacro -%}");
+        assert!(!held.section);
+    }
 }

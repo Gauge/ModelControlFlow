@@ -287,10 +287,16 @@ fn dial_at(desk: &Desk, wanted: Dial) -> usize {
         .unwrap_or(0)
 }
 
+/// A model with no thinking to dial at all.
+///
+/// This used to open a thinking section — `<think>a</think>` — because a section without a
+/// named level was treated as nothing to dial. It is not: the engine cuts a section short
+/// itself, so such a model can be told not to think even though it names no level. What is
+/// left with nothing to dial is a template that neither names a level nor marks a section.
 fn reading_no_level() -> Desk {
     let mut desk = desk();
     desk.declared = Some(mcf_serve::declared::Declared {
-        thinking: mcf_serve::thinking::Thinking::in_template("{{ messages }}<think>a</think>"),
+        thinking: mcf_serve::thinking::Thinking::in_template("{{ messages }}"),
         draft_head: Some(1),
         ..mcf_serve::declared::Declared::default()
     });
@@ -396,7 +402,7 @@ fn a_model_that_reads_no_level_says_why_the_dial_would_do_nothing() {
     let why = desk
         .why_the_dial_does_nothing(Dial::ThinkingLevel)
         .unwrap_or_default();
-    assert!(why.contains("reads no thinking level"), "{why}");
+    assert!(why.contains("neither names a thinking level"), "{why}");
 }
 
 #[test]
@@ -416,7 +422,7 @@ fn a_sweep_of_a_dial_that_would_do_nothing_is_refused_before_a_model_is_held() {
     assert!(!desk.optimizing.running);
     let why = desk.optimizing.refused.clone().unwrap_or_default();
     assert!(
-        why.contains("never looks at it"),
+        why.contains("nothing here to ask for or to cut short"),
         "the refusal says what is wrong with the model rather than with the request: {why}"
     );
 }
@@ -502,6 +508,48 @@ fn a_model_whose_template_opens_no_thinking_section_is_offered_no_way_to_turn_it
         "there is nothing for the engine to cut short, so off would be a value that did \
          nothing and said it did: {:?}",
         desk.levels_of_the_model()
+    );
+}
+
+/// Most templates name no effort level at all — Qwen3, Nemotron-3, Laguna and Gemma among
+/// the families held on the machine this was written on. Every one of them can still be
+/// told not to think, and MCF used to report all of them as having no thinking to control,
+/// because it offered off only alongside a level somebody could name.
+#[test]
+fn a_model_that_names_no_level_but_can_be_switched_off_is_offered_off() {
+    let mut desk = desk();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template(
+            "{%- set enable_thinking = enable_thinking if enable_thinking is defined else True %}\
+             {%- if enable_thinking %}{{- '<think>' }}{%- endif %}",
+        ),
+        ..mcf_serve::declared::Declared::default()
+    });
+    assert_eq!(
+        desk.levels_of_the_model(),
+        vec![mcf_optimize::dial::Dial::OFF.to_owned()],
+        "off and nothing else: the template offers no level to name, and thinking on is \
+         what it does already"
+    );
+    assert!(
+        desk.why_the_dial_does_nothing(Dial::ThinkingLevel)
+            .is_none(),
+        "there is something here to sweep — off against the model's own way of working"
+    );
+}
+
+/// A template that marks a section without reading a switch can still be cut short by the
+/// engine, so off holds there too.
+#[test]
+fn a_section_with_no_switch_can_still_be_turned_off() {
+    let mut desk = desk();
+    desk.declared = Some(mcf_serve::declared::Declared {
+        thinking: mcf_serve::thinking::Thinking::in_template("{{- '<think>' }} and no switch"),
+        ..mcf_serve::declared::Declared::default()
+    });
+    assert_eq!(
+        desk.levels_of_the_model(),
+        vec![mcf_optimize::dial::Dial::OFF.to_owned()]
     );
 }
 

@@ -3371,7 +3371,8 @@ fn configure_tab(
                     "Thinking level",
                     if desk.levels_of_the_model().is_empty() {
                         Control::Idle(
-                            "this model's template reads no level, so one would change nothing"
+                            "this model's template neither names a level nor marks a \
+                             thinking section"
                                 .to_owned(),
                         )
                     } else {
