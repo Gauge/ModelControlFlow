@@ -10,6 +10,7 @@ pub mod engines;
 mod generation;
 pub mod hosting;
 pub mod orphans;
+pub mod parameters;
 pub mod power;
 pub mod projector;
 pub mod provisioning;

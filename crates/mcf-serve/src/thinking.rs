@@ -222,7 +222,7 @@ fn ranked(mut levels: Vec<String>) -> Vec<String> {
     levels
 }
 
-fn the_set_it_allows(template: &str, named: &str) -> Option<Vec<String>> {
+pub(crate) fn the_set_it_allows(template: &str, named: &str) -> Option<Vec<String>> {
     let mut from = 0;
     while let Some(at) = template.get(from..)?.find(named) {
         let here = from.saturating_add(at).saturating_add(named.len());
