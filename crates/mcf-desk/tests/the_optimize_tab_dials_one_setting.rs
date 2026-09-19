@@ -973,11 +973,13 @@ fn a_setting_the_model_names_is_never_searched_over_a_span_of_numbers() {
 /// A setting is worth moving because of what it does to the answers, so marking them is the
 /// default nearly everywhere. The one exception is the setting that cannot touch an answer.
 #[test]
-fn every_setting_is_ranked_by_correctness_to_begin_with_except_the_micro_batch() {
+fn every_setting_is_ranked_by_correctness_to_begin_with_except_the_batches() {
     for dial in Dial::ALL {
         let mut desk = desk();
         desk.act(Act::Dial(dial_at(&desk, dial)));
-        let wanted = if dial == Dial::MicroBatch {
+        // Neither batch can change which tokens come back, only how fast they do, so
+        // neither opens ranked by what the answer said.
+        let wanted = if matches!(dial, Dial::MicroBatch | Dial::Batch) {
             mcf_optimize::reading::Measure::Speed
         } else {
             mcf_optimize::reading::Measure::Correctness
@@ -1044,4 +1046,65 @@ fn the_one_setting_that_cannot_change_an_answer_still_refuses_to_be_marked() {
     );
     let why = desk.optimizing.refused.clone().unwrap_or_default();
     assert!(why.contains("only how fast"), "{why}");
+}
+
+/// The two batches are not independent: the engine will not push a pass wider than the
+/// batch it was handed, so a sweep of one has to say what it did to the other or the
+/// reading is taken under conditions nobody wrote down.
+mod the_two_batches_hold_together {
+    use super::{Act, Dial, desk, dial_at};
+
+    fn adopted(dial: Dial, to: u32) -> Option<mcf_serve::hosting::Hosting> {
+        let mut desk = desk();
+        desk.settings = Some(mcf_serve::hosting::Hosting::recommended(
+            "llama.cpp",
+            "a card",
+            true,
+            32_768,
+            Some(8),
+            true,
+            None,
+        ));
+        desk.act(Act::Dial(dial_at(&desk, dial)));
+        desk.optimizing.settled = Some(mcf_optimize::dial::Step::Whole(to));
+        desk.act(Act::AdoptBest);
+        desk.settings
+    }
+
+    #[test]
+    fn a_batch_under_the_pass_narrows_the_pass() {
+        let Some(held) = adopted(Dial::Batch, 256) else {
+            return;
+        };
+        assert_eq!(held.batch, 256);
+        assert!(
+            held.ubatch <= 256,
+            "the engine would have narrowed it anyway, and a reading has to be taken under \
+             what actually ran: ubatch {}",
+            held.ubatch
+        );
+    }
+
+    #[test]
+    fn a_pass_over_the_batch_widens_the_batch() {
+        let Some(held) = adopted(Dial::MicroBatch, 4096) else {
+            return;
+        };
+        assert_eq!(held.ubatch, 4096);
+        assert!(held.batch >= 4096, "batch {}", held.batch);
+    }
+
+    /// And the dial is offered at all, which is what was missing: the micro-batch could be
+    /// measured on this machine and the batch beside it could not.
+    #[test]
+    fn the_prompt_batch_is_a_setting_a_sweep_can_measure() {
+        let desk = desk();
+        assert!(desk.dials_offered().contains(&Dial::Batch));
+        assert_eq!(Dial::Batch.flag(), Some("--batch-size"));
+        assert!(
+            Dial::Batch.times_reading_the_prompt(),
+            "a batch shows in how fast a prompt is read, not in how fast an answer is \
+             written, and timing the wrong one reads the same number back at every value"
+        );
+    }
 }

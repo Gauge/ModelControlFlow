@@ -356,19 +356,24 @@ fn a_timed_run_that_stopped_early_is_not_offered_as_a_rate() {
 }
 
 #[test]
-fn one_setting_cannot_change_an_answer_and_the_rest_are_marked_by_default() {
-    assert!(
-        Dial::MicroBatch.cannot_change_an_answer(),
-        "a micro-batch is how many prompt tokens go through the device in one pass; the \
-         tokens that come back are the same tokens whatever it is"
-    );
-    assert_eq!(
-        Dial::MicroBatch.ranked_by(),
-        crate::reading::Measure::Speed,
-        "so there is nothing for a marked answer to say about it"
-    );
+fn only_the_batches_cannot_change_an_answer_and_the_rest_are_marked_by_default() {
+    // How many prompt tokens are handed over at a time, and how many go through the
+    // device in one pass. Neither changes which tokens come back, so neither is ranked by
+    // what the answer said.
+    for held in [Dial::MicroBatch, Dial::Batch] {
+        assert!(
+            held.cannot_change_an_answer(),
+            "{} only changes how fast the same tokens come back",
+            held.label()
+        );
+        assert_eq!(
+            held.ranked_by(),
+            crate::reading::Measure::Speed,
+            "so there is nothing for a marked answer to say about it"
+        );
+    }
     for dial in Dial::ALL {
-        if dial == Dial::MicroBatch {
+        if matches!(dial, Dial::MicroBatch | Dial::Batch) {
             continue;
         }
         assert!(

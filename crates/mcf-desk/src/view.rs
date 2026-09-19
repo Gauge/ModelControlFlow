@@ -1966,13 +1966,18 @@ fn base_configuration(paint: &mut Painter, desk: &Desk, area: Box, mut y: f32) -
         return y + 30.0;
     };
     let dialled = desk.optimizing.sweep.dial;
-    let rows: [(&str, String, bool); 6] = [
+    let rows: [(&str, String, bool); 7] = [
         ("model", held.name.clone(), false),
         ("engine", settings.engine.clone(), false),
         (
             "context window",
             format!("{} tokens", settings.context),
             false,
+        ),
+        (
+            "prompt batch",
+            settings.batch.to_string(),
+            dialled == mcf_optimize::dial::Dial::Batch,
         ),
         (
             "micro-batch",

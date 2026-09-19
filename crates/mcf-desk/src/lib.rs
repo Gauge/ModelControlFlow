@@ -990,6 +990,15 @@ fn put_the_dial(
             settings.ubatch = wanted;
             settings.batch = settings.batch.max(wanted);
         }
+        // The other way round, for the same reason: the engine will not run a pass wider
+        // than the batch it was handed, so asking for a batch under the pass quietly
+        // narrows the pass. Narrowing it here means the reading is taken under what was
+        // actually run, and the ledger writes both down.
+        Dial::Batch => {
+            let wanted = step.whole().unwrap_or(settings.batch);
+            settings.batch = wanted;
+            settings.ubatch = settings.ubatch.min(wanted);
+        }
         Dial::ThinkingBudget => settings.started.thinking = step.whole(),
         Dial::DraftDepth => {
             let wanted = step.whole().unwrap_or(0);
@@ -1036,6 +1045,11 @@ fn hold_it_at(
             let wanted = step.whole().unwrap_or(held.ubatch);
             held.ubatch = wanted;
             held.batch = held.batch.max(wanted);
+        }
+        mcf_optimize::dial::Dial::Batch => {
+            let wanted = step.whole().unwrap_or(held.batch);
+            held.batch = wanted;
+            held.ubatch = held.ubatch.min(wanted);
         }
         mcf_optimize::dial::Dial::ThinkingBudget => held.started.thinking = step.whole(),
         mcf_optimize::dial::Dial::DraftDepth => {

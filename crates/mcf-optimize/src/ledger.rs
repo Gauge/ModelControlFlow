@@ -63,6 +63,7 @@ impl Under {
             Dial::TopP => held.top_p = None,
             Dial::TopK => held.top_k = None,
             Dial::MicroBatch => held.ubatch = 0,
+            Dial::Batch => held.batch = 0,
             Dial::DraftDepth => held.draft_depth = None,
         }
         held

@@ -140,6 +140,7 @@ fn every_setting_the_optimizer_dials_can_also_be_set_by_hand() {
             mcf_optimize::dial::Dial::TopP => "Top-p",
             mcf_optimize::dial::Dial::TopK => "Top-k",
             mcf_optimize::dial::Dial::MicroBatch => "Micro-batch",
+            mcf_optimize::dial::Dial::Batch => "Prompt batch",
             mcf_optimize::dial::Dial::DraftDepth => "Draft depth",
         };
         assert!(

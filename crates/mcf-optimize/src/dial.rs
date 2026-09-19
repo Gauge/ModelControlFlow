@@ -5,6 +5,7 @@
 pub enum Dial {
     #[default]
     MicroBatch,
+    Batch,
     ThinkingLevel,
     ThinkingBudget,
     Temperature,
@@ -14,8 +15,9 @@ pub enum Dial {
 }
 
 impl Dial {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::MicroBatch,
+        Self::Batch,
         Self::ThinkingLevel,
         Self::ThinkingBudget,
         Self::Temperature,
@@ -39,6 +41,7 @@ impl Dial {
             Self::TopP => "Top-p",
             Self::TopK => "Top-k",
             Self::MicroBatch => "Micro-batch",
+            Self::Batch => "Prompt batch",
             Self::DraftDepth => "Draft depth",
         }
     }
@@ -47,7 +50,7 @@ impl Dial {
     pub const fn reloads_the_engine(self) -> bool {
         matches!(
             self,
-            Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth
+            Self::ThinkingBudget | Self::MicroBatch | Self::Batch | Self::DraftDepth
         )
     }
 
@@ -56,6 +59,7 @@ impl Dial {
         match self {
             Self::ThinkingBudget => "tokens",
             Self::MicroBatch => "tokens per pass",
+            Self::Batch => "tokens a batch",
             Self::DraftDepth => "drafted tokens",
             Self::ThinkingLevel | Self::Temperature | Self::TopP | Self::TopK => "",
         }
@@ -67,6 +71,7 @@ impl Dial {
             Self::ThinkingBudget
             | Self::ThinkingLevel
             | Self::MicroBatch
+            | Self::Batch
             | Self::DraftDepth
             | Self::TopK => Scale::Whole,
             Self::Temperature | Self::TopP => Scale::Thousandths,
@@ -81,7 +86,7 @@ impl Dial {
             Self::Temperature => Span::new(0, 1000, 25),
             Self::TopP => Span::new(500, 1000, 10),
             Self::TopK => Span::new(0, 200, 5),
-            Self::MicroBatch => Span::new(64, 32_768, 256),
+            Self::MicroBatch | Self::Batch => Span::new(64, 32_768, 256),
             Self::DraftDepth => Span::new(0, 8, 1),
         }
     }
@@ -93,7 +98,7 @@ impl Dial {
     #[must_use]
     pub const fn climbs_from(self) -> u32 {
         match self {
-            Self::MicroBatch => 256,
+            Self::MicroBatch | Self::Batch => 256,
             Self::ThinkingBudget
             | Self::ThinkingLevel
             | Self::Temperature
@@ -117,7 +122,9 @@ impl Dial {
     #[must_use]
     pub const fn climbs_by(self) -> Climb {
         match self {
-            Self::MicroBatch | Self::ThinkingBudget | Self::DraftDepth => Climb::Doubling,
+            Self::MicroBatch | Self::Batch | Self::ThinkingBudget | Self::DraftDepth => {
+                Climb::Doubling
+            }
             Self::Temperature => Climb::Evenly(200),
             Self::TopP => Climb::Evenly(100),
             Self::TopK => Climb::Evenly(40),
@@ -167,6 +174,10 @@ impl Dial {
                 .into_iter()
                 .map(Step::Whole)
                 .collect(),
+            Self::Batch => [512, 1024, 2048, 4096]
+                .into_iter()
+                .map(Step::Whole)
+                .collect(),
             Self::DraftDepth => [0, 2, 3, 5].into_iter().map(Step::Whole).collect(),
         }
     }
@@ -176,6 +187,7 @@ impl Dial {
         match self {
             Self::ThinkingBudget => Some("--reasoning-budget"),
             Self::MicroBatch => Some("--ubatch-size"),
+            Self::Batch => Some("--batch-size"),
             Self::DraftDepth => Some("--spec-draft-n-max"),
             Self::ThinkingLevel | Self::Temperature | Self::TopP | Self::TopK => None,
         }
@@ -188,21 +200,22 @@ impl Dial {
             Self::TopP => Some("top_p"),
             Self::TopK => Some("top_k"),
             Self::ThinkingLevel => Some("reasoning_effort"),
-            Self::ThinkingBudget | Self::MicroBatch | Self::DraftDepth => None,
+            Self::ThinkingBudget | Self::MicroBatch | Self::Batch | Self::DraftDepth => None,
         }
     }
 
     /// A setting that cannot change what a model answers, only how fast it answers it. A
-    /// micro-batch is how many prompt tokens go through the device in one pass; the tokens
-    /// that come back are the same tokens whatever it is, so there is nothing for a marked
-    /// answer to say about it.
+    /// micro-batch is how many prompt tokens go through the device in one pass, and a
+    /// prompt batch is how many are handed over at a time for it to work through; the
+    /// tokens that come back are the same tokens whatever either is, so there is nothing
+    /// for a marked answer to say about them.
     ///
     /// A draft head is not on this list, though its guesses are checked against the model.
     /// The check preserves the distribution rather than the draw, so what comes back is a
     /// legitimate answer and not necessarily the same one — which is a thing worth marking.
     #[must_use]
     pub const fn cannot_change_an_answer(self) -> bool {
-        matches!(self, Self::MicroBatch)
+        matches!(self, Self::MicroBatch | Self::Batch)
     }
 
     /// What a sweep of this setting is ranked by before anybody says otherwise. Marking the
@@ -224,7 +237,7 @@ impl Dial {
     /// other way round. Timing the wrong one reads the same number back at every value.
     #[must_use]
     pub const fn times_reading_the_prompt(self) -> bool {
-        matches!(self, Self::MicroBatch)
+        matches!(self, Self::MicroBatch | Self::Batch)
     }
 
     #[must_use]
