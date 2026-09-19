@@ -1787,6 +1787,8 @@ fn ask_within(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
+    /// A word this model's template reads, where the template says which words it takes.
+    TemplateWord(u8),
     Cache,
     Answers,
     Pooling,
@@ -2159,6 +2161,9 @@ impl Removing {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
+    /// Something this model's template reads that is neither a switch nor a word out of a
+    /// set the template names: a line of identity, a count.
+    TemplateWord(u8),
     Slots,
     Alias,
     Ubatch,
@@ -2188,6 +2193,11 @@ pub enum Field {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Switch {
+    /// One of the switches this model's own chat template reads, by where it stands in
+    /// the list the template asks for them in. Held by place rather than by name because
+    /// a switch is copied about the window and a name is not; the name is what the choice
+    /// is stored under, so it survives the template changing underneath.
+    TemplateTakes(u8),
     CacheOnProcessor,
     PromptCache,
     IdleSlots,
@@ -2297,6 +2307,9 @@ pub enum Act {
     Place(usize),
     Rope(usize),
     ThinkingLevel(usize),
+    /// A word chosen for one of the template's own parameters: which parameter, and which
+    /// of the words it takes — nought being the template's own.
+    TemplateWord(u8, usize),
     Cache(usize),
     SplitMode(usize),
     Loading(usize),
@@ -2940,6 +2953,7 @@ impl Desk {
             | Act::Place(_)
             | Act::Rope(_)
             | Act::ThinkingLevel(_)
+            | Act::TemplateWord(..)
             | Act::Cache(_)
             | Act::SplitMode(_)
             | Act::Loading(_)
@@ -4831,6 +4845,34 @@ impl Desk {
     /// uses. Off is MCF's own word and reaches no template: one that checks its vocabulary
     /// refuses the whole request over it, which is how every trial of every setting on a
     /// hold made this way came back in seven milliseconds with nothing in it.
+    /// Choose one of the words a template says it takes. Nought is the template's own,
+    /// which is sending nothing at all.
+    fn pick_a_word(&mut self, which: u8, at: usize) {
+        self.open = None;
+        let takes = self.template_takes();
+        let Some(held) = takes.get(usize::from(which)).cloned() else {
+            return;
+        };
+        let words = match &held.takes {
+            mcf_serve::parameters::Takes::Word { allowed, .. } => allowed.clone(),
+            _ => return,
+        };
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        settings
+            .started
+            .template_taken
+            .retain(|(named, _)| *named != held.name);
+        let Some(wanted) = at.checked_sub(1).and_then(|at| words.get(at)) else {
+            return;
+        };
+        settings
+            .started
+            .template_taken
+            .push((held.name, mcf_record::json::Value::text(wanted.clone())));
+    }
+
     fn pick_a_level(&mut self, at: usize) {
         self.open = None;
         let named = self.levels_of_the_model();
@@ -4938,6 +4980,7 @@ impl Desk {
                 self.open = None;
             }
             Act::ThinkingLevel(at) => self.pick_a_level(at),
+            Act::TemplateWord(which, at) => self.pick_a_word(which, at),
             Act::Rope(at) => {
                 self.apply_edit();
                 if let Some(settings) = self.settings.as_mut() {
@@ -4978,6 +5021,11 @@ impl Desk {
             return;
         };
         let now = match field {
+            Field::TemplateWord(at) => self
+                .template_takes()
+                .get(usize::from(at))
+                .and_then(|held| self.what_is_taken(&held.name))
+                .map_or_else(String::new, said_plainly),
             Field::Context => settings.context.to_string(),
             Field::Threads => settings.threads.to_string(),
             Field::Batch => settings.batch.to_string(),
@@ -5146,10 +5194,11 @@ impl Desk {
         let _listed = typed.trim().to_owned();
         let typed = typed.trim().replace([',', '_'], "");
         let not_a_number = |what: &str| Some(format!("{what} wants a whole number, not {typed:?}"));
+        let takes = self.template_takes();
         let Some(settings) = self.settings.as_mut() else {
             return;
         };
-        self.edit_refused = Self::a_number_for(settings, field, &typed, &not_a_number);
+        self.edit_refused = Self::a_number_for(settings, &takes, field, &typed, &not_a_number);
     }
 
     #[expect(
@@ -5158,11 +5207,34 @@ impl Desk {
     )]
     fn a_number_for(
         settings: &mut mcf_serve::hosting::Hosting,
+        takes: &[mcf_serve::parameters::Parameter],
         field: Field,
         typed: &str,
         not_a_number: &dyn Fn(&str) -> Option<String>,
     ) -> Option<String> {
         match field {
+            // Emptied is the template left alone, which is what the line underneath the
+            // control says it does on its own.
+            Field::TemplateWord(at) => {
+                let held = takes.get(usize::from(at)).cloned()?;
+                settings
+                    .started
+                    .template_taken
+                    .retain(|(named, _)| *named != held.name);
+                let typed = typed.trim();
+                if typed.is_empty() {
+                    return None;
+                }
+                let sent = match held.takes {
+                    mcf_serve::parameters::Takes::Count { .. } => match typed.parse::<i64>() {
+                        Ok(whole) => mcf_record::json::Value::Integer(whole),
+                        Err(_) => return not_a_number(&held.name),
+                    },
+                    _ => mcf_record::json::Value::text(typed.to_owned()),
+                };
+                settings.started.template_taken.push((held.name, sent));
+                None
+            }
             Field::Context => match typed.parse::<u64>() {
                 Ok(tokens) if tokens >= 512 => {
                     settings.context = tokens;
@@ -5331,11 +5403,78 @@ impl Desk {
         }
     }
 
+    /// What this model's own chat template will read, in the order it asks for them.
+    ///
+    /// Read off the template the model carries rather than from anything MCF knows about
+    /// the family: the names differ between families, and the whole point of reading them
+    /// is to reach the ones nobody has written down.
+    #[must_use]
+    pub fn template_takes(&self) -> Vec<mcf_serve::parameters::Parameter> {
+        self.declared
+            .as_ref()
+            .and_then(|held| held.template.as_deref())
+            .map(mcf_serve::parameters::in_template)
+            .unwrap_or_default()
+    }
+
+    /// What is being sent for one of them, where anything is.
+    #[must_use]
+    pub fn what_is_taken(&self, name: &str) -> Option<&mcf_record::json::Value> {
+        self.settings
+            .as_ref()?
+            .started
+            .template_taken
+            .iter()
+            .find(|(held, _)| held == name)
+            .map(|(_, held)| held)
+    }
+
+    /// Turn one of the template's own switches the other way.
+    ///
+    /// The first turn sends the opposite of whatever the template does on its own, because
+    /// that is the only reason to touch it. Turning it back to what the template already
+    /// does stops sending it at all, so leaving a switch alone and setting it to its own
+    /// default are the same thing, which is what the template's own word underneath says.
+    fn flip_what_the_template_takes(&mut self, at: u8) {
+        let takes = self.template_takes();
+        let Some(held) = usize::from(at).checked_sub(0).and_then(|at| takes.get(at)) else {
+            return;
+        };
+        let name = held.name.clone();
+        let on_its_own = match held.takes {
+            mcf_serve::parameters::Takes::Switch { on_unless_asked } => {
+                on_unless_asked.unwrap_or(false)
+            }
+            _ => return,
+        };
+        let now = self
+            .what_is_taken(&name)
+            .and_then(|held| match held {
+                mcf_record::json::Value::Bool(on) => Some(*on),
+                _ => None,
+            })
+            .unwrap_or(on_its_own);
+        let Some(settings) = self.settings.as_mut() else {
+            return;
+        };
+        settings
+            .started
+            .template_taken
+            .retain(|(held, _)| *held != name);
+        if now == on_its_own {
+            settings
+                .started
+                .template_taken
+                .push((name, mcf_record::json::Value::Bool(!now)));
+        }
+    }
+
     pub fn flip(&mut self, switch: Switch) {
         let Some(settings) = self.settings.as_mut() else {
             return;
         };
         match switch {
+            Switch::TemplateTakes(at) => self.flip_what_the_template_takes(at),
             Switch::CacheOnProcessor => {
                 settings.spread.cache_on_processor = !settings.spread.cache_on_processor;
             }
@@ -5929,3 +6068,13 @@ fn points(paint: &paint::Painter, at: (f32, f32)) -> (f32, f32) {
 
 #[cfg(test)]
 mod tests;
+
+/// One of a template's own values, as the person would have typed it.
+fn said_plainly(held: &mcf_record::json::Value) -> String {
+    match held {
+        mcf_record::json::Value::Bool(on) => on.to_string(),
+        mcf_record::json::Value::Integer(whole) => whole.to_string(),
+        mcf_record::json::Value::Text(said) => said.clone(),
+        _ => String::new(),
+    }
+}

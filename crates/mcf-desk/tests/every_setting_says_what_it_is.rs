@@ -322,3 +322,118 @@ fn choosing_off_by_hand_turns_it_off_the_way_a_sweep_does() {
         started.arguments()
     );
 }
+
+/// What a model's own chat template will read becomes controls, named as the template
+/// names them, and what is set is handed to the engine as the template's arguments.
+mod what_the_template_takes {
+    use super::settings;
+    use mcf_desk::{Desk, Page, Switch};
+
+    /// Nemotron-3's shape: a switch that is on unless asked off, one that is off unless
+    /// asked on, and a third about the history.
+    fn a_desk_holding_a_template_that_takes_things() -> Desk {
+        let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+        desk.page = Page::Host;
+        desk.declared = Some(mcf_serve::declared::Declared {
+            template: Some(
+                "{%- set enable_thinking = enable_thinking if enable_thinking is defined \
+                 else True %}\
+                 {%- set low_effort = low_effort if low_effort is defined else False %}\
+                 {%- if enable_thinking %}{{- '<think>' }}{%- endif %}"
+                    .to_owned(),
+            ),
+            ..mcf_serve::declared::Declared::default()
+        });
+        desk.settings = Some(settings());
+        desk
+    }
+
+    #[test]
+    fn the_template_is_read_for_what_it_takes() {
+        let desk = a_desk_holding_a_template_that_takes_things();
+        let names: Vec<String> = desk
+            .template_takes()
+            .into_iter()
+            .map(|held| held.name)
+            .collect();
+        assert_eq!(names, vec!["enable_thinking", "low_effort"]);
+    }
+
+    /// Nothing is sent until somebody asks for something, so a hold set up and left alone
+    /// is addressed exactly as the model's own template would address it.
+    #[test]
+    fn nothing_is_sent_until_something_is_asked_for() {
+        let desk = a_desk_holding_a_template_that_takes_things();
+        let started = &desk.settings.as_ref().expect("settings").started;
+        assert!(started.template_taken.is_empty());
+        assert!(
+            !started
+                .arguments()
+                .iter()
+                .any(|flag| flag == "--chat-template-kwargs")
+        );
+    }
+
+    #[test]
+    fn turning_one_the_other_way_is_what_gets_sent() {
+        let mut desk = a_desk_holding_a_template_that_takes_things();
+        // The second is off unless asked on, so one turn asks for it on.
+        desk.act(mcf_desk::Act::Switch(Switch::TemplateTakes(1)));
+        let started = &desk.settings.as_ref().expect("settings").started;
+        assert_eq!(
+            started.template_taken,
+            vec![("low_effort".to_owned(), mcf_record::json::Value::Bool(true))]
+        );
+        let said = started.arguments();
+        let at = said
+            .iter()
+            .position(|held| held == "--chat-template-kwargs")
+            .expect("handed to the engine");
+        assert!(
+            said.get(at + 1)
+                .is_some_and(|held| held.contains("low_effort")),
+            "{said:?}"
+        );
+    }
+
+    /// Turning it back to what the template does on its own stops sending it, so leaving
+    /// a control alone and setting it to its own default are the same thing.
+    #[test]
+    fn turning_it_back_stops_sending_it() {
+        let mut desk = a_desk_holding_a_template_that_takes_things();
+        desk.act(mcf_desk::Act::Switch(Switch::TemplateTakes(0)));
+        assert_eq!(
+            desk.settings
+                .as_ref()
+                .expect("settings")
+                .started
+                .template_taken
+                .len(),
+            1,
+            "asked for the opposite of what the template does"
+        );
+        desk.act(mcf_desk::Act::Switch(Switch::TemplateTakes(0)));
+        assert!(
+            desk.settings
+                .as_ref()
+                .expect("settings")
+                .started
+                .template_taken
+                .is_empty(),
+            "and back again is the template left alone"
+        );
+    }
+
+    /// A model addressed plainly is offered nothing, rather than an empty heading.
+    #[test]
+    fn a_template_that_takes_nothing_is_offered_nothing() {
+        let mut desk = a_desk_holding_a_template_that_takes_things();
+        desk.declared = Some(mcf_serve::declared::Declared {
+            template: Some(
+                "{%- for message in messages %}{{ message.role }}{%- endfor %}".to_owned(),
+            ),
+            ..mcf_serve::declared::Declared::default()
+        });
+        assert!(desk.template_takes().is_empty());
+    }
+}

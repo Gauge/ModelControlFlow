@@ -2026,6 +2026,41 @@ mod the_server_page {
         held
     }
 
+    /// The shot's model carries a template that takes things, so the settings page has
+    /// the section to show. Taken from the shape Nemotron-3 uses.
+    fn a_template_that_takes_things(desk: &mut Desk) {
+        desk.declared = Some(mcf_serve::declared::Declared {
+            template: Some(
+                "{%- set enable_thinking = enable_thinking if enable_thinking is defined \
+                 else True %}\
+                 {%- set low_effort = low_effort if low_effort is defined else False %}\
+                 {%- set truncate_history_thinking = truncate_history_thinking if \
+                 truncate_history_thinking is defined else True %}\
+                 {%- if enable_thinking %}{{- '<think>' }}{%- endif %}"
+                    .to_owned(),
+            ),
+            ..mcf_serve::declared::Declared::default()
+        });
+        desk.recommended = Some(mcf_serve::hosting::Hosting::recommended(
+            "llama.cpp",
+            "a card",
+            true,
+            32_768,
+            Some(8),
+            true,
+            None,
+        ));
+        desk.settings = Some(mcf_serve::hosting::Hosting::recommended(
+            "llama.cpp",
+            "a card",
+            true,
+            32_768,
+            Some(8),
+            true,
+            None,
+        ));
+    }
+
     /// A desk with something for the strip to say, for the shot only.
     fn a_talkative_desk() -> Desk {
         let mut desk = a_desk();
@@ -2061,6 +2096,7 @@ mod the_server_page {
             "The hold answers the network without an API key",
         ));
         desk.notices_open = std::env::var("MCF_SHOT_OPEN").is_ok();
+        a_template_that_takes_things(&mut desk);
         a_shelf(&mut desk);
         desk
     }
@@ -2073,6 +2109,7 @@ mod the_server_page {
             .ok()
             .and_then(|held| match held.as_str() {
                 "downloads" => Some(crate::Page::Downloads),
+                "host" => Some(crate::Page::Host),
                 _ => None,
             })
             .unwrap_or(desk.page);

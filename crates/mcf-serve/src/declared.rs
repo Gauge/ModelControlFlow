@@ -187,6 +187,12 @@ pub struct Started {
     pub architecture: Option<String>,
     pub thinking: Option<u32>,
     pub effort: Option<String>,
+    /// What this model's own chat template was asked to read, by the names the template
+    /// uses. MCF knows two settings every family spells the same — whether to think, and
+    /// how hard — and a template may take anything else besides: whether to keep earlier
+    /// reasoning in the history, what identity to stand at the top. These are those, in
+    /// the order the template asks for them.
+    pub template_taken: Vec<(String, Value)>,
     pub temperature: Option<mcf_core::configuration::Thousandths>,
     pub top_p: Option<mcf_core::configuration::Thousandths>,
     pub top_k: Option<u32>,
@@ -222,7 +228,7 @@ impl Scaling {
 
 impl Started {
     #[must_use]
-    pub const fn asks_anything(&self) -> bool {
+    pub fn asks_anything(&self) -> bool {
         self.draft_head
             || self.rope.is_some()
             || self.factor.is_some()
@@ -231,6 +237,7 @@ impl Started {
             || self.lift.is_some()
             || self.thinking.is_some()
             || self.effort.is_some()
+            || !self.template_taken.is_empty()
             || self.temperature.is_some()
             || self.top_p.is_some()
             || self.top_k.is_some()
@@ -315,6 +322,22 @@ impl Started {
         {
             out.push("--reasoning-effort".to_owned());
             out.push(effort.to_owned());
+        }
+        // Handed to the engine as the template's arguments for the life of the hold, so
+        // that a client which knows nothing about this model still reaches it the way it
+        // was set up to be reached. Measured here: a hold started this way rendered the
+        // low-effort marker into every prompt without the caller asking for anything.
+        if !self.template_taken.is_empty() {
+            out.push("--chat-template-kwargs".to_owned());
+            out.push(
+                Value::map(
+                    self.template_taken
+                        .iter()
+                        .map(|(name, held)| (name.as_str(), held.clone()))
+                        .collect::<Vec<_>>(),
+                )
+                .to_line(),
+            );
         }
         if let Some(temperature) = self.temperature {
             out.push("--temp".to_owned());
@@ -416,6 +439,15 @@ impl Started {
                     .map_or(Value::Null, |held| Value::text(held.clone())),
             ),
             (
+                "template_taken",
+                Value::map(
+                    self.template_taken
+                        .iter()
+                        .map(|(name, held)| (name.as_str(), held.clone()))
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+            (
                 "temperature",
                 self.temperature
                     .map_or(Value::Null, |held| Value::Integer(i64::from(held.0))),
@@ -475,6 +507,7 @@ impl Started {
                 .get("effort")
                 .and_then(Value::as_text)
                 .map(str::to_owned),
+            template_taken: taken(value.get("template_taken")),
             temperature: thousandths(value.get("temperature")),
             top_p: thousandths(value.get("top_p")),
             top_k: value
@@ -531,6 +564,21 @@ fn refused(why: &'static str) -> Failure {
         Subsystem::new("mcf-serve::declared"),
         why,
     )
+}
+
+/// What was chosen for a template's own parameters, read back off the wire.
+///
+/// Only the three kinds a template can actually be handed — a switch, a word, a number —
+/// because anything else could not have been sent and would not be read if it were.
+fn taken(held: Option<&Value>) -> Vec<(String, Value)> {
+    let Some(Value::Map(pairs)) = held else {
+        return Vec::new();
+    };
+    pairs
+        .iter()
+        .filter(|(_, held)| matches!(held, Value::Bool(_) | Value::Text(_) | Value::Integer(_)))
+        .map(|(name, held)| (name.clone(), held.clone()))
+        .collect()
 }
 
 fn thousandths(held: Option<&Value>) -> Option<mcf_core::configuration::Thousandths> {

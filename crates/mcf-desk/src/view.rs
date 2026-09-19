@@ -2903,6 +2903,54 @@ enum Control {
     Flip(crate::Switch, bool),
 }
 
+/// The settings this model's own chat template reads, as controls.
+///
+/// Named as the template names them, because that is what the model will read and MCF
+/// does not know what any of them mean — only that the template asks for them. The line
+/// under each says what the template does when nobody says anything, so leaving a control
+/// alone and setting it to that are visibly the same thing.
+fn what_the_template_takes(desk: &Desk) -> Vec<(String, Control, String)> {
+    let mut rows = Vec::new();
+    for (at, held) in desk.template_takes().into_iter().enumerate() {
+        let Ok(which) = u8::try_from(at) else {
+            break;
+        };
+        let sent = desk.what_is_taken(&held.name);
+        let control = match &held.takes {
+            mcf_serve::parameters::Takes::Switch { on_unless_asked } => {
+                let on = sent
+                    .and_then(|held| match held {
+                        mcf_record::json::Value::Bool(on) => Some(*on),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| on_unless_asked.unwrap_or(false));
+                Control::Flip(crate::Switch::TemplateTakes(which), on)
+            }
+            mcf_serve::parameters::Takes::Word { allowed, .. } if !allowed.is_empty() => {
+                Control::Pick(
+                    crate::Picker::TemplateWord(which),
+                    sent.and_then(|held| held.as_text())
+                        .map_or_else(|| "the template's own".to_owned(), str::to_owned),
+                )
+            }
+            mcf_serve::parameters::Takes::Count { .. } => Control::Number(
+                crate::Field::TemplateWord(which),
+                sent.and_then(mcf_record::json::Value::as_integer)
+                    .map_or_else(String::new, |whole| whole.to_string()),
+                held.default_said(),
+            ),
+            mcf_serve::parameters::Takes::Word { .. } => Control::Words(
+                crate::Field::TemplateWord(which),
+                sent.and_then(|held| held.as_text())
+                    .map_or_else(String::new, str::to_owned),
+                "the template's own",
+            ),
+        };
+        rows.push((held.name.clone(), control, held.default_said()));
+    }
+    rows
+}
+
 fn a_section(paint: &mut Painter, area: Box, y: f32, heading: &str) -> f32 {
     let ink = paint.ink;
     let top = y + 10.0;
@@ -2918,8 +2966,11 @@ fn a_section(paint: &mut Painter, area: Box, y: f32, heading: &str) -> f32 {
     top + 34.0
 }
 
-struct Row {
-    name: &'static str,
+struct Row<'a> {
+    name: &'a str,
+    /// Why the setting is there, in MCF's words. A setting read off a model's own template
+    /// has none: MCF knows the model will read it and not what it means, and inventing an
+    /// explanation for somebody else's parameter would be inventing it.
     because: &'static str,
 }
 
@@ -2987,7 +3038,7 @@ fn configure_tab(
     let mut menu: Option<(Picker, Box)> = None;
 
     let label =
-        |paint: &mut Painter, y: f32, row: Row, hovered: &mut Option<(&'static str, f32)>| {
+        |paint: &mut Painter, y: f32, row: Row<'_>, hovered: &mut Option<(&'static str, f32)>| {
             let hit = Box::new(area.x, y - 4.0, area.w, 26.0);
             if mouse.over(hit) && !row.because.is_empty() {
                 *hovered = Some((row.because, y));
@@ -3263,27 +3314,27 @@ fn configure_tab(
         Control::Number(field, now, published(of))
     };
     let flip = |held: crate::Switch, on: bool| Control::Flip(held, on);
-    let sections: Vec<(&'static str, Vec<(&'static str, Control)>)> = vec![
+    let mut sections: Vec<(&'static str, Vec<(String, Control)>)> = vec![
         (
             "Where it runs",
             vec![
                 (
-                    "Split mode",
+                    "Split mode".to_owned(),
                     pick(Picker::SplitMode, settings.spread.split.as_str().to_owned()),
                 ),
                 (
-                    "Experts",
+                    "Experts".to_owned(),
                     pick(Picker::Experts, settings.spread.experts.said()),
                 ),
                 (
-                    "Main device",
+                    "Main device".to_owned(),
                     number(
                         crate::Field::MainDevice,
                         settings.spread.main_device.to_string(),
                     ),
                 ),
                 (
-                    "Devices",
+                    "Devices".to_owned(),
                     words(
                         crate::Field::Devices,
                         settings.spread.devices.clone().unwrap_or_default(),
@@ -3291,14 +3342,14 @@ fn configure_tab(
                     ),
                 ),
                 (
-                    "Dense layers on the processor",
+                    "Dense layers on the processor".to_owned(),
                     number(
                         crate::Field::DenseLayersOnCpu,
                         settings.spread.ffn_layers_on_processor.to_string(),
                     ),
                 ),
                 (
-                    "Tensors placed by hand",
+                    "Tensors placed by hand".to_owned(),
                     words(
                         crate::Field::OverrideTensors,
                         settings.spread.override_tensors.clone().unwrap_or_default(),
@@ -3306,22 +3357,22 @@ fn configure_tab(
                     ),
                 ),
                 (
-                    "Cache in system memory",
+                    "Cache in system memory".to_owned(),
                     flip(
                         crate::Switch::CacheOnProcessor,
                         settings.spread.cache_on_processor,
                     ),
                 ),
                 (
-                    "Memory lock",
+                    "Memory lock".to_owned(),
                     flip(crate::Switch::KeepResident, settings.keep_resident),
                 ),
                 (
-                    "How it loads",
+                    "How it loads".to_owned(),
                     pick(Picker::Loading, settings.loading.as_str().to_owned()),
                 ),
                 (
-                    "Large tensors",
+                    "Large tensors".to_owned(),
                     pick(Picker::LargeTensors, settings.lazily.as_str().to_owned()),
                 ),
             ],
@@ -3330,26 +3381,26 @@ fn configure_tab(
             "Speed",
             vec![
                 (
-                    "Prompt batch",
+                    "Prompt batch".to_owned(),
                     number(crate::Field::Batch, settings.batch.to_string()),
                 ),
                 (
-                    "Micro-batch",
+                    "Micro-batch".to_owned(),
                     number(crate::Field::Ubatch, settings.ubatch.to_string()),
                 ),
                 (
-                    "Threads",
+                    "Threads".to_owned(),
                     number(crate::Field::Threads, settings.threads.to_string()),
                 ),
                 (
-                    "Threads for reading a prompt",
+                    "Threads for reading a prompt".to_owned(),
                     number(
                         crate::Field::ThreadsBatch,
                         settings.threads_batch.to_string(),
                     ),
                 ),
                 (
-                    "Flash attention",
+                    "Flash attention".to_owned(),
                     flip(crate::Switch::FlashAttention, settings.flash_attention),
                 ),
             ],
@@ -3358,7 +3409,7 @@ fn configure_tab(
             "Thinking",
             vec![
                 (
-                    "Thinking budget",
+                    "Thinking budget".to_owned(),
                     number(
                         crate::Field::ThinkingBudget,
                         settings
@@ -3368,7 +3419,7 @@ fn configure_tab(
                     ),
                 ),
                 (
-                    "Thinking level",
+                    "Thinking level".to_owned(),
                     if desk.levels_of_the_model().is_empty() {
                         Control::Idle(
                             "this model's template neither names a level nor marks a \
@@ -3387,7 +3438,7 @@ fn configure_tab(
                     },
                 ),
                 (
-                    "Draft depth",
+                    "Draft depth".to_owned(),
                     number(
                         crate::Field::DraftDepth,
                         settings
@@ -3402,7 +3453,7 @@ fn configure_tab(
             "Sampling",
             vec![
                 (
-                    "Temperature",
+                    "Temperature".to_owned(),
                     sampled(
                         crate::Field::Temperature,
                         settings
@@ -3413,7 +3464,7 @@ fn configure_tab(
                     ),
                 ),
                 (
-                    "Top-p",
+                    "Top-p".to_owned(),
                     sampled(
                         crate::Field::TopP,
                         settings
@@ -3424,7 +3475,7 @@ fn configure_tab(
                     ),
                 ),
                 (
-                    "Top-k",
+                    "Top-k".to_owned(),
                     sampled(
                         crate::Field::TopK,
                         settings
@@ -3440,47 +3491,47 @@ fn configure_tab(
             "Reuse between messages",
             vec![
                 (
-                    "Prompt cache",
+                    "Prompt cache".to_owned(),
                     flip(crate::Switch::PromptCache, settings.reuse.prompt_cache),
                 ),
                 (
-                    "Prompt cache memory",
+                    "Prompt cache memory".to_owned(),
                     number(
                         crate::Field::PromptCacheMib,
                         settings.reuse.prompt_cache_mib.to_string(),
                     ),
                 ),
                 (
-                    "Prefix reuse",
+                    "Prefix reuse".to_owned(),
                     number(
                         crate::Field::CacheReuse,
                         settings.reuse.cache_reuse.to_string(),
                     ),
                 ),
                 (
-                    "Keep idle slots",
+                    "Keep idle slots".to_owned(),
                     flip(crate::Switch::IdleSlots, settings.reuse.idle_slots),
                 ),
                 (
-                    "Checkpoints",
+                    "Checkpoints".to_owned(),
                     number(
                         crate::Field::Checkpoints,
                         settings.reuse.checkpoints.to_string(),
                     ),
                 ),
                 (
-                    "Checkpoint spacing",
+                    "Checkpoint spacing".to_owned(),
                     number(
                         crate::Field::CheckpointSpacing,
                         settings.reuse.checkpoint_min_step.to_string(),
                     ),
                 ),
                 (
-                    "Context shift",
+                    "Context shift".to_owned(),
                     flip(crate::Switch::ContextShift, settings.reuse.context_shift),
                 ),
                 (
-                    "Tokens kept in front",
+                    "Tokens kept in front".to_owned(),
                     number(crate::Field::Keep, settings.reuse.keep.to_string()),
                 ),
             ],
@@ -3489,7 +3540,7 @@ fn configure_tab(
             "Serving",
             vec![
                 (
-                    "Name callers use",
+                    "Name callers use".to_owned(),
                     words(
                         crate::Field::Alias,
                         settings.alias.clone().unwrap_or_default(),
@@ -3497,31 +3548,46 @@ fn configure_tab(
                     ),
                 ),
                 (
-                    "Conversations at once",
+                    "Conversations at once".to_owned(),
                     number(crate::Field::Slots, settings.slots.to_string()),
                 ),
                 (
-                    "Port",
+                    "Port".to_owned(),
                     number(crate::Field::Port, settings.port.to_string()),
                 ),
                 (
-                    "Reachable from the network",
+                    "Reachable from the network".to_owned(),
                     flip(crate::Switch::Open, settings.open),
                 ),
                 (
-                    "Answer kind",
+                    "Answer kind".to_owned(),
                     pick(Picker::Answers, settings.answers.as_str().to_owned()),
                 ),
                 (
-                    "Pooling",
+                    "Pooling".to_owned(),
                     pick(Picker::Pooling, settings.pooling.as_str().to_owned()),
                 ),
             ],
         ),
     ];
+    // Last, and only where there is something to show: a model whose template takes
+    // nothing gets no heading saying so, because an empty section reads as a thing that
+    // failed rather than as a model that is simply addressed plainly.
+    let taken = what_the_template_takes(desk);
+    if !taken.is_empty() {
+        sections.push((
+            "What this template takes",
+            taken
+                .into_iter()
+                .map(|(name, control, _)| (name, control))
+                .collect(),
+        ));
+    }
+
     for (heading, rows) in sections {
         y = a_section(paint, area, y, heading);
         for (name, shape) in rows {
+            let name = name.as_str();
             label(
                 paint,
                 y,
@@ -3983,6 +4049,23 @@ fn configure_menu(
                     .position(|width| *width == settings.cache)
             });
             ui::options(paint, mouse, at, &labels, now).map(Act::Cache)
+        }
+        Picker::TemplateWord(which) => {
+            let takes = desk.template_takes();
+            let held = takes.get(usize::from(which))?;
+            let mcf_serve::parameters::Takes::Word { allowed, .. } = &held.takes else {
+                return None;
+            };
+            let mut labels = vec!["the template's own".to_owned()];
+            labels.extend(allowed.iter().cloned());
+            let now = desk.what_is_taken(&held.name).map_or(0, |sent| {
+                allowed
+                    .iter()
+                    .position(|word| Some(word.as_str()) == sent.as_text())
+                    .map_or(0, |at| at.saturating_add(1))
+            });
+            ui::options(paint, mouse, at, &labels, Some(now))
+                .map(|chosen| Act::TemplateWord(which, chosen))
         }
         Picker::ThinkingLevel => {
             let mut labels = vec!["the model's own".to_owned()];
@@ -4848,7 +4931,8 @@ fn open_menu(
                 .and_then(|index| ON_CHOICES.get(index).copied())
                 .map(Act::SetOn)
         }
-        Picker::Placement
+        Picker::TemplateWord(_)
+        | Picker::Placement
         | Picker::Rope
         | Picker::ThinkingLevel
         | Picker::Cache

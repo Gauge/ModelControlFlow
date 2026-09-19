@@ -207,6 +207,7 @@ fn only_the_engines_own_words_are_scalings() {
 #[test]
 fn the_tuning_switches_reach_the_engine_in_the_order_it_reads_them() {
     let asked = Started {
+        template_taken: Vec::new(),
         effort: None,
         temperature: None,
         top_p: None,
@@ -334,6 +335,45 @@ fn a_budget_that_was_asked_for_is_not_replaced_by_the_one_that_means_off() {
     assert!(said.contains(&"64".to_owned()), "{said:?}");
 }
 
+/// What a template was asked to read is handed to the engine as the template's arguments,
+/// for the life of the hold. Measured against the engine here: a hold started this way
+/// rendered the low-effort marker into every prompt without the caller asking for it.
+#[test]
+fn what_the_template_was_asked_to_read_is_handed_over_whole() {
+    let asked = Started {
+        template_taken: vec![
+            ("low_effort".to_owned(), mcf_record::json::Value::Bool(true)),
+            (
+                "truncate_history_thinking".to_owned(),
+                mcf_record::json::Value::Bool(false),
+            ),
+        ],
+        ..Started::default()
+    };
+    assert!(asked.asks_anything());
+    let said = asked.arguments();
+    let at = said
+        .iter()
+        .position(|held| held == "--chat-template-kwargs")
+        .expect("the template's arguments are handed over");
+    let handed = said.get(at.saturating_add(1)).expect("as one value");
+    assert!(handed.contains("\"low_effort\""), "{handed}");
+    assert!(handed.contains("\"truncate_history_thinking\""), "{handed}");
+    assert!(handed.starts_with('{') && handed.ends_with('}'), "{handed}");
+}
+
+/// A template that was asked for nothing is not handed an empty set: the engine would
+/// read that as a setting, and it is the absence of one.
+#[test]
+fn a_template_asked_for_nothing_is_handed_nothing() {
+    assert!(
+        !Started::default()
+            .arguments()
+            .iter()
+            .any(|held| held == "--chat-template-kwargs")
+    );
+}
+
 /// A named level still reaches the engine as a level.
 #[test]
 fn a_level_is_handed_over_as_a_level() {
@@ -350,6 +390,13 @@ fn a_level_is_handed_over_as_a_level() {
 #[test]
 fn every_new_switch_survives_the_wire() {
     let asked = Started {
+        template_taken: vec![
+            ("low_effort".to_owned(), mcf_record::json::Value::Bool(true)),
+            (
+                "model_identity".to_owned(),
+                mcf_record::json::Value::text("You are a careful assistant."),
+            ),
+        ],
         effort: None,
         temperature: None,
         top_p: None,
