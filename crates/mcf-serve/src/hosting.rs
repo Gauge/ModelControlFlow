@@ -1309,7 +1309,34 @@ impl Hosting {
                     .map_or(Value::Null, Value::text),
             ),
         ]);
-        merged(hold, merged(grouped, self.tail_of_to_value()))
+        merged(
+            hold,
+            merged(
+                grouped,
+                merged(self.tail_of_to_value(), self.template_taken()),
+            ),
+        )
+    }
+
+    /// What the model's own template was asked to read. Written only when something was,
+    /// so settings saved before there was anything to ask for read back the same. Left out
+    /// of the value altogether, every switch ticked under "What this template takes" was
+    /// dropped on the way to the daemon — neither saved nor handed to the engine.
+    fn template_taken(&self) -> Value {
+        if self.started.template_taken.is_empty() {
+            let nothing: [(&str, Value); 0] = [];
+            return Value::map(nothing);
+        }
+        Value::map([(
+            "template_taken",
+            Value::map(
+                self.started
+                    .template_taken
+                    .iter()
+                    .map(|(name, held)| (name.as_str(), held.clone()))
+                    .collect::<Vec<_>>(),
+            ),
+        )])
     }
 
     #[must_use]

@@ -395,6 +395,35 @@ fn a_template_survives_the_round_trip_through_the_socket() {
     );
 }
 
+#[test]
+fn what_the_template_was_asked_to_read_survives_the_round_trip_through_the_socket() {
+    let recommended =
+        super::Hosting::recommended("llama.cpp", "a card", true, 4096, Some(8), true, None);
+    let mut held = recommended.clone();
+    held.started.template_taken = vec![
+        ("enable_thinking".to_owned(), Value::Bool(false)),
+        ("low_effort".to_owned(), Value::Bool(true)),
+    ];
+    let back = super::Hosting::from_value(&held.to_request(), &recommended);
+    assert_eq!(
+        back.started.template_taken, held.started.template_taken,
+        "a switch ticked under what this template takes is saved and held with, not dropped \
+         on the way to the daemon"
+    );
+    assert!(
+        back.started
+            .arguments()
+            .iter()
+            .any(|argument| argument.contains("low_effort")),
+        "and the engine is started with it: {:?}",
+        back.started.arguments()
+    );
+    assert!(
+        recommended.to_value().get("template_taken").is_none(),
+        "settings that ask the template for nothing are written as they always were"
+    );
+}
+
 /// A budget of nothing and no budget at all are opposites, and the engine spells them the
 /// same way if MCF is not careful: it reads `--reasoning-budget 0` as no budget, and lets
 /// the model think until it is done. Measured on a model whose template opens its own
