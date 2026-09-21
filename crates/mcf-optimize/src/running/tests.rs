@@ -61,7 +61,7 @@ fn begun(scratch: &Scratch, steps: &[u32], sets: &[usize]) -> Running {
             },
             under: under(),
             dial: Dial::MicroBatch,
-            ceiling: 64,
+            ceiling: Some(64),
             named: Vec::new(),
             mark: false,
             room: scratch.path.join("marking"),
@@ -196,7 +196,7 @@ fn a_run_that_cannot_hold_the_model_says_so_and_measures_nothing() {
             },
             under: under(),
             dial: Dial::MicroBatch,
-            ceiling: 64,
+            ceiling: Some(64),
             named: Vec::new(),
             mark: false,
             room: scratch.path.join("marking"),
@@ -409,7 +409,7 @@ fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
         },
         under: under(),
         dial: Dial::MicroBatch,
-        ceiling: 64,
+        ceiling: Some(64),
         named: Vec::new(),
         mark: false,
         room: scratch.path.join("marking"),
@@ -428,7 +428,7 @@ fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
         dial: Dial::MicroBatch,
         step: Step::Whole(256),
         repeat: 1,
-        ceiling: 64,
+        ceiling: Some(64),
         named: Vec::new(),
         timing: true,
     };
@@ -480,7 +480,7 @@ fn labelled_by(
     running.doing = at;
     running.holding = holding.map(str::to_owned);
     running.produced = 512;
-    running.label(&[], dial, measure, 4096)
+    running.label(&[], dial, measure, Some(4096))
 }
 
 #[test]
@@ -578,7 +578,12 @@ fn the_token_count_starts_again_with_each_trial() {
     running.produced = 4096;
     assert_eq!(running.produced, 4096);
     running.doing = None;
-    let said = running.label(&[], Dial::MicroBatch, crate::reading::Measure::Speed, 8192);
+    let said = running.label(
+        &[],
+        Dial::MicroBatch,
+        crate::reading::Measure::Speed,
+        Some(8192),
+    );
     assert!(
         !said.contains("4096"),
         "between trials there is no count to show: {said}"
@@ -758,7 +763,7 @@ fn a_sweep_stopped_inside_a_trial_writes_nothing_down_for_it() {
             },
             under: under(),
             dial: Dial::MicroBatch,
-            ceiling: 64,
+            ceiling: Some(64),
             named: Vec::new(),
             mark: false,
             room: scratch.path.join("marking"),
@@ -910,7 +915,7 @@ fn a_short_answer_set_is_asked_one_question_to_a_request_and_read_as_one_set() {
             },
             under: marked,
             dial: Dial::Temperature,
-            ceiling: 64,
+            ceiling: Some(64),
             named: Vec::new(),
             mark: true,
             room: scratch.path.join("marking"),
@@ -972,7 +977,7 @@ fn a_trial_of_short_answers_says_which_question_it_is_on() {
     });
     running.question = Some((7, 25));
     running.produced = 40;
-    let said = running.label(&[], Dial::Temperature, Measure::Correctness, 4096);
+    let said = running.label(&[], Dial::Temperature, Measure::Correctness, Some(4096));
     assert!(said.contains("set 103 · question 7 of 25"), "{said}");
     assert!(
         said.contains("wrote 40 of 4096"),
@@ -1043,6 +1048,25 @@ fn a_trial_says_which_set_of_its_value_it_is() {
         repeat: 1,
     });
     running.place = Some((3, 40));
-    let said = running.label(&[], Dial::Temperature, Measure::Correctness, 4096);
+    let said = running.label(&[], Dial::Temperature, Measure::Correctness, Some(4096));
     assert!(said.contains("set 103 (3 of 40)"), "{said}");
+}
+
+#[test]
+fn a_marked_trial_counts_what_it_has_written_against_nothing() {
+    let scratch = Scratch::new("label-no-ceiling");
+    let mut running = begun(&scratch, &[], &[]);
+    running.doing = Some(crate::ledger::At {
+        dial: Dial::Temperature,
+        step: Step::Thousandths(600),
+        set: 103,
+        repeat: 1,
+    });
+    running.produced = 512;
+    let said = running.label(&[], Dial::Temperature, Measure::Correctness, None);
+    assert!(said.ends_with("wrote 512"), "{said}");
+    assert!(
+        !said.contains(" of 16384"),
+        "a trial asked for no number of tokens has none to count towards: {said}"
+    );
 }

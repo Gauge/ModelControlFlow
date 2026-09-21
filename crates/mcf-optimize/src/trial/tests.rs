@@ -14,7 +14,7 @@ fn asked(dial: Dial, step: Step) -> Asked {
         dial,
         step,
         repeat: 0,
-        ceiling: 40_000,
+        ceiling: Some(40_000),
         named: Vec::new(),
         timing: false,
     }
@@ -238,7 +238,7 @@ fn a_sampling_dial_is_still_sent_as_a_number() {
 fn a_timed_trial_goes_to_the_plain_endpoint_and_asks_for_tokens() {
     let mut held = asked(Dial::DraftDepth, Step::Whole(4));
     held.timing = true;
-    held.ceiling = super::TOKENS_TIMED;
+    held.ceiling = Some(super::TOKENS_TIMED);
     assert_eq!(
         super::the_way_in(&held),
         "/completion",
@@ -269,7 +269,7 @@ fn a_timed_trial_goes_to_the_plain_endpoint_and_asks_for_tokens() {
 fn a_micro_batch_trial_times_reading_a_prompt_rather_than_writing_an_answer() {
     let mut held = asked(Dial::MicroBatch, Step::Whole(512));
     held.timing = true;
-    held.ceiling = super::TOKENS_PREFILLED;
+    held.ceiling = Some(super::TOKENS_PREFILLED);
     let asking = super::body(&held);
     let sent = asking
         .get("prompt")
@@ -418,7 +418,7 @@ fn only_the_speed_settings_are_ranked_by_speed_and_the_rest_are_marked() {
 fn a_timed_trial_that_reaches_its_count_is_an_answer_rather_than_a_runaway() {
     let mut held = asked(Dial::MicroBatch, Step::Whole(256));
     held.timing = true;
-    held.ceiling = 64;
+    held.ceiling = Some(64);
     assert!(
         held.timing,
         "filling the count is the whole point of a timed trial, not a sign it went wrong"
@@ -618,4 +618,89 @@ fn waiting_for_a_hold_gives_up_at_once_when_the_sweep_is_stopped() {
         "it waited {:?} for a hold it had been told to abandon",
         began.elapsed()
     );
+}
+
+#[test]
+fn a_marked_trial_asks_for_no_number_of_tokens_and_writes_until_it_is_done() {
+    let mut held = asked(Dial::Temperature, Step::Thousandths(600));
+    held.ceiling = None;
+    assert!(
+        body(&held).get("max_tokens").is_none(),
+        "a limit on the answer is a place a right answer is cut off half written"
+    );
+    held.ceiling = Some(64);
+    assert_eq!(
+        body(&held).get("max_tokens").and_then(Value::as_integer),
+        Some(64),
+        "and one that is asked for a number still sends it"
+    );
+}
+
+fn ended_as(ran_out: bool, answered: bool) -> (Ending, Option<String>) {
+    let mut held = asked(Dial::Temperature, Step::Thousandths(600));
+    held.ceiling = None;
+    super::how_it_ended(
+        &held,
+        super::Ended {
+            counted: 90_000,
+            produced: 90_000,
+            thinking: 300_000,
+            answered,
+            ran_out,
+        },
+        Ending::Answered,
+        None,
+        "",
+    )
+}
+
+#[test]
+fn with_no_limit_a_trial_ran_out_of_room_only_when_the_engine_says_so() {
+    assert_eq!(
+        ended_as(false, true).0,
+        Ending::Answered,
+        "ninety thousand tokens is a long answer, not a budget filled — there is no budget"
+    );
+    let (ending, why) = ended_as(true, true);
+    assert_eq!(
+        ending,
+        Ending::Filled,
+        "the window filled while it was writing"
+    );
+    assert!(
+        why.as_deref().is_some_and(|why| why.contains("the window")),
+        "{why:?}"
+    );
+    let (ending, why) = ended_as(true, false);
+    assert_eq!(ending, Ending::Filled);
+    assert!(
+        why.as_deref()
+            .is_some_and(|why| why.contains("still thinking")),
+        "{why:?}"
+    );
+    let (ending, why) = ended_as(false, false);
+    assert_eq!(
+        ending,
+        Ending::Answered,
+        "a model that stopped of its own accord without answering has answered wrongly, not \
+         run out of anything"
+    );
+    assert!(
+        why.as_deref()
+            .is_some_and(|why| why.contains("without writing an answer")),
+        "{why:?}"
+    );
+}
+
+#[test]
+fn the_engine_saying_it_stopped_on_its_limit_is_read_either_way_it_says_it() {
+    let chat = mcf_record::json::parse(r#"{"choices":[{"delta":{},"finish_reason":"length"}]}"#)
+        .expect("json");
+    let done = mcf_record::json::parse(r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#)
+        .expect("json");
+    let native = mcf_record::json::parse(r#"{"content":"","stop":true,"stopped_limit":true}"#)
+        .expect("json");
+    assert!(super::stopped_for_room(&chat));
+    assert!(!super::stopped_for_room(&done));
+    assert!(super::stopped_for_room(&native));
 }

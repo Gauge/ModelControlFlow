@@ -43,18 +43,14 @@ pub const TOKENS_TIMED: u32 = 1024;
 /// apart climbs to the top of its span and calls that the answer.
 pub const TOKENS_PREFILLED: u32 = 32_768;
 
-/// The room a marked trial gets: how many tokens the model may spend on one request,
-/// thinking and answering together — a set of programs, or one short question.
-pub const TOKENS_ANSWERED: u32 = 16_384;
-
-/// The most of that room a search will hand to thinking, which is half of it. A budget is
-/// only worth measuring if there is room left to answer in afterwards: a model given the
-/// whole of it thinks until the trial stops and never writes a word, which is a trial that
-/// costs what every other one costs and says nothing.
+/// The most a search will hand to thinking.
 ///
-/// Measured on a set of eight tasks: eleven thousand tokens of thinking and three thousand
-/// of answer, so half leaves room twice over for the part that gets marked.
-pub const TOKENS_THOUGHT: u32 = TOKENS_ANSWERED.div_euclid(2);
+/// A marked trial is not given a number of tokens to stop at: it writes until it is done,
+/// and the only room it runs out of is the window the model is held at. This is the top of
+/// the thinking budget's own span, not a limit on the answer. Measured on a set of eight
+/// tasks: eleven thousand tokens of thinking and three thousand of answer — a question
+/// asked on its own thinks far less than that, so eight thousand is room to spare.
+pub const TOKENS_THOUGHT: u32 = 8_192;
 
 /// Room left at the end of the window so a prompt this long still has somewhere to answer.
 const KEPT_FOR_AN_ANSWER: u64 = 512;
@@ -119,7 +115,9 @@ pub struct Asked {
     pub dial: Dial,
     pub step: Step,
     pub repeat: u8,
-    pub ceiling: u32,
+    /// How many tokens this trial asks for. A timed trial asks for exactly this many, since
+    /// that is the work being timed. A marked one asks for none: it writes until it is done.
+    pub ceiling: Option<u32>,
     pub named: Vec<String>,
     pub timing: bool,
     /// Whether this model's template reads `enable_thinking`. It decides how thinking is
@@ -158,7 +156,10 @@ pub fn body(asked: &Asked) -> Value {
     if asked.timing {
         if asked.dial.times_reading_the_prompt() {
             return Value::map([
-                ("prompt", to_be_read(asked.ceiling)),
+                (
+                    "prompt",
+                    to_be_read(asked.ceiling.unwrap_or(TOKENS_PREFILLED)),
+                ),
                 ("n_predict", Value::Integer(1)),
                 ("ignore_eos", Value::Bool(true)),
                 ("stream", Value::Bool(true)),
@@ -171,7 +172,10 @@ pub fn body(asked: &Asked) -> Value {
         }
         return Value::map([
             ("prompt", Value::text(TO_BE_TIMED.to_owned())),
-            ("n_predict", Value::Integer(i64::from(asked.ceiling))),
+            (
+                "n_predict",
+                Value::Integer(i64::from(asked.ceiling.unwrap_or(TOKENS_TIMED))),
+            ),
             ("ignore_eos", Value::Bool(true)),
             ("stream", Value::Bool(true)),
             ("cache_prompt", Value::Bool(false)),
@@ -185,10 +189,14 @@ pub fn body(asked: &Asked) -> Value {
                 ("content", Value::text(asked.set.asked())),
             ])]),
         ),
-        ("max_tokens", Value::Integer(i64::from(asked.ceiling))),
         ("stream", Value::Bool(true)),
         ("cache_prompt", Value::Bool(false)),
     ];
+    // Asked for no number of tokens, the engine writes until the model stops or the window
+    // is full. A limit here was a place a right answer could be cut off half written.
+    if let Some(ceiling) = asked.ceiling {
+        fields.push(("max_tokens", Value::Integer(i64::from(ceiling))));
+    }
 
     if let Some(field) = asked.dial.field() {
         if asked.dial.is_named_by_the_model() {
@@ -389,6 +397,9 @@ struct Gathered {
     ending: Ending,
     why: Option<String>,
     cut_short: Option<String>,
+    /// Whether the engine said it stopped because there was no more room, rather than
+    /// because the model was done.
+    ran_out: bool,
 }
 
 /// What the trial came to, from what the loop gathered: which figure is the one being
@@ -406,6 +417,7 @@ fn said_of(asked: &Asked, held: Gathered) -> Said {
             produced: held.produced,
             thinking: held.thinking,
             answered: !held.answer.trim().is_empty(),
+            ran_out: held.ran_out,
         },
         (held.ending, held.why, held.cut_short),
         &held.whole,
@@ -439,6 +451,7 @@ pub fn ask(
     let mut thinking: usize = 0;
     let mut read_in: Option<u64> = None;
     let mut cut_short = None;
+    let mut ran_out = false;
     'reading: loop {
         let read = match read_once(
             &mut connection,
@@ -465,12 +478,7 @@ pub fn ask(
             whole.push_str(&arrived);
         }
         pending.push_str(&arrived);
-        while let Some(at) = pending.find('\n') {
-            let line = pending.get(..at).unwrap_or_default().trim().to_owned();
-            pending = pending
-                .get(at.saturating_add(1)..)
-                .unwrap_or_default()
-                .to_owned();
+        while let Some(line) = next_line(&mut pending) {
             let Some(data) = line.strip_prefix("data:") else {
                 continue;
             };
@@ -480,6 +488,7 @@ pub fn ask(
             }
             let Ok(value) = parse(data) else { continue };
             counted = what_it_wrote(&value).or(counted);
+            ran_out = ran_out || stopped_for_room(&value);
             if let Some(read) = what_it_read(&value) {
                 read_in = Some(read);
                 if asked.dial.times_reading_the_prompt() {
@@ -512,7 +521,6 @@ pub fn ask(
             }
         }
     }
-    let _elapsed = started.elapsed();
     Ok(Outcome::Said(said_of(
         asked,
         Gathered {
@@ -525,6 +533,7 @@ pub fn ask(
             ending,
             why,
             cut_short,
+            ran_out,
         },
     )))
 }
@@ -611,6 +620,8 @@ struct Ended {
     /// Whether there is an answer here at all, as opposed to a budget spent getting ready
     /// to write one.
     answered: bool,
+    /// Whether the engine stopped it for want of room.
+    ran_out: bool,
 }
 
 /// What a trial came to, whether it ran out of connection or ran to its end.
@@ -644,12 +655,14 @@ fn how_it_ended(
         produced,
         thinking,
         answered,
+        ..
     } = held;
     if produced == 0 {
         return (Ending::Failed, Some(what_came_back(whole)));
     }
     if asked.timing {
-        if counted < enough_of(asked.ceiling) {
+        let asked_for = asked.ceiling.unwrap_or(0);
+        if counted < enough_of(asked_for) {
             let work = if asked.dial.times_reading_the_prompt() {
                 "the engine read only"
             } else {
@@ -658,30 +671,54 @@ fn how_it_ended(
             return (
                 Ending::Failed,
                 Some(format!(
-                    "{work} {counted} tokens of the {} it was asked for, so this rate is over \
-                     a shorter run than the others and is not theirs to compare with",
-                    asked.ceiling
+                    "{work} {counted} tokens of the {asked_for} it was asked for, so this rate \
+                     is over a shorter run than the others and is not theirs to compare with"
                 )),
             );
         }
         return (ending, why);
     }
-    // A model that thought until its budget ran out has not answered wrongly; it has not
-    // answered. Marking that as nought out of eight says the value was tried and found
-    // wanting, when what happened is that the trial never reached the part being marked.
+    // Where the room ran out: the tokens it was asked for, if it was asked for any, and
+    // otherwise the window the model is held at, which the engine says it stopped on.
+    let ran_out = held.ran_out
+        || asked
+            .ceiling
+            .is_some_and(|ceiling| produced >= u64::from(ceiling).saturating_sub(4));
+    let room = asked.ceiling.map_or_else(
+        || "the window it is held at".to_owned(),
+        |ceiling| format!("its {ceiling} tokens"),
+    );
+    // A model that thought until the room ran out has not answered wrongly; it has not
+    // answered. Marking that as wrong says the value was tried and found wanting, when
+    // what happened is that the trial never reached the part being marked.
     if !answered {
+        if !ran_out {
+            return (
+                ending,
+                Some(format!(
+                    "the model finished without writing an answer — {thinking} characters of \
+                     thinking and nothing after them"
+                )),
+            );
+        }
         return (
             Ending::Filled,
             Some(format!(
-                "the model was still thinking when its {} tokens ran out — {thinking} \
-                 characters of it and not a word of answer. There is nothing here to mark: \
-                 give it more room, or less thinking to do",
-                asked.ceiling
+                "the model was still thinking when {room} ran out — {thinking} characters of \
+                 it and not a word of answer. There is nothing here to mark: hold it with a \
+                 wider window, or give it less thinking to do"
             )),
         );
     }
-    if ending == Ending::Answered && produced >= u64::from(asked.ceiling).saturating_sub(4) {
-        return (Ending::Filled, why);
+    if ending == Ending::Answered && ran_out {
+        return (
+            Ending::Filled,
+            why.or_else(|| {
+                Some(format!(
+                    "the answer was still being written when {room} ran out"
+                ))
+            }),
+        );
     }
     (ending, why)
 }
@@ -713,6 +750,29 @@ impl Piece {
     fn is_empty(&self) -> bool {
         self.answer.is_empty() && self.thought.is_empty()
     }
+}
+
+/// The next whole line of what has arrived, taken off the front of it, trimmed. Nothing
+/// while the last line is still arriving.
+fn next_line(pending: &mut String) -> Option<String> {
+    let at = pending.find('\n')?;
+    let line = pending.get(..at).unwrap_or_default().trim().to_owned();
+    pending.replace_range(..=at, "");
+    Some(line)
+}
+
+/// Whether this chunk says the engine stopped because there was no more room — the window
+/// full, or the tokens asked for spent — rather than because the model had finished.
+fn stopped_for_room(value: &Value) -> bool {
+    let from_a_choice = value
+        .get("choices")
+        .and_then(Value::as_list)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("finish_reason"))
+        .and_then(Value::as_text)
+        .is_some_and(|reason| reason == "length");
+    let from_the_engine = matches!(value.get("stopped_limit"), Some(Value::Bool(true)));
+    from_a_choice || from_the_engine
 }
 
 fn spoken(value: &Value) -> Option<Piece> {

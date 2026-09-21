@@ -131,7 +131,7 @@ struct Doing {
     endpoint: Endpoint,
     under: Under,
     dial: Dial,
-    ceiling: u32,
+    ceiling: Option<u32>,
     named: Vec<String>,
     switch: bool,
     mark: bool,
@@ -372,9 +372,9 @@ fn trial_for(doing: &Doing, spot: At, set: Set, timed: bool) -> Asked {
         ceiling: if !timed {
             doing.ceiling
         } else if doing.dial.times_reading_the_prompt() {
-            crate::trial::prompt_within(doing.under.context)
+            Some(crate::trial::prompt_within(doing.under.context))
         } else {
-            crate::trial::TOKENS_TIMED
+            Some(crate::trial::TOKENS_TIMED)
         },
         named: doing.named.clone(),
         timing: timed,
@@ -552,7 +552,9 @@ pub struct Orders {
     pub endpoint: Endpoint,
     pub under: Under,
     pub dial: Dial,
-    pub ceiling: u32,
+    /// How many tokens a marked trial may write. Nothing, as the desk asks it: a question
+    /// is answered for as long as the model needs, up to the window it is held at.
+    pub ceiling: Option<u32>,
     pub named: Vec<String>,
     /// Whether this model's template reads `enable_thinking`, which decides how a trial
     /// asks for no thinking at all.
@@ -837,7 +839,13 @@ impl Running {
     /// that one trial it has got. Nothing that does not move — a take counter that is always
     /// one, or a token count on work that writes no tokens, is a number to read and discard.
     #[must_use]
-    pub fn label(&self, named: &[String], dial: Dial, measure: Measure, ceiling: u32) -> String {
+    pub fn label(
+        &self,
+        named: &[String],
+        dial: Dial,
+        measure: Measure,
+        ceiling: Option<u32>,
+    ) -> String {
         let clock = as_a_clock(self.running_for());
         if self.waiting {
             return format!("{clock} · paused");
@@ -868,11 +876,17 @@ impl Running {
         if let Some((question, of)) = self.question.filter(|_| !timed) {
             let _wrote = write!(said, " · question {question} of {of}");
         }
-        let doing = if timed && dial.times_reading_the_prompt() {
-            format!(" · read {} of {ceiling}", self.produced)
+        let work = if timed && dial.times_reading_the_prompt() {
+            "read"
         } else {
-            format!(" · wrote {} of {ceiling}", self.produced)
+            "wrote"
         };
+        // A trial asked for no number of tokens has nothing to count towards, so it counts
+        // what it has done and nothing else.
+        let doing = ceiling.map_or_else(
+            || format!(" · {work} {}", self.produced),
+            |ceiling| format!(" · {work} {} of {ceiling}", self.produced),
+        );
         said.push_str(&doing);
         said
     }

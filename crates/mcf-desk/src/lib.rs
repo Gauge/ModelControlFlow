@@ -758,18 +758,18 @@ impl Optimizing {
     }
 
     /// What one trial of this sweep asks for, so that how far into it the sweep has got can
-    /// be said against something. A reading trial reads a prompt; a writing one writes an
-    /// answer; a graded one answers its questions one to a request, so this is the room each
-    /// question gets rather than the room for the set.
+    /// be said against something. A reading trial reads a prompt and a writing one writes
+    /// an answer of a set length, because that length is the work being timed. A graded
+    /// one asks for nothing: a question is answered for as long as the model needs.
     #[must_use]
-    pub fn ceiling_of_a_trial(&self) -> u32 {
+    pub fn ceiling_of_a_trial(&self) -> Option<u32> {
         if self.measure.needs_the_answers_run() {
-            return SWEEP_CEILING;
+            return None;
         }
         if self.sweep.dial.times_reading_the_prompt() {
-            return mcf_optimize::trial::TOKENS_PREFILLED;
+            return Some(mcf_optimize::trial::TOKENS_PREFILLED);
         }
-        mcf_optimize::trial::TOKENS_TIMED
+        Some(mcf_optimize::trial::TOKENS_TIMED)
     }
 
     #[must_use]
@@ -961,8 +961,6 @@ impl Optimizing {
         self.sweep.repeats = u8::try_from(times).unwrap_or(1).clamp(1, 3);
     }
 }
-
-const SWEEP_CEILING: u32 = mcf_optimize::trial::TOKENS_ANSWERED;
 
 const HOLDING_PATIENCE: std::time::Duration = std::time::Duration::from_mins(30);
 
@@ -4814,7 +4812,7 @@ impl Desk {
             },
             under,
             dial: self.optimizing.sweep.dial,
-            ceiling: SWEEP_CEILING,
+            ceiling: None,
             named: self.levels_of_the_model(),
             switch: self
                 .declared
