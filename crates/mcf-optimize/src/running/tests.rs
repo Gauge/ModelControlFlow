@@ -979,3 +979,70 @@ fn a_trial_of_short_answers_says_which_question_it_is_on() {
         "what this question has written, against the room it has: {said}"
     );
 }
+
+#[test]
+fn each_question_marked_is_counted_as_it_is_rather_than_once_the_set_is_done() {
+    let scratch = Scratch::new("tally");
+    let mut running = begun(&scratch, &[], &[]);
+    let spot = crate::ledger::At {
+        dial: Dial::Temperature,
+        step: Step::Thousandths(600),
+        set: 103,
+        repeat: 1,
+    };
+    running.tally = super::Tally::default();
+    // Heard the way the sweep says it, through the same door.
+    let (send, heard) = std::sync::mpsc::channel();
+    running.heard = heard;
+    let _sent = send.send(Heard::Started(spot));
+    let _sent = send.send(Heard::Place { at: 3, of: 40 });
+    let _sent = send.send(Heard::Asking { at: 3, of: 25 });
+    for right in [true, true, false] {
+        let _sent = send.send(Heard::Marked {
+            right,
+            produced: 100,
+            milliseconds: 6_000,
+        });
+    }
+    let _moved = running.hear();
+    assert_eq!(running.tally.asked, 3);
+    assert_eq!(running.tally.right, 2);
+    let said = running
+        .so_far(&[], Dial::Temperature)
+        .expect("something to say once a question is marked");
+    assert!(said.contains("2 of 3 right (66%)"), "{said}");
+    assert!(said.contains("6.0 s a question"), "{said}");
+    // Thirty-seven sets after this one, and twenty-three of this one's questions with the
+    // third still being answered: nine hundred and forty-eight at six seconds each.
+    assert!(said.contains("about 1 h 34 m left on 0.6"), "{said}");
+    let through = running.through_the_value().expect("a share of the value");
+    assert!(
+        (through - 52.0 / 1000.0).abs() < 1e-6,
+        "two sets and two questions of forty sets of twenty-five: {through}"
+    );
+
+    let _sent = send.send(Heard::Started(crate::ledger::At {
+        step: Step::Thousandths(800),
+        ..spot
+    }));
+    let _moved = running.hear();
+    assert_eq!(
+        running.tally.asked, 0,
+        "a new value starts its own count, because a score belongs to the value it was taken at"
+    );
+}
+
+#[test]
+fn a_trial_says_which_set_of_its_value_it_is() {
+    let scratch = Scratch::new("label-place");
+    let mut running = begun(&scratch, &[], &[]);
+    running.doing = Some(crate::ledger::At {
+        dial: Dial::Temperature,
+        step: Step::Thousandths(600),
+        set: 103,
+        repeat: 1,
+    });
+    running.place = Some((3, 40));
+    let said = running.label(&[], Dial::Temperature, Measure::Correctness, 4096);
+    assert!(said.contains("set 103 (3 of 40)"), "{said}");
+}

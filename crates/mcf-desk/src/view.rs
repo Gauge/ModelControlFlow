@@ -2240,9 +2240,6 @@ fn beside_a_row(paint: &mut Painter, mouse: &Mouse, area: Box, said: &str, colou
     );
 }
 
-/// How tall the run bar at the foot of the column is while a sweep is going.
-const METER: f32 = 62.0;
-
 /// Optimize, laid out like the server page: a fixed rail on the right holding the sweep
 /// and the button that starts it, a scrolling column holding what was measured, and — only
 /// while a sweep runs — a bar pinned across the foot of that column carrying the progress.
@@ -2268,7 +2265,11 @@ fn optimize_tab(
         (rail.x - RAIL_GUTTER - area.x).max(280.0),
         area.h,
     );
-    let meter = if desk.optimizing.running { METER } else { 0.0 };
+    let meter = if desk.optimizing.running {
+        meter_height(paint, desk, column.w)
+    } else {
+        0.0
+    };
     let body = Box::new(column.x, column.y, column.w, (column.h - meter).max(120.0));
     let mut act = scrolled(
         paint,
@@ -2306,7 +2307,11 @@ fn optimize_tab(
 /// The same page with the rail's contents run in under the column instead of beside it.
 fn optimize_stacked(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let mut stacked_menu = None;
-    let meter = if desk.optimizing.running { METER } else { 0.0 };
+    let meter = if desk.optimizing.running {
+        meter_height(paint, desk, area.w)
+    } else {
+        0.0
+    };
     let body = Box::new(area.x, area.y, area.w, (area.h - meter).max(120.0));
     let mut act = scrolled(
         paint,
@@ -2803,25 +2808,20 @@ fn what_it_runs_under(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     y + gap::BLOCK
 }
 
-/// The bar across the foot of the column while a sweep runs: what it is on, how far along,
-/// how long is left, and the two buttons that act on it.
-/// A duration as minutes and seconds. A sweep's clock is read, not computed with, so
-/// whole minutes and whole seconds are exactly what is wanted.
-fn how_long(held: std::time::Duration) -> String {
-    let seconds = held.as_secs();
-    format!("{}m {:02}s", seconds.div_euclid(60), seconds.rem_euclid(60))
-}
-
+/// The panel across the foot of the column while a sweep runs: the two buttons that act
+/// on it, how far along it is, and what it has come to so far.
 #[derive(Debug)]
 pub struct Meter {
     pub stopping: bool,
     pub waiting: bool,
-    /// What the sweep is on right now, in one line.
+    /// What the sweep is on right now: the clock, the value, the set, the question.
     pub doing: String,
+    /// What the value on screen has scored so far, and how long it has left — said as each
+    /// question is marked, not once a set of them has finished.
+    pub so_far: Option<String>,
     /// What it has counted so far.
     pub along: String,
     pub fraction: Option<f32>,
-    pub elapsed: std::time::Duration,
     pub best: Option<String>,
 }
 
@@ -2864,15 +2864,70 @@ fn meter_of(desk: &Desk) -> Option<Meter> {
                 desk.optimizing.ceiling_of_a_trial(),
             )
         },
+        so_far: run.so_far(&desk.optimizing.named, desk.optimizing.sweep.dial),
         along: run.far_along(),
         fraction: if stopping {
             None
         } else {
-            desk.optimizing.fraction()
+            how_far_through(desk, run)
         },
-        elapsed: run.running_for(),
         best,
     })
+}
+
+/// How much of the bar to fill. An automatic search has no total to count towards, so a
+/// sweep asked a question at a time fills it across the value on screen; one by hand fills
+/// it across the whole sweep, with the trial under way counted a question at a time rather
+/// than all at once when it finishes.
+fn how_far_through(desk: &Desk, run: &mcf_optimize::running::Running) -> Option<f32> {
+    let automatic = desk.optimizing.way == mcf_optimize::hunt::Way::Halving
+        && !desk.optimizing.sweep.dial.values_are_a_list();
+    if automatic {
+        return run
+            .through_the_value()
+            .or_else(|| desk.optimizing.fraction());
+    }
+    let whole = desk.optimizing.fraction()?;
+    let Some((question, of)) = run.question else {
+        return Some(whole);
+    };
+    let trials = u16::try_from(desk.optimizing.sweep.trials().max(1)).ok()?;
+    let within = f32::from(u16::try_from(question.saturating_sub(1)).ok()?)
+        / f32::from(u16::try_from(of.max(1)).ok()?);
+    Some((whole + within / f32::from(trials)).min(1.0))
+}
+
+/// The lines under the bar, as they will be drawn at this width: what the sweep is on,
+/// what the value on screen has come to, and what the sweep has counted. Each wraps rather
+/// than being cut off, because a line elided to fit is the part of it that was news.
+fn meter_lines(paint: &mut Painter, meter: &Meter, wide: f32) -> Vec<(String, Weight, bool)> {
+    let mut lines = Vec::new();
+    for line in paint.wrap(&meter.doing, Weight::Bold, size::SMALL, wide) {
+        lines.push((line, Weight::Bold, true));
+    }
+    if let Some(so_far) = &meter.so_far {
+        for line in paint.wrap(so_far, Weight::Regular, size::SMALL, wide) {
+            lines.push((line, Weight::Regular, true));
+        }
+    }
+    for line in paint.wrap(&meter.along, Weight::Regular, size::SMALL, wide) {
+        lines.push((line, Weight::Regular, false));
+    }
+    lines
+}
+
+const METER_PAD: f32 = 12.0;
+const METER_BAR: f32 = 8.0;
+
+/// How tall the panel is at this width. Measured before the page is laid out, so the
+/// column above it gives up exactly the room the panel takes and no more.
+fn meter_height(paint: &mut Painter, desk: &Desk, wide: f32) -> f32 {
+    let Some(meter) = meter_of(desk) else {
+        return 0.0;
+    };
+    let lines = meter_lines(paint, &meter, (wide - 2.0 * METER_PAD).max(80.0)).len();
+    let lines = u16::try_from(lines).unwrap_or(u16::MAX);
+    METER_PAD + ui::BUTTON + 10.0 + METER_BAR + 10.0 + f32::from(lines) * gap::LINE + METER_PAD
 }
 
 pub fn sweep_meter(paint: &mut Painter, mouse: &Mouse, at: Box, meter: &Meter) -> Option<Act> {
@@ -2883,12 +2938,14 @@ pub fn sweep_meter(paint: &mut Painter, mouse: &Mouse, at: Box, meter: &Meter) -
     let Meter {
         stopping, waiting, ..
     } = *meter;
-    let y = at.y + (at.h - ui::BUTTON) / 2.0;
+    let left = at.x + METER_PAD;
+    let wide = (at.w - 2.0 * METER_PAD).max(80.0);
+    let y = at.y + METER_PAD;
 
     let (pressed, paused) = ui::fitted(
         paint,
         mouse,
-        (at.x, y),
+        (left, y),
         if waiting { "Carry on" } else { "Pause" },
         if stopping {
             Kind::Quiet
@@ -2911,52 +2968,36 @@ pub fn sweep_meter(paint: &mut Painter, mouse: &Mouse, at: Box, meter: &Meter) -
     if pressed {
         act = Some(Act::Sweep);
     }
-
-    let left = stopped.right() + 18.0;
-    let room = (at.right() - left - 180.0).max(80.0);
-    let shown = paint.elide(&meter.doing, Weight::Bold, size::SMALL, room);
-    paint.say_at(
-        left,
-        at.y + 10.0,
-        &shown,
-        Weight::Bold,
-        size::SMALL,
-        ink.ink,
-    );
-
-    // The meter itself. A sweep that cannot say how many trials it holds is drawn as an
-    // unmeasured bar rather than a full one.
-    let bar = Box::new(left, at.y + 30.0, room, 8.0);
-    ui::progress(paint, bar, meter.fraction);
-    let shown = paint.elide(&meter.along, Weight::Regular, size::SMALL, room);
-    paint.say_at(
-        left,
-        at.y + 42.0,
-        &shown,
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-
-    let elapsed = format!("{} elapsed", how_long(meter.elapsed));
-    paint.say_right(
-        at.right(),
-        at.y + 10.0,
-        &elapsed,
-        Weight::Regular,
-        size::SMALL,
-        ink.quiet,
-    );
     if let Some(best) = &meter.best {
-        let shown = paint.elide(best, Weight::Regular, size::SMALL, 176.0);
-        paint.say_right(
-            at.right(),
-            at.y + 30.0,
-            &shown,
-            Weight::Regular,
+        let room = (left + wide - stopped.right() - 18.0).max(0.0);
+        if room > 60.0 {
+            let shown = paint.elide(best, Weight::Regular, size::SMALL, room);
+            paint.say_right(
+                left + wide,
+                y + (ui::BUTTON - gap::LINE) / 2.0,
+                &shown,
+                Weight::Regular,
+                size::SMALL,
+                ink.quiet,
+            );
+        }
+    }
+
+    // The meter itself. A sweep that cannot say how far it has to go is drawn as an
+    // unmeasured bar rather than a full one.
+    let mut y = y + ui::BUTTON + 10.0;
+    ui::progress(paint, Box::new(left, y, wide, METER_BAR), meter.fraction);
+    y += METER_BAR + 10.0;
+    for (line, weight, strong) in meter_lines(paint, meter, wide) {
+        paint.say_at(
+            left,
+            y,
+            &line,
+            weight,
             size::SMALL,
-            ink.faint,
+            if strong { ink.ink } else { ink.faint },
         );
+        y += gap::LINE;
     }
     act
 }

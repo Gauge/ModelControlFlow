@@ -137,6 +137,30 @@ impl Course {
             .saturating_mul(usize::from(self.repeats))
     }
 
+    /// Where a trial falls among the trials of its own value, counting from one, and how
+    /// many trials that value has. A value is what a sweep compares, so this is the count
+    /// that says how long the value on screen has left to run.
+    #[must_use]
+    pub fn place_of(&self, spot: &At) -> Option<(usize, usize)> {
+        if let Some(exactly) = self.exactly.as_ref() {
+            let alike: Vec<&At> = exactly
+                .iter()
+                .filter(|held| held.step == spot.step)
+                .collect();
+            let at = alike.iter().position(|held| **held == *spot)?;
+            return Some((at.saturating_add(1), alike.len()));
+        }
+        let repeats = usize::from(self.repeats);
+        let set = self.sets.iter().position(|held| *held == spot.set)?;
+        let at = set
+            .saturating_mul(repeats)
+            .saturating_add(usize::from(spot.repeat.saturating_sub(1)));
+        Some((
+            at.saturating_add(1),
+            self.sets.len().saturating_mul(repeats),
+        ))
+    }
+
     #[must_use]
     pub fn left(&self) -> usize {
         self.laid().saturating_sub(self.handed.len())

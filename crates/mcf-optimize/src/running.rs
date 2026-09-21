@@ -25,6 +25,26 @@ pub fn as_a_clock(held: Duration) -> String {
     format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
+/// A length of time as a person would say it roughly: to the minute past an hour, to the
+/// second under a minute.
+#[must_use]
+pub fn roughly(held: Duration) -> String {
+    let all = held.as_secs();
+    let hours = all.checked_div(3600).unwrap_or(0);
+    let minutes = all
+        .checked_div(60)
+        .unwrap_or(0)
+        .checked_rem(60)
+        .unwrap_or(0);
+    if hours > 0 {
+        return format!("{hours} h {minutes} m");
+    }
+    if minutes > 0 {
+        return format!("{minutes} m");
+    }
+    format!("{all} s")
+}
+
 fn judged_by(
     mark: bool,
     room: &std::path::Path,
@@ -81,6 +101,19 @@ pub enum Heard {
     Asking {
         at: usize,
         of: usize,
+    },
+    /// Where this trial falls among the trials of its value, counting from one, and how
+    /// many that value has.
+    Place {
+        at: usize,
+        of: usize,
+    },
+    /// One question marked, as soon as it is. A set of them is minutes of work, and a
+    /// window that only hears about the set sits still for all of it.
+    Marked {
+        right: bool,
+        produced: u64,
+        milliseconds: u64,
     },
     Producing(u64),
     Took(Box<Reading>),
@@ -242,14 +275,21 @@ fn answered_one_at_a_time(
             set: question,
             ..asked.clone()
         };
+        let began = Instant::now();
         let said = match answered(doing, &one, step)? {
             crate::trial::Outcome::Said(said) => said,
             crate::trial::Outcome::Cut => return Ok(None),
         };
-        judged.extend(crate::marking::marked_by_reading(
-            &one.set.tasks,
-            &said.answer,
-        ));
+        let marked = crate::marking::marked_by_reading(&one.set.tasks, &said.answer);
+        doing
+            .send
+            .send(Heard::Marked {
+                right: marked.iter().all(crate::marking::Checked::whole),
+                produced: said.counted.unwrap_or(said.produced),
+                milliseconds: u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
+            })
+            .map_err(|_gone| Stopped::Gone)?;
+        judged.extend(marked);
         produced = produced.saturating_add(said.produced);
         counted = counted.saturating_add(said.counted.unwrap_or(said.produced));
         let why = || {
@@ -393,6 +433,20 @@ fn hold_for(doing: &mut Doing, step: Step) -> Held {
     }
 }
 
+/// Say which round the search is in, which trial is starting, and where it falls among
+/// its value's trials. False when nobody is listening any more.
+fn told_where(doing: &Doing, spot: At) -> bool {
+    let round = doing.course.hunt().map_or(0, crate::hunt::Hunt::round);
+    let place = doing
+        .course
+        .place_of(&spot)
+        .map(|(at, of)| Heard::Place { at, of });
+    [Some(Heard::Round(round)), Some(Heard::Started(spot)), place]
+        .into_iter()
+        .flatten()
+        .all(|heard| doing.send.send(heard).is_ok())
+}
+
 fn sweeping(mut doing: Doing) {
     let mut held_at: Option<Step> = None;
     loop {
@@ -418,11 +472,7 @@ fn sweeping(mut doing: Doing) {
             }
             break;
         };
-        let round = doing.course.hunt().map_or(0, crate::hunt::Hunt::round);
-        if doing.send.send(Heard::Round(round)).is_err() {
-            return;
-        }
-        if doing.send.send(Heard::Started(spot)).is_err() {
+        if !told_where(&doing, spot) {
             return;
         }
         if needs_a_fresh_hold(doing.dial, held_at, spot.step) {
@@ -515,6 +565,27 @@ pub struct Orders {
 pub type Hosting =
     std::boxed::Box<dyn Fn(Step, &mut dyn FnMut(String)) -> Result<u16, String> + Send>;
 
+/// What one value has come to so far, counted a question at a time. Started again when
+/// the sweep moves to another value, because a score is only worth watching against the
+/// value it belongs to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Tally {
+    pub value: Option<Step>,
+    pub asked: u64,
+    pub right: u64,
+    pub produced: u64,
+    pub milliseconds: u64,
+}
+
+impl Tally {
+    /// How long a question has taken on this value, on average.
+    #[must_use]
+    pub fn a_question(&self) -> Option<Duration> {
+        let each = self.milliseconds.checked_div(self.asked)?;
+        Some(Duration::from_millis(each))
+    }
+}
+
 #[derive(Debug)]
 pub struct Running {
     heard: Receiver<Heard>,
@@ -528,6 +599,10 @@ pub struct Running {
     pub holding: Option<String>,
     /// Which question of a short-answer set is being asked, and of how many.
     pub question: Option<(usize, usize)>,
+    /// Where the trial being taken falls among the trials of its value, and of how many.
+    pub place: Option<(usize, usize)>,
+    /// What the value on screen has come to so far in this sweep, question by question.
+    pub tally: Tally,
     pub produced: u64,
     pub stopped: Option<String>,
     pub finished: bool,
@@ -599,6 +674,8 @@ impl Running {
             refused: None,
             holding: None,
             question: None,
+            place: None,
+            tally: Tally::default(),
             produced: 0,
             stopped: None,
             finished: false,
@@ -670,8 +747,15 @@ impl Running {
                     moved = true;
                 }
                 Ok(Heard::Started(at)) => {
+                    if self.tally.value != Some(at.step) {
+                        self.tally = Tally {
+                            value: Some(at.step),
+                            ..Tally::default()
+                        };
+                    }
                     self.doing = Some(at);
                     self.question = None;
+                    self.place = None;
                     self.produced = 0;
                     moved = true;
                 }
@@ -682,6 +766,22 @@ impl Running {
                 Ok(Heard::Asking { at, of }) => {
                     self.question = Some((at, of));
                     self.produced = 0;
+                    moved = true;
+                }
+                Ok(Heard::Place { at, of }) => {
+                    self.place = Some((at, of));
+                    moved = true;
+                }
+                Ok(Heard::Marked {
+                    right,
+                    produced,
+                    milliseconds,
+                }) => {
+                    let tally = &mut self.tally;
+                    tally.asked = tally.asked.saturating_add(1);
+                    tally.right = tally.right.saturating_add(u64::from(right));
+                    tally.produced = tally.produced.saturating_add(produced);
+                    tally.milliseconds = tally.milliseconds.saturating_add(milliseconds);
                     moved = true;
                 }
                 Ok(Heard::Producing(held)) => {
@@ -702,6 +802,7 @@ impl Running {
                     self.doing = None;
                     self.holding = None;
                     self.question = None;
+                    self.place = None;
                     moved = true;
                 }
                 Ok(Heard::Refused(why)) => {
@@ -757,6 +858,9 @@ impl Running {
         let timed = !measure.needs_the_answers_run();
         if !timed {
             let _wrote = write!(said, " · set {}", at.set);
+            if let Some((place, of)) = self.place.filter(|(_, of)| *of > 1) {
+                let _wrote = write!(said, " ({place} of {of})");
+            }
         }
         if at.repeat > 1 {
             let _wrote = write!(said, " · take {}", at.repeat);
@@ -771,6 +875,58 @@ impl Running {
         };
         said.push_str(&doing);
         said
+    }
+
+    /// How far through the value on screen the sweep is, a question at a time: the sets of
+    /// this value already done, and the questions of this set already marked. Nothing for a
+    /// trial that is not asked a question at a time, which has nothing finer to count.
+    #[must_use]
+    pub fn through_the_value(&self) -> Option<f32> {
+        let (place, sets) = self.place?;
+        let (question, of) = self.question?;
+        let whole = u16::try_from(sets.saturating_mul(of)).ok()?;
+        let done = place
+            .saturating_sub(1)
+            .saturating_mul(of)
+            .saturating_add(question.saturating_sub(1));
+        let done = u16::try_from(done).ok()?;
+        (whole > 0).then(|| f32::from(done) / f32::from(whole))
+    }
+
+    /// What the value on screen has scored so far and how fast it is going, said while it
+    /// is still being measured rather than once a set of twenty-five has finished.
+    #[must_use]
+    pub fn so_far(&self, named: &[String], dial: Dial) -> Option<String> {
+        let tally = &self.tally;
+        if tally.asked == 0 {
+            return None;
+        }
+        let value = dial.said_among(tally.value?, named);
+        let share = tally
+            .right
+            .saturating_mul(100)
+            .checked_div(tally.asked)
+            .unwrap_or(0);
+        let mut said = format!(
+            "{value} so far: {} of {} right ({share}%)",
+            tally.right, tally.asked
+        );
+        if let Some(each) = tally.a_question() {
+            let _wrote = write!(said, " · {:.1} s a question", each.as_secs_f64());
+            if let (Some((place, sets)), Some((question, of))) = (self.place, self.question) {
+                let left = sets
+                    .saturating_sub(place)
+                    .saturating_mul(of)
+                    .saturating_add(of.saturating_sub(question.saturating_sub(1)));
+                let left = u32::try_from(left).unwrap_or(u32::MAX);
+                let _wrote = write!(
+                    said,
+                    " · about {} left on {value}",
+                    roughly(each.saturating_mul(left))
+                );
+            }
+        }
+        Some(said)
     }
 
     /// How far through the sweep it is, in the only terms an automatic search can honestly

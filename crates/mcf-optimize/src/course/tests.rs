@@ -531,3 +531,24 @@ fn a_chosen_reading_still_in_the_record_is_skipped_rather_than_run_twice() {
     );
     assert_eq!(course.skipped(), 1);
 }
+
+#[test]
+fn a_trial_knows_where_it_falls_among_the_trials_of_its_own_value() {
+    let course = by_hand(&[256, 512], &[101, 102, 103], 2);
+    let place = |set: usize, repeat: u8| {
+        course.place_of(&At {
+            dial: Dial::MicroBatch,
+            step: Step::Whole(512),
+            set,
+            repeat,
+        })
+    };
+    assert_eq!(place(101, 1), Some((1, 6)), "three sets, twice each");
+    assert_eq!(place(102, 2), Some((4, 6)));
+    assert_eq!(place(103, 2), Some((6, 6)));
+    assert_eq!(
+        place(999, 1),
+        None,
+        "a set this course never lays out has no place in it"
+    );
+}
