@@ -3165,49 +3165,17 @@ fn what_was_measured(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box)
     act
 }
 
-/// The three figures a sweep exists to produce, as tiles.
+/// The three figures a sweep exists to produce, as tiles. While a sweep runs they say what
+/// it is finding as it finds it — the value being measured, its score so far, and how fast
+/// it is going — rather than waiting for a set of twenty-five to be written down before
+/// they say anything at all.
 fn found_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let ink = paint.ink;
-    let best = desk.optimizing.report.best_by(desk.optimizing.measure);
-    let dial = desk.optimizing.sweep.dial;
-    let settled = best
-        .as_ref()
-        .is_some_and(|best| desk.optimizing.settled == Some(best.step));
-    let value = best
-        .as_ref()
-        .map(|best| dial.said_among(best.step, &desk.optimizing.named));
-    let reading = best.as_ref().map(|best| match desk.optimizing.measure {
-        mcf_optimize::reading::Measure::Speed => best
-            .tokens_a_second()
-            .map_or_else(|| UNKNOWN_FIGURE.to_owned(), |rate| format!("{rate:.0}")),
-        mcf_optimize::reading::Measure::Correctness => format!("{}/{}", best.passed, best.of),
-    });
-    let tiles: [(&str, Option<String>, &str, bool); 3] = [
-        (
-            if settled { "best value" } else { "best so far" },
-            value,
-            dial.label(),
-            true,
-        ),
-        (
-            desk.optimizing.measure.label(),
-            reading,
-            match desk.optimizing.measure {
-                mcf_optimize::reading::Measure::Speed => "tokens a second",
-                mcf_optimize::reading::Measure::Correctness => "of the prompts asked",
-            },
-            false,
-        ),
-        (
-            "readings",
-            Some(desk.optimizing.rows.len().to_string()),
-            "under exactly this configuration",
-            false,
-        ),
-    ];
+    let tiles = what_the_tiles_say(desk);
     let across = 3.0;
     let wide = ((at.w - 12.0 * (across - 1.0)) / across).max(90.0);
     for (index, (label, figure, note, lift)) in tiles.iter().enumerate() {
+        let (label, note) = (label.as_str(), note.as_str());
         let tile = Box::new(at.x + (wide + 12.0) * index as f32, at.y, wide, 84.0);
         ui::card(paint, tile, *lift && figure.is_some());
         spaced(paint, tile.x + 14.0, tile.y + 13.0, label, ink.faint);
@@ -3236,6 +3204,102 @@ fn found_tiles(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
         }
     }
     at.y + 84.0
+}
+
+type Tile = (String, Option<String>, String, bool);
+
+fn what_the_tiles_say(desk: &Desk) -> [Tile; 3] {
+    let best = desk.optimizing.report.best_by(desk.optimizing.measure);
+    let dial = desk.optimizing.sweep.dial;
+    let named = &desk.optimizing.named;
+    let run = desk.optimizing.run.as_ref();
+    let tally = run.map(|run| run.tally).filter(|tally| tally.asked > 0);
+    let settled = best
+        .as_ref()
+        .is_some_and(|best| desk.optimizing.settled == Some(best.step));
+    let correctness = desk.optimizing.measure == mcf_optimize::reading::Measure::Correctness;
+
+    let first = match (&best, run.and_then(|run| run.doing)) {
+        (Some(best), _) => (
+            if settled { "best value" } else { "best so far" }.to_owned(),
+            Some(dial.said_among(best.step, named)),
+            dial.label().to_owned(),
+            true,
+        ),
+        (None, Some(doing)) => (
+            "measuring".to_owned(),
+            Some(dial.said_among(doing.step, named)),
+            "no value has finished yet".to_owned(),
+            false,
+        ),
+        (None, None) => (
+            "best so far".to_owned(),
+            None,
+            dial.label().to_owned(),
+            true,
+        ),
+    };
+
+    let second = match (&best, tally) {
+        (Some(best), _) if correctness => (
+            "correctness".to_owned(),
+            best.passed
+                .saturating_mul(100)
+                .checked_div(best.of)
+                .map(|share| format!("{share}%")),
+            format!("{} of {} right", best.passed, best.of),
+            false,
+        ),
+        (Some(best), _) => (
+            "speed".to_owned(),
+            best.tokens_a_second().map(|rate| format!("{rate:.0}")),
+            "tokens a second".to_owned(),
+            false,
+        ),
+        (None, Some(tally)) => (
+            "right so far".to_owned(),
+            tally.share().map(|share| format!("{share}%")),
+            format!(
+                "{} of {} at {}",
+                tally.right,
+                tally.asked,
+                tally
+                    .value
+                    .map_or_else(String::new, |step| dial.said_among(step, named))
+            ),
+            false,
+        ),
+        (None, None) => (
+            desk.optimizing.measure.label().to_owned(),
+            None,
+            if correctness {
+                "of the questions asked"
+            } else {
+                "tokens a second"
+            }
+            .to_owned(),
+            false,
+        ),
+    };
+
+    let third = match tally.and_then(|tally| Some((tally, tally.a_question()?))) {
+        Some((tally, each)) => (
+            "pace".to_owned(),
+            Some(format!("{:.1} s", each.as_secs_f64())),
+            tally.tokens_a_second().map_or_else(
+                || "a question".to_owned(),
+                |rate| format!("a question · {rate} tok/s"),
+            ),
+            false,
+        ),
+        None => (
+            "readings".to_owned(),
+            Some(desk.optimizing.rows.len().to_string()),
+            "under exactly this configuration".to_owned(),
+            false,
+        ),
+    };
+    [first, second, third]
 }
 
 /// How long a bar is, for a figure against the largest of them.

@@ -95,6 +95,8 @@ pub enum Heard {
     /// how far along it is.
     Round(u32),
     Holding(String),
+    /// The model is loaded and answering. Whatever was said about loading it is over.
+    Held,
     /// Which question of a short-answer set is being asked, counting from one. Those are
     /// asked one to a request, so what the trial has written so far is what this question
     /// has written.
@@ -150,25 +152,33 @@ enum Stopped {
     Cut,
 }
 
+/// What loading the model is for, in words. A setting that rides in each request is not
+/// what the model is loaded with, so it is not named: "at 0" beside a load said the model
+/// was being loaded with a temperature, which it never is.
+fn loading_for(dial: Dial, step: Step, named: &[String]) -> String {
+    if !dial.reloads_the_engine() {
+        return "loading the model".to_owned();
+    }
+    format!(
+        "loading the model with {} {}",
+        dial.label().to_lowercase(),
+        dial.said_among(step, named)
+    )
+}
+
 fn held_again(
     send: &std::sync::mpsc::Sender<Heard>,
     host: &Hosting,
-    step: Step,
+    (step, what): (Step, String),
     ready_within: Duration,
     give_up: &dyn Fn() -> bool,
 ) -> Result<u16, Stopped> {
-    let said = step.said();
-    if send
-        .send(Heard::Holding(format!("holding the model at {said}")))
-        .is_err()
-    {
+    if send.send(Heard::Holding(what.clone())).is_err() {
         return Err(Stopped::Gone);
     }
     let telling = send.clone();
     let mut along = move |how: String| {
-        let _sent = telling.send(Heard::Holding(format!(
-            "holding the model at {said} — {how}"
-        )));
+        let _sent = telling.send(Heard::Holding(format!("{what} — {how}")));
     };
     let port = host(step, &mut along).map_err(Stopped::Refused)?;
     let ready = crate::trial::ready_within(
@@ -180,6 +190,9 @@ fn held_again(
         give_up,
     );
     if ready {
+        // Said as soon as it is true, so the line under the bar goes back to saying what
+        // the sweep is doing rather than what it was doing before it started.
+        let _sent = send.send(Heard::Held);
         return Ok(port);
     }
     if give_up() {
@@ -214,10 +227,17 @@ fn answered(
     doing
         .send
         .send(Heard::Holding(
-            "the engine stopped answering — holding it again".to_owned(),
+            "the engine stopped answering — loading the model again".to_owned(),
         ))
         .map_err(|_gone| Stopped::Gone)?;
-    match held_again(&doing.send, &doing.host, step, doing.ready_within, &give_up) {
+    let what = loading_for(doing.dial, step, &doing.named);
+    match held_again(
+        &doing.send,
+        &doing.host,
+        (step, what),
+        doing.ready_within,
+        &give_up,
+    ) {
         Ok(port) => doing.endpoint.port = port,
         Err(Stopped::Gone) => return Err(Stopped::Gone),
         Err(Stopped::Cut) => return Err(Stopped::Cut),
@@ -419,7 +439,14 @@ enum Held {
 fn hold_for(doing: &mut Doing, step: Step) -> Held {
     let flag = Arc::clone(&doing.asked_to_stop);
     let give_up = move || flag.load(Ordering::Relaxed);
-    match held_again(&doing.send, &doing.host, step, doing.ready_within, &give_up) {
+    let what = loading_for(doing.dial, step, &doing.named);
+    match held_again(
+        &doing.send,
+        &doing.host,
+        (step, what),
+        doing.ready_within,
+        &give_up,
+    ) {
         Ok(port) => {
             doing.endpoint.port = port;
             Held::Ready
@@ -585,6 +612,30 @@ impl Tally {
     pub fn a_question(&self) -> Option<Duration> {
         let each = self.milliseconds.checked_div(self.asked)?;
         Some(Duration::from_millis(each))
+    }
+
+    /// One more question marked.
+    pub const fn count(&mut self, right: bool, produced: u64, milliseconds: u64) {
+        self.asked = self.asked.saturating_add(1);
+        if right {
+            self.right = self.right.saturating_add(1);
+        }
+        self.produced = self.produced.saturating_add(produced);
+        self.milliseconds = self.milliseconds.saturating_add(milliseconds);
+    }
+
+    /// How fast this value's answers are being written, over every question so far.
+    #[must_use]
+    pub fn tokens_a_second(&self) -> Option<u64> {
+        self.produced
+            .saturating_mul(1000)
+            .checked_div(self.milliseconds)
+    }
+
+    /// The share of this value's questions answered rightly so far, in whole percent.
+    #[must_use]
+    pub fn share(&self) -> Option<u64> {
+        self.right.saturating_mul(100).checked_div(self.asked)
     }
 }
 
@@ -765,6 +816,10 @@ impl Running {
                     self.holding = Some(said);
                     moved = true;
                 }
+                Ok(Heard::Held) => {
+                    self.holding = None;
+                    moved = true;
+                }
                 Ok(Heard::Asking { at, of }) => {
                     self.question = Some((at, of));
                     self.produced = 0;
@@ -779,11 +834,7 @@ impl Running {
                     produced,
                     milliseconds,
                 }) => {
-                    let tally = &mut self.tally;
-                    tally.asked = tally.asked.saturating_add(1);
-                    tally.right = tally.right.saturating_add(u64::from(right));
-                    tally.produced = tally.produced.saturating_add(produced);
-                    tally.milliseconds = tally.milliseconds.saturating_add(milliseconds);
+                    self.tally.count(right, produced, milliseconds);
                     moved = true;
                 }
                 Ok(Heard::Producing(held)) => {
@@ -916,17 +967,16 @@ impl Running {
             return None;
         }
         let value = dial.said_among(tally.value?, named);
-        let share = tally
-            .right
-            .saturating_mul(100)
-            .checked_div(tally.asked)
-            .unwrap_or(0);
+        let share = tally.share().unwrap_or(0);
         let mut said = format!(
             "{value} so far: {} of {} right ({share}%)",
             tally.right, tally.asked
         );
         if let Some(each) = tally.a_question() {
             let _wrote = write!(said, " · {:.1} s a question", each.as_secs_f64());
+            if let Some(rate) = tally.tokens_a_second() {
+                let _wrote = write!(said, " ({rate} tok/s)");
+            }
             if let (Some((place, sets)), Some((question, of))) = (self.place, self.question) {
                 let left = sets
                     .saturating_sub(place)

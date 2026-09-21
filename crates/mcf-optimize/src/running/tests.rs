@@ -1070,3 +1070,34 @@ fn a_marked_trial_counts_what_it_has_written_against_nothing() {
         "a trial asked for no number of tokens has none to count towards: {said}"
     );
 }
+
+#[test]
+fn loading_the_model_is_said_once_and_then_gets_out_of_the_way() {
+    let scratch = Scratch::new("held-clears");
+    let mut running = begun(&scratch, &[], &[]);
+    let (send, heard) = std::sync::mpsc::channel();
+    running.heard = heard;
+    let _sent = send.send(Heard::Holding(
+        "loading the model — 0.2 GB loaded".to_owned(),
+    ));
+    let _moved = running.hear();
+    assert!(running.holding.is_some());
+    let _sent = send.send(Heard::Held);
+    let _moved = running.hear();
+    assert!(
+        running.holding.is_none(),
+        "a load that finished is not still what the sweep is doing"
+    );
+}
+
+#[test]
+fn a_setting_that_rides_in_the_request_is_not_what_the_model_is_loaded_with() {
+    assert_eq!(
+        super::loading_for(Dial::Temperature, Step::Thousandths(0), &[]),
+        "loading the model"
+    );
+    assert_eq!(
+        super::loading_for(Dial::MicroBatch, Step::Whole(512), &[]),
+        "loading the model with micro-batch 512"
+    );
+}
