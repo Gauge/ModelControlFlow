@@ -462,10 +462,32 @@ fn a_timed_reading_taken_the_old_way_is_taken_again_and_a_marked_one_is_not() {
         "a marked reading carries no way of timing, so there is none for a change to spoil \
          — and work that cost a container to grade is not thrown away by one"
     );
-    assert_eq!(
-        MARKED, 0,
-        "which is to say it carries nothing, the way every reading written before this \
-         field existed does"
+}
+
+#[test]
+fn a_marked_reading_asked_a_whole_set_at_a_time_is_taken_again() {
+    let scratch = Scratch::new("marked-again");
+    let mut ledger = Ledger::open(&scratch.at()).expect("opens");
+    let mut the_old_way = under();
+    the_old_way.timed = MARKED.saturating_sub(1);
+    let graded = At {
+        dial: Dial::ThinkingBudget,
+        step: Step::Whole(4096),
+        set: 101,
+        repeat: 1,
+    };
+    let mut told = reading(Step::Whole(4096), 101, 6);
+    told.dial = Dial::ThinkingBudget;
+    told.step = Step::Whole(4096);
+    ledger
+        .record(&the_old_way, graded, &told, "then")
+        .expect("a reading is written");
+    let mut marked = under();
+    marked.timed = MARKED;
+    assert!(
+        ledger.already(&marked, &graded).is_none(),
+        "twenty-five questions in one request is not the trial one question to a request \
+         is, so its score is not one to skip ahead on"
     );
 }
 

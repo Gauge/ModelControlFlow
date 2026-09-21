@@ -1914,7 +1914,8 @@ fn a_value_of_my_own(
         size::SMALL,
         ink.quiet,
     );
-    let field_at = Box::new(area.x + NAMED, y, 120.0, 28.0);
+    // As wide as it can be up to its own width, and never past the edge of the rail.
+    let field_at = Box::new(area.x + NAMED, y, (area.w - NAMED).clamp(48.0, 120.0), 28.0);
     let touched = ui::field(
         paint,
         mouse,
@@ -2466,7 +2467,8 @@ fn the_sweep(
     let mut y = below;
     let dial = desk.optimizing.sweep.dial;
 
-    if !dial.is_named_by_the_model() {
+    // A list has no span to search: every value in it is run, so there is no choice here.
+    if !dial.values_are_a_list() {
         y = rail_section(paint, at, y, "search");
         let ways: Vec<(String, bool)> = mcf_optimize::hunt::Way::ALL
             .iter()
@@ -2556,27 +2558,34 @@ fn the_rest_of_the_sweep(
 ) -> (f32, Option<Act>) {
     let ink = paint.ink;
     let dial = desk.optimizing.sweep.dial;
-    let mut y = rail_section(paint, at, at.y, "ranked by");
-    let measures: Vec<(String, bool)> = mcf_optimize::reading::Measure::ALL
-        .iter()
-        .map(|measure| {
-            (
-                measure.label().to_owned(),
-                *measure == desk.optimizing.measure,
-            )
-        })
-        .collect();
-    let (below, picked) = segmented(paint, mouse, Box::new(at.x, y, at.w, 0.0), &measures);
-    if let Some(chosen) = picked {
-        act = act.or(Some(Act::SweepMeasure(chosen)));
+    let mut y = at.y;
+    // A setting that cannot change an answer is only ever ranked by speed, and the line
+    // above it already says so. Two buttons, one of which is refused, are not a choice.
+    if !dial.cannot_change_an_answer() {
+        y = rail_section(paint, at, y, "ranked by");
+        let measures: Vec<(String, bool)> = mcf_optimize::reading::Measure::ALL
+            .iter()
+            .map(|measure| {
+                (
+                    measure.label().to_owned(),
+                    *measure == desk.optimizing.measure,
+                )
+            })
+            .collect();
+        let (below, picked) = segmented(paint, mouse, Box::new(at.x, y, at.w, 0.0), &measures);
+        if let Some(chosen) = picked {
+            act = act.or(Some(Act::SweepMeasure(chosen)));
+        }
+        y = below + 6.0;
     }
-    y = below + 6.0;
     let span = dial.span();
     let said = if dial.is_named_by_the_model() {
         format!(
             "Every level this model names: {}.",
             desk.optimizing.named.join(", ")
         )
+    } else if dial.values_are_a_list() {
+        "Runs the values ticked below, and nothing else.".to_owned()
     } else if desk.optimizing.way == mcf_optimize::hunt::Way::Halving {
         format!(
             "Starts at {} and doubles until a value comes back worse, then halves either \
@@ -2615,9 +2624,15 @@ fn the_rest_of_the_sweep(
             act = act.or(Some(Act::SweepValue(chosen)));
         }
         y = below + 4.0;
-        let (below, typed) = a_value_of_my_own(paint, desk, mouse, Box::new(at.x, y, at.w, 0.0), y);
-        act = act.or(typed);
-        y = below;
+        // A list offers every value it has, so there is nothing of one's own to type.
+        if dial.values_are_a_list() {
+            y += 6.0;
+        } else {
+            let (below, typed) =
+                a_value_of_my_own(paint, desk, mouse, Box::new(at.x, y, at.w, 0.0), y);
+            act = act.or(typed);
+            y = below;
+        }
     }
 
     let (below, picked) = the_test_set(paint, desk, mouse, Box::new(at.x, y, at.w, 0.0));
@@ -2630,45 +2645,37 @@ fn the_rest_of_the_sweep(
 }
 
 /// What the sweep is run against, and how many times each value is taken.
+///
+/// A timed trial reads nothing from a test set — it is handed a prompt to continue or a
+/// prompt to read, the same one every time — so a timed sweep shows only its takes.
 fn the_test_set(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32, Option<Act>) {
     let ink = paint.ink;
     let mut act = None;
-    let mut y = rail_section(paint, at, at.y, "test set");
-    if desk.optimizing.measure.needs_the_answers_run() {
+    let marked = desk.optimizing.measure.needs_the_answers_run();
+    let mut y = if marked {
+        let mut y = rail_section(paint, at, at.y, "test set");
         let said = format!(
-            "All {} prompts, every time — so two readings can be set beside each other.",
-            desk.optimizing.sweep.sets.len()
+            "All {} questions, asked one at a time, every time — so two readings can be set \
+             beside each other.",
+            questions_in(&desk.optimizing.sweep.sets)
         );
         for line in paint.wrap(&said, Weight::Regular, size::SMALL, at.w) {
             paint.say_at(at.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
             y += gap::LINE;
         }
         y += 6.0;
+        paint.say_at(
+            at.x,
+            y,
+            "Takes of each",
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        y + 18.0
     } else {
-        let sets: Vec<(String, bool)> = mcf_optimize::corpus::Set::all()
-            .iter()
-            .map(|set| {
-                (
-                    format!("Set {}", set.number),
-                    desk.optimizing.sweep.sets.contains(&set.number),
-                )
-            })
-            .collect();
-        let (below, picked) = option_chips(paint, mouse, Box::new(at.x, y, at.w, 0.0), &sets, true);
-        if let Some(chosen) = picked {
-            act = act.or(Some(Act::TestSet(chosen.saturating_add(1))));
-        }
-        y = below + 6.0;
-    }
-    paint.say_at(
-        at.x,
-        y,
-        "Takes of each",
-        Weight::Regular,
-        size::SMALL,
-        ink.quiet,
-    );
-    y += 18.0;
+        rail_section(paint, at, at.y, "takes of each")
+    };
     let takes: Vec<(String, bool)> = (1..=3_u8)
         .map(|held| (held.to_string(), held == desk.optimizing.sweep.repeats))
         .collect();
@@ -2677,12 +2684,55 @@ fn the_test_set(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f3
         act = act.or(Some(Act::Takes(chosen.saturating_add(1))));
     }
     y = below + 6.0;
-    let said = desk.optimizing.sweep.said_among(&desk.optimizing.named);
+    let said = what_the_sweep_runs(desk);
     for line in paint.wrap(&said, Weight::Regular, size::SMALL, at.w) {
         paint.say_at(at.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
         y += gap::LINE;
     }
     (y + 10.0, act)
+}
+
+/// How many questions the sets named hold between them.
+fn questions_in(sets: &[usize]) -> usize {
+    sets.iter()
+        .filter_map(|number| mcf_optimize::corpus::Set::numbered(*number))
+        .map(|set| set.tasks.len())
+        .sum()
+}
+
+/// What one press of the button runs, in the terms that sweep is counted in: questions
+/// for a marked sweep, timed runs for a timed one. An automatic search chooses its own
+/// values as it goes, so it is counted per value rather than against a list it has not
+/// chosen yet.
+fn what_the_sweep_runs(desk: &Desk) -> String {
+    let sweep = &desk.optimizing.sweep;
+    let takes = usize::from(sweep.repeats.max(1));
+    let marked = desk.optimizing.measure.needs_the_answers_run();
+    let each = if marked {
+        format!(
+            "{} questions",
+            questions_in(&sweep.sets).saturating_mul(takes)
+        )
+    } else if takes == 1 {
+        "One timed run".to_owned()
+    } else {
+        format!("{takes} timed runs")
+    };
+    let automatic =
+        !sweep.dial.values_are_a_list() && desk.optimizing.way == mcf_optimize::hunt::Way::Halving;
+    if automatic {
+        return format!("{each} for each value the search tries.");
+    }
+    if sweep.steps.is_empty() {
+        return "Nothing to run: tick at least one value.".to_owned();
+    }
+    let values = sweep
+        .steps
+        .iter()
+        .map(|step| sweep.dial.said_among(*step, &desk.optimizing.named))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{each} for each of {values}.")
 }
 
 /// The settings every trial is held under, and anything the sweep refused.

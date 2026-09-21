@@ -37,19 +37,26 @@ fn a_value_is_turned_off_and_on_again_without_disturbing_the_others() {
 }
 
 #[test]
-fn a_test_set_is_turned_off_and_on_again() {
+fn a_setting_that_is_a_list_is_run_by_hand_and_runs_only_what_is_ticked() {
     let mut desk = desk();
-    assert_eq!(desk.optimizing.sweep.sets.len(), 8);
-    desk.act(Act::TestSet(3));
-    assert!(!desk.optimizing.sweep.sets.contains(&3));
-    desk.act(Act::TestSet(3));
-    assert!(desk.optimizing.sweep.sets.contains(&3));
-    assert!(
-        desk.optimizing.sweep.sets.windows(2).all(|two| two
-            .first()
-            .zip(two.get(1))
-            .is_none_or(|(one, next)| one < next)),
-        "the sets stay in order"
+    desk.act(Act::Dial(dial_at(&desk, Dial::FlashAttention)));
+    assert_eq!(
+        desk.optimizing.way,
+        mcf_optimize::hunt::Way::ByHand,
+        "off and on have no span to search, so there is no search to choose"
+    );
+    assert_eq!(
+        desk.optimizing.sweep.steps.len(),
+        2,
+        "both, until one is unticked"
+    );
+    desk.act(Act::SweepValue(0));
+    assert_eq!(desk.optimizing.sweep.steps, vec![Step::Whole(1)]);
+    desk.act(Act::Sweep);
+    assert_eq!(
+        desk.optimizing.sweep.steps,
+        vec![Step::Whole(1)],
+        "a value unticked is a value that does not run, rather than one put back at the start"
     );
 }
 

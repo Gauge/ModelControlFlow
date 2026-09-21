@@ -43,8 +43,8 @@ pub const TOKENS_TIMED: u32 = 1024;
 /// apart climbs to the top of its span and calls that the answer.
 pub const TOKENS_PREFILLED: u32 = 32_768;
 
-/// The room a marked trial gets: how many tokens the model may spend on a set of tasks,
-/// thinking and answering together.
+/// The room a marked trial gets: how many tokens the model may spend on one request,
+/// thinking and answering together — a set of programs, or one short question.
 pub const TOKENS_ANSWERED: u32 = 16_384;
 
 /// The most of that room a search will hand to thinking, which is half of it. A budget is

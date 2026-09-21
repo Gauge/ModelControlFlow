@@ -816,3 +816,166 @@ fn a_sweep_stopped_inside_a_trial_writes_nothing_down_for_it() {
         "an abandoned trial reached the report"
     );
 }
+
+/// An engine that answers every question it is sent, rightly where it can find the question
+/// in the set, and keeps every request it was sent so a test can look at what was asked.
+fn an_engine_that_answers(
+    set: &crate::corpus::Set,
+) -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a loopback port is free");
+    let port = listener.local_addr().expect("the port is known").port();
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let kept = std::sync::Arc::clone(&asked);
+    let tasks = set.tasks.clone();
+    let _server = std::thread::spawn(move || {
+        for held in listener.incoming() {
+            let Ok(mut held) = held else { return };
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 8192];
+            // The whole request, body and all, before anything is said back.
+            while let Ok(read) = held.read(&mut buffer) {
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(buffer.get(..read).unwrap_or_default());
+                let text = String::from_utf8_lossy(&request).into_owned();
+                let Some(headers_end) = text.find("\r\n\r\n") else {
+                    continue;
+                };
+                let wanted = text
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Content-Length: "))
+                    .and_then(|length| length.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if request.len() >= headers_end + 4 + wanted {
+                    break;
+                }
+            }
+            let text = String::from_utf8_lossy(&request).into_owned();
+            if text.starts_with("GET ") {
+                let body = b"{\"status\":\"ok\"}";
+                let _wrote = held.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+                let _wrote = held.write_all(body);
+                continue;
+            }
+            let answer = tasks
+                .iter()
+                .find(|task| text.contains(&task.asked))
+                .map_or("nothing", |task| task.checked.as_str())
+                .to_owned();
+            kept.lock().expect("not poisoned").push(text);
+            let _wrote = held.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: \
+                     close\r\n\r\ndata: {{\"choices\":[{{\"delta\":{{\"content\":\"### ANSWER 1: \
+                     {answer}\"}}}}]}}\n\ndata: [DONE]\n\n"
+                )
+                .as_bytes(),
+            );
+        }
+    });
+    (port, asked)
+}
+
+#[test]
+fn a_short_answer_set_is_asked_one_question_to_a_request_and_read_as_one_set() {
+    let scratch = Scratch::new("one-at-a-time");
+    let set = crate::corpus::Set::numbered(crate::corpus::SHORT_FROM).expect("the first set");
+    let (port, asked) = an_engine_that_answers(&set);
+    let mut marked = under();
+    marked.timed = crate::ledger::MARKED;
+    let course = Course::laid_out(
+        marked.clone(),
+        Way::ByHand,
+        Dial::Temperature,
+        &[Step::Thousandths(600)],
+        &[set.number],
+        1,
+        Measure::Correctness,
+    );
+    let mut running = Running::begun(
+        Orders {
+            switch: false,
+            endpoint: Endpoint {
+                port,
+                key: None,
+                patience: std::time::Duration::from_secs(30),
+            },
+            under: marked,
+            dial: Dial::Temperature,
+            ceiling: 64,
+            named: Vec::new(),
+            mark: true,
+            room: scratch.path.join("marking"),
+            ready_within: std::time::Duration::from_secs(5),
+        },
+        course,
+        Ledger::open(&scratch.at()).expect("opens"),
+        std::boxed::Box::new(move |_step, _along| Ok(port)),
+        || "now".to_owned(),
+    );
+    settled(&mut running);
+    assert!(running.refused.is_none(), "{:?}", running.refused);
+    let requests = asked.lock().expect("not poisoned").clone();
+    assert_eq!(
+        requests.len(),
+        set.tasks.len(),
+        "one request to a question, not one to the set"
+    );
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("QUESTION 2")),
+        "each request asks one question and nothing else"
+    );
+    assert_eq!(running.taken, 1, "and the set is still one reading");
+    let reading = running.report.readings.first().expect("a reading");
+    assert_eq!(reading.set, set.number);
+    assert_eq!(usize::try_from(reading.of).ok(), Some(set.tasks.len()));
+    let found = set
+        .tasks
+        .iter()
+        .filter(|task| requests.iter().any(|request| request.contains(&task.asked)))
+        .count();
+    assert!(
+        found > 0,
+        "the engine could find none of the questions it was sent"
+    );
+    assert_eq!(
+        usize::try_from(reading.passed).ok(),
+        Some(found),
+        "every question the engine answered rightly is marked right, in the right place"
+    );
+    assert_eq!(
+        reading.per_task.len(),
+        set.tasks.len(),
+        "and each question keeps its own name"
+    );
+}
+
+#[test]
+fn a_trial_of_short_answers_says_which_question_it_is_on() {
+    let scratch = Scratch::new("label-question");
+    let mut running = begun(&scratch, &[], &[]);
+    running.doing = Some(crate::ledger::At {
+        dial: Dial::Temperature,
+        step: Step::Thousandths(600),
+        set: 103,
+        repeat: 1,
+    });
+    running.question = Some((7, 25));
+    running.produced = 40;
+    let said = running.label(&[], Dial::Temperature, Measure::Correctness, 4096);
+    assert!(said.contains("set 103 · question 7 of 25"), "{said}");
+    assert!(
+        said.contains("wrote 40 of 4096"),
+        "what this question has written, against the room it has: {said}"
+    );
+}

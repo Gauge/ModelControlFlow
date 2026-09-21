@@ -141,6 +141,23 @@ mod short_answers {
         );
     }
 
+    #[test]
+    fn a_question_asked_on_its_own_is_asked_alone_and_answered_on_the_line_that_is_marked() {
+        let set = Set::numbered(SHORT_FROM).expect("the first short set");
+        let alone = set.one_at_a_time();
+        assert_eq!(alone.len(), set.tasks.len());
+        let first = alone.first().expect("a first question");
+        assert_eq!(first.number, set.number, "still the set it came from");
+        let asked = first.asked();
+        let question = &set.tasks.first().expect("a first task").asked;
+        assert!(asked.contains(question.as_str()), "{asked}");
+        assert!(asked.contains("### ANSWER 1: value"), "{asked}");
+        assert!(
+            !asked.contains("ALL") && !asked.contains("QUESTION 2"),
+            "nothing here asks for more than the one: {asked}"
+        );
+    }
+
     /// Every name is its own, so a reading that says which task failed says which one.
     #[test]
     fn no_two_tasks_share_a_name() {

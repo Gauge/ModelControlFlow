@@ -26,9 +26,13 @@ pub const CORPUS: u32 = 3;
 /// is and asks only for the timed ones again.
 pub const TIMED: u32 = 3;
 
-/// What a reading that was marked rather than timed carries, which is nothing: there is no
-/// rate in it for a way of timing to have spoiled.
-pub const MARKED: u32 = 0;
+/// How a reading that was marked rather than timed was asked. There is no rate in it for a
+/// way of timing to have spoiled, so raising `TIMED` leaves it alone — but how the
+/// questions were put does change what it scores. Nought was a whole set in one request,
+/// where a model reasoned about twenty-five questions at once before answering any; one
+/// is each question in a request of its own. A score is only comparable with one asked
+/// the same way.
+pub const MARKED: u32 = 1;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Under {

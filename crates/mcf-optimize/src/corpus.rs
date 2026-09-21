@@ -89,8 +89,8 @@ const SETS: [&str; 8] = [
 ];
 
 impl Set {
-    /// Every short-answer set: a thousand questions with one right answer apiece, asked
-    /// twenty-five at a time.
+    /// Every short-answer set: a thousand questions with one right answer apiece, twenty-five
+    /// to a set, and each one asked on its own.
     ///
     /// They are here because the code corpus is eight sets of hard problems, and a run of
     /// it is slow, coarse and expensive: a model may spend eleven thousand tokens thinking
@@ -151,6 +151,24 @@ impl Set {
         })
     }
 
+    /// Each question of this set as a set of its own, numbered as this one is, so that a
+    /// trial can ask them one at a time and still write down one reading for the set.
+    ///
+    /// Asked twenty-five to a request, a model reasoned about all of them together before it
+    /// wrote the first answer, and a set of sums took as long as a set of hard problems. Asked
+    /// one at a time, an easy question is answered as quickly as it is easy.
+    #[must_use]
+    pub fn one_at_a_time(&self) -> Vec<Self> {
+        self.tasks
+            .iter()
+            .map(|task| Self {
+                number: self.number,
+                kind: self.kind,
+                tasks: vec![task.clone()],
+            })
+            .collect()
+    }
+
     #[must_use]
     pub fn asked(&self) -> String {
         if self.kind == Kind::ShortAnswer {
@@ -178,6 +196,15 @@ impl Set {
     /// and nothing else will sometimes reason in the answer line and put the wrong thing
     /// in it. The marker reads the answer line and ignores the rest.
     fn asked_for_short_answers(&self) -> String {
+        if let [task] = self.tasks.as_slice() {
+            return format!(
+                "Answer the following question.\n\n{}\n\n---\nOUTPUT FORMAT, follow exactly:\n\
+                 End with one line '### ANSWER 1: value'. The value is the answer alone — a \
+                 number with no units and no thousands separators, or a single word. Give an \
+                 answer even if you are unsure.",
+                task.asked
+            );
+        }
         let mut said = format!(
             "Answer ALL of the following {} questions, IN ORDER.\n\n",
             self.tasks.len()

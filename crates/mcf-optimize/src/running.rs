@@ -75,6 +75,13 @@ pub enum Heard {
     /// how far along it is.
     Round(u32),
     Holding(String),
+    /// Which question of a short-answer set is being asked, counting from one. Those are
+    /// asked one to a request, so what the trial has written so far is what this question
+    /// has written.
+    Asking {
+        at: usize,
+        of: usize,
+    },
     Producing(u64),
     Took(Box<Reading>),
     Skipped(usize),
@@ -199,6 +206,122 @@ fn answered(
     })
 }
 
+/// Ask a short-answer set one question to a request, and mark each answer as it comes back.
+///
+/// The set is still the unit written down — one reading, the sum of its questions — so a
+/// ledger read a year from now still has one row per set. What changes is that a model
+/// asked one sum no longer reasons about twenty-four others before it answers it.
+///
+/// A question that ran out of room or looped is a question answered wrongly, not a set
+/// that never ran: the reading is a runaway only if every question in it was.
+fn answered_one_at_a_time(
+    doing: &mut Doing,
+    asked: &Asked,
+    step: Step,
+) -> Result<Option<(crate::trial::Said, Vec<crate::marking::Checked>)>, Stopped> {
+    let questions = asked.set.one_at_a_time();
+    let of = questions.len();
+    let mut judged = Vec::with_capacity(of);
+    let mut answers = Vec::with_capacity(of);
+    let mut produced: u64 = 0;
+    let mut counted: u64 = 0;
+    let mut failed: Option<String> = None;
+    let mut looped: Option<String> = None;
+    let mut filled: Option<String> = None;
+    let mut runaways: usize = 0;
+    for (at, question) in questions.into_iter().enumerate() {
+        if doing.asked_to_stop.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let number = at.saturating_add(1);
+        doing
+            .send
+            .send(Heard::Asking { at: number, of })
+            .map_err(|_gone| Stopped::Gone)?;
+        let one = Asked {
+            set: question,
+            ..asked.clone()
+        };
+        let said = match answered(doing, &one, step)? {
+            crate::trial::Outcome::Said(said) => said,
+            crate::trial::Outcome::Cut => return Ok(None),
+        };
+        judged.extend(crate::marking::marked_by_reading(
+            &one.set.tasks,
+            &said.answer,
+        ));
+        produced = produced.saturating_add(said.produced);
+        counted = counted.saturating_add(said.counted.unwrap_or(said.produced));
+        let why = || {
+            format!(
+                "question {number}: {}",
+                said.why.as_deref().unwrap_or(said.ending.label())
+            )
+        };
+        match said.ending {
+            crate::reading::Ending::Answered => {}
+            crate::reading::Ending::Failed => {
+                failed = failed.or_else(|| Some(why()));
+            }
+            crate::reading::Ending::Looped => {
+                runaways = runaways.saturating_add(1);
+                looped = looped.or_else(|| Some(why()));
+            }
+            crate::reading::Ending::Filled => {
+                runaways = runaways.saturating_add(1);
+                filled = filled.or_else(|| Some(why()));
+            }
+        }
+        answers.push(said.answer);
+    }
+    let (ending, why) = if let Some(why) = failed {
+        (crate::reading::Ending::Failed, Some(why))
+    } else if runaways == of && of > 0 {
+        match looped {
+            Some(why) => (crate::reading::Ending::Looped, Some(why)),
+            None => (crate::reading::Ending::Filled, filled),
+        }
+    } else if runaways > 0 {
+        (
+            crate::reading::Ending::Answered,
+            Some(format!(
+                "{runaways} of {of} questions ran away and were marked wrong — {}",
+                looped.or(filled).unwrap_or_default()
+            )),
+        )
+    } else {
+        (crate::reading::Ending::Answered, None)
+    };
+    Ok(Some((
+        crate::trial::Said {
+            answer: answers.join("\n"),
+            produced,
+            ending,
+            why,
+            counted: Some(counted),
+            read_in: None,
+        },
+        judged,
+    )))
+}
+
+/// Take one trial: a short-answer set a question at a time, marked as it goes, and anything
+/// else in one request, left to be marked once it is back. Nothing means it was cut short.
+fn taken(
+    doing: &mut Doing,
+    asked: &Asked,
+    step: Step,
+    one_at_a_time: bool,
+) -> Result<Option<(crate::trial::Said, Vec<crate::marking::Checked>)>, Stopped> {
+    if one_at_a_time {
+        return answered_one_at_a_time(doing, asked, step);
+    }
+    answered(doing, asked, step).map(|outcome| match outcome {
+        crate::trial::Outcome::Said(said) => Some((said, Vec::new())),
+        crate::trial::Outcome::Cut => None,
+    })
+}
+
 /// What one trial asks for: how much room it gets, and whether it is timed or marked.
 fn trial_for(doing: &Doing, spot: At, set: Set, timed: bool) -> Asked {
     Asked {
@@ -318,12 +441,14 @@ fn sweeping(mut doing: Doing) {
             continue;
         };
         let asked = trial_for(&doing, spot, set, timed);
+        let marking = doing.mark && !timed;
+        let one_at_a_time = marking && asked.set.kind == crate::corpus::Kind::ShortAnswer;
         let began = Instant::now();
-        let said = match answered(&mut doing, &asked, spot.step) {
-            Ok(crate::trial::Outcome::Said(said)) => said,
+        let (said, marked_already) = match taken(&mut doing, &asked, spot.step, one_at_a_time) {
+            Ok(Some(taken)) => taken,
             // Cut off part way through. Nothing below this line runs, so nothing about
             // this trial reaches the ledger, the report or the window.
-            Ok(crate::trial::Outcome::Cut) | Err(Stopped::Cut) => break,
+            Ok(None) | Err(Stopped::Cut) => break,
             Err(Stopped::Gone) => return,
             Err(Stopped::Refused(why)) => {
                 let _sent = doing.send.send(Heard::Refused(why));
@@ -335,15 +460,18 @@ fn sweeping(mut doing: Doing) {
         if doing.asked_to_stop.load(Ordering::Relaxed) {
             break;
         }
-        let marking = doing.mark && !timed;
-        let (judged, unmarked) = judged_by(
-            marking,
-            &doing.room,
-            spot,
-            asked.set.kind,
-            &asked.set.tasks,
-            &said,
-        );
+        let (judged, unmarked) = if one_at_a_time {
+            (marked_already, None)
+        } else {
+            judged_by(
+                marking,
+                &doing.room,
+                spot,
+                asked.set.kind,
+                &asked.set.tasks,
+                &said,
+            )
+        };
         if let Some(why) = unmarked
             && doing.send.send(Heard::Stopped(why)).is_err()
         {
@@ -398,6 +526,8 @@ pub struct Running {
     pub skipped: usize,
     pub refused: Option<String>,
     pub holding: Option<String>,
+    /// Which question of a short-answer set is being asked, and of how many.
+    pub question: Option<(usize, usize)>,
     pub produced: u64,
     pub stopped: Option<String>,
     pub finished: bool,
@@ -468,6 +598,7 @@ impl Running {
             skipped: 0,
             refused: None,
             holding: None,
+            question: None,
             produced: 0,
             stopped: None,
             finished: false,
@@ -540,11 +671,17 @@ impl Running {
                 }
                 Ok(Heard::Started(at)) => {
                     self.doing = Some(at);
+                    self.question = None;
                     self.produced = 0;
                     moved = true;
                 }
                 Ok(Heard::Holding(said)) => {
                     self.holding = Some(said);
+                    moved = true;
+                }
+                Ok(Heard::Asking { at, of }) => {
+                    self.question = Some((at, of));
+                    self.produced = 0;
                     moved = true;
                 }
                 Ok(Heard::Producing(held)) => {
@@ -564,6 +701,7 @@ impl Running {
                     self.report.record(*reading);
                     self.doing = None;
                     self.holding = None;
+                    self.question = None;
                     moved = true;
                 }
                 Ok(Heard::Refused(why)) => {
@@ -622,6 +760,9 @@ impl Running {
         }
         if at.repeat > 1 {
             let _wrote = write!(said, " · take {}", at.repeat);
+        }
+        if let Some((question, of)) = self.question.filter(|_| !timed) {
+            let _wrote = write!(said, " · question {question} of {of}");
         }
         let doing = if timed && dial.times_reading_the_prompt() {
             format!(" · read {} of {ceiling}", self.produced)

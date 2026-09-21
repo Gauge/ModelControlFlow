@@ -759,7 +759,8 @@ impl Optimizing {
 
     /// What one trial of this sweep asks for, so that how far into it the sweep has got can
     /// be said against something. A reading trial reads a prompt; a writing one writes an
-    /// answer; a graded one answers the tasks.
+    /// answer; a graded one answers its questions one to a request, so this is the room each
+    /// question gets rather than the room for the set.
     #[must_use]
     pub fn ceiling_of_a_trial(&self) -> u32 {
         if self.measure.needs_the_answers_run() {
@@ -804,15 +805,6 @@ impl Optimizing {
         }
     }
 
-    pub fn toggle_set(&mut self, number: usize) {
-        if let Some(found) = self.sweep.sets.iter().position(|held| *held == number) {
-            let _dropped = self.sweep.sets.remove(found);
-        } else {
-            self.sweep.sets.push(number);
-            self.sweep.sets.sort_unstable();
-        }
-    }
-
     #[must_use]
     pub fn standing(&self) -> String {
         if let Some(said) = &self.last_said {
@@ -854,10 +846,17 @@ impl Optimizing {
         // A setting whose words are MCF's own knows how many it has; one whose words are
         // the model's has as many as the model named.
         let held = self.sweep.dial.own_words().len().max(self.named.len());
-        self.sweep.steps = (0..held)
+        let every: Vec<mcf_optimize::dial::Step> = (0..held)
             .filter_map(|at| u32::try_from(at).ok())
             .map(mcf_optimize::dial::Step::Whole)
             .collect();
+        // The values ticked are the values run. Only a choice that names a place the list
+        // does not have — or names nothing — is put back to the whole list.
+        let chosen_fits = !self.sweep.steps.is_empty()
+            && self.sweep.steps.iter().all(|step| every.contains(step));
+        if !chosen_fits {
+            self.sweep.steps = every;
+        }
     }
 
     /// Rank a sweep of this setting the way the setting asks to be ranked, and lay out the
@@ -2366,7 +2365,6 @@ pub enum Act {
     AdoptBest,
     /// Leave the settings where they are, and stop asking.
     KeepAsIs,
-    TestSet(usize),
     Takes(usize),
     Sweep,
     /// Stop a sweep where it stands, or tell a stopped one to carry on. Not the same as
@@ -3020,7 +3018,6 @@ impl Desk {
             | Act::ForgetRow(_)
             | Act::PickNone
             | Act::RerunPicked
-            | Act::TestSet(_)
             | Act::Takes(_)
             | Act::Sweep
             | Act::PauseSweep
@@ -4884,6 +4881,8 @@ impl Desk {
                 let levels = self.levels_of_the_model();
                 self.optimizing.pick_dial_among(at, &offered);
                 self.optimizing.rank_as_the_setting_asks();
+                self.optimizing.named.clone_from(&levels);
+                self.optimizing.only_the_levels_the_model_names();
                 if self.optimizing.sweep.dial.is_named_by_the_model() {
                     self.optimizing.way = mcf_optimize::hunt::Way::ByHand;
                     self.optimizing.sweep.steps = (0..levels.len())
@@ -4903,7 +4902,6 @@ impl Desk {
             | Act::ForgetRow(_)
             | Act::PickNone
             | Act::RerunPicked => self.choosing_values(act),
-            Act::TestSet(number) => self.optimizing.toggle_set(number),
             Act::Takes(times) => self.optimizing.take_each(times),
             Act::Sweep => self.start_or_stop_sweeping(),
             Act::PauseSweep => self.pause_or_carry_on_sweeping(),
