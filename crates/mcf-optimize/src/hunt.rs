@@ -202,12 +202,19 @@ impl Hunt {
     /// And clearly worse, not worse by a hair — one take of a trial is not exact, so a value
     /// reading within a whisker of the best has said nothing about a turn.
     ///
-    /// And confirmed, rather than taken on the first bad reading. A micro-batch of 512 reads
-    /// nine per cent below both of its neighbours on the machine this was written on: going
-    /// up, 712, 652, 718, 757, 780, 783. A climb that ended at the first value worse than
-    /// the one before it answered 256 and stopped, five rungs below the best there was. So
-    /// the rung above a bad one is tried before the climb is called over, and one dip costs
-    /// a trial instead of the answer.
+    /// And still falling. Two rungs below the best is not a turn if the second of them came
+    /// back above the first: a curve that drops and then recovers is a curve with a dip in
+    /// it, not a curve that has peaked. Prompt batch on the machine this was written on read
+    /// 265 at 1024, 210 at 2048 and 222 at 4096, and the climb stopped there — both rungs
+    /// were clearly below 1024, so the old rule called it a turn. A sweep of the same dial
+    /// an hour earlier read 268 at 2048 and 269 at 4096 and climbed to 32768. The dip was
+    /// the machine, not the setting, and quitting on it left everything above 4096
+    /// unmeasured and a peak reported five rungs below where the flat actually started.
+    ///
+    /// So the drop has to be consecutive: the top rung clearly worse than the rung under it,
+    /// and that rung clearly worse than the best below them both. A dip costs the rungs it
+    /// takes to climb out of, which a doubling climb bounds at a handful, instead of costing
+    /// the answer.
     ///
     /// A value that produced no reading to score is worse than one that did: there is
     /// nothing above a value that could not be measured worth climbing to.
@@ -231,9 +238,24 @@ impl Hunt {
         else {
             return false;
         };
-        let clearly_worse =
-            |value: u32| read(value).is_none_or(|held| held.clearly_worse_than(best));
-        clearly_worse(highest) && clearly_worse(under_it)
+        // The rung under the top one has to have fallen away from the best below it.
+        let Some(under) = read(under_it) else {
+            // Nothing measured there at all: the rung above it decides on its own, against
+            // the best, because there is no reading to be still falling from.
+            return read(highest).is_none_or(|held| held.clearly_worse_than(best));
+        };
+        if !under.clearly_worse_than(best) {
+            return false;
+        }
+        // And the top rung has to still be falling from it — except that a value which
+        // could not be measured at all is the end of the climb whatever sits under it.
+        // There is nothing above a value that would not run worth climbing to, and two
+        // unmeasurable rungs compare as neither worse than the other.
+        match read(highest) {
+            None => true,
+            Some(held) if held.score.is_none() => true,
+            Some(held) => held.clearly_worse_than(under),
+        }
     }
 
     /// Why a search that has stopped improving is over. A search whose best is still the top

@@ -89,6 +89,108 @@ fn as_this_machine_reads(value: u32) -> Option<f64> {
     Some(held)
 }
 
+/// A reading of a value scored as a rate, with the error a timed trial carries. A rate
+/// repeats to about one part in fifty, which is a far tighter bar than a marked set's, and
+/// it is the bar a speed sweep is actually judged against.
+fn timed(step: Step, score: Option<f64>) -> crate::reading::Scored {
+    crate::reading::Scored {
+        step,
+        score,
+        error: score.map_or(0.0, |held| held / 50.0),
+    }
+}
+
+/// Drives a hunt as `hunted` does, against rate readings rather than marked ones.
+fn hunted_on_rates(dial: Dial, score: impl Fn(u32) -> Option<f64>) -> (Hunt, Vec<u32>) {
+    let mut hunt = Hunt::started(dial);
+    let mut run: Vec<Step> = hunt.asked();
+    for _ in 0..64 {
+        let scored: Vec<crate::reading::Scored> = run
+            .iter()
+            .map(|step| timed(*step, score(one(*step))))
+            .collect();
+        let Some(best) = scored
+            .iter()
+            .filter(|held| held.score.is_some())
+            .max_by(|one, two| {
+                one.score
+                    .unwrap_or(f64::MIN)
+                    .total_cmp(&two.score.unwrap_or(f64::MIN))
+            })
+            .map(|held| held.step)
+        else {
+            break;
+        };
+        let next = hunt.stepped_on(best, &scored, &run);
+        if next.is_empty() {
+            break;
+        }
+        run.extend(next);
+    }
+    (hunt, values(&run))
+}
+
+/// Prompt batch as this machine read it on 2026-09-19, with a dip in the middle that the
+/// machine put there rather than the setting.
+///
+/// The rungs up to 4096 are one sweep's readings; the rungs above are the same machine's
+/// readings of the same dial an hour earlier, which put 2048 at 268 and 4096 at 269. The
+/// dip is therefore known to be transient, and everything above it is known to be good.
+fn a_dip_that_recovers(value: u32) -> Option<f64> {
+    let curve: [(u32, f64); 8] = [
+        (256, 150.9),
+        (512, 212.7),
+        (1024, 265.3),
+        (2048, 210.2),
+        (4096, 222.5),
+        (8192, 261.1),
+        (16_384, 272.3),
+        (32_768, 268.8),
+    ];
+    curve
+        .iter()
+        .find(|(rung, _)| *rung == value)
+        .map(|(_, held)| *held)
+        .or_else(|| {
+            // Between the rungs, the nearest one below — a sweep only ever asks the rungs.
+            curve
+                .iter()
+                .rev()
+                .find(|(rung, _)| *rung <= value)
+                .map(|(_, held)| *held)
+        })
+}
+
+#[test]
+fn a_climb_does_not_end_on_a_dip_that_recovers() {
+    let (_hunt, run) = hunted_on_rates(Dial::Batch, a_dip_that_recovers);
+    // 2048 fell away from 1024 and 4096 came back up above it. That is a dip, not a peak,
+    // and a climb that calls it a turn never measures the flat above 4096 where this dial
+    // actually settles.
+    assert!(
+        run.contains(&8192),
+        "the climb stopped at a dip that recovered and never looked above it: {run:?}"
+    );
+}
+
+#[test]
+fn a_climb_still_ends_when_the_reading_keeps_falling() {
+    // The same curve up to the peak, then falling and staying fallen.
+    let falling = |value: u32| match value {
+        256 => Some(150.9),
+        512 => Some(212.7),
+        1024 => Some(265.3),
+        2048 => Some(210.2),
+        4096 => Some(160.0),
+        _ => Some(120.0),
+    };
+    let (_hunt, run) = hunted_on_rates(Dial::Batch, falling);
+    assert!(
+        !run.contains(&32_768),
+        "a climb that kept falling ran to the ceiling anyway: {run:?}"
+    );
+}
+
 #[test]
 fn every_automatic_search_opens_on_one_value_and_doubles_from_there() {
     for dial in Dial::ALL {
