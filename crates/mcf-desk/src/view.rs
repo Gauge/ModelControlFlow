@@ -2659,11 +2659,28 @@ fn the_test_set(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f3
     let marked = desk.optimizing.measure.needs_the_answers_run();
     let mut y = if marked {
         let mut y = rail_section(paint, at, at.y, "test set");
-        let said = format!(
-            "All {} questions, asked one at a time, every time — so two readings can be set \
-             beside each other.",
-            questions_in(&desk.optimizing.sweep.sets)
-        );
+        let choices: Vec<(String, bool)> = crate::Tests::ALL
+            .iter()
+            .map(|tests| (tests.label().to_owned(), *tests == desk.optimizing.tests))
+            .collect();
+        let (below, picked) = segmented(paint, mouse, Box::new(at.x, y, at.w, 0.0), &choices);
+        if let Some(chosen) = picked {
+            act = act.or(Some(Act::PickTests(chosen)));
+        }
+        y = below + 6.0;
+        let asked = questions_in(&desk.optimizing.sweep.sets);
+        let said = match desk.optimizing.tests {
+            crate::Tests::Short => format!(
+                "All {asked} questions, four at a time, every time — so two readings can be \
+                 set beside each other."
+            ),
+            crate::Tests::Long => format!(
+                "{asked} long programs, {} checks, each run in a container. For the settings \
+                 that keep a model from repeating itself: a one-line answer never loops, a long \
+                 program can.",
+                checks_in(&desk.optimizing.sweep.sets)
+            ),
+        };
         for line in paint.wrap(&said, Weight::Regular, size::SMALL, at.w) {
             paint.say_at(at.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
             y += gap::LINE;
@@ -2697,6 +2714,15 @@ fn the_test_set(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f3
     (y + 10.0, act)
 }
 
+/// How many claims the checks of the sets named make between them.
+fn checks_in(sets: &[usize]) -> u32 {
+    sets.iter()
+        .filter_map(|number| mcf_optimize::corpus::Set::numbered(*number))
+        .flat_map(|set| set.tasks)
+        .map(|task| mcf_optimize::marking::claims_in(&task.checked))
+        .sum()
+}
+
 /// How many questions the sets named hold between them.
 fn questions_in(sets: &[usize]) -> usize {
     sets.iter()
@@ -2715,8 +2741,13 @@ fn what_the_sweep_runs(desk: &Desk) -> String {
     let marked = desk.optimizing.measure.needs_the_answers_run();
     let each = if marked {
         format!(
-            "{} questions",
-            questions_in(&sweep.sets).saturating_mul(takes)
+            "{} {}",
+            questions_in(&sweep.sets).saturating_mul(takes),
+            if desk.optimizing.tests == crate::Tests::Long {
+                "programs"
+            } else {
+                "questions"
+            }
         )
     } else if takes == 1 {
         "One timed run".to_owned()
@@ -3197,7 +3228,14 @@ fn now_asking(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32,
     let following = run.following() == Some(shown);
 
     // Everything is measured before anything is drawn, so the card is as tall as it holds.
-    let asked = paint.wrap(&seen.asked, Weight::Regular, size::BODY, inner);
+    let mut asked = paint.wrap(&seen.asked, Weight::Regular, size::BODY, inner);
+    // A long task is pages of specification; its opening is enough to say which task it is.
+    if asked.len() > ASKED_SHOWN {
+        asked.truncate(ASKED_SHOWN);
+        if let Some(last) = asked.last_mut() {
+            last.push_str(" …");
+        }
+    }
     let reply = reply_lines(paint, seen, inner - 24.0);
     let reply_h = 12.0 + gap::LINE * (1.0 + count_of(reply.len().max(1))) + 10.0;
     let square = ((inner - 4.0 * 24.0) / 25.0).clamp(8.0, 18.0);
@@ -3241,6 +3279,7 @@ fn now_asking(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32,
 }
 
 const ASKING_PAD: f32 = 16.0;
+const ASKED_SHOWN: usize = 6;
 const ASKED_LINE: f32 = 21.0;
 
 fn count_of(held: usize) -> f32 {
@@ -3309,10 +3348,10 @@ fn reply_lines(
     seen: &mcf_optimize::running::Seen,
     room: f32,
 ) -> Vec<(String, bool)> {
-    let mut thought = paint.wrap(seen.thought.trim(), Weight::Regular, size::SMALL, room);
+    let mut thought = lines_kept(paint, &seen.thought, Weight::Regular, room);
     let skip = thought.len().saturating_sub(THOUGHT_LINES);
     thought.drain(..skip);
-    let mut answer = paint.wrap(seen.answer.trim(), Weight::Bold, size::SMALL, room);
+    let mut answer = lines_kept(paint, &seen.answer, Weight::Bold, room);
     let skip = answer.len().saturating_sub(ANSWER_LINES);
     answer.drain(..skip);
     thought
@@ -3320,6 +3359,28 @@ fn reply_lines(
         .map(|line| (line, false))
         .chain(answer.into_iter().map(|line| (line, true)))
         .collect()
+}
+
+/// A reply wrapped to the room it has, keeping the lines it was written in. A program is
+/// its lines; running them together would show code as a paragraph.
+fn lines_kept(paint: &mut Painter, said: &str, weight: Weight, room: f32) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in said.lines().filter(|line| !line.trim().is_empty()) {
+        // Indentation is part of a line of code, and wrapping by words would drop it.
+        let indent = &line[..line.len().saturating_sub(line.trim_start().len())];
+        for (at, piece) in paint
+            .wrap(line.trim_start(), weight, size::SMALL, room)
+            .into_iter()
+            .enumerate()
+        {
+            out.push(if at == 0 {
+                format!("{indent}{piece}")
+            } else {
+                piece
+            });
+        }
+    }
+    out
 }
 
 /// The reply, in a well of its own: how far it has got, the end of the thinking dimmed, and
@@ -3374,6 +3435,10 @@ fn verdict_row(paint: &mut Painter, seen: &mcf_optimize::running::Seen, at: Box)
             ink.bad,
         ),
         Some(Verdict::RanAway(_)) => ("Ran away — marked wrong".to_owned(), ink.warn),
+        Some(Verdict::Checks { passed, of }) => (
+            format!("{passed} of {of} checks held"),
+            if passed >= of { ink.good } else { ink.bad },
+        ),
     };
     let chip_w = paint.measure(&said, Weight::Bold, size::SMALL) + 20.0;
     let chip = Box::new(at.x, at.y, chip_w, 24.0);
@@ -3386,6 +3451,10 @@ fn verdict_row(paint: &mut Painter, seen: &mcf_optimize::running::Seen, at: Box)
         size::SMALL,
         colour,
     );
+    // A program's check is a page of claims; what it is wanted to do is the question.
+    if seen.wanted.is_empty() {
+        return;
+    }
     let wanted = format!("Wanted {}", seen.wanted);
     let room = (at.w - chip_w - 16.0).max(40.0);
     let wanted = paint.elide(&wanted, Weight::Regular, size::SMALL, room);
@@ -3442,6 +3511,9 @@ fn question_strip(
             Some(Verdict::Right) => Some(ink.good),
             Some(Verdict::Wrong(_)) => Some(ink.bad),
             Some(Verdict::RanAway(_)) => Some(ink.warn),
+            Some(Verdict::Checks { passed, of }) => {
+                Some(if passed >= of { ink.good } else { ink.bad })
+            }
             None => None,
         };
         if index == shown && !following {
@@ -3551,7 +3623,15 @@ fn what_the_tiles_say(desk: &Desk) -> [Tile; 3] {
             false,
         ),
         (None, Some(tally)) => (
-            "right so far".to_owned(),
+            if run.is_some_and(|run| {
+                run.kind
+                    .is_some_and(|kind| kind != mcf_optimize::corpus::Kind::ShortAnswer)
+            }) {
+                "checks held so far"
+            } else {
+                "right so far"
+            }
+            .to_owned(),
             tally.share().map(|share| format!("{share}%")),
             format!(
                 "{} of {} at {}",

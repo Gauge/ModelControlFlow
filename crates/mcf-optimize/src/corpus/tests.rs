@@ -172,3 +172,165 @@ mod short_answers {
         assert_eq!(names.len(), all);
     }
 }
+
+/// Eight long programs, each asked alone and marked by running it, for the settings that
+/// keep a model from repeating itself.
+mod long_scripts {
+    use crate::corpus::{Kind, LONG_FROM, SHORT_FROM, Set};
+
+    /// A correct program for every task, kept beside the tasks so that a check which a
+    /// correct program cannot pass is found here rather than by a model being marked down.
+    const REFERENCE: [(&str, &str); 8] = [
+        (
+            "spreadsheet",
+            include_str!("../../tasks/long/reference/spreadsheet.py"),
+        ),
+        (
+            "markdown",
+            include_str!("../../tasks/long/reference/markdown.py"),
+        ),
+        ("bank", include_str!("../../tasks/long/reference/bank.py")),
+        (
+            "planner",
+            include_str!("../../tasks/long/reference/planner.py"),
+        ),
+        (
+            "interpreter",
+            include_str!("../../tasks/long/reference/interpreter.py"),
+        ),
+        (
+            "recurrence",
+            include_str!("../../tasks/long/reference/recurrence.py"),
+        ),
+        ("grid", include_str!("../../tasks/long/reference/grid.py")),
+        ("sql", include_str!("../../tasks/long/reference/sql.py")),
+    ];
+
+    fn reply_of(reference: &str) -> String {
+        format!("Here is the program.\n\n```python\n{reference}```\n")
+    }
+
+    #[test]
+    fn there_are_two_sets_of_four_programs_numbered_apart_from_the_others() {
+        let sets = Set::long();
+        assert_eq!(sets.len(), 2);
+        for (at, set) in sets.iter().enumerate() {
+            assert_eq!(set.number, LONG_FROM + at);
+            assert_eq!(set.kind, Kind::LongScript);
+            assert_eq!(set.tasks.len(), 4);
+            assert_eq!(
+                Set::numbered(set.number).map(|held| held.kind),
+                Some(Kind::LongScript)
+            );
+        }
+        assert!(LONG_FROM > SHORT_FROM + Set::short().len());
+        assert!(Set::numbered(LONG_FROM + 2).is_none());
+    }
+
+    #[test]
+    fn every_check_makes_enough_claims_to_score_a_program_finely() {
+        for task in Set::long().into_iter().flat_map(|set| set.tasks) {
+            let claims = crate::marking::claims_in(&task.checked);
+            assert!(claims >= 20, "{} makes only {claims} claims", task.name);
+            assert!(
+                !task.checked.contains("assert False"),
+                "{}: a claim that only runs when something went wrong is never counted as \
+                 holding, so a correct program would lose it",
+                task.name
+            );
+        }
+    }
+
+    #[test]
+    fn a_program_is_asked_for_alone_in_one_block() {
+        let set = Set::numbered(LONG_FROM).expect("the first long set");
+        let first = set
+            .one_at_a_time()
+            .into_iter()
+            .next()
+            .expect("a first task");
+        let asked = first.asked();
+        assert!(
+            asked.contains("ONE fenced python code block"),
+            "{asked:.300}"
+        );
+        assert!(asked.contains("must not read input"), "{asked:.300}");
+        assert!(
+            asked.contains("class `Sheet`"),
+            "the task itself is in it: {asked:.300}"
+        );
+    }
+
+    #[test]
+    fn every_task_has_a_correct_program_beside_it() {
+        let names: Vec<String> = Set::long()
+            .into_iter()
+            .flat_map(|set| set.tasks)
+            .map(|task| task.name)
+            .collect();
+        let known: Vec<&str> = REFERENCE.iter().map(|(name, _)| *name).collect();
+        assert_eq!(names, known);
+    }
+
+    /// A long program repeats itself in ways that are not a loop — closing brackets, lines
+    /// that differ only in a name — and the watch for loops runs over every answer as it
+    /// arrives. It must never cut a correct program off.
+    #[test]
+    fn no_correct_program_is_ever_taken_for_a_loop() {
+        for (name, reference) in REFERENCE {
+            let reply = reply_of(reference);
+            let mut end = 1500;
+            while end < reply.len() {
+                while !reply.is_char_boundary(end) {
+                    end += 1;
+                }
+                let so_far = reply.get(..end).unwrap_or(&reply);
+                assert_eq!(
+                    crate::looping::looping(so_far),
+                    None,
+                    "{name} was called a loop {end} characters in"
+                );
+                end += 200;
+            }
+            assert_eq!(crate::looping::looping(&reply), None, "{name}, whole");
+        }
+    }
+
+    /// Marked the way a sweep marks them — in the container — every correct program holds
+    /// every claim its check makes. Needs podman, and says so rather than passing quietly
+    /// on a machine without it.
+    #[test]
+    fn a_correct_program_holds_every_claim_when_marked_in_the_container() {
+        if crate::marking::where_podman_is().is_none() {
+            eprintln!("skipped: podman is not on this machine, so nothing could be marked");
+            return;
+        }
+        let tasks: Vec<_> = Set::long().into_iter().flat_map(|set| set.tasks).collect();
+        for (task, (_, reference)) in tasks.iter().zip(REFERENCE) {
+            let room = std::env::temp_dir().join(format!(
+                "mcf-long-reference-{}-{}",
+                std::process::id(),
+                task.name
+            ));
+            let held = crate::marking::marked(
+                &room,
+                std::slice::from_ref(task),
+                &reply_of(reference),
+                std::time::Duration::from_secs(300),
+            );
+            let _swept = std::fs::remove_dir_all(&room);
+            assert_eq!(held.why(), None, "{} was not marked", task.name);
+            let checked = held.or_unmarked(std::slice::from_ref(task));
+            let (passed, of) = checked.iter().fold((0, 0), |(passed, of), held| {
+                (passed + held.passed, of + held.of)
+            });
+            assert_eq!(passed, of, "{}: {passed} of {of}", task.name);
+            assert_eq!(
+                of,
+                crate::marking::claims_in(&task.checked),
+                "{}",
+                task.name
+            );
+        }
+    }
+}

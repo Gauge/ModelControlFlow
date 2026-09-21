@@ -8,13 +8,14 @@
 //! its own, in a request of its own, marked on its own.
 
 use std::collections::VecDeque;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use super::{Doing, Heard, Stopped, answered, held_again, loading_for};
-use crate::corpus::Set;
+use super::{Doing, Heard, MARKING_PATIENCE, Stopped, answered, held_again, loading_for};
+use crate::corpus::{Kind, Set};
 use crate::dial::Step;
 use crate::marking::Checked;
 use crate::reading::Ending;
@@ -34,11 +35,24 @@ const TOLD_EVERY: usize = 12;
 /// What one question came to: the reply, and the verdict on it.
 pub(super) type Answered = (Said, Vec<Checked>);
 
-/// What a question is, for the window: what was asked, and the answer wanted.
+/// What a question is, for the window: what was asked, and the answer wanted — which for a
+/// program is nothing to read, since what it is wanted to do is what the question says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Question {
     pub asked: String,
     pub wanted: String,
+}
+
+/// What came of asking one question.
+enum Came {
+    Marked(Said, Vec<Checked>),
+    /// The sweep was told to stop while it was being answered.
+    Cut,
+    /// The engine went away part way through. Asked again once the model is held again.
+    Dropped(String),
+    /// Answered, but the answer could not be marked — the container could not be run. A
+    /// sweep does not write down a score that was never taken.
+    Unmarked(String),
 }
 
 /// Ask every question of the set, `at_once` at a time, and hand back what each came to in
@@ -54,17 +68,25 @@ pub(super) fn asked_together(
         .filter_map(|held| held.tasks.first())
         .map(|task| Question {
             asked: task.asked.clone(),
-            wanted: task.checked.clone(),
+            wanted: if asked.set.kind == Kind::ShortAnswer {
+                task.checked.clone()
+            } else {
+                String::new()
+            },
         })
         .collect();
     doing
         .send
-        .send(Heard::Questions(listed))
+        .send(Heard::Questions {
+            kind: asked.set.kind,
+            listed,
+        })
         .map_err(|_gone| Stopped::Gone)?;
-    let mut came: Vec<Option<Result<Outcome, String>>> = {
+    let mut came: Vec<Option<Came>> = {
         let queue = Mutex::new((0..questions.len()).collect::<VecDeque<usize>>());
         let results = Mutex::new((0..questions.len()).map(|_| None).collect::<Vec<_>>());
         let shared = Shared {
+            room: &doing.room,
             endpoint: &doing.endpoint,
             asked,
             questions: &questions,
@@ -81,22 +103,24 @@ pub(super) fn asked_together(
         });
         results.into_inner().unwrap_or_default()
     };
+    if let Some(why) = came.iter().find_map(|held| match held {
+        Some(Came::Unmarked(why)) => Some(why.clone()),
+        _ => None,
+    }) {
+        return Err(Stopped::Refused(format!("answers were not marked: {why}")));
+    }
     if doing.asked_to_stop.load(Ordering::Relaxed)
         || came
             .iter()
-            .any(|held| matches!(held, Some(Ok(Outcome::Cut)) | None))
+            .any(|held| matches!(held, Some(Came::Cut) | None))
     {
         return Ok(None);
     }
     again_where_it_failed(doing, asked, step, &questions, &mut came)?;
     Ok(Some(
         came.into_iter()
-            .zip(&questions)
-            .filter_map(|(held, one)| match held {
-                Some(Ok(Outcome::Said(said))) => {
-                    let marked = crate::marking::marked_by_reading(&one.tasks, &said.answer);
-                    Some((said, marked))
-                }
+            .filter_map(|held| match held {
+                Some(Came::Marked(said, marked)) => Some((said, marked)),
                 _ => None,
             })
             .collect(),
@@ -105,18 +129,19 @@ pub(super) fn asked_together(
 
 /// What the workers share. Everything in it is read, or taken under a lock.
 struct Shared<'held> {
+    room: &'held Path,
     endpoint: &'held Endpoint,
     asked: &'held Asked,
     questions: &'held [Set],
     queue: &'held Mutex<VecDeque<usize>>,
-    results: &'held Mutex<Vec<Option<Result<Outcome, String>>>>,
+    results: &'held Mutex<Vec<Option<Came>>>,
     stop: &'held Arc<AtomicBool>,
 }
 
 impl Shared<'_> {
-    /// Take questions off the queue until there are none, asking each and saying how it
-    /// went. A failure is kept rather than acted on: holding the model again is the sweep's
-    /// to do, once, after every question in flight has come back.
+    /// Take questions off the queue until there are none, asking each, marking it and
+    /// saying how it went. A failure is kept rather than acted on: holding the model again
+    /// is the sweep's to do, once, after every question in flight has come back.
     fn work(&self, send: &Sender<Heard>) {
         let give_up = || self.stop.load(Ordering::Relaxed);
         loop {
@@ -138,16 +163,47 @@ impl Shared<'_> {
                 set: set.clone(),
                 ..self.asked.clone()
             };
-            let came = asked_one(self.endpoint, &one, at, send, &give_up);
-            if let Ok(Outcome::Said(said)) = &came {
-                told_the_verdict(send, at, &one, said);
-            }
+            let came = match asked_one(self.endpoint, &one, at, send, &give_up) {
+                Ok(Outcome::Said(said)) => match marked(self.room, at, &one, &said) {
+                    Ok(marked) => {
+                        told_the_verdict(send, at, &one, &said, &marked);
+                        Came::Marked(said, marked)
+                    }
+                    Err(why) => Came::Unmarked(why),
+                },
+                Ok(Outcome::Cut) => Came::Cut,
+                Err(why) => Came::Dropped(why),
+            };
             if let Ok(mut results) = self.results.lock()
                 && let Some(slot) = results.get_mut(at)
             {
                 *slot = Some(came);
             }
         }
+    }
+}
+
+/// Mark one answer the way its kind is marked: a short answer by reading it, and a program
+/// by running it against its check in a container, in a room of its own so that four being
+/// marked at once never read each other's files.
+fn marked(room: &Path, at: usize, one: &Asked, said: &Said) -> Result<Vec<Checked>, String> {
+    if one.set.kind == Kind::ShortAnswer {
+        return Ok(crate::marking::marked_by_reading(
+            &one.set.tasks,
+            &said.answer,
+        ));
+    }
+    let here = room.join(format!(
+        "set-{}-{}-{}-question-{at}",
+        one.set.number,
+        one.step.said().replace('.', "-"),
+        one.repeat
+    ));
+    let held = crate::marking::marked(&here, &one.set.tasks, &said.answer, MARKING_PATIENCE);
+    let _swept = std::fs::remove_dir_all(&here);
+    match held.why() {
+        Some(why) => Err(why.to_owned()),
+        None => Ok(held.or_unmarked(&one.set.tasks)),
     }
 }
 
@@ -173,12 +229,8 @@ fn asked_one(
                 answer.push_str(answering);
                 pieces = pieces.saturating_add(1);
                 if pieces.checked_rem(TOLD_EVERY) == Some(0) {
-                    let _sent = send.send(reply(
-                        at,
-                        &thought,
-                        &answer,
-                        produced.max(pieces_as(pieces)),
-                    ));
+                    let written = produced.max(u64::try_from(pieces).unwrap_or(u64::MAX));
+                    let _sent = send.send(reply(at, &thought, &answer, written));
                 }
             }
         };
@@ -193,10 +245,6 @@ fn asked_one(
         });
     }
     came
-}
-
-fn pieces_as(pieces: usize) -> u64 {
-    u64::try_from(pieces).unwrap_or(u64::MAX)
 }
 
 fn reply(at: usize, thought: &str, answer: &str, produced: u64) -> Heard {
@@ -217,14 +265,17 @@ fn tail_of(said: &str) -> String {
     said.get(from..).unwrap_or_default().to_owned()
 }
 
-/// Say whether a question was answered rightly, and with what.
-fn told_the_verdict(send: &Sender<Heard>, at: usize, one: &Asked, said: &Said) {
-    let marked = crate::marking::marked_by_reading(&one.set.tasks, &said.answer);
+/// Say how a question was marked: how many of its claims held, and — for a short answer —
+/// the line the marker read.
+fn told_the_verdict(send: &Sender<Heard>, at: usize, one: &Asked, said: &Said, marked: &[Checked]) {
     let _sent = send.send(Heard::Marked {
         at,
-        right: marked.iter().all(Checked::whole),
+        passed: marked.iter().map(|held| held.passed).sum(),
+        of: marked.iter().map(|held| held.of).sum(),
         produced: said.counted.unwrap_or(said.produced),
-        given: crate::marking::given(&said.answer, 1),
+        given: (one.set.kind == Kind::ShortAnswer)
+            .then(|| crate::marking::given(&said.answer, 1))
+            .flatten(),
         ending: said.ending,
         why: said.why.clone(),
     });
@@ -237,19 +288,19 @@ fn again_where_it_failed(
     asked: &Asked,
     step: Step,
     questions: &[Set],
-    came: &mut [Option<Result<Outcome, String>>],
+    came: &mut [Option<Came>],
 ) -> Result<(), Stopped> {
     let dropped: Vec<usize> = came
         .iter()
         .enumerate()
-        .filter(|(_, held)| matches!(held, Some(Err(_))))
+        .filter(|(_, held)| matches!(held, Some(Came::Dropped(_))))
         .map(|(at, _)| at)
         .collect();
     let Some(first) = dropped.first() else {
         return Ok(());
     };
     let why = match came.get(*first) {
-        Some(Some(Err(why))) => why.clone(),
+        Some(Some(Came::Dropped(why))) => why.clone(),
         _ => String::new(),
     };
     doing
@@ -285,12 +336,14 @@ fn again_where_it_failed(
             ..asked.clone()
         };
         let _sent = doing.send.send(Heard::Sent { at });
-        let outcome = answered(doing, &one, step)?;
-        if let Outcome::Said(said) = &outcome {
-            told_the_verdict(&doing.send, at, &one, said);
-        }
+        let Outcome::Said(said) = answered(doing, &one, step)? else {
+            return Err(Stopped::Cut);
+        };
+        let marked = marked(&doing.room, at, &one, &said)
+            .map_err(|why| Stopped::Refused(format!("answers were not marked: {why}")))?;
+        told_the_verdict(&doing.send, at, &one, &said, &marked);
         if let Some(slot) = came.get_mut(at) {
-            *slot = Some(Ok(outcome));
+            *slot = Some(Came::Marked(said, marked));
         }
     }
     Ok(())

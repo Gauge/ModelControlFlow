@@ -101,8 +101,11 @@ pub enum Heard {
     /// The model is loaded and answering. Whatever was said about loading it is over.
     Held,
     /// The questions of the set about to be asked, in order: what each asks, and the answer
-    /// it wants.
-    Questions(Vec<Question>),
+    /// it wants — and what kind of set it is, which decides how an answer is marked.
+    Questions {
+        kind: crate::corpus::Kind,
+        listed: Vec<Question>,
+    },
     /// A question, by where it stands in its set counting from nought, has been sent.
     Sent {
         at: usize,
@@ -130,7 +133,10 @@ pub enum Heard {
     /// window that only hears about the set sits still for all of it.
     Marked {
         at: usize,
-        right: bool,
+        /// How many of the question's claims held, of how many it makes: one of one for a
+        /// short answer answered rightly, and a program's share of its check.
+        passed: u32,
+        of: u32,
         produced: u64,
         /// The answer line the marker read, as the model wrote it.
         given: Option<String>,
@@ -452,7 +458,13 @@ fn sweeping(mut doing: Doing) {
         };
         let asked = trial_for(&doing, spot, set, timed);
         let marking = doing.mark && !timed;
-        let one_at_a_time = marking && asked.set.kind == crate::corpus::Kind::ShortAnswer;
+        // Short answers and long programs are asked a question to a request and several at
+        // once. The retired code sets are still asked whole, as their readings were taken.
+        let one_at_a_time = marking
+            && matches!(
+                asked.set.kind,
+                crate::corpus::Kind::ShortAnswer | crate::corpus::Kind::LongScript
+            );
         let began = Instant::now();
         let (said, marked_already) = match taken(&mut doing, &asked, spot.step, one_at_a_time) {
             Ok(Some(taken)) => taken,
@@ -536,6 +548,11 @@ pub enum Verdict {
     Right,
     /// Answered wrongly, with the answer the marker read, if it found one at all.
     Wrong(Option<String>),
+    /// A program, run against its check: how many of the check's claims held.
+    Checks {
+        passed: u32,
+        of: u32,
+    },
     /// Looped, or filled the window it is held at, and so marked wrong — said apart from a
     /// wrong answer so that a runaway is never mistaken for one.
     RanAway(String),
@@ -569,8 +586,13 @@ impl Seen {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Tally {
     pub value: Option<Step>,
+    /// Claims made and claims that held. A short answer is one claim; a program is as many
+    /// as its check makes, so a program most of the way there counts for most of its check.
     pub asked: u64,
     pub right: u64,
+    /// Questions marked, for the pace: how long a question takes is a question's time, not
+    /// a claim's.
+    pub questions: u64,
     pub produced: u64,
     /// How long the sweep has spent on this value, by the clock, since its first question
     /// was sent. The clock rather than the questions' own times added up: four questions
@@ -585,16 +607,15 @@ impl Tally {
     /// How long a question has taken on this value, on average.
     #[must_use]
     pub fn a_question(&self) -> Option<Duration> {
-        let each = self.milliseconds.checked_div(self.asked)?;
+        let each = self.milliseconds.checked_div(self.questions)?;
         Some(Duration::from_millis(each))
     }
 
-    /// One more question marked.
-    pub const fn count(&mut self, right: bool, produced: u64) {
-        self.asked = self.asked.saturating_add(1);
-        if right {
-            self.right = self.right.saturating_add(1);
-        }
+    /// One more question marked, with how many of its claims held.
+    pub fn count(&mut self, passed: u32, of: u32, produced: u64) {
+        self.asked = self.asked.saturating_add(u64::from(of));
+        self.right = self.right.saturating_add(u64::from(passed));
+        self.questions = self.questions.saturating_add(1);
         self.produced = self.produced.saturating_add(produced);
     }
 
@@ -634,6 +655,8 @@ pub struct Running {
     /// of it so far. Kept until the next set's questions arrive, so the last set can still
     /// be looked back over in the moment between the two.
     pub questions: Vec<Seen>,
+    /// What kind of set is being asked, which decides how its answers read.
+    pub kind: Option<crate::corpus::Kind>,
     pub produced: u64,
     pub stopped: Option<String>,
     pub finished: bool,
@@ -710,6 +733,7 @@ impl Running {
             place: None,
             tally: Tally::default(),
             questions: Vec::new(),
+            kind: None,
             produced: 0,
             stopped: None,
             finished: false,
@@ -802,7 +826,7 @@ impl Running {
                     moved = true;
                 }
                 Ok(
-                    heard @ (Heard::Questions(_)
+                    heard @ (Heard::Questions { .. }
                     | Heard::Sent { .. }
                     | Heard::Reply { .. }
                     | Heard::Answered { .. }
@@ -868,7 +892,8 @@ impl Running {
     /// arriving, and its verdict.
     fn heard_of_a_question(&mut self, heard: Heard) {
         match heard {
-            Heard::Questions(listed) => {
+            Heard::Questions { kind, listed } => {
+                self.kind = Some(kind);
                 self.questions = listed
                     .into_iter()
                     .map(|question| Seen {
@@ -905,15 +930,19 @@ impl Running {
             }
             Heard::Marked {
                 at,
-                right,
+                passed,
+                of,
                 produced,
                 given,
                 ending,
                 why,
             } => {
+                let program = self.kind != Some(crate::corpus::Kind::ShortAnswer);
                 let verdict = if ending.is_a_runaway() {
                     Verdict::RanAway(why.unwrap_or_else(|| ending.label().to_owned()))
-                } else if right {
+                } else if program {
+                    Verdict::Checks { passed, of }
+                } else if of > 0 && passed >= of {
                     Verdict::Right
                 } else {
                     Verdict::Wrong(given)
@@ -921,7 +950,7 @@ impl Running {
                 if let Some(seen) = self.questions.get_mut(at) {
                     seen.verdict = Some(verdict);
                 }
-                self.tally.count(right && !ending.is_a_runaway(), produced);
+                self.tally.count(passed, of, produced);
                 if let Some(since) = self.tally.since {
                     let on_it = self.running_for().saturating_sub(since);
                     self.tally.milliseconds = u64::try_from(on_it.as_millis()).unwrap_or(u64::MAX);
@@ -1048,8 +1077,13 @@ impl Running {
         }
         let value = dial.said_among(tally.value?, named);
         let share = tally.share().unwrap_or(0);
+        let held = if self.kind == Some(crate::corpus::Kind::ShortAnswer) || self.kind.is_none() {
+            "right"
+        } else {
+            "checks held"
+        };
         let mut said = format!(
-            "{value} so far: {} of {} right ({share}%)",
+            "{value} so far: {} of {} {held} ({share}%)",
             tally.right, tally.asked
         );
         if let Some(each) = tally.a_question() {

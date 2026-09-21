@@ -1006,19 +1006,21 @@ fn each_question_marked_is_counted_as_it_is_rather_than_once_the_set_is_done() {
     running.heard = heard;
     let _sent = send.send(Heard::Started(spot));
     let _sent = send.send(Heard::Place { at: 3, of: 40 });
-    let _sent = send.send(Heard::Questions(
-        (0..25)
+    let _sent = send.send(Heard::Questions {
+        kind: crate::corpus::Kind::ShortAnswer,
+        listed: (0..25)
             .map(|at| super::Question {
                 asked: format!("question {at}"),
                 wanted: "1".to_owned(),
             })
             .collect(),
-    ));
+    });
     for (at, right) in [true, true, false].into_iter().enumerate() {
         let _sent = send.send(Heard::Sent { at });
         let _sent = send.send(Heard::Marked {
             at,
-            right,
+            passed: u32::from(right),
+            of: 1,
             produced: 100,
             given: Some(if right { "1" } else { "2" }.to_owned()),
             ending: crate::reading::Ending::Answered,
@@ -1259,5 +1261,146 @@ fn a_set_is_asked_four_questions_at_a_time_and_still_read_in_order() {
     assert!(
         running.questions.iter().all(|seen| seen.verdict.is_some()),
         "every question the window was told of has a verdict"
+    );
+}
+
+/// An engine that answers each long-script task of the first set with its correct program.
+fn an_engine_that_writes_programs() -> u16 {
+    use mcf_record::json::Value;
+    use std::io::{Read, Write};
+    let programs: [(&str, &str); 4] = [
+        (
+            "spreadsheet engine",
+            include_str!("../../tasks/long/reference/spreadsheet.py"),
+        ),
+        (
+            "subset of Markdown",
+            include_str!("../../tasks/long/reference/markdown.py"),
+        ),
+        (
+            "multi-currency bank",
+            include_str!("../../tasks/long/reference/bank.py"),
+        ),
+        (
+            "project planner",
+            include_str!("../../tasks/long/reference/planner.py"),
+        ),
+    ];
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a loopback port is free");
+    let port = listener.local_addr().expect("the port is known").port();
+    let _server = std::thread::spawn(move || {
+        for held in listener.incoming() {
+            let Ok(mut held) = held else { return };
+            let _one = std::thread::spawn(move || {
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 8192];
+                while let Ok(read) = held.read(&mut buffer) {
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(buffer.get(..read).unwrap_or_default());
+                    let text = String::from_utf8_lossy(&request).into_owned();
+                    let Some(headers_end) = text.find("\r\n\r\n") else {
+                        continue;
+                    };
+                    let wanted = text
+                        .lines()
+                        .find_map(|line| line.strip_prefix("Content-Length: "))
+                        .and_then(|length| length.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= headers_end + 4 + wanted {
+                        break;
+                    }
+                }
+                let text = String::from_utf8_lossy(&request).into_owned();
+                if text.starts_with("GET ") {
+                    let _wrote = held.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}",
+                    );
+                    return;
+                }
+                let program = programs
+                    .iter()
+                    .find(|(marker, _)| text.contains(marker))
+                    .map_or("", |(_, program)| program);
+                let reply = format!("```python\n{program}```\n");
+                let chunk = Value::map([(
+                    "choices",
+                    Value::List(vec![Value::map([(
+                        "delta",
+                        Value::map([("content", Value::text(reply))]),
+                    )])]),
+                )]);
+                let _wrote = held.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: \
+                         close\r\n\r\ndata: {}\n\ndata: [DONE]\n\n",
+                        chunk.to_line()
+                    )
+                    .as_bytes(),
+                );
+            });
+        }
+    });
+    port
+}
+
+#[test]
+fn long_programs_are_asked_four_at_a_time_and_each_is_run_against_its_check() {
+    if crate::marking::where_podman_is().is_none() {
+        eprintln!("skipped: podman is not on this machine, so nothing could be marked");
+        return;
+    }
+    let scratch = Scratch::new("long-programs");
+    let port = an_engine_that_writes_programs();
+    let mut marked = under();
+    marked.timed = crate::ledger::MARKED;
+    let course = Course::laid_out(
+        marked.clone(),
+        Way::ByHand,
+        Dial::DryStrength,
+        &[Step::Thousandths(800)],
+        &[crate::corpus::LONG_FROM],
+        1,
+        Measure::Correctness,
+    );
+    let mut running = Running::begun(
+        Orders {
+            switch: false,
+            endpoint: Endpoint {
+                port,
+                key: None,
+                patience: std::time::Duration::from_secs(60),
+            },
+            under: marked,
+            dial: Dial::DryStrength,
+            ceiling: None,
+            named: Vec::new(),
+            mark: true,
+            at_once: 4,
+            room: scratch.path.join("marking"),
+            ready_within: std::time::Duration::from_secs(5),
+        },
+        course,
+        Ledger::open(&scratch.at()).expect("opens"),
+        std::boxed::Box::new(move |_step, _along| Ok(port)),
+        || "now".to_owned(),
+    );
+    settled(&mut running);
+    assert!(running.refused.is_none(), "{:?}", running.refused);
+    let reading = running.report.readings.first().expect("a reading");
+    assert_eq!(reading.set, crate::corpus::LONG_FROM);
+    assert_eq!(
+        reading.passed, reading.of,
+        "four correct programs hold every claim: {} of {}",
+        reading.passed, reading.of
+    );
+    assert!(reading.of >= 80, "the checks were all run: {}", reading.of);
+    assert!(
+        running
+            .questions
+            .iter()
+            .all(|seen| matches!(seen.verdict, Some(super::Verdict::Checks { passed, of }) if passed == of)),
+        "and each one says how many of its checks held"
     );
 }

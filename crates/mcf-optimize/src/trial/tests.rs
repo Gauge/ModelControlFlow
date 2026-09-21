@@ -69,6 +69,15 @@ fn an_unclosed_fence_yields_the_blocks_before_it_rather_than_failing() {
 }
 
 #[test]
+fn three_backticks_inside_a_line_of_code_are_code_and_not_the_end_of_the_block() {
+    let said = "```python\ndef fence(line):\n    return line == '```'\n```\nThat is all.";
+    assert_eq!(
+        blocks(said),
+        vec!["def fence(line):\n    return line == '```'".to_owned()]
+    );
+}
+
+#[test]
 fn an_endpoint_defaults_to_loopback_with_no_key() {
     let held = Endpoint::default();
     assert!(held.key.is_none(), "a key is supplied, never assumed");

@@ -26,6 +26,16 @@ const DECLARED: &[Deletes] = &[
                time. No model file and nothing anybody stored is touched (A27, §3.11)",
     },
     Deletes {
+        file: "crates/mcf-optimize/src/running/together.rs",
+        calls: 1,
+        what: "the scratch directory one long program was marked in, once the container \
+               that ran it has exited — the same thing the trial runner removes, one program \
+               to a directory so that four marked at once never read each other's files. \
+               What goes is code a model wrote a minute earlier, copied there by MCF so a \
+               container could run it, and its verdict has already been read. No model file \
+               and nothing anybody stored is touched (A27, §3.11)",
+    },
+    Deletes {
         file: "crates/mcf-desk/src/lib.rs",
         calls: 1,
         what: "the optimizer's own record of readings, when somebody asks the window to \

@@ -1308,3 +1308,27 @@ fn a_question_looked_back_at_is_shown_until_it_is_pressed_again() {
     );
     let _removed = std::fs::remove_file(&scratch);
 }
+
+#[test]
+fn a_marked_sweep_runs_against_short_answers_or_long_scripts_as_chosen() {
+    let mut desk = desk();
+    desk.act(Act::Dial(dial_at(&desk, Dial::DryStrength)));
+    assert_eq!(
+        desk.optimizing.measure,
+        mcf_optimize::reading::Measure::Correctness,
+        "a setting against repeating is ranked by what it does to the answers"
+    );
+    assert_eq!(desk.optimizing.tests, mcf_desk::Tests::Short);
+    assert_eq!(desk.optimizing.sweep.sets.len(), 40);
+    desk.act(Act::PickTests(1));
+    assert_eq!(desk.optimizing.tests, mcf_desk::Tests::Long);
+    assert_eq!(
+        desk.optimizing.sweep.sets,
+        vec![
+            mcf_optimize::corpus::LONG_FROM,
+            mcf_optimize::corpus::LONG_FROM + 1
+        ]
+    );
+    desk.act(Act::PickTests(0));
+    assert_eq!(desk.optimizing.sweep.sets.len(), 40, "and back again");
+}

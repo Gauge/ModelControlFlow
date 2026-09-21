@@ -749,6 +749,8 @@ pub struct Optimizing {
     /// What was said about the last value taken up, so the answer to a decision does not
     /// vanish the moment it is made.
     pub adopted: Option<String>,
+    /// What a sweep that marks answers is run against.
+    pub tests: Tests,
     /// The question of a set being looked back at — by the set it is in and where it stands
     /// in it — rather than the one the sweep is on.
     pub looking_at: Option<(usize, usize)>,
@@ -902,13 +904,7 @@ impl Optimizing {
 
     fn lay_out_the_run(&mut self) {
         if self.measure.needs_the_answers_run() {
-            // The short corpus: a thousand questions with one right answer apiece. A
-            // score off eight hard programs moves in lumps, and a setting that makes
-            // answers a little worse cannot be seen through a score like that.
-            self.sweep.sets = mcf_optimize::corpus::Set::short()
-                .iter()
-                .map(|set| set.number)
-                .collect();
+            self.sweep.sets = self.tests.sets();
             self.sweep.repeats = 1;
             return;
         }
@@ -992,6 +988,48 @@ impl Optimizing {
 
     pub fn take_each(&mut self, times: usize) {
         self.sweep.repeats = u8::try_from(times).unwrap_or(1).clamp(1, 3);
+    }
+
+    /// Choose what a marked sweep is run against, and lay the run out again for it.
+    pub fn pick_tests(&mut self, at: usize) {
+        if let Some(tests) = Tests::ALL.get(at) {
+            self.tests = *tests;
+            self.lay_out_the_run();
+        }
+    }
+}
+
+/// What a sweep that marks answers is run against.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Tests {
+    /// A thousand questions with one right answer apiece. A score off eight hard programs
+    /// moves in lumps, and a setting that makes answers a little worse cannot be seen
+    /// through a score like that.
+    #[default]
+    Short,
+    /// Eight long programs, each run against its check. For the settings that keep a model
+    /// from repeating itself, which a one-line answer never gives a chance to.
+    Long,
+}
+
+impl Tests {
+    pub const ALL: [Self; 2] = [Self::Short, Self::Long];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Short => "Short answers",
+            Self::Long => "Long scripts",
+        }
+    }
+
+    #[must_use]
+    pub fn sets(self) -> Vec<usize> {
+        let sets = match self {
+            Self::Short => mcf_optimize::corpus::Set::short(),
+            Self::Long => mcf_optimize::corpus::Set::long(),
+        };
+        sets.iter().map(|set| set.number).collect()
     }
 }
 
@@ -2435,6 +2473,8 @@ pub enum Act {
     /// Look back at one question of the set being asked, by where it stands in the set; or,
     /// pressed on the one already shown or the one being asked, follow the sweep again.
     LookAt(usize),
+    /// Choose what a marked sweep is run against: short answers or long scripts.
+    PickTests(usize),
     Sweep,
     /// Stop a sweep where it stands, or tell a stopped one to carry on. Not the same as
     /// stopping it: a paused sweep keeps its place, and the readings it has already taken
@@ -3089,6 +3129,7 @@ impl Desk {
             | Act::RerunPicked
             | Act::Takes(_)
             | Act::LookAt(_)
+            | Act::PickTests(_)
             | Act::Sweep
             | Act::PauseSweep
             | Act::Edit(..)
@@ -4816,6 +4857,16 @@ impl Desk {
                 Some("choose at least one test set before running".to_owned());
             return;
         }
+        let programs =
+            self.optimizing.measure.needs_the_answers_run() && self.optimizing.tests == Tests::Long;
+        if programs && mcf_optimize::marking::where_podman_is().is_none() {
+            self.optimizing.refused = Some(
+                "long scripts are marked by running them in a container, and podman is not \
+                 installed on this machine"
+                    .to_owned(),
+            );
+            return;
+        }
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             self.optimizing.refused = Some("choose a model on the left first".to_owned());
             return;
@@ -4985,6 +5036,7 @@ impl Desk {
             | Act::RerunPicked => self.choosing_values(act),
             Act::Takes(times) => self.optimizing.take_each(times),
             Act::LookAt(at) => self.optimizing.look_at(at),
+            Act::PickTests(at) => self.optimizing.pick_tests(at),
             Act::Sweep => self.start_or_stop_sweeping(),
             Act::PauseSweep => self.pause_or_carry_on_sweeping(),
             _ => return false,

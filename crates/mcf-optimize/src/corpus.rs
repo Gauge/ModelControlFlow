@@ -18,6 +18,11 @@ pub enum Kind {
     /// Say the answer. Marked by reading it, because there is exactly one right answer
     /// and it is short enough to write on one line.
     ShortAnswer,
+    /// Write one long program. Marked like a code task, by running it against the claims
+    /// its check makes, inside a container — but asked alone, because a program of several
+    /// hundred lines is the whole of an answer, and what a setting does to a model writing
+    /// at that length is what this kind is here to measure.
+    LongScript,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +38,15 @@ pub struct Set {
 /// written down in a reading a year ago still names the same set after either corpus has
 /// grown.
 pub const SHORT_FROM: usize = 101;
+
+/// Where the long-script sets start counting, apart from both of the others for the same
+/// reason they are apart from each other.
+pub const LONG_FROM: usize = 201;
+
+const LONG: [&str; 2] = [
+    include_str!("../tasks/long/set1.json"),
+    include_str!("../tasks/long/set2.json"),
+];
 
 const SHORT: [&str; 40] = [
     include_str!("../tasks/short/set1.json"),
@@ -112,6 +126,27 @@ impl Set {
             .collect()
     }
 
+    /// The long-script sets: eight programs of several hundred lines apiece, each asked on
+    /// its own and marked by running it against a check of twenty to forty claims.
+    ///
+    /// They are for the settings a short answer cannot show: the ones that keep a model
+    /// from repeating itself. A model answering a sum in one line never loops, so a
+    /// penalty against looping shows only what it costs there. Over a long program it
+    /// shows both what it costs and what it saves.
+    #[must_use]
+    pub fn long() -> Vec<Self> {
+        LONG.iter()
+            .enumerate()
+            .filter_map(|(at, text)| {
+                Some(Self {
+                    number: LONG_FROM.checked_add(at)?,
+                    kind: Kind::LongScript,
+                    tasks: tasks_in(text)?,
+                })
+            })
+            .collect()
+    }
+
     /// The code sets: sixty-four programs to write, marked by running them.
     ///
     /// Retired as the measure of correctness — the short questions are what a marked
@@ -135,6 +170,14 @@ impl Set {
 
     #[must_use]
     pub fn numbered(number: usize) -> Option<Self> {
+        if let Some(at) = number.checked_sub(LONG_FROM) {
+            let text = LONG.get(at)?;
+            return Some(Self {
+                number,
+                kind: Kind::LongScript,
+                tasks: tasks_in(text)?,
+            });
+        }
         if let Some(at) = number.checked_sub(SHORT_FROM) {
             let text = SHORT.get(at)?;
             return Some(Self {
@@ -173,6 +216,16 @@ impl Set {
     pub fn asked(&self) -> String {
         if self.kind == Kind::ShortAnswer {
             return self.asked_for_short_answers();
+        }
+        if let (Kind::LongScript, [task]) = (self.kind, self.tasks.as_slice()) {
+            return format!(
+                "Write one complete, self-contained Python 3 program for the task below.\n\n{}\n\n\
+                 ---\nOUTPUT FORMAT, follow exactly:\nOutput ONE fenced python code block holding \
+                 the whole program, and nothing after it. Define the functions and classes the \
+                 task names. The program is loaded and then its functions are called, so it must \
+                 not read input or run anything when it is loaded. Use only the standard library.",
+                task.asked
+            );
         }
         let mut said = format!(
             "You will solve ALL of the following {} Python problems, IN ORDER.\n\n",

@@ -811,19 +811,26 @@ fn spoken(value: &Value) -> Option<Piece> {
     (!held.is_empty()).then_some(held)
 }
 
+/// The fenced code blocks in an answer, in order.
+///
+/// A fence is a line, as it is in Markdown: a block opens on a line that starts with three
+/// backticks and closes on a line that is nothing but three. Three backticks inside a line
+/// are code. A program that renders Markdown has `'```'` in its own source, and reading that
+/// as the end of the block cut every correct answer to such a task in half.
 #[must_use]
 pub fn blocks(said: &str) -> Vec<String> {
     let mut held = Vec::new();
-    let mut rest = said;
-    while let Some(open) = rest.find("```") {
-        let after = rest.get(open.saturating_add(3)..).unwrap_or_default();
-        let body = after
-            .find('\n')
-            .and_then(|at| after.get(at.saturating_add(1)..))
-            .unwrap_or(after);
-        let Some(close) = body.find("```") else { break };
-        held.push(body.get(..close).unwrap_or_default().trim().to_owned());
-        rest = body.get(close.saturating_add(3)..).unwrap_or_default();
+    let mut open: Option<Vec<&str>> = None;
+    for line in said.lines() {
+        match open.as_mut() {
+            None if line.trim_start().starts_with("```") => open = Some(Vec::new()),
+            None => {}
+            Some(body) if line.trim() == "```" => {
+                held.push(body.join("\n").trim().to_owned());
+                open = None;
+            }
+            Some(body) => body.push(line),
+        }
     }
     held
 }
