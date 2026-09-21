@@ -1859,6 +1859,9 @@ fn ask_within(
 pub enum Picker {
     /// A word this model's template reads, where the template says which words it takes.
     TemplateWord(u8),
+    /// Which setting the sweep moves. A dozen dials named at once is the wall of chips
+    /// this page was redrawn to get rid of, so they are named one at a time.
+    Dial,
     Cache,
     Answers,
     Pooling,

@@ -2288,11 +2288,23 @@ fn optimize_tab(
         )
         .or(act);
     }
-    optimize_rail(paint, desk, mouse, rail).or(act)
+    let (pressed, menu) = optimize_rail(paint, desk, mouse, rail);
+    act = pressed.or(act);
+    // Drawn last and clipped to nothing, so a dozen dials can hang over the column rather
+    // than being cut off by the rail they were opened in.
+    if let Some(field) = menu {
+        let wide = field.w.max(200.0);
+        let at = Box::new((field.x + field.w - wide).max(0.0), field.y, wide, field.h);
+        if let Some(picked) = open_menu(paint, desk, mouse, Picker::Dial, at) {
+            act = Some(picked);
+        }
+    }
+    act
 }
 
 /// The same page with the rail's contents run in under the column instead of beside it.
 fn optimize_stacked(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let mut stacked_menu = None;
     let meter = if desk.optimizing.running { METER } else { 0.0 };
     let body = Box::new(area.x, area.y, area.w, (area.h - meter).max(120.0));
     let mut act = scrolled(
@@ -2310,8 +2322,10 @@ fn optimize_stacked(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
                 paint.ink.line,
                 255,
             );
-            let (below, picked) = the_sweep(paint, desk, mouse, Box::new(inner.x, y, inner.w, 0.0));
+            let (below, picked, opened) =
+                the_sweep(paint, desk, mouse, Box::new(inner.x, y, inner.w, 0.0));
             act = act.or(picked);
+            stacked_menu = opened;
             y = below;
             if !desk.optimizing.running {
                 let wide = inner.w.min(260.0);
@@ -2340,6 +2354,11 @@ fn optimize_stacked(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) 
             &state,
         )
         .or(act);
+    }
+    if let Some(field) = stacked_menu
+        && let Some(picked) = open_menu(paint, desk, mouse, Picker::Dial, field)
+    {
+        act = Some(picked);
     }
     act
 }
@@ -2378,7 +2397,12 @@ fn start_kind(desk: &Desk) -> Kind {
 
 /// The rail: what the sweep is, and the button that starts it, pinned at the foot exactly
 /// where the server page pins `Stop server`.
-fn optimize_rail(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Option<Act> {
+fn optimize_rail(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: Box,
+) -> (Option<Act>, Option<Box>) {
     let ink = paint.ink;
     paint.rect(at, ink.card);
     paint.rule((at.x, at.y), (at.x, at.bottom()), ink.line, 255);
@@ -2394,6 +2418,7 @@ fn optimize_rail(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Op
         inside.w,
         (at.bottom() - button - inside.y).max(80.0),
     );
+    let mut menu = None;
     let mut act = scrolled(
         paint,
         mouse,
@@ -2401,8 +2426,9 @@ fn optimize_rail(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Op
         Region::Sweep,
         room,
         |paint, mouse, inner| {
-            let (below, picked) = the_sweep(paint, desk, mouse, inner);
+            let (below, picked, opened) = the_sweep(paint, desk, mouse, inner);
             paint.reaches(below);
+            menu = opened;
             picked
         },
     );
@@ -2422,15 +2448,20 @@ fn optimize_rail(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> Op
     {
         act = Some(Act::Sweep);
     }
-    act
+    (act, menu)
 }
 
 /// Everything that decides what the sweep will do, in the order the decisions are made:
 /// which dial moves, how it is searched, what it is ranked by, what it is run against, and
 /// finally the settings every trial is held under.
-fn the_sweep(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32, Option<Act>) {
+fn the_sweep(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: Box,
+) -> (f32, Option<Act>, Option<Box>) {
     let mut act = None;
-    let (below, picked) = which_setting_moves(paint, desk, mouse, at);
+    let (below, picked, menu) = which_setting_moves(paint, desk, mouse, at);
     act = act.or(picked);
     let mut y = below;
     let dial = desk.optimizing.sweep.dial;
@@ -2447,7 +2478,8 @@ fn the_sweep(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32, 
         }
         y = below + 10.0;
     }
-    the_rest_of_the_sweep(paint, desk, mouse, Box::new(at.x, y, at.w, 0.0), act)
+    let (below, act) = the_rest_of_the_sweep(paint, desk, mouse, Box::new(at.x, y, at.w, 0.0), act);
+    (below, act, menu)
 }
 
 /// Which dial the sweep moves, and what moving it actually does.
@@ -2456,28 +2488,21 @@ fn which_setting_moves(
     desk: &Desk,
     mouse: &Mouse,
     at: Box,
-) -> (f32, Option<Act>) {
+) -> (f32, Option<Act>, Option<Box>) {
     let ink = paint.ink;
     let mut act = None;
+    let mut menu = None;
     let mut y = rail_section(paint, at, at.y, "setting");
-    let offered = desk.dials_offered();
     let dial = desk.optimizing.sweep.dial;
-    let dials: Vec<(String, bool)> = offered
-        .iter()
-        .map(|held| {
-            let label = if desk.why_the_dial_does_nothing(*held).is_some() {
-                format!("{} ·", held.label())
-            } else {
-                held.label().to_owned()
-            };
-            (label, *held == dial)
-        })
-        .collect();
-    let (below, picked) = option_chips(paint, mouse, Box::new(at.x, y, at.w, 0.0), &dials, false);
-    if let Some(chosen) = picked {
-        act = Some(Act::Dial(chosen));
+    let open = desk.open == Some(Picker::Dial);
+    let field = Box::new(at.x, y, at.w, 30.0);
+    if ui::picker(paint, mouse, field, dial.label(), open) {
+        act = Some(Act::Open(Picker::Dial));
     }
-    y = below;
+    if open {
+        menu = Some(field);
+    }
+    y = field.bottom() + 10.0;
     let why = if let Some(why) = desk.why_the_dial_does_nothing(dial) {
         why
     } else if !desk.optimizing.measure.needs_the_answers_run() {
@@ -2518,13 +2543,7 @@ fn which_setting_moves(
         );
         y += gap::LINE;
     }
-    if offered.len() > 1 {
-        y += 4.0;
-        let said = format!("{} settings can be swept on this model", offered.len());
-        paint.say_at(at.x, y, &said, Weight::Regular, size::SMALL, ink.faint);
-        y += gap::LINE;
-    }
-    (y + 10.0, act)
+    (y + 10.0, act, menu)
 }
 
 /// What the sweep is ranked by, the values it runs, and what it runs against.
@@ -2669,7 +2688,7 @@ fn the_test_set(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f3
 /// The settings every trial is held under, and anything the sweep refused.
 fn what_it_runs_under(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let ink = paint.ink;
-    let mut y = rail_section(paint, at, at.y, "every trial runs under");
+    let mut y = rail_section(paint, at, at.y, "base");
     if let Some(settings) = &desk.settings {
         let dialled = desk.optimizing.sweep.dial;
         let rows: [(&str, String, bool); 6] = [
@@ -4592,7 +4611,10 @@ fn configure_menu(
             }
             ui::options(paint, mouse, at, &labels, desk.quantization_at()).map(Act::Quantization)
         }
-        Picker::Model
+        // The dial belongs to Optimize, which draws its own menu over the whole page
+        // rather than inside the tab that opened it.
+        Picker::Dial
+        | Picker::Model
         | Picker::Window
         | Picker::On
         | Picker::Architecture
@@ -5424,6 +5446,28 @@ fn open_menu(
             ui::options(paint, mouse, at, &labels, chosen)
                 .and_then(|index| ON_CHOICES.get(index).copied())
                 .map(Act::SetOn)
+        }
+        Picker::Dial => {
+            let offered = desk.dials_offered();
+            let labels: Vec<String> = offered
+                .iter()
+                .map(|held| {
+                    // The dials that would do nothing on this model are still offered —
+                    // saying why is more use than hiding them — but they say so.
+                    if desk.why_the_dial_does_nothing(*held).is_some() {
+                        format!("{} ·", held.label())
+                    } else {
+                        held.label().to_owned()
+                    }
+                })
+                .collect();
+            if labels.is_empty() {
+                return None;
+            }
+            let chosen = offered
+                .iter()
+                .position(|held| *held == desk.optimizing.sweep.dial);
+            ui::options(paint, mouse, at, &labels, chosen).map(Act::Dial)
         }
         Picker::TemplateWord(_)
         | Picker::Placement
