@@ -1057,6 +1057,34 @@ fn put_the_dial(
             settings.started.top_p = step.thousandths();
         }
         Dial::TopK => settings.started.top_k = step.whole(),
+        Dial::MinP
+        | Dial::PresencePenalty
+        | Dial::FrequencyPenalty
+        | Dial::RepeatPenalty
+        | Dial::DryStrength => {
+            if let Some(knob) = knob_of(dial) {
+                settings
+                    .started
+                    .sampling
+                    .set(knob, step.thousandths().map(|held| held.0));
+            }
+        }
+    }
+}
+
+/// The saved setting a sampling dial moves. One name each side, so what a sweep lands on is
+/// what Configure shows and what the hold is started with.
+#[must_use]
+pub const fn knob_of(dial: mcf_optimize::dial::Dial) -> Option<mcf_serve::sampling::Knob> {
+    use mcf_optimize::dial::Dial;
+    use mcf_serve::sampling::Knob;
+    match dial {
+        Dial::MinP => Some(Knob::MinP),
+        Dial::PresencePenalty => Some(Knob::PresencePenalty),
+        Dial::FrequencyPenalty => Some(Knob::FrequencyPenalty),
+        Dial::RepeatPenalty => Some(Knob::RepeatPenalty),
+        Dial::DryStrength => Some(Knob::DryStrength),
+        _ => None,
     }
 }
 
@@ -1113,7 +1141,12 @@ fn hold_it_at(
         mcf_optimize::dial::Dial::ThinkingLevel
         | mcf_optimize::dial::Dial::Temperature
         | mcf_optimize::dial::Dial::TopP
-        | mcf_optimize::dial::Dial::TopK => {}
+        | mcf_optimize::dial::Dial::TopK
+        | mcf_optimize::dial::Dial::MinP
+        | mcf_optimize::dial::Dial::PresencePenalty
+        | mcf_optimize::dial::Dial::FrequencyPenalty
+        | mcf_optimize::dial::Dial::RepeatPenalty
+        | mcf_optimize::dial::Dial::DryStrength => {}
     }
     let answer = asked_until_done(
         socket,
@@ -2261,6 +2294,8 @@ pub enum Field {
     Temperature,
     TopP,
     TopK,
+    /// Min-p, or one of the settings that keep a model from repeating itself.
+    Sampling(mcf_serve::sampling::Knob),
     ChatTemplate,
 }
 
@@ -5147,6 +5182,11 @@ impl Desk {
                 .started
                 .top_k
                 .map_or_else(String::new, |held| held.to_string()),
+            Field::Sampling(knob) => settings
+                .started
+                .sampling
+                .get(knob)
+                .map_or_else(String::new, |held| knob.said(held)),
             Field::ChatTemplate => self.template_now(),
         };
         self.editing = Some((field, crate::typing::Typing::of(now)));
@@ -5459,6 +5499,20 @@ impl Desk {
                 }
             }
             Field::Temperature | Field::TopP | Field::TopK => Self::sampled(settings, field, typed),
+            Field::Sampling(knob) => {
+                // Emptied is the engine's own again, which is a thing to be able to go back to.
+                if typed.is_empty() {
+                    settings.started.sampling.set(knob, None);
+                    return None;
+                }
+                match knob.read(typed) {
+                    Ok(held) => {
+                        settings.started.sampling.set(knob, Some(held));
+                        None
+                    }
+                    Err(why) => Some(why),
+                }
+            }
             Field::ChatTemplate => None,
             Field::DraftDepth => {
                 if typed.is_empty() {

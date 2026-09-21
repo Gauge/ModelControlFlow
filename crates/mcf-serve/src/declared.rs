@@ -196,6 +196,8 @@ pub struct Started {
     pub temperature: Option<mcf_core::configuration::Thousandths>,
     pub top_p: Option<mcf_core::configuration::Thousandths>,
     pub top_k: Option<u32>,
+    /// Min-p, and the settings that keep a model from repeating itself.
+    pub sampling: crate::sampling::Sampling,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,6 +243,7 @@ impl Started {
             || self.temperature.is_some()
             || self.top_p.is_some()
             || self.top_k.is_some()
+            || !self.sampling.is_empty()
     }
 
     #[must_use]
@@ -256,6 +259,7 @@ impl Started {
             && self.temperature == other.temperature
             && self.top_p == other.top_p
             && self.top_k == other.top_k
+            && self.sampling == other.sampling
     }
 
     #[must_use]
@@ -351,6 +355,7 @@ impl Started {
             out.push("--top-k".to_owned());
             out.push(top_k.to_string());
         }
+        out.extend(self.sampling.arguments());
         out
     }
 
@@ -394,7 +399,7 @@ impl Started {
 
     #[must_use]
     pub fn to_value(&self) -> Value {
-        Value::map([
+        let mut held = Value::map([
             ("draft_head", Value::Bool(self.draft_head)),
             (
                 "rope_scaling",
@@ -468,7 +473,13 @@ impl Started {
                     Value::Integer(i64::try_from(window).unwrap_or(i64::MAX))
                 }),
             ),
-        ])
+        ]);
+        if let Value::Map(fields) = &mut held {
+            for (key, value) in self.sampling.pairs() {
+                let _set = fields.insert(key.to_owned(), value);
+            }
+        }
+        held
     }
 
     #[must_use]
@@ -518,6 +529,7 @@ impl Started {
                 .get("thinking")
                 .and_then(Value::as_integer)
                 .and_then(|held| u32::try_from(held).ok()),
+            sampling: crate::sampling::Sampling::from_value(value),
         }
     }
 

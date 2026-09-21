@@ -79,7 +79,7 @@ fn each_dial_suggests_values_of_its_own_kind() {
     for dial in Dial::ALL {
         let steps = dial.suggested();
         assert!(!steps.is_empty(), "{} suggests something", dial.label());
-        let decimal = matches!(dial, Dial::Temperature | Dial::TopP);
+        let decimal = dial.scale() == crate::dial::Scale::Thousandths;
         for step in steps {
             assert_eq!(
                 matches!(step, Step::Thousandths(_)),

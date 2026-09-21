@@ -78,6 +78,13 @@ impl Under {
             Dial::FlashAttention => held.flash_attention = false,
             Dial::ThreadsForAPrompt => held.threads_for_a_prompt = 0,
             Dial::DraftDepth => held.draft_depth = None,
+            // Not written into what a reading was taken under, so there is nothing of them
+            // to take out: two readings of these are told apart by their own value.
+            Dial::MinP
+            | Dial::PresencePenalty
+            | Dial::FrequencyPenalty
+            | Dial::RepeatPenalty
+            | Dial::DryStrength => {}
         }
         held
     }

@@ -465,3 +465,36 @@ fn asking_for_no_thinking_is_not_asking_for_no_budget() {
          default anyway: {said:?}"
     );
 }
+
+#[test]
+fn a_repetition_setting_is_saved_held_with_and_listed() {
+    use crate::sampling::Knob;
+    let recommended =
+        super::Hosting::recommended("llama.cpp", "a card", true, 4096, Some(8), true, None);
+    let mut held = recommended.clone();
+    held.started.sampling.set(Knob::DryStrength, Some(800));
+    held.started.sampling.set(Knob::MinP, Some(0));
+    let back = super::Hosting::from_value(&held.to_request(), &recommended);
+    assert_eq!(
+        back.started.sampling, held.started.sampling,
+        "saved and read back"
+    );
+    let started = back.started.arguments();
+    assert!(
+        started
+            .windows(2)
+            .any(|two| two == ["--dry-multiplier", "0.800"]),
+        "and the engine is started with it: {started:?}"
+    );
+    let changed = back.differs_from(&recommended);
+    assert!(
+        changed
+            .iter()
+            .any(|line| line.starts_with("DRY strength: 0.800")),
+        "and the record says what changed: {changed:?}"
+    );
+    assert!(
+        recommended.to_value().get("dry_multiplier").is_none(),
+        "settings that set none of these are written as they always were"
+    );
+}

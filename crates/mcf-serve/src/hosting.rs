@@ -1223,6 +1223,14 @@ impl Hosting {
                           weights; without it the model takes text only",
             },
         ]
+        .into_iter()
+        .chain(crate::sampling::Knob::ALL.into_iter().map(|knob| Setting {
+            name: knob.name(),
+            value: self.started.sampling.shown(knob),
+            recommended: against.started.sampling.shown(knob),
+            because: knob.because(),
+        }))
+        .collect()
     }
 
     #[must_use]
@@ -1313,7 +1321,13 @@ impl Hosting {
             hold,
             merged(
                 grouped,
-                merged(self.tail_of_to_value(), self.template_taken()),
+                merged(
+                    self.tail_of_to_value(),
+                    merged(
+                        self.template_taken(),
+                        Value::map(self.started.sampling.pairs()),
+                    ),
+                ),
             ),
         )
     }

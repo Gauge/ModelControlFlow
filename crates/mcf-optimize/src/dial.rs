@@ -16,10 +16,15 @@ pub enum Dial {
     TopP,
     TopK,
     DraftDepth,
+    MinP,
+    PresencePenalty,
+    FrequencyPenalty,
+    RepeatPenalty,
+    DryStrength,
 }
 
 impl Dial {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 17] = [
         Self::MicroBatch,
         Self::Batch,
         Self::CacheWidth,
@@ -31,6 +36,11 @@ impl Dial {
         Self::Temperature,
         Self::TopP,
         Self::TopK,
+        Self::MinP,
+        Self::PresencePenalty,
+        Self::FrequencyPenalty,
+        Self::RepeatPenalty,
+        Self::DryStrength,
         Self::DraftDepth,
     ];
 
@@ -55,6 +65,11 @@ impl Dial {
             Self::FlashAttention => "Flash attention",
             Self::ThreadsForAPrompt => "Threads for reading a prompt",
             Self::DraftDepth => "Draft depth",
+            Self::MinP => "Min-p",
+            Self::PresencePenalty => "Presence penalty",
+            Self::FrequencyPenalty => "Frequency penalty",
+            Self::RepeatPenalty => "Repeat penalty",
+            Self::DryStrength => "DRY strength",
         }
     }
 
@@ -87,7 +102,12 @@ impl Dial {
             | Self::ThinkingLevel
             | Self::Temperature
             | Self::TopP
-            | Self::TopK => "",
+            | Self::TopK
+            | Self::MinP
+            | Self::PresencePenalty
+            | Self::FrequencyPenalty
+            | Self::RepeatPenalty
+            | Self::DryStrength => "",
         }
     }
 
@@ -104,7 +124,13 @@ impl Dial {
             | Self::FlashAttention
             | Self::ThreadsForAPrompt
             | Self::TopK => Scale::Whole,
-            Self::Temperature | Self::TopP => Scale::Thousandths,
+            Self::Temperature
+            | Self::TopP
+            | Self::MinP
+            | Self::PresencePenalty
+            | Self::FrequencyPenalty
+            | Self::RepeatPenalty
+            | Self::DryStrength => Scale::Thousandths,
         }
     }
 
@@ -120,6 +146,10 @@ impl Dial {
             Self::Experts | Self::FlashAttention => Span::new(0, 1, 1),
             Self::ThreadsForAPrompt => Span::new(1, 256, 1),
             Self::DraftDepth | Self::CacheWidth => Span::new(0, 8, 1),
+            Self::MinP => Span::new(0, 300, 10),
+            Self::PresencePenalty | Self::FrequencyPenalty => Span::new(0, 2000, 50),
+            Self::RepeatPenalty => Span::new(1000, 1500, 10),
+            Self::DryStrength => Span::new(0, 3000, 50),
         }
     }
 
@@ -140,7 +170,12 @@ impl Dial {
             | Self::DraftDepth
             | Self::CacheWidth
             | Self::Experts
-            | Self::FlashAttention => self.span().floor,
+            | Self::FlashAttention
+            | Self::MinP
+            | Self::PresencePenalty
+            | Self::FrequencyPenalty
+            | Self::RepeatPenalty
+            | Self::DryStrength => self.span().floor,
         }
     }
 
@@ -162,12 +197,15 @@ impl Dial {
                 Climb::Doubling
             }
             Self::Temperature => Climb::Evenly(200),
-            Self::TopP => Climb::Evenly(100),
+            Self::TopP | Self::RepeatPenalty => Climb::Evenly(100),
             Self::TopK => Climb::Evenly(40),
             Self::ThinkingLevel | Self::CacheWidth | Self::Experts | Self::FlashAttention => {
                 Climb::Evenly(1)
             }
             Self::ThreadsForAPrompt => Climb::Doubling,
+            Self::MinP => Climb::Evenly(50),
+            Self::PresencePenalty | Self::FrequencyPenalty => Climb::Evenly(400),
+            Self::DryStrength => Climb::Evenly(500),
         }
     }
 
@@ -223,6 +261,11 @@ impl Dial {
             Self::CacheWidth => (0..9).map(Step::Whole).collect(),
             Self::Experts | Self::FlashAttention => (0..2).map(Step::Whole).collect(),
             Self::ThreadsForAPrompt => [2, 4, 8, 16, 32].into_iter().map(Step::Whole).collect(),
+            Self::MinP => thousandths(&[0, 20, 50, 100, 200]),
+            Self::PresencePenalty => thousandths(&[0, 250, 500, 1000, 1500]),
+            Self::FrequencyPenalty => thousandths(&[0, 100, 250, 500, 1000]),
+            Self::RepeatPenalty => thousandths(&[1000, 1030, 1050, 1100, 1200]),
+            Self::DryStrength => thousandths(&[0, 400, 800, 1200, 2000]),
         }
     }
 
@@ -237,7 +280,15 @@ impl Dial {
             Self::FlashAttention => Some("--flash-attn"),
             Self::ThreadsForAPrompt => Some("--threads-batch"),
             Self::DraftDepth => Some("--spec-draft-n-max"),
-            Self::ThinkingLevel | Self::Temperature | Self::TopP | Self::TopK => None,
+            Self::ThinkingLevel
+            | Self::Temperature
+            | Self::TopP
+            | Self::TopK
+            | Self::MinP
+            | Self::PresencePenalty
+            | Self::FrequencyPenalty
+            | Self::RepeatPenalty
+            | Self::DryStrength => None,
         }
     }
 
@@ -248,6 +299,13 @@ impl Dial {
             Self::TopP => Some("top_p"),
             Self::TopK => Some("top_k"),
             Self::ThinkingLevel => Some("reasoning_effort"),
+            // The names the engine reads in a request, which are the names MCF saves them
+            // under on the hold as well.
+            Self::MinP => Some("min_p"),
+            Self::PresencePenalty => Some("presence_penalty"),
+            Self::FrequencyPenalty => Some("frequency_penalty"),
+            Self::RepeatPenalty => Some("repeat_penalty"),
+            Self::DryStrength => Some("dry_multiplier"),
             Self::ThinkingBudget
             | Self::MicroBatch
             | Self::Batch
@@ -555,6 +613,10 @@ impl Sweep {
             self.tasks()
         )
     }
+}
+
+fn thousandths(values: &[u32]) -> Vec<Step> {
+    values.iter().copied().map(Step::Thousandths).collect()
 }
 
 #[cfg(test)]

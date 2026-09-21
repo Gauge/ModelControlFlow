@@ -207,6 +207,7 @@ fn only_the_engines_own_words_are_scalings() {
 #[test]
 fn the_tuning_switches_reach_the_engine_in_the_order_it_reads_them() {
     let asked = Started {
+        sampling: crate::sampling::Sampling::default(),
         template_taken: Vec::new(),
         effort: None,
         temperature: None,
@@ -390,6 +391,7 @@ fn a_level_is_handed_over_as_a_level() {
 #[test]
 fn every_new_switch_survives_the_wire() {
     let asked = Started {
+        sampling: crate::sampling::Sampling::default(),
         template_taken: vec![
             ("low_effort".to_owned(), mcf_record::json::Value::Bool(true)),
             (

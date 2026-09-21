@@ -4156,6 +4156,26 @@ fn configure_tab(
             ],
         ),
         (
+            "Repetition",
+            mcf_serve::sampling::Knob::ALL
+                .into_iter()
+                .map(|knob| {
+                    (
+                        knob.label().to_owned(),
+                        sampled(
+                            crate::Field::Sampling(knob),
+                            settings
+                                .started
+                                .sampling
+                                .get(knob)
+                                .map_or_else(String::new, |held| knob.said(held)),
+                            &move |held| held.started.sampling.get(knob).map(|it| knob.said(it)),
+                        ),
+                    )
+                })
+                .collect(),
+        ),
+        (
             "Reuse between messages",
             vec![
                 (

@@ -14,6 +14,7 @@ pub mod parameters;
 pub mod power;
 pub mod projector;
 pub mod provisioning;
+pub mod sampling;
 pub mod served;
 pub mod signals;
 pub mod takes;
