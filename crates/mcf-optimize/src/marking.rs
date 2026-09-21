@@ -93,6 +93,17 @@ pub fn marked_by_reading(tasks: &[Task], answer: &str) -> Vec<Checked> {
         .collect()
 }
 
+/// What a model gave as the answer to one numbered question, as it wrote it, so a verdict
+/// can show the line that was marked beside the answer that was wanted.
+#[must_use]
+pub fn given(answer: &str, number: usize) -> Option<String> {
+    // The first, because that is the one the marker reads.
+    answers_in(answer)
+        .into_iter()
+        .find(|(held, _)| *held == number)
+        .map(|(_, given)| given)
+}
+
 /// The answer lines a model wrote, by the number each one answers.
 fn answers_in(said: &str) -> Vec<(usize, String)> {
     let mut held = Vec::new();

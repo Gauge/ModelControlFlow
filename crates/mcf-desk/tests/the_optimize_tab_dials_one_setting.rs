@@ -1240,3 +1240,71 @@ mod settings_that_can_now_be_measured {
         }
     }
 }
+
+#[test]
+fn a_question_looked_back_at_is_shown_until_it_is_pressed_again() {
+    use mcf_optimize::running::{Seen, Verdict};
+    let mut desk = desk();
+    let course = mcf_optimize::course::Course::laid_out(
+        mcf_optimize::ledger::Under::default(),
+        mcf_optimize::hunt::Way::ByHand,
+        Dial::Temperature,
+        &[],
+        &[],
+        1,
+        mcf_optimize::reading::Measure::Correctness,
+    );
+    let scratch = std::env::temp_dir().join(format!("mcf-look-back-{}.jsonl", std::process::id()));
+    let mut run = mcf_optimize::running::Running::begun(
+        mcf_optimize::running::Orders {
+            endpoint: mcf_optimize::trial::Endpoint::default(),
+            under: mcf_optimize::ledger::Under::default(),
+            dial: Dial::Temperature,
+            ceiling: None,
+            named: Vec::new(),
+            switch: false,
+            mark: true,
+            at_once: 4,
+            room: std::env::temp_dir(),
+            ready_within: std::time::Duration::from_secs(1),
+        },
+        course,
+        mcf_optimize::ledger::Ledger::open(&scratch).expect("ledger"),
+        Box::new(|_, _| Err("no".to_owned())),
+        || "now".to_owned(),
+    );
+    run.doing = Some(mcf_optimize::ledger::At {
+        dial: Dial::Temperature,
+        step: Step::Thousandths(0),
+        set: 101,
+        repeat: 1,
+    });
+    run.questions = (0..5)
+        .map(|at| Seen {
+            sent: at < 4,
+            verdict: (at < 3).then_some(Verdict::Right),
+            ..Seen::default()
+        })
+        .collect();
+    desk.optimizing.run = Some(run);
+    assert_eq!(
+        desk.optimizing.shown_question(),
+        Some(3),
+        "the panel follows the oldest question still being answered"
+    );
+    desk.act(Act::LookAt(1));
+    assert_eq!(desk.optimizing.shown_question(), Some(1));
+    desk.act(Act::LookAt(1));
+    assert_eq!(
+        desk.optimizing.shown_question(),
+        Some(3),
+        "pressed again, it goes back to following the sweep"
+    );
+    desk.act(Act::LookAt(4));
+    assert_eq!(
+        desk.optimizing.shown_question(),
+        Some(3),
+        "a question not asked yet has nothing to look back at"
+    );
+    let _removed = std::fs::remove_file(&scratch);
+}

@@ -749,6 +749,9 @@ pub struct Optimizing {
     /// What was said about the last value taken up, so the answer to a decision does not
     /// vanish the moment it is made.
     pub adopted: Option<String>,
+    /// The question of a set being looked back at — by the set it is in and where it stands
+    /// in it — rather than the one the sweep is on.
+    pub looking_at: Option<(usize, usize)>,
 }
 
 impl Optimizing {
@@ -789,6 +792,36 @@ impl Optimizing {
             self.report = mcf_optimize::reading::Report::default();
             self.done = 0;
         }
+    }
+
+    /// Look back at one question of the set being asked, or go back to following the sweep.
+    pub fn look_at(&mut self, at: usize) {
+        let Some(run) = self.run.as_ref() else {
+            return;
+        };
+        let set = run.doing.map_or(0, |doing| doing.set);
+        let already = self.looking_at == Some((set, at));
+        let asked = run.questions.get(at).is_some_and(|seen| seen.sent);
+        self.looking_at = (!already && asked && run.following() != Some(at)).then_some((set, at));
+    }
+
+    /// The question the panel shows: one looked back at, while it is still in the set on
+    /// screen, and otherwise the one the sweep is on.
+    #[must_use]
+    pub fn shown_question(&self) -> Option<usize> {
+        let run = self.run.as_ref()?;
+        let set = run.doing.map_or(0, |doing| doing.set);
+        if let Some((held, at)) = self.looking_at
+            && held == set
+            && run.questions.get(at).is_some()
+        {
+            return Some(at);
+        }
+        run.following().or_else(|| {
+            run.questions
+                .iter()
+                .rposition(|seen| seen.verdict.is_some())
+        })
     }
 
     pub fn toggle_value(&mut self, at: usize) {
@@ -2399,6 +2432,9 @@ pub enum Act {
     /// Leave the settings where they are, and stop asking.
     KeepAsIs,
     Takes(usize),
+    /// Look back at one question of the set being asked, by where it stands in the set; or,
+    /// pressed on the one already shown or the one being asked, follow the sweep again.
+    LookAt(usize),
     Sweep,
     /// Stop a sweep where it stands, or tell a stopped one to carry on. Not the same as
     /// stopping it: a paused sweep keeps its place, and the readings it has already taken
@@ -3052,6 +3088,7 @@ impl Desk {
             | Act::PickNone
             | Act::RerunPicked
             | Act::Takes(_)
+            | Act::LookAt(_)
             | Act::Sweep
             | Act::PauseSweep
             | Act::Edit(..)
@@ -4836,9 +4873,19 @@ impl Desk {
         course: mcf_optimize::course::Course,
         ledger: mcf_optimize::ledger::Ledger,
         model: String,
-        settings: mcf_serve::hosting::Hosting,
+        mut settings: mcf_serve::hosting::Hosting,
         path: &std::path::Path,
     ) {
+        // A marked sweep asks several questions at once, so the model it holds answers that
+        // many together rather than queueing them. A timed one is left as it is: the slots a
+        // model is held with change what one request is timed at.
+        let at_once = if self.optimizing.measure.needs_the_answers_run() {
+            mcf_optimize::running::AT_ONCE
+        } else {
+            1
+        };
+        let slots = u32::try_from(at_once).unwrap_or(1);
+        settings.slots = settings.slots.max(slots);
         let orders = mcf_optimize::running::Orders {
             endpoint: mcf_optimize::trial::Endpoint {
                 port: 0,
@@ -4854,6 +4901,7 @@ impl Desk {
                 .as_ref()
                 .is_some_and(|held| held.thinking.switch),
             mark: self.optimizing.measure.needs_the_answers_run(),
+            at_once,
             ready_within: HOLDING_PATIENCE,
             room: path
                 .parent()
@@ -4936,6 +4984,7 @@ impl Desk {
             | Act::PickNone
             | Act::RerunPicked => self.choosing_values(act),
             Act::Takes(times) => self.optimizing.take_each(times),
+            Act::LookAt(at) => self.optimizing.look_at(at),
             Act::Sweep => self.start_or_stop_sweeping(),
             Act::PauseSweep => self.pause_or_carry_on_sweeping(),
             _ => return false,

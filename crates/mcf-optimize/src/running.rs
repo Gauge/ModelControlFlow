@@ -12,6 +12,9 @@ use crate::trial::{Asked, Endpoint, ask, reading_of};
 
 const MARKING_PATIENCE: Duration = Duration::from_secs(600);
 
+mod together;
+pub use together::{AT_ONCE, Question};
+
 #[must_use]
 pub fn as_a_clock(held: Duration) -> String {
     let all = held.as_secs();
@@ -97,12 +100,25 @@ pub enum Heard {
     Holding(String),
     /// The model is loaded and answering. Whatever was said about loading it is over.
     Held,
-    /// Which question of a short-answer set is being asked, counting from one. Those are
-    /// asked one to a request, so what the trial has written so far is what this question
-    /// has written.
-    Asking {
+    /// The questions of the set about to be asked, in order: what each asks, and the answer
+    /// it wants.
+    Questions(Vec<Question>),
+    /// A question, by where it stands in its set counting from nought, has been sent.
+    Sent {
         at: usize,
-        of: usize,
+    },
+    /// The latest of a question's reply, as it arrives: the end of what the model has
+    /// thought, the end of what it has answered, and how much it has written.
+    Reply {
+        at: usize,
+        thought: String,
+        answer: String,
+        produced: u64,
+    },
+    /// A question's reply has come back, after this long.
+    Answered {
+        at: usize,
+        milliseconds: u64,
     },
     /// Where this trial falls among the trials of its value, counting from one, and how
     /// many that value has.
@@ -113,9 +129,13 @@ pub enum Heard {
     /// One question marked, as soon as it is. A set of them is minutes of work, and a
     /// window that only hears about the set sits still for all of it.
     Marked {
+        at: usize,
         right: bool,
         produced: u64,
-        milliseconds: u64,
+        /// The answer line the marker read, as the model wrote it.
+        given: Option<String>,
+        ending: crate::reading::Ending,
+        why: Option<String>,
     },
     Producing(u64),
     Took(Box<Reading>),
@@ -137,6 +157,7 @@ struct Doing {
     named: Vec<String>,
     switch: bool,
     mark: bool,
+    at_once: usize,
     room: std::path::PathBuf,
     ready_within: Duration,
     host: Hosting,
@@ -212,8 +233,10 @@ fn answered(
     let flag = Arc::clone(&doing.asked_to_stop);
     let give_up = move || flag.load(Ordering::Relaxed);
     let telling = doing.send.clone();
-    let mut along = move |held: u64| {
-        let _sent = telling.send(Heard::Producing(held));
+    let mut along = move |held: crate::trial::Along<'_>| {
+        if let crate::trial::Along::Counted(held) = held {
+            let _sent = telling.send(Heard::Producing(held));
+        }
     };
     let first = match ask(&doing.endpoint, asked, &mut along, &give_up) {
         Ok(outcome) => return Ok(outcome),
@@ -248,8 +271,10 @@ fn answered(
         }
     }
     let telling = doing.send.clone();
-    let mut along = move |held: u64| {
-        let _sent = telling.send(Heard::Producing(held));
+    let mut along = move |held: crate::trial::Along<'_>| {
+        if let crate::trial::Along::Counted(held) = held {
+            let _sent = telling.send(Heard::Producing(held));
+        }
     };
     ask(&doing.endpoint, asked, &mut along, &give_up).map_err(|again| {
         if give_up() {
@@ -259,110 +284,18 @@ fn answered(
     })
 }
 
-/// Ask a short-answer set one question to a request, and mark each answer as it comes back.
+/// Ask a short-answer set one question to a request, several requests at once, and mark
+/// each answer as it comes back.
 ///
 /// The set is still the unit written down — one reading, the sum of its questions — so a
 /// ledger read a year from now still has one row per set. What changes is that a model
 /// asked one sum no longer reasons about twenty-four others before it answers it.
-///
-/// A question that ran out of room or looped is a question answered wrongly, not a set
-/// that never ran: the reading is a runaway only if every question in it was.
 fn answered_one_at_a_time(
     doing: &mut Doing,
     asked: &Asked,
     step: Step,
 ) -> Result<Option<(crate::trial::Said, Vec<crate::marking::Checked>)>, Stopped> {
-    let questions = asked.set.one_at_a_time();
-    let of = questions.len();
-    let mut judged = Vec::with_capacity(of);
-    let mut answers = Vec::with_capacity(of);
-    let mut produced: u64 = 0;
-    let mut counted: u64 = 0;
-    let mut failed: Option<String> = None;
-    let mut looped: Option<String> = None;
-    let mut filled: Option<String> = None;
-    let mut runaways: usize = 0;
-    for (at, question) in questions.into_iter().enumerate() {
-        if doing.asked_to_stop.load(Ordering::Relaxed) {
-            return Ok(None);
-        }
-        let number = at.saturating_add(1);
-        doing
-            .send
-            .send(Heard::Asking { at: number, of })
-            .map_err(|_gone| Stopped::Gone)?;
-        let one = Asked {
-            set: question,
-            ..asked.clone()
-        };
-        let began = Instant::now();
-        let said = match answered(doing, &one, step)? {
-            crate::trial::Outcome::Said(said) => said,
-            crate::trial::Outcome::Cut => return Ok(None),
-        };
-        let marked = crate::marking::marked_by_reading(&one.set.tasks, &said.answer);
-        doing
-            .send
-            .send(Heard::Marked {
-                right: marked.iter().all(crate::marking::Checked::whole),
-                produced: said.counted.unwrap_or(said.produced),
-                milliseconds: u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
-            })
-            .map_err(|_gone| Stopped::Gone)?;
-        judged.extend(marked);
-        produced = produced.saturating_add(said.produced);
-        counted = counted.saturating_add(said.counted.unwrap_or(said.produced));
-        let why = || {
-            format!(
-                "question {number}: {}",
-                said.why.as_deref().unwrap_or(said.ending.label())
-            )
-        };
-        match said.ending {
-            crate::reading::Ending::Answered => {}
-            crate::reading::Ending::Failed => {
-                failed = failed.or_else(|| Some(why()));
-            }
-            crate::reading::Ending::Looped => {
-                runaways = runaways.saturating_add(1);
-                looped = looped.or_else(|| Some(why()));
-            }
-            crate::reading::Ending::Filled => {
-                runaways = runaways.saturating_add(1);
-                filled = filled.or_else(|| Some(why()));
-            }
-        }
-        answers.push(said.answer);
-    }
-    let (ending, why) = if let Some(why) = failed {
-        (crate::reading::Ending::Failed, Some(why))
-    } else if runaways == of && of > 0 {
-        match looped {
-            Some(why) => (crate::reading::Ending::Looped, Some(why)),
-            None => (crate::reading::Ending::Filled, filled),
-        }
-    } else if runaways > 0 {
-        (
-            crate::reading::Ending::Answered,
-            Some(format!(
-                "{runaways} of {of} questions ran away and were marked wrong — {}",
-                looped.or(filled).unwrap_or_default()
-            )),
-        )
-    } else {
-        (crate::reading::Ending::Answered, None)
-    };
-    Ok(Some((
-        crate::trial::Said {
-            answer: answers.join("\n"),
-            produced,
-            ending,
-            why,
-            counted: Some(counted),
-            read_in: None,
-        },
-        judged,
-    )))
+    Ok(together::asked_together(doing, asked, step)?.map(together::summed))
 }
 
 /// Take one trial: a short-answer set a question at a time, marked as it goes, and anything
@@ -587,12 +520,48 @@ pub struct Orders {
     /// asks for no thinking at all.
     pub switch: bool,
     pub mark: bool,
+    /// How many of a set's questions are asked at once. The engine the sweep holds is held
+    /// with at least this many slots, so they are answered together rather than queued.
+    pub at_once: usize,
     pub room: std::path::PathBuf,
     pub ready_within: Duration,
 }
 
 pub type Hosting =
     std::boxed::Box<dyn Fn(Step, &mut dyn FnMut(String)) -> Result<u16, String> + Send>;
+
+/// What came of one question.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    Right,
+    /// Answered wrongly, with the answer the marker read, if it found one at all.
+    Wrong(Option<String>),
+    /// Looped, or filled the window it is held at, and so marked wrong — said apart from a
+    /// wrong answer so that a runaway is never mistaken for one.
+    RanAway(String),
+}
+
+/// One question of the set being asked, as far as it has got.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Seen {
+    pub asked: String,
+    pub wanted: String,
+    pub sent: bool,
+    /// The end of what the model has thought, and of what it has answered, so far.
+    pub thought: String,
+    pub answer: String,
+    pub produced: u64,
+    pub milliseconds: Option<u64>,
+    pub verdict: Option<Verdict>,
+}
+
+impl Seen {
+    /// Sent, and not come back marked.
+    #[must_use]
+    pub const fn open(&self) -> bool {
+        self.sent && self.verdict.is_none()
+    }
+}
 
 /// What one value has come to so far, counted a question at a time. Started again when
 /// the sweep moves to another value, because a score is only worth watching against the
@@ -603,7 +572,13 @@ pub struct Tally {
     pub asked: u64,
     pub right: u64,
     pub produced: u64,
+    /// How long the sweep has spent on this value, by the clock, since its first question
+    /// was sent. The clock rather than the questions' own times added up: four questions
+    /// in flight at once each take longer than one would, and adding them up would count
+    /// the same minute four times over.
     pub milliseconds: u64,
+    /// When, on the sweep's clock, this value's first question was sent.
+    pub since: Option<Duration>,
 }
 
 impl Tally {
@@ -615,13 +590,12 @@ impl Tally {
     }
 
     /// One more question marked.
-    pub const fn count(&mut self, right: bool, produced: u64, milliseconds: u64) {
+    pub const fn count(&mut self, right: bool, produced: u64) {
         self.asked = self.asked.saturating_add(1);
         if right {
             self.right = self.right.saturating_add(1);
         }
         self.produced = self.produced.saturating_add(produced);
-        self.milliseconds = self.milliseconds.saturating_add(milliseconds);
     }
 
     /// How fast this value's answers are being written, over every question so far.
@@ -656,6 +630,10 @@ pub struct Running {
     pub place: Option<(usize, usize)>,
     /// What the value on screen has come to so far in this sweep, question by question.
     pub tally: Tally,
+    /// Every question of the set being asked: what it asks, what it wants, and what has come
+    /// of it so far. Kept until the next set's questions arrive, so the last set can still
+    /// be looked back over in the moment between the two.
+    pub questions: Vec<Seen>,
     pub produced: u64,
     pub stopped: Option<String>,
     pub finished: bool,
@@ -687,6 +665,7 @@ impl Running {
             ceiling,
             named,
             mark,
+            at_once,
             room,
             ready_within,
         } = orders;
@@ -708,6 +687,7 @@ impl Running {
                 ceiling,
                 named,
                 mark,
+                at_once,
                 room,
                 ready_within,
                 host,
@@ -729,6 +709,7 @@ impl Running {
             question: None,
             place: None,
             tally: Tally::default(),
+            questions: Vec::new(),
             produced: 0,
             stopped: None,
             finished: false,
@@ -820,21 +801,18 @@ impl Running {
                     self.holding = None;
                     moved = true;
                 }
-                Ok(Heard::Asking { at, of }) => {
-                    self.question = Some((at, of));
-                    self.produced = 0;
+                Ok(
+                    heard @ (Heard::Questions(_)
+                    | Heard::Sent { .. }
+                    | Heard::Reply { .. }
+                    | Heard::Answered { .. }
+                    | Heard::Marked { .. }),
+                ) => {
+                    self.heard_of_a_question(heard);
                     moved = true;
                 }
                 Ok(Heard::Place { at, of }) => {
                     self.place = Some((at, of));
-                    moved = true;
-                }
-                Ok(Heard::Marked {
-                    right,
-                    produced,
-                    milliseconds,
-                }) => {
-                    self.tally.count(right, produced, milliseconds);
                     moved = true;
                 }
                 Ok(Heard::Producing(held)) => {
@@ -886,6 +864,98 @@ impl Running {
         moved
     }
 
+    /// Take in word of one question: the set's questions arriving, one being sent, its reply
+    /// arriving, and its verdict.
+    fn heard_of_a_question(&mut self, heard: Heard) {
+        match heard {
+            Heard::Questions(listed) => {
+                self.questions = listed
+                    .into_iter()
+                    .map(|question| Seen {
+                        asked: question.asked,
+                        wanted: question.wanted,
+                        ..Seen::default()
+                    })
+                    .collect();
+            }
+            Heard::Sent { at } => {
+                if self.tally.since.is_none() {
+                    self.tally.since = Some(self.running_for());
+                }
+                if let Some(seen) = self.questions.get_mut(at) {
+                    seen.sent = true;
+                }
+            }
+            Heard::Reply {
+                at,
+                thought,
+                answer,
+                produced,
+            } => {
+                if let Some(seen) = self.questions.get_mut(at) {
+                    seen.thought = thought;
+                    seen.answer = answer;
+                    seen.produced = produced;
+                }
+            }
+            Heard::Answered { at, milliseconds } => {
+                if let Some(seen) = self.questions.get_mut(at) {
+                    seen.milliseconds = Some(milliseconds);
+                }
+            }
+            Heard::Marked {
+                at,
+                right,
+                produced,
+                given,
+                ending,
+                why,
+            } => {
+                let verdict = if ending.is_a_runaway() {
+                    Verdict::RanAway(why.unwrap_or_else(|| ending.label().to_owned()))
+                } else if right {
+                    Verdict::Right
+                } else {
+                    Verdict::Wrong(given)
+                };
+                if let Some(seen) = self.questions.get_mut(at) {
+                    seen.verdict = Some(verdict);
+                }
+                self.tally.count(right && !ending.is_a_runaway(), produced);
+                if let Some(since) = self.tally.since {
+                    let on_it = self.running_for().saturating_sub(since);
+                    self.tally.milliseconds = u64::try_from(on_it.as_millis()).unwrap_or(u64::MAX);
+                }
+            }
+            _ => {}
+        }
+        let of = self.questions.len();
+        let done = self
+            .questions
+            .iter()
+            .filter(|seen| seen.verdict.is_some())
+            .count();
+        self.question = (of > 0).then(|| (done.saturating_add(1).min(of), of));
+        self.produced = self.following().map_or(0, |at| {
+            self.questions.get(at).map_or(0, |seen| seen.produced)
+        });
+    }
+
+    /// The question the window follows: the oldest one still being answered.
+    #[must_use]
+    pub fn following(&self) -> Option<usize> {
+        self.questions.iter().position(Seen::open)
+    }
+
+    /// Which of the set's questions are being answered now, counting from one: the first
+    /// and the last of them.
+    #[must_use]
+    pub fn in_flight(&self) -> Option<(usize, usize)> {
+        let first = self.questions.iter().position(Seen::open)?;
+        let last = self.questions.iter().rposition(Seen::open)?;
+        Some((first.saturating_add(1), last.saturating_add(1)))
+    }
+
     /// What a sweep is doing this second: the clock, the value it is on, and how far into
     /// that one trial it has got. Nothing that does not move — a take counter that is always
     /// one, or a token count on work that writes no tokens, is a number to read and discard.
@@ -924,8 +994,18 @@ impl Running {
         if at.repeat > 1 {
             let _wrote = write!(said, " · take {}", at.repeat);
         }
-        if let Some((question, of)) = self.question.filter(|_| !timed) {
-            let _wrote = write!(said, " · question {question} of {of}");
+        if let Some((_, of)) = self.question.filter(|_| !timed) {
+            let _wrote = match self.in_flight() {
+                Some((first, last)) if last > first => {
+                    write!(said, " · questions {first}–{last} of {of}")
+                }
+                Some((first, _)) => write!(said, " · question {first} of {of}"),
+                None => write!(
+                    said,
+                    " · question {} of {of}",
+                    self.question.map_or(1, |(at, _)| at)
+                ),
+            };
         }
         let work = if timed && dial.times_reading_the_prompt() {
             "read"

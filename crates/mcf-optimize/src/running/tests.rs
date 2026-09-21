@@ -64,6 +64,7 @@ fn begun(scratch: &Scratch, steps: &[u32], sets: &[usize]) -> Running {
             ceiling: Some(64),
             named: Vec::new(),
             mark: false,
+            at_once: 1,
             room: scratch.path.join("marking"),
             ready_within: std::time::Duration::from_millis(50),
         },
@@ -199,6 +200,7 @@ fn a_run_that_cannot_hold_the_model_says_so_and_measures_nothing() {
             ceiling: Some(64),
             named: Vec::new(),
             mark: false,
+            at_once: 1,
             room: scratch.path.join("marking"),
             ready_within: std::time::Duration::from_millis(50),
         },
@@ -412,6 +414,7 @@ fn an_engine_that_goes_away_is_held_again_before_the_sweep_gives_up() {
         ceiling: Some(64),
         named: Vec::new(),
         mark: false,
+        at_once: 1,
         room: scratch.path.join("marking"),
         ready_within: std::time::Duration::from_millis(20),
         host: std::boxed::Box::new(move |_step, _along| {
@@ -766,6 +769,7 @@ fn a_sweep_stopped_inside_a_trial_writes_nothing_down_for_it() {
             ceiling: Some(64),
             named: Vec::new(),
             mark: false,
+            at_once: 1,
             room: scratch.path.join("marking"),
             ready_within: std::time::Duration::from_secs(5),
         },
@@ -918,6 +922,7 @@ fn a_short_answer_set_is_asked_one_question_to_a_request_and_read_as_one_set() {
             ceiling: Some(64),
             named: Vec::new(),
             mark: true,
+            at_once: 4,
             room: scratch.path.join("marking"),
             ready_within: std::time::Duration::from_secs(5),
         },
@@ -1001,29 +1006,51 @@ fn each_question_marked_is_counted_as_it_is_rather_than_once_the_set_is_done() {
     running.heard = heard;
     let _sent = send.send(Heard::Started(spot));
     let _sent = send.send(Heard::Place { at: 3, of: 40 });
-    let _sent = send.send(Heard::Asking { at: 3, of: 25 });
-    for right in [true, true, false] {
+    let _sent = send.send(Heard::Questions(
+        (0..25)
+            .map(|at| super::Question {
+                asked: format!("question {at}"),
+                wanted: "1".to_owned(),
+            })
+            .collect(),
+    ));
+    for (at, right) in [true, true, false].into_iter().enumerate() {
+        let _sent = send.send(Heard::Sent { at });
         let _sent = send.send(Heard::Marked {
+            at,
             right,
             produced: 100,
-            milliseconds: 6_000,
+            given: Some(if right { "1" } else { "2" }.to_owned()),
+            ending: crate::reading::Ending::Answered,
+            why: None,
         });
     }
     let _moved = running.hear();
     assert_eq!(running.tally.asked, 3);
     assert_eq!(running.tally.right, 2);
+    assert_eq!(
+        running
+            .questions
+            .get(2)
+            .and_then(|seen| seen.verdict.clone()),
+        Some(super::Verdict::Wrong(Some("2".to_owned()))),
+        "a wrong answer keeps the line the marker read"
+    );
+    // The clock is the machine's, so the time spent on the value is set here: three
+    // questions in eighteen seconds.
+    running.tally.milliseconds = 18_000;
     let said = running
         .so_far(&[], Dial::Temperature)
         .expect("something to say once a question is marked");
     assert!(said.contains("2 of 3 right (66%)"), "{said}");
     assert!(said.contains("6.0 s a question"), "{said}");
-    // Thirty-seven sets after this one, and twenty-three of this one's questions with the
-    // third still being answered: nine hundred and forty-eight at six seconds each.
+    // Thirty-seven sets after this one, and the twenty-two of this one not yet marked:
+    // nine hundred and forty-seven at six seconds each.
     assert!(said.contains("about 1 h 34 m left on 0.6"), "{said}");
     let through = running.through_the_value().expect("a share of the value");
     assert!(
-        (through - 52.0 / 1000.0).abs() < 1e-6,
-        "two sets and two questions of forty sets of twenty-five: {through}"
+        (through - 53.0 / 1000.0).abs() < 1e-6,
+        "two sets and three questions of forty sets of twenty-five: {through}"
     );
 
     let _sent = send.send(Heard::Started(crate::ledger::At {
@@ -1099,5 +1126,138 @@ fn a_setting_that_rides_in_the_request_is_not_what_the_model_is_loaded_with() {
     assert_eq!(
         super::loading_for(Dial::MicroBatch, Step::Whole(512), &[]),
         "loading the model with micro-batch 512"
+    );
+}
+
+/// An engine that answers every question after a pause, each on a thread of its own, and
+/// counts the most requests it held at once.
+fn an_engine_that_answers_together(
+    set: &crate::corpus::Set,
+) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a loopback port is free");
+    let port = listener.local_addr().expect("the port is known").port();
+    let most = std::sync::Arc::new(AtomicUsize::new(0));
+    let now = std::sync::Arc::new(AtomicUsize::new(0));
+    let kept = std::sync::Arc::clone(&most);
+    let tasks = set.tasks.clone();
+    let _server = std::thread::spawn(move || {
+        for held in listener.incoming() {
+            let Ok(mut held) = held else { return };
+            let tasks = tasks.clone();
+            let most = std::sync::Arc::clone(&kept);
+            let now = std::sync::Arc::clone(&now);
+            let _one = std::thread::spawn(move || {
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 8192];
+                while let Ok(read) = held.read(&mut buffer) {
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(buffer.get(..read).unwrap_or_default());
+                    let text = String::from_utf8_lossy(&request).into_owned();
+                    let Some(headers_end) = text.find("\r\n\r\n") else {
+                        continue;
+                    };
+                    let wanted = text
+                        .lines()
+                        .find_map(|line| line.strip_prefix("Content-Length: "))
+                        .and_then(|length| length.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= headers_end + 4 + wanted {
+                        break;
+                    }
+                }
+                let text = String::from_utf8_lossy(&request).into_owned();
+                if text.starts_with("GET ") {
+                    let _wrote = held.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}",
+                    );
+                    return;
+                }
+                let inside = now.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+                let _most = most.fetch_max(inside, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(60));
+                let answer = tasks
+                    .iter()
+                    .find(|task| text.contains(&task.asked))
+                    .map_or("nothing", |task| task.checked.as_str())
+                    .to_owned();
+                let _wrote = held.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: \
+                         close\r\n\r\ndata: {{\"choices\":[{{\"delta\":{{\"content\":\"### \
+                         ANSWER 1: {answer}\"}}}}]}}\n\ndata: [DONE]\n\n"
+                    )
+                    .as_bytes(),
+                );
+                let _left = now.fetch_sub(1, Ordering::SeqCst);
+            });
+        }
+    });
+    (port, most)
+}
+
+#[test]
+fn a_set_is_asked_four_questions_at_a_time_and_still_read_in_order() {
+    let scratch = Scratch::new("together");
+    let set = crate::corpus::Set::numbered(crate::corpus::SHORT_FROM).expect("the first set");
+    let (port, most) = an_engine_that_answers_together(&set);
+    let mut marked = under();
+    marked.timed = crate::ledger::MARKED;
+    let course = Course::laid_out(
+        marked.clone(),
+        Way::ByHand,
+        Dial::Temperature,
+        &[Step::Thousandths(600)],
+        &[set.number],
+        1,
+        Measure::Correctness,
+    );
+    let mut running = Running::begun(
+        Orders {
+            switch: false,
+            endpoint: Endpoint {
+                port,
+                key: None,
+                patience: std::time::Duration::from_secs(30),
+            },
+            under: marked,
+            dial: Dial::Temperature,
+            ceiling: None,
+            named: Vec::new(),
+            mark: true,
+            at_once: 4,
+            room: scratch.path.join("marking"),
+            ready_within: std::time::Duration::from_secs(5),
+        },
+        course,
+        Ledger::open(&scratch.at()).expect("opens"),
+        std::boxed::Box::new(move |_step, _along| Ok(port)),
+        || "now".to_owned(),
+    );
+    settled(&mut running);
+    assert!(running.refused.is_none(), "{:?}", running.refused);
+    assert_eq!(
+        most.load(std::sync::atomic::Ordering::SeqCst),
+        4,
+        "four questions in flight at once, and never more"
+    );
+    let reading = running.report.readings.first().expect("a reading");
+    assert_eq!(usize::try_from(reading.of).ok(), Some(set.tasks.len()));
+    let names: Vec<&str> = reading
+        .per_task
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    let wanted: Vec<&str> = set.tasks.iter().map(|task| task.name.as_str()).collect();
+    assert_eq!(
+        names, wanted,
+        "and read back in the order the questions stand in"
+    );
+    assert!(
+        running.questions.iter().all(|seen| seen.verdict.is_some()),
+        "every question the window was told of has a verdict"
     );
 }

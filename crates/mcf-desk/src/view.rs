@@ -3136,6 +3136,9 @@ fn what_was_measured(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box)
     spaced(paint, area.x, y, "what the sweep found", ink.faint);
     y += 22.0;
     y = found_tiles(paint, desk, Box::new(area.x, y, area.w, 0.0));
+    let (below, looked) = now_asking(paint, desk, mouse, Box::new(area.x, y + 14.0, area.w, 0.0));
+    act = act.or(looked);
+    y = below;
     let (below, decided) = what_it_found(paint, desk, mouse, area, y + 14.0);
     act = act.or(decided);
     y = below;
@@ -3162,6 +3165,297 @@ fn what_was_measured(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box)
     y += 22.0;
     act = act.or(rows_of_the_record(paint, desk, mouse, area, &mut y));
     paint.reaches(y);
+    act
+}
+
+/// How many lines of a reply the panel shows: the latest of what the model is thinking, and
+/// the latest of what it has answered.
+const THOUGHT_LINES: usize = 4;
+const ANSWER_LINES: usize = 3;
+
+/// The question being asked and what has come of it: what it asks, the model's reply as it
+/// arrives, the answer wanted, and the verdict the moment it is marked — with the whole set
+/// beneath it as a strip of squares, one a question, that can be pressed to look back.
+///
+/// Drawn for a sweep that marks answers and nothing else: a timed trial continues a prompt
+/// nobody asked, so there is no question to show.
+fn now_asking(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32, Option<Act>) {
+    let Some(run) = desk.optimizing.run.as_ref() else {
+        return (at.y, None);
+    };
+    if !desk.optimizing.measure.needs_the_answers_run() || run.questions.is_empty() {
+        return (at.y, None);
+    }
+    let Some(shown) = desk.optimizing.shown_question() else {
+        return (at.y, None);
+    };
+    let Some(seen) = run.questions.get(shown) else {
+        return (at.y, None);
+    };
+    let ink = paint.ink;
+    let inner = (at.w - 2.0 * ASKING_PAD).max(120.0);
+    let following = run.following() == Some(shown);
+
+    // Everything is measured before anything is drawn, so the card is as tall as it holds.
+    let asked = paint.wrap(&seen.asked, Weight::Regular, size::BODY, inner);
+    let reply = reply_lines(paint, seen, inner - 24.0);
+    let reply_h = 12.0 + gap::LINE * (1.0 + count_of(reply.len().max(1))) + 10.0;
+    let square = ((inner - 4.0 * 24.0) / 25.0).clamp(8.0, 18.0);
+    let rows = run.questions.len().div_ceil(25).max(1);
+    let strip_h = 22.0 + (square + 4.0) * count_of(rows);
+    let asked_h = ASKED_LINE * count_of(asked.len());
+    let height = 2.0 * ASKING_PAD + 26.0 + asked_h + 10.0 + reply_h + 12.0 + 40.0 + strip_h;
+    let card = Box::new(at.x, at.y, at.w, height);
+    paint.edge(
+        card,
+        10.0,
+        if following { ink.accent } else { ink.line },
+        ink.card,
+    );
+
+    let left = at.x + ASKING_PAD;
+    let mut y = asking_heading(
+        paint,
+        desk,
+        Box::new(left, at.y + ASKING_PAD, inner, 0.0),
+        shown,
+        following,
+    );
+    for line in &asked {
+        paint.say_at(left, y, line, Weight::Regular, size::BODY, ink.ink);
+        y += ASKED_LINE;
+    }
+    y += 10.0;
+    reply_well(paint, seen, &reply, Box::new(left, y, inner, reply_h));
+    y += reply_h + 12.0;
+    verdict_row(paint, seen, Box::new(left, y, inner, 0.0));
+    y += 40.0;
+    let act = question_strip(
+        paint,
+        mouse,
+        run,
+        Box::new(left, y, inner, square),
+        (shown, following),
+    );
+    (card.bottom(), act)
+}
+
+const ASKING_PAD: f32 = 16.0;
+const ASKED_LINE: f32 = 21.0;
+
+fn count_of(held: usize) -> f32 {
+    f32::from(u16::try_from(held).unwrap_or(u16::MAX))
+}
+
+/// The label that says whether the panel is following the sweep or looking back, and where
+/// in the sweep the question shown stands.
+fn asking_heading(paint: &mut Painter, desk: &Desk, at: Box, shown: usize, following: bool) -> f32 {
+    let ink = paint.ink;
+    spaced(
+        paint,
+        at.x,
+        at.y,
+        if following {
+            "now asking"
+        } else {
+            "looking back"
+        },
+        if following { ink.accent } else { ink.faint },
+    );
+    let Some(run) = desk.optimizing.run.as_ref() else {
+        return at.y + 26.0;
+    };
+    let of = run.questions.len();
+    let dial = desk.optimizing.sweep.dial;
+    let mut said = run.doing.map_or_else(String::new, |doing| {
+        format!(
+            "{} {} · set {}",
+            dial.label(),
+            dial.said_among(doing.step, &desk.optimizing.named),
+            doing.set
+        )
+    });
+    if let Some((place, sets)) = run.place.filter(|(_, sets)| *sets > 1) {
+        let _wrote = std::fmt::Write::write_fmt(&mut said, format_args!(" ({place} of {sets})"));
+    }
+    if !said.is_empty() {
+        said.push_str(" · ");
+    }
+    let _wrote = std::fmt::Write::write_fmt(
+        &mut said,
+        format_args!("question {} of {of}", shown.saturating_add(1)),
+    );
+    let shown_where = paint.elide(
+        &said,
+        Weight::Regular,
+        size::SMALL,
+        (at.w - 110.0).max(60.0),
+    );
+    paint.say_right(
+        at.right(),
+        at.y,
+        &shown_where,
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    at.y + 26.0
+}
+
+/// The end of the reply as it will be drawn: the latest of the thinking, then the latest of
+/// the answer, each marked with which it is.
+fn reply_lines(
+    paint: &mut Painter,
+    seen: &mcf_optimize::running::Seen,
+    room: f32,
+) -> Vec<(String, bool)> {
+    let mut thought = paint.wrap(seen.thought.trim(), Weight::Regular, size::SMALL, room);
+    let skip = thought.len().saturating_sub(THOUGHT_LINES);
+    thought.drain(..skip);
+    let mut answer = paint.wrap(seen.answer.trim(), Weight::Bold, size::SMALL, room);
+    let skip = answer.len().saturating_sub(ANSWER_LINES);
+    answer.drain(..skip);
+    thought
+        .into_iter()
+        .map(|line| (line, false))
+        .chain(answer.into_iter().map(|line| (line, true)))
+        .collect()
+}
+
+/// The reply, in a well of its own: how far it has got, the end of the thinking dimmed, and
+/// the end of the answer.
+fn reply_well(
+    paint: &mut Painter,
+    seen: &mcf_optimize::running::Seen,
+    lines: &[(String, bool)],
+    well: Box,
+) {
+    let ink = paint.ink;
+    paint.panel(well, 8.0, ink.sunk, 255);
+    let count = match (&seen.verdict, seen.milliseconds) {
+        (None, _) if !seen.sent => "not asked yet".to_owned(),
+        (None, _) if seen.answer.trim().is_empty() => {
+            format!("thinking · {} tokens", seen.produced)
+        }
+        (None, _) => format!("answering · {} tokens", seen.produced),
+        (Some(_), Some(held)) => format!(
+            "answered · {} tokens · {:.1} s",
+            seen.produced,
+            f64::from(u32::try_from(held).unwrap_or(u32::MAX)) / 1000.0
+        ),
+        (Some(_), None) => format!("answered · {} tokens", seen.produced),
+    };
+    let left = well.x + 12.0;
+    let mut y = well.y + 10.0;
+    paint.say_at(left, y, &count, Weight::Regular, size::SMALL, ink.faint);
+    for (line, answering) in lines {
+        y += gap::LINE;
+        if *answering {
+            paint.say_at(left, y, line, Weight::Bold, size::SMALL, ink.ink);
+        } else {
+            paint.say_at(left, y, line, Weight::Regular, size::SMALL, ink.faint);
+        }
+    }
+}
+
+/// The verdict, with what was wanted beside it, so a marking fault and a wrong answer look
+/// different.
+fn verdict_row(paint: &mut Painter, seen: &mcf_optimize::running::Seen, at: Box) {
+    use mcf_optimize::running::Verdict;
+    let ink = paint.ink;
+    let (said, colour) = match &seen.verdict {
+        None => ("Asking".to_owned(), ink.accent),
+        Some(Verdict::Right) => ("Right".to_owned(), ink.good),
+        Some(Verdict::Wrong(given)) => (
+            given.as_ref().map_or_else(
+                || "Wrong — no answer line".to_owned(),
+                |given| format!("Wrong — said {given}"),
+            ),
+            ink.bad,
+        ),
+        Some(Verdict::RanAway(_)) => ("Ran away — marked wrong".to_owned(), ink.warn),
+    };
+    let chip_w = paint.measure(&said, Weight::Bold, size::SMALL) + 20.0;
+    let chip = Box::new(at.x, at.y, chip_w, 24.0);
+    paint.panel(chip, 12.0, colour, 40);
+    paint.say_at(
+        at.x + 10.0,
+        at.y + 4.0,
+        &said,
+        Weight::Bold,
+        size::SMALL,
+        colour,
+    );
+    let wanted = format!("Wanted {}", seen.wanted);
+    let room = (at.w - chip_w - 16.0).max(40.0);
+    let wanted = paint.elide(&wanted, Weight::Regular, size::SMALL, room);
+    paint.say_at(
+        chip.right() + 12.0,
+        at.y + 4.0,
+        &wanted,
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+}
+
+/// The set, a square a question, coloured by what came of it. A square is pressed to look
+/// back at its question.
+fn question_strip(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    run: &mcf_optimize::running::Running,
+    at: Box,
+    (shown, following): (usize, bool),
+) -> Option<Act> {
+    use mcf_optimize::running::Verdict;
+    let ink = paint.ink;
+    let square = at.h;
+    paint.say_at(
+        at.x,
+        at.y,
+        "This set, question by question",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    paint.say_right(
+        at.right(),
+        at.y,
+        "press one to look back",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let top = at.y + 22.0;
+    let mut act = None;
+    for (index, each) in run.questions.iter().enumerate() {
+        let column = count_of(index.rem_euclid(25));
+        let row = count_of(index.div_euclid(25));
+        let place = Box::new(
+            at.x + column * (square + 4.0),
+            top + row * (square + 4.0),
+            square,
+            square,
+        );
+        let fill = match &each.verdict {
+            Some(Verdict::Right) => Some(ink.good),
+            Some(Verdict::Wrong(_)) => Some(ink.bad),
+            Some(Verdict::RanAway(_)) => Some(ink.warn),
+            None => None,
+        };
+        if index == shown && !following {
+            paint.edge(place.inset(-3.0), 6.0, ink.ink, ink.card);
+        }
+        match fill {
+            Some(colour) => paint.panel(place, 4.0, colour, 255),
+            None if each.open() => paint.edge(place, 4.0, ink.accent, ink.card),
+            None => paint.edge(place, 4.0, ink.line, ink.sunk),
+        }
+        if each.sent && mouse.clicked(place) {
+            act = Some(Act::LookAt(index));
+        }
+    }
     act
 }
 

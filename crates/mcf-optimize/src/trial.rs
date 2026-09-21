@@ -323,6 +323,14 @@ fn sent_to(endpoint: &Endpoint, asked: &Asked) -> Result<TcpStream, Failure> {
     Ok(connection)
 }
 
+/// What a trial says as it goes: how much it has written or read, every so often, and each
+/// piece of text as it arrives — what the model thought, and what it answered.
+#[derive(Debug, Clone, Copy)]
+pub enum Along<'piece> {
+    Counted(u64),
+    Piece(&'piece str, &'piece str),
+}
+
 /// What a trial came to.
 ///
 /// `Cut` is not a failure and not a reading: the sweep was asked to stop while this trial
@@ -435,7 +443,7 @@ fn said_of(asked: &Asked, held: Gathered) -> Said {
 pub fn ask(
     endpoint: &Endpoint,
     asked: &Asked,
-    along: &mut dyn FnMut(u64),
+    along: &mut dyn FnMut(Along<'_>),
     give_up: &dyn Fn() -> bool,
 ) -> Result<Outcome, Failure> {
     let mut connection = sent_to(endpoint, asked)?;
@@ -492,20 +500,21 @@ pub fn ask(
             if let Some(read) = what_it_read(&value) {
                 read_in = Some(read);
                 if asked.dial.times_reading_the_prompt() {
-                    along(read);
+                    along(Along::Counted(read));
                 }
             }
             let Some(piece) = spoken(&value) else {
                 continue;
             };
             produced = produced.saturating_add(1);
+            along(Along::Piece(&piece.thought, &piece.answer));
             answer.push_str(&piece.answer);
             thinking = thinking.saturating_add(piece.thought.len());
             if produced
                 .checked_rem(TOLD_EVERY)
                 .is_some_and(|left| left == 0)
             {
-                along(counted.unwrap_or(produced));
+                along(Along::Counted(counted.unwrap_or(produced)));
             }
             let time_to_look = !asked.timing
                 && produced
