@@ -1,4 +1,4 @@
-use super::{Ending, Measure, Reading, Report, Scored, Summary};
+use super::{Ending, Measure, Reading, Report, Scored, Summary, by_category};
 use crate::dial::{Dial, Step};
 
 fn reading(step: u32, set: usize, passed: u32, ending: Ending) -> Reading {
@@ -285,5 +285,64 @@ fn two_readings_differ_only_by_more_than_the_pair_of_them_can_tell_apart() {
     assert!(
         nothing.clearly_worse_than(&at(50.0, 64)),
         "a value that could not be measured at all is worse than one that could"
+    );
+}
+
+fn asked(step: u32, verdicts: &[(&str, bool)]) -> Reading {
+    Reading {
+        per_task: verdicts
+            .iter()
+            .map(|(name, right)| ((*name).to_owned(), *right))
+            .collect(),
+        ..reading(step, 101, 0, Ending::Answered)
+    }
+}
+
+#[test]
+fn a_score_is_taken_apart_by_kind_of_question_at_each_value() {
+    let mut report = Report::default();
+    report.record(asked(
+        1,
+        &[
+            ("arith-0001", true),
+            ("arith-0002", false),
+            ("code-0003", false),
+        ],
+    ));
+    report.record(asked(2, &[("arith-0004", true), ("code-0005", true)]));
+    report.record(asked(1, &[("arith-0006", true)]));
+    let held = report.by_category();
+    assert_eq!(held.len(), 2, "one breakdown a value");
+    let Some(first) = held.first() else {
+        panic!("the first value is broken down");
+    };
+    assert_eq!(first.step, Step::Whole(1));
+    assert_eq!(
+        (first.right, first.asked),
+        (2, 4),
+        "the whole beside the kinds"
+    );
+    let arithmetic = first
+        .kinds
+        .first()
+        .map(|tally| (tally.category.key, tally.right, tally.asked));
+    assert_eq!(
+        arithmetic,
+        Some(("arith", 2, 3)),
+        "both takes at a value count together"
+    );
+    let code = first
+        .kinds
+        .get(1)
+        .map(|tally| (tally.category.key, tally.share()));
+    assert_eq!(code, Some(("code", Some(0.0))));
+}
+
+#[test]
+fn a_question_of_no_short_kind_is_left_out_of_the_breakdown() {
+    let held = by_category(&[asked(1, &[("expr-eval", true), ("regex", false)])]);
+    assert!(
+        held.is_empty(),
+        "a code task is not a kind of short question: {held:?}"
     );
 }

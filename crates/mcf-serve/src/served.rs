@@ -650,7 +650,7 @@ impl Served {
             gpu_layers: settings.gpu_layers,
             key_file,
             window: settings.context,
-            projector: settings.projector.as_ref().map(PathBuf::from),
+            projector: settings.projector.path().map(PathBuf::from),
             media_marker: None,
             started: settings.started.clone(),
         };

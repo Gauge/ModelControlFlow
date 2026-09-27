@@ -2670,9 +2670,11 @@ fn the_test_set(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f3
         y = below + 6.0;
         let asked = questions_in(&desk.optimizing.sweep.sets);
         let said = match desk.optimizing.tests {
-            crate::Tests::Short => format!(
-                "All {asked} questions, four at a time, every time — so two readings can be \
-                 set beside each other."
+            crate::Tests::Focus => format!(
+                "{asked} runs of {} steps, four at a time: five registers changed a step at a \
+                 time and written out after each. Every step is as easy as the last, so a \
+                 step marked wrong is the model losing its place.",
+                mcf_optimize::corpus::FOCUS_STEPS
             ),
             crate::Tests::Long => format!(
                 "{asked} long programs, {} checks, each run in a container. For the settings \
@@ -2743,10 +2745,9 @@ fn what_the_sweep_runs(desk: &Desk) -> String {
         format!(
             "{} {}",
             questions_in(&sweep.sets).saturating_mul(takes),
-            if desk.optimizing.tests == crate::Tests::Long {
-                "programs"
-            } else {
-                "questions"
+            match desk.optimizing.tests {
+                crate::Tests::Focus => "runs",
+                crate::Tests::Long => "programs",
             }
         )
     } else if takes == 1 {
@@ -3191,6 +3192,9 @@ fn what_was_measured(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box)
     }
 
     y = readings_chart(paint, desk, Box::new(area.x, y + 6.0, area.w, 190.0));
+    if let Some(below) = by_kind_of_question(paint, desk, Box::new(area.x, y + 14.0, area.w, 0.0)) {
+        y = below;
+    }
     y += 20.0;
     spaced(paint, area.x, y, "readings", ink.faint);
     y += 22.0;
@@ -3228,7 +3232,14 @@ fn now_asking(paint: &mut Painter, desk: &Desk, mouse: &Mouse, at: Box) -> (f32,
     let following = run.following() == Some(shown);
 
     // Everything is measured before anything is drawn, so the card is as tall as it holds.
-    let mut asked = paint.wrap(&seen.asked, Weight::Regular, size::BODY, inner);
+    // Wrapped a line at a time, so a question that is a list — a focus run's steps — reads
+    // as one, rather than run together into a paragraph where `2.` looks like a number.
+    let mut asked: Vec<String> = seen
+        .asked
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .flat_map(|line| paint.wrap(line, Weight::Regular, size::BODY, inner))
+        .collect();
     // A long task is pages of specification; its opening is enough to say which task it is.
     if asked.len() > ASKED_SHOWN {
         asked.truncate(ASKED_SHOWN);
@@ -3439,6 +3450,17 @@ fn verdict_row(paint: &mut Painter, seen: &mcf_optimize::running::Seen, at: Box)
             format!("{passed} of {of} checks held"),
             if passed >= of { ink.good } else { ink.bad },
         ),
+        Some(Verdict::Steps {
+            held,
+            of,
+            first_slip,
+        }) => (
+            first_slip.as_ref().map_or_else(
+                || format!("All {of} steps held"),
+                |slip| format!("{held} of {of} steps held — {slip}"),
+            ),
+            slips_colour(ink, *held, *of),
+        ),
     };
     let chip_w = paint.measure(&said, Weight::Bold, size::SMALL) + 20.0;
     let chip = Box::new(at.x, at.y, chip_w, 24.0);
@@ -3466,6 +3488,29 @@ fn verdict_row(paint: &mut Painter, seen: &mcf_optimize::running::Seen, at: Box)
         size::SMALL,
         ink.quiet,
     );
+}
+
+/// What a marked score counts, in the words of the tests it was taken on.
+const fn marks_held(desk: &Desk) -> &'static str {
+    match desk.optimizing.tests {
+        crate::Tests::Focus => "steps held",
+        crate::Tests::Long => "checks held",
+    }
+}
+
+/// A focus run's colour: good with no slip, a warning for a slip or two in a hundred, and
+/// bad past that. A run of a hundred and fifty steps with one slip in it is a model that
+/// mostly kept its place, and colouring it the same as one that lost it every few lines
+/// would hide the difference the test is there to show.
+fn slips_colour(ink: crate::paint::Ink, held: u32, of: u32) -> crate::paint::Rgb {
+    let slips = of.saturating_sub(held);
+    if slips == 0 {
+        ink.good
+    } else if slips.saturating_mul(50) <= of {
+        ink.warn
+    } else {
+        ink.bad
+    }
 }
 
 /// The set, a square a question, coloured by what came of it. A square is pressed to look
@@ -3514,6 +3559,7 @@ fn question_strip(
             Some(Verdict::Checks { passed, of }) => {
                 Some(if passed >= of { ink.good } else { ink.bad })
             }
+            Some(Verdict::Steps { held, of, .. }) => Some(slips_colour(ink, *held, *of)),
             None => None,
         };
         if index == shown && !following {
@@ -3613,7 +3659,7 @@ fn what_the_tiles_say(desk: &Desk) -> [Tile; 3] {
                 .saturating_mul(100)
                 .checked_div(best.of)
                 .map(|share| format!("{share}%")),
-            format!("{} of {} right", best.passed, best.of),
+            format!("{} of {} {}", best.passed, best.of, marks_held(desk)),
             false,
         ),
         (Some(best), _) => (
@@ -3623,13 +3669,10 @@ fn what_the_tiles_say(desk: &Desk) -> [Tile; 3] {
             false,
         ),
         (None, Some(tally)) => (
-            if run.is_some_and(|run| {
-                run.kind
-                    .is_some_and(|kind| kind != mcf_optimize::corpus::Kind::ShortAnswer)
-            }) {
-                "checks held so far"
-            } else {
-                "right so far"
+            match run.and_then(|run| run.kind) {
+                Some(mcf_optimize::corpus::Kind::ShortAnswer) | None => "right so far",
+                Some(mcf_optimize::corpus::Kind::Focus) => "steps held so far",
+                Some(_) => "checks held so far",
             }
             .to_owned(),
             tally.share().map(|share| format!("{share}%")),
@@ -3688,39 +3731,30 @@ fn along_by(room: f32, figure: f64, most: f64) -> f32 {
     ((f64::from(room) * (figure / most)) as f32).max(3.0)
 }
 
-/// Every reading drawn as a bar, so the shape of the sweep can be seen before the numbers
-/// are read. One bar per value, the best one in the accent.
-/// One bar per value, taking the best reading at each — a value run three times is one
-/// bar, not three.
+/// Every value drawn as a bar, so the shape of the sweep can be seen before the numbers
+/// are read. One bar per value, scored on every reading taken at it: a value asked forty
+/// sets is forty sets' worth of questions, and its best set alone would read full marks
+/// for a value that got some wrong.
 fn bars_of(desk: &Desk) -> Vec<(mcf_optimize::dial::Step, f64, String)> {
+    use mcf_optimize::reading::Measure;
     let measure = desk.optimizing.measure;
-    let mut bars: Vec<(mcf_optimize::dial::Step, f64, String)> = Vec::new();
-    for row in &desk.optimizing.rows {
-        let Some(figure) = (match measure {
-            mcf_optimize::reading::Measure::Speed => row.reading.tokens_a_second(),
-            mcf_optimize::reading::Measure::Correctness => (row.reading.of > 0)
-                .then(|| f64::from(row.reading.passed) / f64::from(row.reading.of)),
-        }) else {
-            continue;
-        };
-        let said = match measure {
-            mcf_optimize::reading::Measure::Speed => format!("{figure:.0}"),
-            mcf_optimize::reading::Measure::Correctness => {
-                format!("{}/{}", row.reading.passed, row.reading.of)
-            }
-        };
-        match bars
-            .iter_mut()
-            .find(|(step, _, _)| *step == row.reading.step)
-        {
-            Some(held) if figure > held.1 => {
-                held.1 = figure;
-                held.2 = said;
-            }
-            Some(_) => {}
-            None => bars.push((row.reading.step, figure, said)),
-        }
-    }
+    let mut bars: Vec<(mcf_optimize::dial::Step, f64, String)> =
+        mcf_optimize::reading::by_step(desk.optimizing.rows.iter().map(|row| &row.reading))
+            .into_iter()
+            .filter_map(|summary| {
+                let (figure, said) = match measure {
+                    Measure::Speed => {
+                        let rate = summary.tokens_a_second()?;
+                        (rate, format!("{rate:.0}"))
+                    }
+                    Measure::Correctness => (
+                        summary.share()?,
+                        format!("{}/{}", summary.passed, summary.of),
+                    ),
+                };
+                Some((summary.step, figure, said))
+            })
+            .collect();
     bars.sort_by_key(|(step, _, _)| match *step {
         mcf_optimize::dial::Step::Whole(value) | mcf_optimize::dial::Step::Thousandths(value) => {
             value
@@ -3802,6 +3836,199 @@ fn readings_chart(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
         y += tall;
     }
     card.bottom()
+}
+
+/// How narrow a column of the breakdown may be before values are left off the right of it.
+const KIND_COLUMN: f32 = 64.0;
+const KIND_LABEL: f32 = 170.0;
+
+/// The score at every value taken apart by kind of question: one row a kind, one column a
+/// value, and the whole of it on top. What a setting did to the thousand short questions
+/// shows in the chart; where it did it shows here — a setting that is level on the whole
+/// can be better at sums and worse at reading code.
+///
+/// Drawn only when correctness is what is measured and some reading asked short questions:
+/// a code task or a timed trial is of no kind.
+fn by_kind_of_question(paint: &mut Painter, desk: &Desk, at: Box) -> Option<f32> {
+    use mcf_optimize::corpus::CATEGORIES;
+    if desk.optimizing.measure != mcf_optimize::reading::Measure::Correctness {
+        return None;
+    }
+    let mut values =
+        mcf_optimize::reading::by_category(desk.optimizing.rows.iter().map(|row| &row.reading));
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by_key(|value| match value.step {
+        mcf_optimize::dial::Step::Whole(held) | mcf_optimize::dial::Step::Thousandths(held) => held,
+    });
+    let ink = paint.ink;
+
+    let room = (at.w - 32.0 - KIND_LABEL).max(KIND_COLUMN);
+    let fits = count_fitting(room, values.len());
+    let left_off = values.len().saturating_sub(fits);
+    values.truncate(fits);
+    let wide = (room / count_of(fits.max(1))).min(110.0);
+
+    let kinds: Vec<&mcf_optimize::corpus::Category> = CATEGORIES
+        .iter()
+        .filter(|category| values.iter().any(|value| value.of(category).is_some()))
+        .collect();
+    let tall = 20.0;
+    let card = Box::new(
+        at.x,
+        at.y,
+        at.w,
+        34.0 + tall * (count_of(kinds.len()) + 2.0) + 16.0,
+    );
+    ui::card(paint, card, false);
+    spaced(
+        paint,
+        card.x + 16.0,
+        card.y + 14.0,
+        "correctness by kind of question",
+        ink.faint,
+    );
+    if left_off > 0 {
+        paint.say_right(
+            card.right() - 16.0,
+            card.y + 12.0,
+            &format!("{left_off} more value(s) do not fit"),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    let mut y = card.y + 34.0;
+    value_headings(paint, desk, &values, (card.x + 16.0 + KIND_LABEL, y), wide);
+    y += tall;
+
+    let whole: Vec<(u32, u32)> = values
+        .iter()
+        .map(|value| (value.right, value.asked))
+        .collect();
+    let asked = values.iter().map(|value| value.asked).max().unwrap_or(0);
+    kind_row(
+        paint,
+        (card.x + 16.0, y),
+        "all questions",
+        asked,
+        &whole,
+        wide,
+        Weight::Bold,
+    );
+    y += tall;
+    paint.rule(
+        (card.x + 16.0, y - 3.0),
+        (card.right() - 16.0, y - 3.0),
+        ink.line,
+        255,
+    );
+    for category in kinds {
+        let cells: Vec<(u32, u32)> = values
+            .iter()
+            .map(|value| {
+                value
+                    .of(category)
+                    .map_or((0, 0), |held| (held.right, held.asked))
+            })
+            .collect();
+        let asked = cells.iter().map(|(_, asked)| *asked).max().unwrap_or(0);
+        kind_row(
+            paint,
+            (card.x + 16.0, y),
+            category.label,
+            asked,
+            &cells,
+            wide,
+            Weight::Regular,
+        );
+        y += tall;
+    }
+    Some(card.bottom())
+}
+
+/// The value each column of the breakdown was read at, the best of them in the accent.
+fn value_headings(
+    paint: &mut Painter,
+    desk: &Desk,
+    values: &[mcf_optimize::reading::Breakdown],
+    (x, y): (f32, f32),
+    wide: f32,
+) {
+    let ink = paint.ink;
+    let dial = desk.optimizing.sweep.dial;
+    let best = desk
+        .optimizing
+        .report
+        .best_by(desk.optimizing.measure)
+        .map(|best| best.step);
+    for (index, value) in values.iter().enumerate() {
+        let label = dial.said_among(value.step, &desk.optimizing.named);
+        let shown = paint.elide(&label, Weight::Bold, size::SMALL, wide - 8.0);
+        paint.say_right(
+            x + wide * count_of(index) + wide - 8.0,
+            y,
+            &shown,
+            Weight::Bold,
+            size::SMALL,
+            if best == Some(value.step) {
+                ink.accent
+            } else {
+                ink.quiet
+            },
+        );
+    }
+}
+
+/// How many columns of the breakdown fit the room there is.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a count of columns, bounded by the width of a card"
+)]
+fn count_fitting(room: f32, values: usize) -> usize {
+    ((room / KIND_COLUMN).floor().max(1.0) as usize).min(values)
+}
+
+/// One kind's row: its name, how many of it one value asked, and each value's share of it
+/// right. The best of the row is in the accent where the values differ, so a kind a setting
+/// moved stands out from one it left alone.
+fn kind_row(
+    paint: &mut Painter,
+    (x, y): (f32, f32),
+    label: &str,
+    asked: u32,
+    cells: &[(u32, u32)],
+    wide: f32,
+    weight: Weight,
+) {
+    let ink = paint.ink;
+    let shares: Vec<Option<u32>> = cells
+        .iter()
+        .map(|(right, asked)| right.saturating_mul(100).checked_div(*asked))
+        .collect();
+    let most = shares.iter().flatten().max().copied();
+    let differ = shares.iter().flatten().any(|share| Some(*share) != most);
+    let named = paint.elide(label, weight, size::SMALL, KIND_LABEL - 44.0);
+    paint.say_at(x, y, &named, weight, size::SMALL, ink.ink);
+    paint.say_right(
+        x + KIND_LABEL - 12.0,
+        y,
+        &asked.to_string(),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    for (index, share) in shares.iter().enumerate() {
+        let right_edge = x + KIND_LABEL + wide * count_of(index) + wide - 8.0;
+        let (said, colour) = match share {
+            None => (UNKNOWN_FIGURE.to_owned(), ink.faint),
+            Some(held) if differ && Some(*held) == most => (format!("{held}%"), ink.accent),
+            Some(held) => (format!("{held}%"), ink.quiet),
+        };
+        paint.say_right(right_edge, y, &said, weight, size::SMALL, colour);
+    }
 }
 
 /// The live figures for this model, if this model is the one being run. A model that is
@@ -4824,9 +5051,9 @@ fn configure_tab(
         },
         &mut hovered,
     );
-    match recommended.projector.as_deref() {
+    match recommended.projector.path() {
         Some(path) => {
-            if switch(paint, mouse, y, settings.projector.is_some()) {
+            if switch(paint, mouse, y, settings.projector.path().is_some()) {
                 act = Some(Act::Switch(crate::Switch::Projector));
             }
             let named = path.rsplit('/').next().unwrap_or(path);

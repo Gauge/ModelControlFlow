@@ -822,8 +822,8 @@ fn choosing_a_setting_that_changes_answers_leaves_the_ranking_alone() {
     );
     assert_eq!(
         desk.optimizing.sweep.sets.len(),
-        mcf_optimize::corpus::Set::short().len(),
-        "a marked sweep asks the short questions, all of them"
+        mcf_optimize::corpus::Set::focus().len(),
+        "a marked sweep asks the focus runs, all of them"
     );
 }
 
@@ -847,7 +847,7 @@ fn moving_from_a_timed_setting_to_one_that_marks_answers_puts_the_sets_back() {
     desk.act(Act::Dial(dial_at(&desk, Dial::ThinkingBudget)));
     assert_eq!(
         desk.optimizing.sweep.sets.len(),
-        mcf_optimize::corpus::Set::short().len(),
+        mcf_optimize::corpus::Set::focus().len(),
         "the questions come back when the setting being dialled can change an answer"
     );
 }
@@ -1011,7 +1011,7 @@ fn every_setting_is_ranked_by_correctness_to_begin_with_except_the_speed_setting
         if wanted.needs_the_answers_run() {
             assert_eq!(
                 desk.optimizing.sweep.sets.len(),
-                mcf_optimize::corpus::Set::short().len(),
+                mcf_optimize::corpus::Set::focus().len(),
                 "{} marks answers, so it asks the questions",
                 dial.label()
             );
@@ -1310,7 +1310,7 @@ fn a_question_looked_back_at_is_shown_until_it_is_pressed_again() {
 }
 
 #[test]
-fn a_marked_sweep_runs_against_short_answers_or_long_scripts_as_chosen() {
+fn a_marked_sweep_runs_against_focus_runs_or_long_scripts_as_chosen() {
     let mut desk = desk();
     desk.act(Act::Dial(dial_at(&desk, Dial::DryStrength)));
     assert_eq!(
@@ -1318,8 +1318,11 @@ fn a_marked_sweep_runs_against_short_answers_or_long_scripts_as_chosen() {
         mcf_optimize::reading::Measure::Correctness,
         "a setting against repeating is ranked by what it does to the answers"
     );
-    assert_eq!(desk.optimizing.tests, mcf_desk::Tests::Short);
-    assert_eq!(desk.optimizing.sweep.sets.len(), 40);
+    assert_eq!(desk.optimizing.tests, mcf_desk::Tests::Focus);
+    assert_eq!(
+        desk.optimizing.sweep.sets.len(),
+        mcf_optimize::corpus::FOCUS_SETS
+    );
     desk.act(Act::PickTests(1));
     assert_eq!(desk.optimizing.tests, mcf_desk::Tests::Long);
     assert_eq!(
@@ -1330,5 +1333,9 @@ fn a_marked_sweep_runs_against_short_answers_or_long_scripts_as_chosen() {
         ]
     );
     desk.act(Act::PickTests(0));
-    assert_eq!(desk.optimizing.sweep.sets.len(), 40, "and back again");
+    assert_eq!(
+        desk.optimizing.sweep.sets.first(),
+        Some(&mcf_optimize::corpus::FOCUS_FROM),
+        "and back again"
+    );
 }

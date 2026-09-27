@@ -1,6 +1,7 @@
 pub mod corpus;
 pub mod course;
 pub mod dial;
+pub mod focus;
 pub mod hunt;
 pub mod ledger;
 pub mod looping;

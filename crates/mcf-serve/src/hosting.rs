@@ -438,7 +438,7 @@ pub struct Hosting {
     pub port: u16,
     pub api_key: Option<String>,
     pub open: bool,
-    pub projector: Option<String>,
+    pub projector: Projector,
     pub started: crate::declared::Started,
     pub tensor_split: Vec<u64>,
     /// A chat template to hold the model under instead of the one packed into its file.
@@ -500,13 +500,56 @@ pub struct Setting {
     pub because: &'static str,
 }
 
-/// Which projector a hold uses: the one asked for, or the one the model came with where
-/// nothing was asked, or none at all where it was asked for and left blank.
-fn projector_in(value: &Value, recommended: &Hosting) -> Option<String> {
+/// The encoder a hold reads pictures, video and sound through, if it reads them at all.
+///
+/// Three ways rather than two, because "there was none" and "somebody switched it off" are
+/// saved differently and mean different things later: a hold saved before its projector
+/// arrived takes it once it has, and one switched off stays off.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Projector {
+    /// None beside the model. Saved as `null`.
+    #[default]
+    None,
+    /// There was one, and the hold was asked to go without it. Saved as `false`.
+    Off,
+    /// This one. Saved as its path.
+    At(String),
+}
+
+impl Projector {
+    #[must_use]
+    pub fn at(path: Option<&std::path::Path>) -> Self {
+        path.map_or(Self::None, |path| Self::At(path.display().to_string()))
+    }
+
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        match self {
+            Self::At(path) => Some(path),
+            Self::None | Self::Off => None,
+        }
+    }
+
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        match self {
+            Self::None => Value::Null,
+            Self::Off => Value::Bool(false),
+            Self::At(path) => Value::text(path.clone()),
+        }
+    }
+}
+
+/// Which projector a hold uses: the one asked for; none where it was switched off (`false`)
+/// or asked for and left blank; and the one beside the model now wherever nothing was said
+/// (`null`), because that is what a hold saved before its projector arrived says, and
+/// holding such a model text-only for ever after would throw away the reason the projector
+/// was fetched.
+fn projector_in(value: &Value, recommended: &Hosting) -> Projector {
     match value.get("projector") {
-        None => recommended.projector.clone(),
-        Some(Value::Text(path)) if !path.is_empty() => Some(path.clone()),
-        Some(_) => None,
+        Some(Value::Text(path)) if !path.is_empty() => Projector::At(path.clone()),
+        Some(Value::Text(_) | Value::Bool(false)) => Projector::Off,
+        _ => recommended.projector.clone(),
     }
 }
 
@@ -566,7 +609,7 @@ impl Hosting {
             port: DEFAULT_PORT,
             api_key: None,
             open: false,
-            projector: projector.map(|path| path.display().to_string()),
+            projector: Projector::at(projector),
             started: crate::declared::Started::default(),
             tensor_split: Vec::new(),
             template: None,
@@ -737,9 +780,9 @@ impl Hosting {
             out.push("--api-key-file".to_owned());
             out.push(key_file.display().to_string());
         }
-        if let Some(projector) = &self.projector {
+        if let Some(projector) = self.projector.path() {
             out.push("--mmproj".to_owned());
-            out.push(projector.clone());
+            out.push(projector.to_owned());
         }
         out.extend(self.started.arguments());
         out
@@ -1216,8 +1259,8 @@ impl Hosting {
             },
             Setting {
                 name: "projector",
-                value: projector_named(self.projector.as_deref()),
-                recommended: projector_named(against.projector.as_deref()),
+                value: projector_named(self.projector.path()),
+                recommended: projector_named(against.projector.path()),
                 because: "the encoder that turns a picture, a video or a sound into what the \
                           model reads. Its publisher ships it as a second file beside the \
                           weights; without it the model takes text only",
@@ -1380,10 +1423,7 @@ impl Hosting {
                     .as_ref()
                     .map_or(Value::Null, |held| Value::text(held.clone())),
             ),
-            (
-                "projector",
-                self.projector.clone().map_or(Value::Null, Value::text),
-            ),
+            ("projector", self.projector.to_value()),
             ("draft_head", Value::Bool(self.started.draft_head)),
             (
                 "drafted",

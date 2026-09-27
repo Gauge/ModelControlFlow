@@ -183,15 +183,18 @@ impl Shared<'_> {
     }
 }
 
-/// Mark one answer the way its kind is marked: a short answer by reading it, and a program
-/// by running it against its check in a container, in a room of its own so that four being
-/// marked at once never read each other's files.
+/// Mark one answer the way its kind is marked: a short answer or a focus run by reading
+/// it, and a program by running it against its check in a container, in a room of its own
+/// so that four being marked at once never read each other's files.
 fn marked(room: &Path, at: usize, one: &Asked, said: &Said) -> Result<Vec<Checked>, String> {
     if one.set.kind == Kind::ShortAnswer {
         return Ok(crate::marking::marked_by_reading(
             &one.set.tasks,
             &said.answer,
         ));
+    }
+    if one.set.kind == Kind::Focus {
+        return Ok(crate::focus::marked(&one.set.tasks, &said.answer));
     }
     let here = room.join(format!(
         "set-{}-{}-{}-question-{at}",
@@ -266,16 +269,18 @@ fn tail_of(said: &str) -> String {
 }
 
 /// Say how a question was marked: how many of its claims held, and — for a short answer —
-/// the line the marker read.
+/// the line the marker read, or for a focus run where it first slipped.
 fn told_the_verdict(send: &Sender<Heard>, at: usize, one: &Asked, said: &Said, marked: &[Checked]) {
     let _sent = send.send(Heard::Marked {
         at,
         passed: marked.iter().map(|held| held.passed).sum(),
         of: marked.iter().map(|held| held.of).sum(),
         produced: said.counted.unwrap_or(said.produced),
-        given: (one.set.kind == Kind::ShortAnswer)
-            .then(|| crate::marking::given(&said.answer, 1))
-            .flatten(),
+        given: match one.set.kind {
+            Kind::ShortAnswer => crate::marking::given(&said.answer, 1),
+            Kind::Focus => crate::focus::first_slip(&one.set.tasks, &said.answer),
+            Kind::Code | Kind::LongScript => None,
+        },
         ending: said.ending,
         why: said.why.clone(),
     });

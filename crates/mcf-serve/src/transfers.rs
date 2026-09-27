@@ -563,11 +563,100 @@ pub fn carry_out(queue: &Queue, start: &Start, root: &Path, journal: &Path) {
         Some(path) => {
             queue.arrived(start.id, &path);
             note_it_arrived(journal, start, whole, &path);
+            ask_for_its_projector(
+                queue,
+                &start.reference,
+                start.from.as_deref(),
+                &listing,
+                &start.file,
+                root,
+            );
         }
         None => queue.stopped(
             start.id,
             &crate::control::refused("a file this repository publishes", &start.file),
         ),
+    }
+}
+
+/// Queue the projector a model's publisher ships beside it, where one does and it is not
+/// here yet. A model that reads pictures, video or sound reads only text without it, and
+/// nobody asking for such a model is asking for the half that cannot see.
+///
+/// Queued rather than fetched here, so it shows in the queue like any other file and can be
+/// paused or given up like one; the worker that brought the model takes it next.
+fn ask_for_its_projector(
+    queue: &Queue,
+    reference: &str,
+    from: Option<&str>,
+    listing: &mcf_hub::source::Listing,
+    model: &str,
+    root: &Path,
+) {
+    let Some(projector) = listing.projector_for(model) else {
+        return;
+    };
+    let landing = mcf_hub::acquisition::destination(root, &listing.reference, &projector.path);
+    if landing.is_file() {
+        return;
+    }
+    let _id = queue.ask_for(reference, &projector.path, from);
+}
+
+/// Look for the projector of a model already on the shelf, fetched before MCF brought
+/// projectors with their models, and queue it if its publisher ships one.
+///
+/// Where the model came from is read from the provenance written beside it when it
+/// arrived; a model with none, or one that came from a local file, has nowhere to ask.
+/// This asks the hub, so it is for a thread of its own, never for a request's.
+pub fn seek_the_projector_of(queue: &Arc<Queue>, root: &Path, journal: &Path, model: &Path) {
+    let Ok(provenance) = mcf_hub::store::provenance_of(model) else {
+        return;
+    };
+    let mcf_core::provenance::Origin::Hub { repository, .. } = provenance.origin() else {
+        return;
+    };
+    let Ok(reference) = mcf_hub::reference::parse(repository.as_str()) else {
+        return;
+    };
+    let under = root.join(&reference.owner).join(&reference.name);
+    let Some(file) = model
+        .strip_prefix(&under)
+        .ok()
+        .and_then(Path::to_str)
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let Ok(base) = mcf_hub::http::Url::parse(DEFAULT_HUB) else {
+        return;
+    };
+    let Ok(listing) = listing_of(&base, &reference) else {
+        return;
+    };
+    ask_for_its_projector(queue, repository.as_str(), None, &listing, &file, root);
+    start_what_can_start(queue, root, journal);
+}
+
+/// Start whatever the queue says can start now, each on its own thread.
+///
+/// The queue decides; this only obeys. A transfer's thread is not scoped to whatever asked
+/// for it, because a transfer outlives the connection that asked for it — that is the point
+/// of queuing it.
+pub fn start_what_can_start(queue: &Arc<Queue>, root: &Path, journal: &Path) {
+    for start in queue.what_can_start() {
+        let working = Arc::clone(queue);
+        let (root_here, journal_here) = (root.to_path_buf(), journal.to_path_buf());
+        let id = start.id;
+        let spawned = std::thread::Builder::new()
+            .name(format!("mcf-transfer-{id}"))
+            .spawn(move || work_a_place(&working, &root_here, &journal_here, start));
+        if let Err(error) = spawned {
+            queue.stopped(
+                id,
+                &crate::control::refused("a thread for the transfer", &error.to_string()),
+            );
+        }
     }
 }
 

@@ -186,9 +186,12 @@ pub fn nothing_held(tasks: &[Task]) -> Vec<Checked> {
 
 /// How many claims a check makes. Counted off the source so that a task which never ran at
 /// all still has a denominator: a model that wrote nothing scored nought out of nine, not
-/// nought out of nothing.
+/// nought out of nothing. A focus run's claims are its steps.
 #[must_use]
 pub fn claims_in(checked: &str) -> u32 {
+    if let Some(run) = crate::focus::Run::from_checked(checked) {
+        return u32::try_from(run.changes.len()).unwrap_or(u32::MAX).max(1);
+    }
     let held = checked
         .lines()
         .filter(|line| line.trim_start().starts_with("assert "))

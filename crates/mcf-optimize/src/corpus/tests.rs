@@ -1,4 +1,4 @@
-use super::{Set, task_count};
+use super::{CATEGORIES, Set, category_of, task_count};
 
 #[test]
 fn the_corpus_is_sixty_four_tasks_in_eight_sets() {
@@ -333,4 +333,92 @@ mod long_scripts {
             );
         }
     }
+}
+
+#[test]
+fn every_short_question_is_of_a_kind_and_every_kind_is_asked() {
+    let mut asked = [0_usize; CATEGORIES.len()];
+    for set in Set::short() {
+        for task in &set.tasks {
+            let Some(category) = category_of(&task.name) else {
+                panic!("{} is of no kind the table knows", task.name);
+            };
+            if let Some(at) = CATEGORIES.iter().position(|held| held == category)
+                && let Some(count) = asked.get_mut(at)
+            {
+                *count += 1;
+            }
+        }
+    }
+    for (category, count) in CATEGORIES.iter().zip(asked) {
+        assert!(count > 0, "{} is never asked", category.key);
+    }
+    assert_eq!(asked.iter().sum::<usize>(), 1000);
+}
+
+#[test]
+fn a_code_task_is_of_no_short_kind() {
+    for set in Set::all().into_iter().chain(Set::long()) {
+        for task in &set.tasks {
+            assert_eq!(category_of(&task.name), None, "{}", task.name);
+        }
+    }
+}
+
+#[test]
+fn a_kind_is_read_off_the_whole_word_before_the_number() {
+    assert_eq!(
+        category_of("mod-0012").map(|held| held.label),
+        Some("remainders")
+    );
+    assert_eq!(
+        category_of("powmod-0012").map(|held| held.label),
+        Some("powers mod n")
+    );
+    assert_eq!(category_of("mod-"), None);
+    assert_eq!(category_of("mod-12a"), None);
+    assert_eq!(category_of("diff-patch"), None);
+}
+
+#[test]
+fn the_focus_sets_are_made_the_same_every_time_and_each_run_is_its_own() {
+    let sets = Set::focus();
+    assert_eq!(sets.len(), crate::corpus::FOCUS_SETS);
+    assert_eq!(
+        sets,
+        Set::focus(),
+        "made from seeds, so made the same again"
+    );
+    let mut runs = Vec::new();
+    for set in &sets {
+        assert_eq!(set.kind, crate::corpus::Kind::Focus);
+        assert_eq!(Set::numbered(set.number).as_ref(), Some(set));
+        assert_eq!(set.tasks.len(), crate::corpus::FOCUS_RUNS);
+        for task in &set.tasks {
+            assert_eq!(
+                crate::marking::claims_in(&task.checked),
+                u32::try_from(crate::corpus::FOCUS_STEPS).unwrap_or(0),
+                "a run's claims are its steps"
+            );
+            runs.push(task.checked.clone());
+        }
+    }
+    let count = runs.len();
+    runs.sort();
+    runs.dedup();
+    assert_eq!(runs.len(), count, "no two runs are the same run");
+    assert_eq!(
+        Set::numbered(crate::corpus::FOCUS_FROM + crate::corpus::FOCUS_SETS),
+        None
+    );
+}
+
+#[test]
+fn a_focus_run_is_asked_with_its_rules_and_every_step() {
+    let set = Set::focus().remove(0).one_at_a_time().remove(0);
+    let asked = set.asked();
+    assert!(asked.contains("wraps round"));
+    assert!(asked.contains("Start: a="));
+    assert!(asked.contains(&format!("\n{}. ", crate::corpus::FOCUS_STEPS)));
+    assert!(asked.contains("OUTPUT FORMAT"));
 }

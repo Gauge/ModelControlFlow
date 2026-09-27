@@ -188,6 +188,35 @@ impl Listing {
         found
     }
 
+    /// The projector this repository publishes for one of its models, if it publishes one:
+    /// the second file a model that reads pictures, video or sound needs beside its
+    /// weights, without which it takes text only.
+    ///
+    /// One in the model's own directory is taken before one elsewhere in the repository,
+    /// and of several at once the one [`crate::store::projector_preference`] puts first. A
+    /// projector is never its own projector.
+    #[must_use]
+    pub fn projector_for(&self, model: &str) -> Option<&Entry> {
+        fn directory_of(path: &str) -> &str {
+            path.rsplit_once('/').map_or("", |(held, _)| held)
+        }
+        let here = directory_of(model);
+        self.entries
+            .iter()
+            .filter(|entry| {
+                let path = Path::new(&entry.path);
+                is_read_here(&entry.path) && crate::store::is_a_companion(path)
+            })
+            .filter(|_| !crate::store::is_a_companion(Path::new(model)))
+            .min_by_key(|entry| {
+                (
+                    directory_of(&entry.path) != here,
+                    crate::store::projector_preference(Path::new(&entry.path)),
+                    entry.path.clone(),
+                )
+            })
+    }
+
     #[must_use]
     pub fn total_bytes(&self) -> Option<u64> {
         self.entries

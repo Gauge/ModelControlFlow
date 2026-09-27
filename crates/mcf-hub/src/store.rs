@@ -129,6 +129,28 @@ pub fn is_a_companion(path: &Path) -> bool {
         .is_some_and(|held| held.to_ascii_lowercase().starts_with("mmproj"))
 }
 
+/// Which of several projectors to take, lowest first. A publisher often ships the same
+/// projector at more than one precision; F16 comes first because every engine build reads
+/// it on every device, where BF16 is slow or refused on some cards and F32 is twice the
+/// size for nothing a picture shows.
+#[must_use]
+pub fn projector_preference(path: &Path) -> u8 {
+    let stem = path
+        .file_stem()
+        .and_then(|held| held.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if stem.contains("bf16") {
+        1
+    } else if stem.contains("f16") {
+        0
+    } else if stem.contains("f32") {
+        2
+    } else {
+        3
+    }
+}
+
 #[must_use]
 pub fn part_of_a_set(path: &Path) -> Option<(String, u32)> {
     let stem = path.file_stem()?.to_str()?;

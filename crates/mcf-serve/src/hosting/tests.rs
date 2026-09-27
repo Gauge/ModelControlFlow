@@ -1,4 +1,4 @@
-use super::{DEFAULT_PORT, Hosting, LOOPBACK};
+use super::{DEFAULT_PORT, Hosting, LOOPBACK, Projector};
 use mcf_record::json::Value;
 
 fn on_a_card() -> Hosting {
@@ -496,5 +496,55 @@ fn a_repetition_setting_is_saved_held_with_and_listed() {
     assert!(
         recommended.to_value().get("dry_multiplier").is_none(),
         "settings that set none of these are written as they always were"
+    );
+}
+
+fn with_a_projector() -> Hosting {
+    Hosting::recommended(
+        "llama.cpp-cuda",
+        "NVIDIA",
+        true,
+        32_768,
+        Some(32),
+        true,
+        Some(std::path::Path::new("/models/owner/model/mmproj-F16.gguf")),
+    )
+}
+
+#[test]
+fn a_hold_saved_before_its_projector_arrived_takes_it_once_it_has() {
+    let before = on_a_card();
+    let saved = before.to_value();
+    assert_eq!(saved.get("projector"), Some(&Value::Null));
+
+    let now = with_a_projector();
+    let held = Hosting::from_value(&saved, &now);
+    assert_eq!(
+        held.projector.path(),
+        Some("/models/owner/model/mmproj-F16.gguf"),
+        "a hold saved when there was no projector would keep the model text-only for ever"
+    );
+    assert!(
+        held.arguments("/models/owner/model/m.gguf", "127.0.0.1", None, None)
+            .iter()
+            .any(|held| held == "--mmproj"),
+        "the engine is started with the projector"
+    );
+}
+
+#[test]
+fn a_projector_switched_off_stays_off_when_the_hold_is_given_back() {
+    let mut chosen = with_a_projector();
+    chosen.projector = Projector::Off;
+    let saved = chosen.to_value();
+    assert_eq!(saved.get("projector"), Some(&Value::Bool(false)));
+
+    let held = Hosting::from_value(&saved, &with_a_projector());
+    assert_eq!(held.projector, Projector::Off);
+    assert!(
+        !held
+            .arguments("/models/owner/model/m.gguf", "127.0.0.1", None, None)
+            .iter()
+            .any(|held| held == "--mmproj")
     );
 }

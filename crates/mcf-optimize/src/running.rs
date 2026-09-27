@@ -64,6 +64,9 @@ fn judged_by(
     if set_kind == crate::corpus::Kind::ShortAnswer {
         return (crate::marking::marked_by_reading(tasks, &said.answer), None);
     }
+    if set_kind == crate::corpus::Kind::Focus {
+        return (crate::focus::marked(tasks, &said.answer), None);
+    }
     let here = room.join(format!(
         "set-{}-{}-{}",
         spot.set,
@@ -76,6 +79,13 @@ fn judged_by(
         .why()
         .map(|why| format!("answers were not marked: {why}"));
     (held.or_unmarked(tasks), why)
+}
+
+/// Short answers, focus runs and long programs are asked a question to a request and
+/// several at once. The retired code sets are still asked whole, as their readings were
+/// taken.
+const fn asked_a_question_at_a_time(kind: crate::corpus::Kind) -> bool {
+    !matches!(kind, crate::corpus::Kind::Code)
 }
 
 #[must_use]
@@ -458,13 +468,7 @@ fn sweeping(mut doing: Doing) {
         };
         let asked = trial_for(&doing, spot, set, timed);
         let marking = doing.mark && !timed;
-        // Short answers and long programs are asked a question to a request and several at
-        // once. The retired code sets are still asked whole, as their readings were taken.
-        let one_at_a_time = marking
-            && matches!(
-                asked.set.kind,
-                crate::corpus::Kind::ShortAnswer | crate::corpus::Kind::LongScript
-            );
+        let one_at_a_time = marking && asked_a_question_at_a_time(asked.set.kind);
         let began = Instant::now();
         let (said, marked_already) = match taken(&mut doing, &asked, spot.step, one_at_a_time) {
             Ok(Some(taken)) => taken,
@@ -552,6 +556,13 @@ pub enum Verdict {
     Checks {
         passed: u32,
         of: u32,
+    },
+    /// A focus run, read a step at a time: how many steps held, and where the first one
+    /// that did not was, said.
+    Steps {
+        held: u32,
+        of: u32,
+        first_slip: Option<String>,
     },
     /// Looped, or filled the window it is held at, and so marked wrong — said apart from a
     /// wrong answer so that a runaway is never mistaken for one.
@@ -940,6 +951,12 @@ impl Running {
                 let program = self.kind != Some(crate::corpus::Kind::ShortAnswer);
                 let verdict = if ending.is_a_runaway() {
                     Verdict::RanAway(why.unwrap_or_else(|| ending.label().to_owned()))
+                } else if self.kind == Some(crate::corpus::Kind::Focus) {
+                    Verdict::Steps {
+                        held: passed,
+                        of,
+                        first_slip: given,
+                    }
                 } else if program {
                     Verdict::Checks { passed, of }
                 } else if of > 0 && passed >= of {
@@ -1077,10 +1094,10 @@ impl Running {
         }
         let value = dial.said_among(tally.value?, named);
         let share = tally.share().unwrap_or(0);
-        let held = if self.kind == Some(crate::corpus::Kind::ShortAnswer) || self.kind.is_none() {
-            "right"
-        } else {
-            "checks held"
+        let held = match self.kind {
+            Some(crate::corpus::Kind::ShortAnswer) | None => "right",
+            Some(crate::corpus::Kind::Focus) => "steps held",
+            Some(_) => "checks held",
         };
         let mut said = format!(
             "{value} so far: {} of {} {held} ({share}%)",

@@ -186,6 +186,19 @@ fn arriving(body: &Value) -> Vec<String> {
             Some(where_) => lines.push(format!("  written down in {where_}")),
             None => lines.push("  MCF could not write this acquisition to its record".to_owned()),
         }
+        match body.get("projector") {
+            Some(Value::Text(projector)) => lines.push(format!(
+                "  its projector is here too, so it reads pictures and video: {projector}"
+            )),
+            Some(missing @ Value::Map(_)) => lines.push(format!(
+                "  its projector did not arrive, so it reads text only until it does: {}",
+                missing
+                    .get("what_to_do")
+                    .and_then(Value::as_text)
+                    .unwrap_or("ask for it again")
+            )),
+            _ => {}
+        }
         return lines;
     }
     let arrived = body.get("arrived").and_then(Value::as_integer);

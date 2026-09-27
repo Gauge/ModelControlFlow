@@ -25,9 +25,18 @@ pub fn declares_a_vision_encoder(path: &Path) -> bool {
     false
 }
 
+/// The projector beside a model, if one is there: in the model's own directory, or in the
+/// one above it, which is where a publisher that keeps each quantization in a folder of its
+/// own puts the one projector they all share.
 #[must_use]
 pub fn beside(model: &Path) -> Option<PathBuf> {
     let directory = model.parent()?;
+    std::iter::once(directory)
+        .chain(directory.parent())
+        .find_map(|directory| in_directory(directory, model))
+}
+
+fn in_directory(directory: &Path, model: &Path) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = std::fs::read_dir(directory)
         .ok()?
         .flatten()
@@ -37,14 +46,10 @@ pub fn beside(model: &Path) -> Option<PathBuf> {
                 .extension()
                 .and_then(|held| held.to_str())
                 .is_some_and(|held| held.eq_ignore_ascii_case("gguf"));
-            let is_named_like_one = path
-                .file_stem()
-                .and_then(|held| held.to_str())
-                .is_some_and(|held| held.to_ascii_lowercase().starts_with("mmproj"));
-            is_gguf && is_named_like_one && path != model
+            is_gguf && mcf_hub::store::is_a_companion(path) && path != model
         })
         .collect();
-    candidates.sort();
+    candidates.sort_by_key(|path| (mcf_hub::store::projector_preference(path), path.clone()));
     candidates
         .into_iter()
         .find(|path| declares_a_vision_encoder(path))

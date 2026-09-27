@@ -947,6 +947,10 @@ pub struct Daemon {
     /// The files MCF has been asked to bring here. Not subject to the one-model rule:
     /// fetching writes bytes to a disk and has nothing to do with what is running.
     transfers: std::sync::Arc<crate::transfers::Queue>,
+    /// The models whose publisher has already been asked for a projector since the daemon
+    /// started. Asking is a round trip to the hub, and a model is looked at every time its
+    /// settings are, so it is asked once.
+    projectors_sought: std::sync::Mutex<std::collections::BTreeSet<PathBuf>>,
 }
 
 #[derive(Debug)]
@@ -1057,6 +1061,7 @@ impl Daemon {
             arrivals: std::sync::atomic::AtomicU64::new(0),
             refusals: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             transfers: std::sync::Arc::new(crate::transfers::Queue::new()),
+            projectors_sought: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         };
         daemon.note(
             EntryKind::DaemonStarted,
@@ -2324,27 +2329,34 @@ impl Daemon {
         Answer::served(Value::Map(fields))
     }
 
-    /// Start whatever the queue says can start now, each on its own thread.
-    ///
-    /// The queue decides; this only obeys. A transfer's thread is not scoped to the accept
-    /// loop the way carried work is, because a transfer outlives the connection that asked
-    /// for it — that is the point of queuing it.
-    fn start_what_can_start(&self) {
-        for start in self.transfers.what_can_start() {
-            let queue = std::sync::Arc::clone(&self.transfers);
-            let root = self.places.models.clone();
-            let journal = self.places.journal.clone();
-            let id = start.id;
-            let spawned = std::thread::Builder::new()
-                .name(format!("mcf-transfer-{id}"))
-                .spawn(move || {
-                    crate::transfers::work_a_place(&queue, &root, &journal, start);
-                });
-            if let Err(error) = spawned {
-                let failure = unusable("a thread for the transfer", &self.places.models, &error);
-                self.transfers.stopped(id, &failure);
-            }
+    /// Ask, on a thread of its own, whether the publisher of a model already here ships a
+    /// projector for it, and queue it if so. The hold asked for now goes ahead text-only;
+    /// the next one takes the projector, because a hold saved without one takes the one
+    /// beside the model when it is there.
+    fn seek_the_projector_of(&self, model: &Path) {
+        let first_time = self
+            .projectors_sought
+            .lock()
+            .is_ok_and(|mut sought| sought.insert(model.to_path_buf()));
+        if !first_time {
+            return;
         }
+        let queue = std::sync::Arc::clone(&self.transfers);
+        let (root, journal) = (self.places.models.clone(), self.places.journal.clone());
+        let model = model.to_path_buf();
+        let _spawned = std::thread::Builder::new()
+            .name("mcf-seek-projector".to_owned())
+            .spawn(move || {
+                crate::transfers::seek_the_projector_of(&queue, &root, &journal, &model);
+            });
+    }
+
+    fn start_what_can_start(&self) {
+        crate::transfers::start_what_can_start(
+            &self.transfers,
+            &self.places.models,
+            &self.places.journal,
+        );
     }
 
     fn acquiring(&self, reference: &str, file: &str, from: Option<&str>, writer: &mut &UnixStream) {
@@ -2419,12 +2431,15 @@ impl Daemon {
                 Err(answer) => return say(writer, &answer),
             }
         }
+        let projector = self.its_projector(&base, &listing, reference, file, writer);
         let answer = match first {
             Some((path, done)) => {
                 let mut answer = acquired(&path, &done);
                 if let Value::Map(fields) = &mut answer.body {
                     let _p = fields.insert("parts".to_owned(), as_whole(count));
                     let _b = fields.insert("bytes_whole".to_owned(), as_whole(whole));
+                    let _v =
+                        fields.insert("projector".to_owned(), projector.unwrap_or(Value::Null));
                 }
                 answer
             }
@@ -2434,6 +2449,43 @@ impl Daemon {
             )),
         };
         say(writer, &answer);
+    }
+
+    /// The projector comes with the model, the way it does through the queue: a model that
+    /// reads pictures reads only text without it. Its failing to arrive does not undo the
+    /// model that did; the answer says it is missing and how to ask for it again.
+    fn its_projector(
+        &self,
+        base: &mcf_hub::http::Url,
+        listing: &mcf_hub::source::Listing,
+        reference: &str,
+        file: &str,
+        writer: &mut &UnixStream,
+    ) -> Option<Value> {
+        let entry = listing.projector_for(file)?;
+        let landing =
+            mcf_hub::acquisition::destination(&self.places.models, &listing.reference, &entry.path);
+        if landing.is_file() {
+            return Some(Value::text(landing.display().to_string()));
+        }
+        let place = Progress {
+            part: 1,
+            of: 1,
+            whole: entry.size,
+            before: 0,
+        };
+        Some(
+            match self.fetching_one(base, listing, entry, place, writer) {
+                Ok(done) => Value::text(done.acquired.path.display().to_string()),
+                Err(_) => Value::map([
+                    ("missing", Value::text(entry.path.clone())),
+                    (
+                        "what_to_do",
+                        Value::text(format!("mcf acquire {reference} {}", entry.path)),
+                    ),
+                ]),
+            },
+        )
     }
 
     fn fetching_one(
@@ -2974,6 +3026,9 @@ impl Daemon {
         };
         let fits = why_not.is_none() && together.is_none_or(|free| wanted <= free);
         let projector = crate::projector::beside(&path);
+        if projector.is_none() {
+            self.seek_the_projector_of(&path);
+        }
         Ok(Recommended {
             settings: crate::hosting::Hosting::recommended(
                 &choice.engine,

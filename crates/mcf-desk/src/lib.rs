@@ -1002,23 +1002,28 @@ impl Optimizing {
 /// What a sweep that marks answers is run against.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Tests {
-    /// A thousand questions with one right answer apiece. A score off eight hard programs
-    /// moves in lumps, and a setting that makes answers a little worse cannot be seen
-    /// through a score like that.
+    /// Runs of small changes to five registers, with the registers written after every
+    /// one, marked a step at a time. Each step is as easy as the last, so a step marked
+    /// wrong is the model losing its place — the significant error a setting causes —
+    /// and not a question it could never have answered.
+    ///
+    /// It took the place of a thousand short questions, which were one mark each for
+    /// however long a model took over them, and moved with which questions a setting
+    /// happened to get right.
     #[default]
-    Short,
+    Focus,
     /// Eight long programs, each run against its check. For the settings that keep a model
     /// from repeating itself, which a one-line answer never gives a chance to.
     Long,
 }
 
 impl Tests {
-    pub const ALL: [Self; 2] = [Self::Short, Self::Long];
+    pub const ALL: [Self; 2] = [Self::Focus, Self::Long];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Short => "Short answers",
+            Self::Focus => "Focus",
             Self::Long => "Long scripts",
         }
     }
@@ -1026,7 +1031,7 @@ impl Tests {
     #[must_use]
     pub fn sets(self) -> Vec<usize> {
         let sets = match self {
-            Self::Short => mcf_optimize::corpus::Set::short(),
+            Self::Focus => mcf_optimize::corpus::Set::focus(),
             Self::Long => mcf_optimize::corpus::Set::long(),
         };
         sets.iter().map(|set| set.number).collect()
@@ -4681,7 +4686,16 @@ impl Desk {
             self.optimizing.known = 0;
             return;
         };
-        let against = ledger.against(&under, self.optimizing.sweep.dial);
+        // A marked score is only comparable with one taken on the same tests: a step held in
+        // a focus run and a short question answered are not the same mark, and summed
+        // together they would be neither.
+        let marked = self.optimizing.measure.needs_the_answers_run();
+        let sets = self.optimizing.tests.sets();
+        let against: Vec<_> = ledger
+            .against(&under, self.optimizing.sweep.dial)
+            .into_iter()
+            .filter(|row| !marked || sets.contains(&row.at.set))
+            .collect();
         self.optimizing.known = against.len();
         let mut report = mcf_optimize::reading::Report::default();
         for row in &against {
@@ -5036,7 +5050,10 @@ impl Desk {
             | Act::RerunPicked => self.choosing_values(act),
             Act::Takes(times) => self.optimizing.take_each(times),
             Act::LookAt(at) => self.optimizing.look_at(at),
-            Act::PickTests(at) => self.optimizing.pick_tests(at),
+            Act::PickTests(at) => {
+                self.optimizing.pick_tests(at);
+                self.read_the_ledger();
+            }
             Act::Sweep => self.start_or_stop_sweeping(),
             Act::PauseSweep => self.pause_or_carry_on_sweeping(),
             _ => return false,
@@ -5720,12 +5737,14 @@ impl Desk {
             Switch::Open => settings.open = !settings.open,
             Switch::DraftHead => settings.started.draft_head = !settings.started.draft_head,
             Switch::Projector => {
-                settings.projector = if settings.projector.is_some() {
-                    None
+                settings.projector = if settings.projector.path().is_some() {
+                    mcf_serve::hosting::Projector::Off
                 } else {
                     self.recommended
                         .as_ref()
-                        .and_then(|recommended| recommended.projector.clone())
+                        .map_or(mcf_serve::hosting::Projector::None, |recommended| {
+                            recommended.projector.clone()
+                        })
                 };
             }
         }

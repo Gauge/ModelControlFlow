@@ -242,3 +242,81 @@ fn nothing_the_queue_never_had_is_answered_about() {
     assert!(!queue.pause(404));
     assert!(!queue.resume(404));
 }
+
+fn published(paths: &[&str]) -> mcf_hub::source::Listing {
+    mcf_hub::source::Listing {
+        reference: mcf_hub::reference::parse("owner/model").expect("a reference"),
+        revision: Some("main".to_owned()),
+        entries: paths
+            .iter()
+            .map(|path| mcf_hub::source::Entry::new(*path, 1))
+            .collect(),
+        gated: None,
+        declared_licence: None,
+        lineage: None,
+    }
+}
+
+fn files_asked_for(queue: &Queue) -> Vec<String> {
+    queue
+        .held()
+        .iter()
+        .map(|transfer| transfer.file.clone())
+        .collect()
+}
+
+#[test]
+fn a_model_that_reads_pictures_queues_its_projector_when_it_arrives() {
+    let root = std::env::temp_dir().join(format!("mcf-projector-queued-{}", std::process::id()));
+    let queue = Queue::new();
+    let listing = published(&["model-Q4_K_M.gguf", "mmproj-BF16.gguf", "mmproj-F16.gguf"]);
+    super::ask_for_its_projector(
+        &queue,
+        "owner/model",
+        None,
+        &listing,
+        "model-Q4_K_M.gguf",
+        &root,
+    );
+    assert_eq!(
+        files_asked_for(&queue),
+        ["mmproj-F16.gguf"],
+        "without its projector the model reads text only, which nobody asking for it asked for"
+    );
+}
+
+#[test]
+fn a_projector_already_here_is_not_asked_for_again() {
+    let root = std::env::temp_dir().join(format!("mcf-projector-here-{}", std::process::id()));
+    let beside = root.join("owner").join("model");
+    std::fs::create_dir_all(&beside).expect("a directory for the model");
+    std::fs::write(beside.join("mmproj-F16.gguf"), b"GGUF").expect("a projector on disk");
+    let queue = Queue::new();
+    let listing = published(&["model-Q4_K_M.gguf", "mmproj-F16.gguf"]);
+    super::ask_for_its_projector(
+        &queue,
+        "owner/model",
+        None,
+        &listing,
+        "model-Q4_K_M.gguf",
+        &root,
+    );
+    let _swept = std::fs::remove_dir_all(&root);
+    assert!(files_asked_for(&queue).is_empty());
+}
+
+#[test]
+fn a_model_that_reads_text_only_queues_nothing_more() {
+    let root = std::env::temp_dir().join(format!("mcf-projector-none-{}", std::process::id()));
+    let queue = Queue::new();
+    let listing = published(&["model-Q4_K_M.gguf", "README.md"]);
+    super::ask_for_its_projector(
+        &queue,
+        "owner/model",
+        None,
+        &listing,
+        "model-Q4_K_M.gguf",
+        &root,
+    );
+    assert!(files_asked_for(&queue).is_empty());
+}

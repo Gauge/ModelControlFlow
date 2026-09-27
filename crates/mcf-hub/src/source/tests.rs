@@ -110,3 +110,49 @@ fn the_part_suffix_comes_off_the_name_and_nothing_else_does() {
     );
     assert_eq!(without_the_part("notes.md"), "notes.md");
 }
+
+#[test]
+fn a_model_that_reads_pictures_brings_the_projector_its_publisher_ships() {
+    let listing = listing(&[
+        ("model-Q4_K_M.gguf", 10),
+        ("mmproj-BF16.gguf", 1),
+        ("mmproj-F32.gguf", 2),
+        ("mmproj-F16.gguf", 1),
+        ("README.md", 1),
+    ]);
+    let projector = listing
+        .projector_for("model-Q4_K_M.gguf")
+        .expect("the publisher ships a projector");
+    assert_eq!(
+        projector.path, "mmproj-F16.gguf",
+        "F16 is read by every engine build on every device, so it is taken over BF16 and F32"
+    );
+}
+
+#[test]
+fn a_projector_beside_the_model_is_taken_over_one_elsewhere() {
+    let listing = listing(&[
+        ("Q3/model-Q3-00001-of-00002.gguf", 10),
+        ("Q3/model-Q3-00002-of-00002.gguf", 10),
+        ("Q3/mmproj-BF16.gguf", 1),
+        ("mmproj-F16.gguf", 1),
+    ]);
+    assert_eq!(
+        listing
+            .projector_for("Q3/model-Q3-00001-of-00002.gguf")
+            .map(|entry| entry.path.as_str()),
+        Some("Q3/mmproj-BF16.gguf")
+    );
+}
+
+#[test]
+fn a_model_that_reads_text_only_brings_nothing_and_a_projector_is_not_its_own() {
+    let text_only = listing(&[("model-Q4_K_M.gguf", 10), ("README.md", 1)]);
+    assert!(text_only.projector_for("model-Q4_K_M.gguf").is_none());
+
+    let vision = listing(&[("model-Q4_K_M.gguf", 10), ("mmproj-F16.gguf", 1)]);
+    assert!(
+        vision.projector_for("mmproj-F16.gguf").is_none(),
+        "fetching a projector must not ask for itself again"
+    );
+}

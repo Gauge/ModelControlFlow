@@ -1,3 +1,4 @@
+use crate::corpus::{CATEGORIES, Category, category_of};
 use crate::dial::{Dial, Step};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +139,125 @@ impl Measure {
     }
 }
 
+/// How many of one kind of question were asked at a value, and how many were right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tally {
+    pub category: &'static Category,
+    pub right: u32,
+    pub asked: u32,
+}
+
+impl Tally {
+    #[must_use]
+    pub fn share(&self) -> Option<f64> {
+        if self.asked == 0 {
+            return None;
+        }
+        Some(f64::from(self.right) * 100.0 / f64::from(self.asked))
+    }
+}
+
+/// One value's score taken apart by kind of question, with the whole of it beside.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Breakdown {
+    pub step: Step,
+    pub right: u32,
+    pub asked: u32,
+    /// Only the kinds that were asked, in the corpus's order.
+    pub kinds: Vec<Tally>,
+}
+
+impl Breakdown {
+    #[must_use]
+    pub fn of(&self, category: &Category) -> Option<&Tally> {
+        self.kinds.iter().find(|held| held.category == category)
+    }
+}
+
+/// Every value's score taken apart by kind of question, in the order the values were first
+/// read.
+///
+/// Counted off each question's own verdict rather than the reading's total, so a take of
+/// any number of sets, and a code task mixed in among them, both come out right: a question
+/// of no short kind is left out, and a value that asked none has no breakdown at all.
+#[must_use]
+pub fn by_category<'a>(readings: impl IntoIterator<Item = &'a Reading>) -> Vec<Breakdown> {
+    let mut held: Vec<(Step, [(u32, u32); CATEGORIES.len()])> = Vec::new();
+    for reading in readings {
+        for (name, right) in &reading.per_task {
+            let Some(at) = category_of(name)
+                .and_then(|category| CATEGORIES.iter().position(|held| held == category))
+            else {
+                continue;
+            };
+            let place = held
+                .iter()
+                .position(|(step, _)| *step == reading.step)
+                .unwrap_or_else(|| {
+                    held.push((reading.step, [(0, 0); CATEGORIES.len()]));
+                    held.len().saturating_sub(1)
+                });
+            if let Some((ticked, asked)) = held
+                .get_mut(place)
+                .and_then(|(_, counts)| counts.get_mut(at))
+            {
+                *ticked = ticked.saturating_add(u32::from(*right));
+                *asked = asked.saturating_add(1);
+            }
+        }
+    }
+    held.into_iter()
+        .map(|(step, counts)| {
+            let kinds: Vec<Tally> = CATEGORIES
+                .iter()
+                .zip(counts)
+                .filter(|(_, (_, asked))| *asked > 0)
+                .map(|(category, (right, asked))| Tally {
+                    category,
+                    right,
+                    asked,
+                })
+                .collect();
+            Breakdown {
+                step,
+                right: kinds.iter().map(|held| held.right).sum(),
+                asked: kinds.iter().map(|held| held.asked).sum(),
+                kinds,
+            }
+        })
+        .collect()
+}
+
+/// Every reading at each value added together, in the order the values were first read: a
+/// value run over forty sets is scored on all forty, not on the best of them.
+#[must_use]
+pub fn by_step<'a>(readings: impl IntoIterator<Item = &'a Reading>) -> Vec<Summary> {
+    let mut held: Vec<Summary> = Vec::new();
+    for reading in readings {
+        if let Some(found) = held.iter_mut().find(|summary| summary.step == reading.step) {
+            found.trials = found.trials.saturating_add(1);
+            found.passed = found.passed.saturating_add(reading.passed);
+            found.of = found.of.saturating_add(reading.of);
+            found.produced = found.produced.saturating_add(reading.produced);
+            found.milliseconds = found.milliseconds.saturating_add(reading.milliseconds);
+            if reading.ending.is_a_runaway() {
+                found.runaways = found.runaways.saturating_add(1);
+            }
+            continue;
+        }
+        held.push(Summary {
+            step: reading.step,
+            trials: 1,
+            passed: reading.passed,
+            of: reading.of,
+            runaways: usize::from(reading.ending.is_a_runaway()),
+            produced: reading.produced,
+            milliseconds: reading.milliseconds,
+        });
+    }
+    held
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Report {
     pub readings: Vec<Reading>,
@@ -226,30 +346,7 @@ impl Report {
 
     #[must_use]
     pub fn by_step(&self) -> Vec<Summary> {
-        let mut held: Vec<Summary> = Vec::new();
-        for reading in &self.readings {
-            if let Some(found) = held.iter_mut().find(|summary| summary.step == reading.step) {
-                found.trials = found.trials.saturating_add(1);
-                found.passed = found.passed.saturating_add(reading.passed);
-                found.of = found.of.saturating_add(reading.of);
-                found.produced = found.produced.saturating_add(reading.produced);
-                found.milliseconds = found.milliseconds.saturating_add(reading.milliseconds);
-                if reading.ending.is_a_runaway() {
-                    found.runaways = found.runaways.saturating_add(1);
-                }
-                continue;
-            }
-            held.push(Summary {
-                step: reading.step,
-                trials: 1,
-                passed: reading.passed,
-                of: reading.of,
-                runaways: usize::from(reading.ending.is_a_runaway()),
-                produced: reading.produced,
-                milliseconds: reading.milliseconds,
-            });
-        }
-        held
+        by_step(&self.readings)
     }
 
     /// What each value scored, or nothing for one that produced no reading to score. A
@@ -265,6 +362,12 @@ impl Report {
                 error: summary.error_of(measure),
             })
             .collect()
+    }
+
+    /// What each value scored on each kind of question it asked.
+    #[must_use]
+    pub fn by_category(&self) -> Vec<Breakdown> {
+        by_category(&self.readings)
     }
 
     #[must_use]

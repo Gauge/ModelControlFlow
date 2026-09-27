@@ -2718,3 +2718,76 @@ mod removal_lives_on_the_downloads_page {
         assert_eq!(paint.paper().expect("paper").width, 1400);
     }
 }
+
+/// A marked score is only read beside scores taken on the same tests. Readings taken on
+/// the short questions, before the focus runs replaced them, are still in the ledger; they
+/// stay out of a focus reading, and come back when their own tests are chosen.
+#[test]
+fn a_score_on_one_kind_of_test_is_never_summed_with_another() {
+    use mcf_optimize::dial::{Dial, Step};
+    use mcf_optimize::ledger::{At, Ledger};
+    use mcf_optimize::reading::{Ending, Reading};
+    let home = std::env::temp_dir().join(format!("mcf-focus-ledger-{}", std::process::id()));
+    let _made = std::fs::create_dir_all(&home);
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.home = Some(home.clone());
+    desk.models = vec![Model {
+        name: "A-Model-Q4_K_M".to_owned(),
+        path: "/m/A-Model-Q4_K_M.gguf".to_owned(),
+        ..Model::default()
+    }];
+    desk.chosen = Some(0);
+    desk.settings = Some(mcf_serve::hosting::Hosting::recommended(
+        "llama.cpp",
+        "a card",
+        true,
+        32_768,
+        Some(8),
+        true,
+        None,
+    ));
+    desk.optimizing.sweep.dial = Dial::Temperature;
+    let under = desk.base_for_a_sweep().expect("a base");
+    let path = desk.ledger_path().expect("a ledger");
+    let _cleared = std::fs::remove_file(&path);
+    let mut ledger = Ledger::open(&path).expect("ledger");
+    for set in [
+        mcf_optimize::corpus::SHORT_FROM,
+        mcf_optimize::corpus::FOCUS_FROM,
+    ] {
+        let at = At {
+            dial: Dial::Temperature,
+            step: Step::Thousandths(700),
+            set,
+            repeat: 1,
+        };
+        let reading = Reading {
+            dial: Dial::Temperature,
+            step: Step::Thousandths(700),
+            set,
+            repeat: 1,
+            passed: 20,
+            of: 25,
+            produced: 1000,
+            milliseconds: 1000,
+            ending: Ending::Answered,
+            why: None,
+            per_task: Vec::new(),
+        };
+        ledger
+            .record(&under, at, &reading, "now")
+            .expect("recorded");
+    }
+    assert_eq!(desk.optimizing.tests, crate::Tests::Focus);
+    desk.read_the_ledger();
+    assert_eq!(
+        desk.optimizing
+            .rows
+            .iter()
+            .map(|row| row.at.set)
+            .collect::<Vec<_>>(),
+        vec![mcf_optimize::corpus::FOCUS_FROM],
+        "the short questions' reading is left out of a focus score"
+    );
+    let _removed = std::fs::remove_dir_all(&home);
+}
