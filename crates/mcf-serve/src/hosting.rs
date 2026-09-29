@@ -635,8 +635,6 @@ impl Hosting {
         if under("nextn_predict_layers").is_some_and(|layers| layers > 0) {
             self.started.draft_head = true;
             self.started.drafted = Some(2);
-            self.reuse.prompt_cache_mib = 0;
-            self.reuse.checkpoints = 0;
         }
         self.started.architecture = architecture;
         self.sampled_as_the_file_asks(file)

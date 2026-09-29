@@ -66,14 +66,23 @@ fn the_cache_is_halved_because_that_is_what_lets_a_long_window_fit() {
 }
 
 #[test]
-fn a_file_that_carries_a_draft_head_has_it_turned_on_with_what_it_needs() {
+fn a_file_that_carries_a_draft_head_has_it_turned_on() {
     let tuned = bare().tuned_for(&file(&[("testarch.nextn_predict_layers", 1)]));
     assert!(tuned.started.draft_head);
     assert_eq!(tuned.started.drafted, Some(2));
-    assert_eq!(
-        (tuned.reuse.prompt_cache_mib, tuned.reuse.checkpoints),
-        (0, 0)
-    );
+}
+
+/// A hybrid model's recurrent state cannot be cut back, so without checkpoints any
+/// conversation whose tail differs from what the slot holds is read again from its first
+/// token. The draft head once aborted llama.cpp when state was saved; measured on
+/// 304665f and a97cce86 with 4 slots and 23k-token prompts, it no longer does.
+#[test]
+fn a_draft_head_keeps_the_caches_a_conversation_is_resumed_from() {
+    let plain = bare();
+    let tuned = bare().tuned_for(&file(&[("testarch.nextn_predict_layers", 1)]));
+    assert_eq!(tuned.reuse.prompt_cache_mib, plain.reuse.prompt_cache_mib);
+    assert_eq!(tuned.reuse.checkpoints, plain.reuse.checkpoints);
+    assert!(tuned.reuse.checkpoints > 0);
 }
 
 #[test]
